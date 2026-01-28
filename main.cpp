@@ -1,7 +1,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_main.h>
-#include <SDL3_image/SDL_image.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 struct Vertex {
     float x, y, z;
@@ -16,8 +17,6 @@ static Vertex vertices[] = {
     {-0.5f, -0.5f, 0.0f,  1.0f, 1.0f, 0.0f, 1.0f,  0.0f, 1.0f}  // Лево-низ
 };
 
-// 2. Массив индексов (по 3 на каждый треугольник)
-// Используем Uint16 для экономии памяти
 static Uint16 indices[] = {
     0, 1, 2, // Первый треугольник
     0, 2, 3  // Второй треугольник
@@ -82,12 +81,21 @@ int main(int argc, char *argv[]) {
     SDL_GPUShader *fragmentShader = SDL_CreateGPUShader(device, &fragmentInfo);
     SDL_free(fragmentCode);
 
+
+    // stbi_set_flip_vertically_on_load(true);
+    int width, height, channels;
+    unsigned char *imageData = stbi_load("assets/image.png", &width, &height, &channels, STBI_rgb_alpha);
+    if (!imageData) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load image: %s", stbi_failure_reason());
+        return -1;
+    }
+
     // 1. Создаем текстуру
     SDL_GPUTextureCreateInfo texInfo{};
     texInfo.type = SDL_GPU_TEXTURETYPE_2D;
     texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    texInfo.width = 32;  // Ширина твоей картинки
-    texInfo.height = 32;
+    texInfo.width = 512;
+    texInfo.height = 512;
     texInfo.layer_count_or_depth = 1;
     texInfo.num_levels = 1;
     texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER; // Важно: для чтения в шейдере
@@ -116,7 +124,7 @@ int main(int argc, char *argv[]) {
 
     SDL_GPUVertexAttribute vertexAttributes[3];
 
-vertexAttributes[0].buffer_slot = 0;
+    vertexAttributes[0].buffer_slot = 0;
     vertexAttributes[0].location = 0;
     vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
     vertexAttributes[0].offset = 0;

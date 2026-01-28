@@ -1,4 +1,4 @@
- 
+
 # Сборочные файлы
 build/
 *.o
@@ -11,10 +11,13 @@ build/
 *.tmp
 *.log
 
+compile_commands.json
+
 # IDE и редакторы
 .vscode/
 .idea/
 .clangd/
+.cache/
 *.swp
 *.swo
 
