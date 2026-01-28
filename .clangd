@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: ["-Iinclude", "-Ivendored/SDL/include", "-Ivendored/SDL_image/include"]

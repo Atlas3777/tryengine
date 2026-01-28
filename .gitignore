@@ -1,0 +1,26 @@
+ 
+# Сборочные файлы
+build/
+*.o
+*.a
+*.so
+*.exe
+*.out
+
+# Временные файлы
+*.tmp
+*.log
+
+# IDE и редакторы
+.vscode/
+.idea/
+.clangd/
+*.swp
+*.swo
+
+# Вендорные зависимости
+vendored/
+
+# Операционная система
+.DS_Store
+Thumbs.db
