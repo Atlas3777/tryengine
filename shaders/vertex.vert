@@ -5,7 +5,7 @@ layout(location = 1) in vec4 VertexColor;
 layout(location = 2) in vec2 VertexTexCoord;
 
 layout(location = 0) out vec4 fragColor;
-layout(location = 0) out vec2 TexCoord;
+layout(location = 1) out vec2 TexCoord;
 
 layout(std140, set = 3, binding = 0) uniform UniformBufferVertex {
     float srcAspect;

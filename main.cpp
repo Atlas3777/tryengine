@@ -22,10 +22,6 @@ static Uint16 indices[] = {
     0, 2, 3  // Второй треугольник
 };
 
-struct UniformBuffer {
-    float time;
-};
-
 struct UniformBufferVertex {
     float srcAspect;
 };
@@ -90,27 +86,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // 1. Создаем текстуру
-    SDL_GPUTextureCreateInfo texInfo{};
-    texInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    texInfo.width = 512;
-    texInfo.height = 512;
-    texInfo.layer_count_or_depth = 1;
-    texInfo.num_levels = 1;
-    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER; // Важно: для чтения в шейдере
-
-    SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &texInfo);
-
-    // 2. Создаем семплер (как в Unity Filter Mode / Wrap Mode)
-    SDL_GPUSamplerCreateInfo samplerInfo{};
-    samplerInfo.min_filter = SDL_GPU_FILTER_LINEAR;
-    samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
-    samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-    samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-
-    SDL_GPUSampler* sampler = SDL_CreateGPUSampler(device, &samplerInfo);
-
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertex_shader = vertexShader;
     pipelineInfo.fragment_shader = fragmentShader;
@@ -151,9 +126,10 @@ int main(int argc, char *argv[]) {
     colorTargetDescriptions[0].format = SDL_GetGPUSwapchainTextureFormat(device, window);
 
     pipelineInfo.vertex_input_state.num_vertex_buffers = 1;
-    pipelineInfo.vertex_input_state.num_vertex_attributes = 2;
+    pipelineInfo.vertex_input_state.num_vertex_attributes = 3;
     pipelineInfo.vertex_input_state.vertex_buffer_descriptions = vertexBufferDescriptions;
     pipelineInfo.vertex_input_state.vertex_attributes = vertexAttributes;
+
     pipelineInfo.target_info.num_color_targets = 1;
     pipelineInfo.target_info.color_target_descriptions = colorTargetDescriptions;
 
@@ -216,15 +192,12 @@ int main(int argc, char *argv[]) {
         Uint32 width, height;
         SDL_WaitAndAcquireGPUSwapchainTexture(commandBuffer, window, &swapchainTexture, &width, &height);
 
-// end the frame early if a swapchain texture is not available
         if (swapchainTexture == NULL)
         {
-            // you must always submit the command buffer
             SDL_SubmitGPUCommandBuffer(commandBuffer);
             return SDL_APP_CONTINUE;
         }
 
-        // create the color target
         SDL_GPUColorTargetInfo colorTargetInfo{};
         colorTargetInfo.clear_color = {240/255.0f, 240/255.0f, 240/255.0f, 255/255.0f};
         colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
@@ -232,26 +205,13 @@ int main(int argc, char *argv[]) {
         colorTargetInfo.texture = swapchainTexture;
 
 
-
-        // UniformBuffer timeUniform{};
-        // timeUniform.time = SDL_GetTicksNS() / 1e9f;
-        // SDL_PushGPUFragmentUniformData(commandBuffer, 0 , &timeUniform, sizeof(UniformBuffer));
-
         UniformBufferVertex uVertexBuffer{};
         uVertexBuffer.srcAspect = WindowHeight/WindowWidth;
         SDL_PushGPUVertexUniformData(commandBuffer, 0 , &uVertexBuffer, sizeof(UniformBufferVertex));
 
-
-
         // begin a render pass
         SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, NULL);
 
-        SDL_GPUTextureSamplerBinding binding{};
-        binding.texture = texture;
-        binding.sampler = sampler;
-
-        // Привязываем к фрагментному шейдеру в слот 0
-        SDL_BindGPUFragmentSamplers(renderPass, 0, &binding, 1);
 
         SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
 

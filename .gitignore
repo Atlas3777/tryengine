@@ -1,4 +1,11 @@
-
+# CMake артефакты
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+Makefile
+# Если собираешь не в /build, а в корне (что не очень хорошо, но бывает)
+*.spv
 # Сборочные файлы
 build/
 *.o
