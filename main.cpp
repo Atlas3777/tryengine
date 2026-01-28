@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
 
     // stbi_set_flip_vertically_on_load(true);
     int width, height, channels;
-    unsigned char *imageData = stbi_load("assets/image.png", &width, &height, &channels, STBI_rgb_alpha);
+    unsigned char *imageData = stbi_load("assets/test.png", &width, &height, &channels, STBI_rgb_alpha);
     if (!imageData) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load image: %s", stbi_failure_reason());
         return -1;
