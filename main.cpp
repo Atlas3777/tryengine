@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
     fragmentInfo.entrypoint = "main";
     fragmentInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
     fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    fragmentInfo.num_samplers = 0;
+    fragmentInfo.num_samplers = 1;
     fragmentInfo.num_storage_buffers = 0;
     fragmentInfo.num_storage_textures = 0;
     fragmentInfo.num_uniform_buffers = 1;
@@ -85,6 +85,49 @@ int main(int argc, char *argv[]) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load image: %s", stbi_failure_reason());
         return -1;
     }
+    SDL_GPUTextureCreateInfo texInfo{};
+    texInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;               // будем семплить
+    texInfo.width = (Uint32)width;
+    texInfo.height = (Uint32)height;
+    texInfo.layer_count_or_depth = 1;
+    texInfo.num_levels = 1;
+    texInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    texInfo.props = 0;
+
+    SDL_GPUTexture *gpuTexture = SDL_CreateGPUTexture(device, &texInfo);
+    if (!gpuTexture) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "CreateGPUTexture failed");
+        stbi_image_free(imageData);
+        return -1;
+    }
+
+    // create a transfer buffer just for the image upload
+    SDL_GPUTransferBufferCreateInfo transferTexInfo{};
+    transferTexInfo.size = (Uint64)width * (Uint64)height * 4; // RGBA8
+    transferTexInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    SDL_GPUTransferBuffer *transferBufferTex = SDL_CreateGPUTransferBuffer(device, &transferTexInfo);
+
+    // fill transfer buffer with image data
+    Uint8 *mapTex = (Uint8*)SDL_MapGPUTransferBuffer(device, transferBufferTex, false);
+    SDL_memcpy(mapTex, imageData, (size_t)transferTexInfo.size);
+    SDL_UnmapGPUTransferBuffer(device, transferBufferTex);
+
+    // we no longer need CPU-side pixels after copying to transfer buffer
+    stbi_image_free(imageData);
+    imageData = NULL;
+
+    SDL_GPUSamplerCreateInfo samplerInfo{};
+    samplerInfo.min_filter = SDL_GPU_FILTER_LINEAR;
+    samplerInfo.mag_filter = SDL_GPU_FILTER_LINEAR;
+    samplerInfo.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    samplerInfo.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    samplerInfo.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+
+    SDL_GPUSampler *gpuSampler = SDL_CreateGPUSampler(device, &samplerInfo);
+
 
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.vertex_shader = vertexShader;
@@ -174,9 +217,17 @@ int main(int argc, char *argv[]) {
     SDL_GPUBufferRegion dstIdx{indexBuffer, 0, sizeof(indices)};
     SDL_UploadToGPUBuffer(copyPass, &srcIdx, &dstIdx, true);
 
+    SDL_GPUTextureTransferInfo srcTexInfo{ transferBufferTex, 0, 0, 0 }; // pixels_per_row / rows_per_layer = 0 => tightly packed
+    SDL_GPUTextureRegion dstTexRegion{ gpuTexture, 0, 0, 0, 0, 0, (Uint32)width, (Uint32)height, 1 };
+    SDL_UploadToGPUTexture(copyPass, &srcTexInfo, &dstTexRegion, true);
+
+
     SDL_EndGPUCopyPass(copyPass);
 
     SDL_SubmitGPUCommandBuffer(uploadCmd);
+
+    SDL_ReleaseGPUTransferBuffer(device, transferBufferTex);
+    transferBufferTex = NULL;
 
     // --- ЦИКЛ ---
     bool running = true;
@@ -212,14 +263,15 @@ int main(int argc, char *argv[]) {
         // begin a render pass
         SDL_GPURenderPass* renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, NULL);
 
-
         SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
+
+        SDL_GPUTextureSamplerBinding tsb{.texture = gpuTexture, .sampler = gpuSampler};
+        SDL_BindGPUFragmentSamplers(renderPass, 0, &tsb, 1);
 
         SDL_GPUBufferBinding vertexBinding{vertexBuffer, 0};
         SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBinding, 1);
 
         SDL_GPUBufferBinding indexBinding{indexBuffer, 0};
-
         SDL_BindGPUIndexBuffer(renderPass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
 
@@ -231,6 +283,9 @@ int main(int argc, char *argv[]) {
         // submit the command buffer
         SDL_SubmitGPUCommandBuffer(commandBuffer);
     }
+
+    SDL_ReleaseGPUSampler(device, gpuSampler);
+    SDL_ReleaseGPUTexture(device, gpuTexture);
 
     // Cleanup
     SDL_ReleaseGPUBuffer(device, vertexBuffer);
