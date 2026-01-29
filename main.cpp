@@ -9,22 +9,29 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <vector>
+#include <string>
+
 struct Vertex {
-  float x, y, z;
-  float r, g, b, a;
-  float u, v; // Добавляем UV
+  float x, y, z;      // Position
+  float nx, ny, nz;   // Normal (Добавили для освещения)
+  float r, g, b, a;   // Color (Оставим пока как заглушку или tint)
+  float u, v;         // UV
 };
 
 static Vertex vertices[] = {
-    //   x,     y,     z,      r,    g,    b,    a,    u,    v
-    {-0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 0
-    {-0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 1.0f}, // 1
-    {-0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f, 1.0f,  1.0f, 0.0f}, // 2
-    {-0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}, // 3
-    { 0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 4
-    { 0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f, 1.0f,  0.0f, 1.0f}, // 5
-    { 0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 0.0f, 1.0f,  1.0f, 0.0f}, // 6
-    { 0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}  // 7
+    //   x,     y,     z,      nx,   ny,   nz,   r,    g,    b,    a,    u,    v
+    {-0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 0
+    {-0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 1.0f}, // 1
+    {-0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f,  1.0f, 0.0f}, // 2
+    {-0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}, // 3
+    { 0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 4
+    { 0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 1.0f, 1.0f,  0.0f, 1.0f}, // 5
+    { 0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f, 0.0f, 1.0f,  1.0f, 0.0f}, // 6
+    { 0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}  // 7
 };
 
 static Uint16 indices[] = {
@@ -35,6 +42,83 @@ static Uint16 indices[] = {
     0, 2, 3, 0, 3, 1, // left
     4, 7, 6, 4, 5, 7  // right
 };
+
+bool LoadMesh(const std::string& path, std::vector<Vertex>& outVertices, std::vector<Uint16>& outIndices) {
+    Assimp::Importer importer;
+
+    // Флаги:
+    // aiProcess_Triangulate: превращает всё в треугольники (обязательно для GPU)
+    // aiProcess_FlipUVs: переворачивает Y у текстур (зависит от того, как ты экспортишь, для OpenGL часто нужно, для Vulkan/SDL3 иногда нет. Попробуй с ним и без)
+    // aiProcess_GenNormals: генерирует нормали, если их нет в файле
+    // aiProcess_JoinIdenticalVertices: оптимизация, объединяет полностью одинаковые вершины
+    const aiScene* scene = importer.ReadFile(path,
+        aiProcess_Triangulate |
+        aiProcess_FlipUVs |
+        aiProcess_GenNormals |
+        aiProcess_JoinIdenticalVertices);
+
+    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Assimp Error: %s", importer.GetErrorString());
+        return false;
+    }
+
+    // Берем первый меш из файла (для простоты пока так)
+    if (scene->mNumMeshes == 0) return false;
+    aiMesh* mesh = scene->mMeshes[0];
+
+    // 1. Парсим вершины
+    for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
+        Vertex vertex{};
+
+        // Позиции
+        vertex.x = mesh->mVertices[i].x;
+        vertex.y = mesh->mVertices[i].y;
+        vertex.z = mesh->mVertices[i].z;
+
+        // Нормали (если есть)
+        if (mesh->HasNormals()) {
+            vertex.nx = mesh->mNormals[i].x;
+            vertex.ny = mesh->mNormals[i].y;
+            vertex.nz = mesh->mNormals[i].z;
+        } else {
+            vertex.nx = 0.0f;
+            vertex.ny = 1.0f;
+            vertex.nz = 0.0f;
+        }
+
+        // Цвета (если есть, иначе белый)
+        if (mesh->HasVertexColors(0)) {
+            vertex.r = mesh->mColors[0][i].r;
+            vertex.g = mesh->mColors[0][i].g;
+            vertex.b = mesh->mColors[0][i].b;
+            vertex.a = mesh->mColors[0][i].a;
+        } else {
+            vertex.r = 1.0f; vertex.g = 1.0f; vertex.b = 1.0f; vertex.a = 1.0f;
+        }
+
+        // Текстурные координаты (UV)
+        if (mesh->HasTextureCoords(0)) {
+            vertex.u = mesh->mTextureCoords[0][i].x;
+            vertex.v = mesh->mTextureCoords[0][i].y;
+        } else {
+            vertex.u = 0.0f;
+            vertex.v = 0.0f;
+        }
+
+        outVertices.push_back(vertex);
+    }
+
+    // 2. Парсим индексы
+    for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+        aiFace face = mesh->mFaces[i];
+        for (unsigned int j = 0; j < face.mNumIndices; j++) {
+            outIndices.push_back(static_cast<Uint16>(face.mIndices[j]));
+        }
+    }
+
+    SDL_Log("Loaded Mesh: %s (Verts: %zu, Indices: %zu)", path.c_str(), outVertices.size(), outIndices.size());
+    return true;
+}
 
 struct alignas(16) UniformBufferVertex {
   glm::mat4 mvp;
@@ -169,22 +253,32 @@ int main(int argc, char *argv[]) {
   vertexBufferDescriptions[0].instance_step_rate = 0;
   vertexBufferDescriptions[0].pitch = sizeof(Vertex);
 
-  SDL_GPUVertexAttribute vertexAttributes[3];
+  // Теперь у нас 4 атрибута: Pos, Normal, Color, UV
+  SDL_GPUVertexAttribute vertexAttributes[4];
 
+  // 0: Position (Float3)
   vertexAttributes[0].buffer_slot = 0;
   vertexAttributes[0].location = 0;
   vertexAttributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
   vertexAttributes[0].offset = 0;
 
+  // 1: Normal (Float3) - НОВОЕ
   vertexAttributes[1].buffer_slot = 0;
   vertexAttributes[1].location = 1;
-  vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-  vertexAttributes[1].offset = sizeof(float) * 3;
+  vertexAttributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+  vertexAttributes[1].offset = sizeof(float) * 3; // Сразу после x,y,z
 
+  // 2: Color (Float4)
   vertexAttributes[2].buffer_slot = 0;
   vertexAttributes[2].location = 2;
-  vertexAttributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-  vertexAttributes[2].offset = sizeof(float) * 7;
+  vertexAttributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+  vertexAttributes[2].offset = sizeof(float) * 6; // Pos(3) + Normal(3)
+
+  // 3: UV (Float2)
+  vertexAttributes[3].buffer_slot = 0;
+  vertexAttributes[3].location = 3;
+  vertexAttributes[3].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+  vertexAttributes[3].offset = sizeof(float) * 10; // Pos(3) + Normal(3) + Color(4)
 
   SDL_GPUColorTargetDescription colorTargetDescriptions[1];
   colorTargetDescriptions[0] = {};
@@ -203,7 +297,7 @@ int main(int argc, char *argv[]) {
       SDL_GetGPUSwapchainTextureFormat(device, window);
 
   pipelineInfo.vertex_input_state.num_vertex_buffers = 1;
-  pipelineInfo.vertex_input_state.num_vertex_attributes = 3;
+  pipelineInfo.vertex_input_state.num_vertex_attributes = 4; // БЫЛО 3
   pipelineInfo.vertex_input_state.vertex_buffer_descriptions =
       vertexBufferDescriptions;
   pipelineInfo.vertex_input_state.vertex_attributes = vertexAttributes;
@@ -223,25 +317,37 @@ int main(int argc, char *argv[]) {
   SDL_ReleaseGPUShader(device, vertexShader);
   SDL_ReleaseGPUShader(device, fragmentShader);
 
+  // Загрузка модели с помощью Assimp
+  std::vector<Vertex> meshVertices;
+  std::vector<Uint16> meshIndices;
+
+  // Загружаем модель из assets/box_low_poly/scene.gltf
+  if (!LoadMesh("assets/box_low_poly/scene.gltf", meshVertices, meshIndices)) {
+      SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to load model");
+      return -1;
+  }
+
+  // Создание буферов с динамическими размерами
   SDL_GPUBufferCreateInfo bufferInfo{};
-  bufferInfo.size = sizeof(vertices);
+  bufferInfo.size = meshVertices.size() * sizeof(Vertex); // Динамический размер
   bufferInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
   vertexBuffer = SDL_CreateGPUBuffer(device, &bufferInfo);
 
   SDL_GPUBufferCreateInfo indexBufInfo{};
-  indexBufInfo.size = sizeof(indices);
+  indexBufInfo.size = meshIndices.size() * sizeof(Uint16); // Динамический размер
   indexBufInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
   indexBuffer = SDL_CreateGPUBuffer(device, &indexBufInfo);
 
   SDL_GPUTransferBufferCreateInfo transferInfo{};
-  transferInfo.size = sizeof(vertices) + sizeof(indices);
+  transferInfo.size = bufferInfo.size + indexBufInfo.size;
   transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
   transferBuffer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
 
-  Uint8 *mapData =
-      (Uint8 *)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
-  SDL_memcpy(mapData, vertices, sizeof(vertices));
-  SDL_memcpy(mapData + sizeof(vertices), indices, sizeof(indices));
+  Uint8 *mapData = (Uint8 *)SDL_MapGPUTransferBuffer(device, transferBuffer, false);
+
+  // Копируем вектора
+  SDL_memcpy(mapData, meshVertices.data(), bufferInfo.size);
+  SDL_memcpy(mapData + bufferInfo.size, meshIndices.data(), indexBufInfo.size);
 
   SDL_UnmapGPUTransferBuffer(device, transferBuffer);
 
@@ -251,11 +357,12 @@ int main(int argc, char *argv[]) {
   SDL_GPUCopyPass *copyPass = SDL_BeginGPUCopyPass(uploadCmd);
 
   SDL_GPUTransferBufferLocation srcVert{transferBuffer, 0};
-  SDL_GPUBufferRegion dstVert{vertexBuffer, 0, sizeof(vertices)};
+  SDL_GPUBufferRegion dstVert{vertexBuffer, 0, bufferInfo.size};
   SDL_UploadToGPUBuffer(copyPass, &srcVert, &dstVert, true);
 
-  SDL_GPUTransferBufferLocation srcIdx{transferBuffer, sizeof(vertices)};
-  SDL_GPUBufferRegion dstIdx{indexBuffer, 0, sizeof(indices)};
+  // Смещение для индексов теперь динамическое
+  SDL_GPUTransferBufferLocation srcIdx{transferBuffer, bufferInfo.size};
+  SDL_GPUBufferRegion dstIdx{indexBuffer, 0, indexBufInfo.size};
   SDL_UploadToGPUBuffer(copyPass, &srcIdx, &dstIdx, true);
 
   SDL_GPUTextureTransferInfo srcTexInfo{
@@ -376,7 +483,9 @@ int main(int argc, char *argv[]) {
     UniformBufferVertex uVertexBuffer{};
     glm::mat4 model =
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
-    model = model * glm::rotate(glm::mat4(1.0f), SDL_GetTicks() / 1000.0f,
+    model = model * glm::rotate(glm::mat4(1.0f),
+        // SDL_GetTicks() / 1000.0f,
+        0.0f,
                                 glm::vec3(1.0f, 0.0f, 0.0f));
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
     glm::mat4 proj = glm::perspective(
@@ -403,7 +512,7 @@ int main(int argc, char *argv[]) {
     SDL_BindGPUIndexBuffer(renderPass, &indexBinding,
                            SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    SDL_DrawGPUIndexedPrimitives(renderPass, 36, 1, 0, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(renderPass, meshIndices.size(), 1, 0, 0, 0);
 
     // end the render pass
     SDL_EndGPURenderPass(renderPass);

@@ -1,0 +1,11 @@
+Model Information:
+* title:	Box, Low Poly
+* source:	https://sketchfab.com/3d-models/box-low-poly-c7a1ecb2355145bc91337e64f57bd0ec
+* author:	FLAREMEDIA (https://sketchfab.com/flaremedia)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Box, Low Poly" (https://sketchfab.com/3d-models/box-low-poly-c7a1ecb2355145bc91337e64f57bd0ec) by FLAREMEDIA (https://sketchfab.com/flaremedia) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
