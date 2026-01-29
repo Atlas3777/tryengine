@@ -4,6 +4,7 @@ project(MyPhysicsEngine)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/external")
 
 include(FetchContent)
 
@@ -32,6 +33,9 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/nothings/stb.git
   GIT_TAG        master
 )
+set(SDL3_TESTS OFF CACHE INTERNAL "")
+set(SDL3_EXAMPLES OFF CACHE INTERNAL "")
+set(SDL3_IMAGE_TESTS OFF CACHE INTERNAL "")
 
 # 2. Выкачиваем всё
 FetchContent_MakeAvailable(glm SDL3 SDL3_image stb)

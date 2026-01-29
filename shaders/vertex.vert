@@ -7,12 +7,15 @@ layout(location = 2) in vec2 VertexTexCoord;
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 TexCoord;
 
-layout(std140, set = 3, binding = 0) uniform UniformBufferVertex {
-    float srcAspect;
+layout(std140, set = 1, binding = 0) uniform UniformBuffer {
+    mat4 mvp; // 64 байта
 };
 
 void main() {
-    gl_Position = vec4(VertexPos.x * srcAspect, VertexPos.yz, 1.0);
+    // gl_Position = proj * view * model * vec4(VertexPos, 1.0);
+    // gl_Position = vec4(VertexPos, 1.0);
+    gl_Position = mvp * vec4(VertexPos, 1.0);
+
     fragColor = VertexColor;
     TexCoord = VertexTexCoord;
 }
