@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_oldnames.h>
@@ -15,18 +16,27 @@ struct Vertex {
 };
 
 static Vertex vertices[] = {
-    {-0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}, // Лево-верх
-    {0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f},  // Право-верх
-    {0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f}, // Право-низ
-    {-0.5f, -0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f} // Лево-низ
+    //   x,     y,     z,      r,    g,    b,    a,    u,    v
+    {-0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 0
+    {-0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 1.0f}, // 1
+    {-0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f, 1.0f,  1.0f, 0.0f}, // 2
+    {-0.5f,  0.5f,  0.5f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}, // 3
+    { 0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f, 1.0f,  0.0f, 0.0f}, // 4
+    { 0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f, 1.0f,  0.0f, 1.0f}, // 5
+    { 0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 0.0f, 1.0f,  1.0f, 0.0f}, // 6
+    { 0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f, 1.0f,  1.0f, 1.0f}  // 7
 };
 
 static Uint16 indices[] = {
-    0, 1, 2, // Первый треугольник
-    0, 2, 3  // Второй треугольник
+    0, 1, 4, 1, 5, 4, // bottom
+    2, 7, 3, 2, 6, 7, // top
+    0, 6, 2, 0, 4, 6, // front
+    1, 3, 7, 1, 5, 7, // back
+    0, 2, 3, 0, 3, 1, // left
+    4, 7, 6, 4, 5, 7  // right
 };
 
-struct alignas(16)UniformBufferVertex {
+struct alignas(16) UniformBufferVertex {
   glm::mat4 mvp;
 };
 
@@ -43,8 +53,7 @@ int main(int argc, char *argv[]) {
   if (!SDL_Init(SDL_INIT_VIDEO))
     return -1;
 
-  window =
-      SDL_CreateWindow("XPBD Engine - Triangle", WindowWidth, WindowHeight, 0);
+  window = SDL_CreateWindow("tryengine", WindowWidth, WindowHeight, 0);
   device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
 
   SDL_ClaimWindowForGPUDevice(device, window);
@@ -82,6 +91,18 @@ int main(int argc, char *argv[]) {
 
   SDL_GPUShader *fragmentShader = SDL_CreateGPUShader(device, &fragmentInfo);
   SDL_free(fragmentCode);
+
+  SDL_GPUTextureCreateInfo depthTexInfo{};
+  depthTexInfo.type = SDL_GPU_TEXTURETYPE_2D;
+  depthTexInfo.format = SDL_GPU_TEXTUREFORMAT_D16_UNORM; // Или D32_SFLOAT
+  depthTexInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+  depthTexInfo.width = WindowWidth;
+  depthTexInfo.height = WindowHeight;
+  depthTexInfo.layer_count_or_depth = 1;
+  depthTexInfo.num_levels = 1;
+  depthTexInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+  SDL_GPUTexture* depthTexture = SDL_CreateGPUTexture(device, &depthTexInfo);
 
   // stbi_set_flip_vertically_on_load(true);
   int width, height, channels;
@@ -190,6 +211,12 @@ int main(int argc, char *argv[]) {
   pipelineInfo.target_info.num_color_targets = 1;
   pipelineInfo.target_info.color_target_descriptions = colorTargetDescriptions;
 
+  pipelineInfo.depth_stencil_state.enable_depth_test = true;
+  pipelineInfo.depth_stencil_state.enable_depth_write = true;
+  pipelineInfo.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+  pipelineInfo.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+  pipelineInfo.target_info.has_depth_stencil_target = true;
+
   SDL_GPUGraphicsPipeline *pipeline =
       SDL_CreateGPUGraphicsPipeline(device, &pipelineInfo);
 
@@ -245,12 +272,21 @@ int main(int argc, char *argv[]) {
   SDL_ReleaseGPUTransferBuffer(device, transferBufferTex);
   transferBufferTex = NULL;
 
-  uint64_t lastTime = SDL_GetTicksNS();
-  double deltaTime = 0.0;
-
   glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 0.0f);
   glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
   glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+  uint64_t lastTime = SDL_GetTicksNS();
+  double deltaTime = 0.0;
+  float cameraSpeedBase = 2.5f;
+
+  bool firstMouse = true;
+  float pitch = 0.0f;
+  float yaw = -90.0f;
+  float lastX = WindowWidth / 2;
+  float lastY = WindowHeight / 2;
+
+  SDL_SetWindowRelativeMouseMode(window, true);
 
   // --- ЦИКЛ ---
   bool running = true;
@@ -259,15 +295,58 @@ int main(int argc, char *argv[]) {
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_EVENT_QUIT)
         running = false;
+      else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        if (firstMouse) {
+          firstMouse = false;
+          continue; // пропускаем первый рывок
+        }
+        float xoffset = event.motion.xrel;
+        float yoffset =
+            -event.motion.yrel; // инвертируем, т.к. Y идет сверху вниз
+
+        float sensitivity = 0.1f;
+        xoffset *= sensitivity;
+        yoffset *= sensitivity;
+
+        yaw += xoffset;
+        pitch += yoffset;
+
+        // Ограничиваем pitch, чтобы не "сделать сальто"
+        if (pitch > 89.0f)
+          pitch = 89.0f;
+        if (pitch < -89.0f)
+          pitch = -89.0f;
+
+        // Пересчитываем вектор направления камеры
+        glm::vec3 front;
+        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        front.y = sin(glm::radians(pitch));
+        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        cameraFront = glm::normalize(front);
+      }
     }
 
     uint64_t currentTime = SDL_GetTicksNS();
-
-    // Вычисляем разницу и переводим в секунды (double)
-    // 1,000,000,000 наносекунд в одной секунде
     deltaTime = (currentTime - lastTime) / 1000000000.0;
-
     lastTime = currentTime;
+    // 3. УПРАВЛЕНИЕ КАМЕРОЙ
+    const bool *keys = SDL_GetKeyboardState(nullptr);
+    float currentSpeed = cameraSpeedBase * (float)deltaTime;
+
+    if (keys[SDL_SCANCODE_W])
+      cameraPos += currentSpeed * cameraFront;
+    if (keys[SDL_SCANCODE_S])
+      cameraPos -= currentSpeed * cameraFront;
+    if (keys[SDL_SCANCODE_A])
+      cameraPos -=
+          glm::normalize(glm::cross(cameraFront, cameraUp)) * currentSpeed;
+    if (keys[SDL_SCANCODE_D])
+      cameraPos +=
+          glm::normalize(glm::cross(cameraFront, cameraUp)) * currentSpeed;
+    if (keys[SDL_SCANCODE_E])
+      cameraPos += currentSpeed * cameraUp;
+    if (keys[SDL_SCANCODE_Q])
+      cameraPos -= currentSpeed * cameraUp;
 
     SDL_GPUCommandBuffer *commandBuffer = SDL_AcquireGPUCommandBuffer(device);
     SDL_GPUTexture *swapchainTexture;
@@ -281,36 +360,50 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_GPUColorTargetInfo colorTargetInfo{};
-    colorTargetInfo.clear_color = {240 / 255.0f, 240 / 255.0f, 240 / 255.0f,255 / 255.0f};
+    colorTargetInfo.clear_color = {240 / 255.0f, 240 / 255.0f, 240 / 255.0f, 255 / 255.0f};
     colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
     colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
     colorTargetInfo.texture = swapchainTexture;
 
+    SDL_GPUDepthStencilTargetInfo depthTargetInfo{};
+    depthTargetInfo.texture = depthTexture;
+    depthTargetInfo.clear_depth = 1.0f;
+    depthTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    depthTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+    depthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+    depthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
     UniformBufferVertex uVertexBuffer{};
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
-    model = model * glm::rotate(glm::mat4(1.0f), SDL_GetTicks()/1000.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::mat4 model =
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
+    model = model * glm::rotate(glm::mat4(1.0f), SDL_GetTicks() / 1000.0f,
+                                glm::vec3(1.0f, 0.0f, 0.0f));
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-    glm::mat4 proj = glm::perspective(glm::radians(70.0f), static_cast<float>(width) / height, 0.1f, 100.0f);
+    glm::mat4 proj = glm::perspective(
+        glm::radians(70.0f), static_cast<float>(width) / height, 0.1f, 100.0f);
     uVertexBuffer.mvp = proj * view * model;
 
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &uVertexBuffer, sizeof(UniformBufferVertex));
+    SDL_PushGPUVertexUniformData(commandBuffer, 0, &uVertexBuffer,
+                                 sizeof(UniformBufferVertex));
 
     // begin a render pass
     SDL_GPURenderPass *renderPass =
-        SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, NULL);
+        SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthTargetInfo);
 
     SDL_BindGPUGraphicsPipeline(renderPass, pipeline);
 
-    SDL_GPUTextureSamplerBinding tsb{.texture = gpuTexture, .sampler = gpuSampler};
+    SDL_GPUTextureSamplerBinding tsb{.texture = gpuTexture,
+                                     .sampler = gpuSampler};
     SDL_BindGPUFragmentSamplers(renderPass, 0, &tsb, 1);
 
     SDL_GPUBufferBinding vertexBinding{vertexBuffer, 0};
     SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBinding, 1);
 
     SDL_GPUBufferBinding indexBinding{indexBuffer, 0};
-    SDL_BindGPUIndexBuffer(renderPass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    SDL_BindGPUIndexBuffer(renderPass, &indexBinding,
+                           SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    SDL_DrawGPUIndexedPrimitives(renderPass, 6, 1, 0, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(renderPass, 36, 1, 0, 0, 0);
 
     // end the render pass
     SDL_EndGPURenderPass(renderPass);
