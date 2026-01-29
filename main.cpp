@@ -2,7 +2,7 @@
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_main.h>
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include <stb_image.h>
 
 struct Vertex {
     float x, y, z;
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
     SDL_GPUTextureCreateInfo texInfo{};
     texInfo.type = SDL_GPU_TEXTURETYPE_2D;
     texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;               // будем семплить
+    texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;// будем семплить
     texInfo.width = (Uint32)width;
     texInfo.height = (Uint32)height;
     texInfo.layer_count_or_depth = 1;
