@@ -9,6 +9,7 @@ struct Camera {
     float pitch;
     float speed;
     float sensitivity;
+    bool firstMouse = true;
 };
 
 void UpdateCamera(Camera& cam, bool& running, double deltaTime);

@@ -1,0 +1,6 @@
+---
+Language: Cpp
+BasedOnStyle: Google  # Или LLVM, Chromium
+ColumnLimit: 120      # Установи желаемую длину строки
+IndentWidth: 4
+---

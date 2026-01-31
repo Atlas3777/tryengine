@@ -1,12 +1,11 @@
 #include "core/camera.h"
-#include <SDL3/SDL_scancode.h>
-#include <SDL3/SDL_mouse.h>
+
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
-#include <cstdio>
+#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_scancode.h>
 
 void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
-    static bool firstMouse = true;
     static float lastX = 0.0f;
     static float lastY = 0.0f;
 
@@ -15,15 +14,15 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
         if (event.type == SDL_EVENT_QUIT) {
             running = false;
         } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            if (firstMouse) {
+            if (cam.firstMouse) {
                 lastX = (float)event.motion.x;
                 lastY = (float)event.motion.y;
-                firstMouse = false;
+                cam.firstMouse = false;
                 // SDL_SetWindowRelativeMouseMode(window, true);
             }
 
             float xoffset = event.motion.xrel;
-            float yoffset = -event.motion.yrel; // инвертируем, т.к. Y идет сверху вниз
+            float yoffset = -event.motion.yrel;  // инвертируем, т.к. Y идет сверху вниз
 
             xoffset *= cam.sensitivity;
             yoffset *= cam.sensitivity;
@@ -45,14 +44,10 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
     }
 
     // Управление клавишами
-    const bool *keys = SDL_GetKeyboardState(nullptr);
+    const bool* keys = SDL_GetKeyboardState(nullptr);
     float currentSpeed = cam.speed * (float)deltaTime;
 
-    if (keys[SDL_SCANCODE_W])
-    {
-        printf("W pressed \n");
-        cam.pos += currentSpeed * cam.front;
-    }
+    if (keys[SDL_SCANCODE_W]) cam.pos += currentSpeed * cam.front;
     if (keys[SDL_SCANCODE_S]) cam.pos -= currentSpeed * cam.front;
     if (keys[SDL_SCANCODE_A]) cam.pos -= glm::normalize(glm::cross(cam.front, cam.up)) * currentSpeed;
     if (keys[SDL_SCANCODE_D]) cam.pos += glm::normalize(glm::cross(cam.front, cam.up)) * currentSpeed;
