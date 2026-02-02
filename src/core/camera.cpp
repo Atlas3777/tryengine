@@ -18,7 +18,6 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
                 lastX = (float)event.motion.x;
                 lastY = (float)event.motion.y;
                 cam.firstMouse = false;
-                // SDL_SetWindowRelativeMouseMode(window, true);
             }
 
             float xoffset = event.motion.xrel;

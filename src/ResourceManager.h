@@ -18,7 +18,6 @@ class ResourceManager {
     std::unordered_map<std::string, Texture*> textureCache;
     std::unordered_map<std::string, Mesh*> meshCache;
 
-    // Храним дефолтную белую текстуру, чтобы не пересоздавать
     Texture* whiteTexture = nullptr;
 
    public:
@@ -79,14 +78,14 @@ class ResourceManager {
     // Загрузка текстуры (с проверкой кеша)
     Texture* LoadTexture(const std::string& path) {
         if (textureCache.find(path) != textureCache.end()) {
-            return textureCache[path];  // Уже загружена, возвращаем ссылку
+            return textureCache[path];
         }
 
         int w, h, c;
         unsigned char* data = stbi_load(path.c_str(), &w, &h, &c, STBI_rgb_alpha);
         if (!data) {
             SDL_Log("Failed to load texture: %s", path.c_str());
-            return nullptr;  // Или вернуть дефолтную розовую текстуру
+            return nullptr;
         }
 
         Texture* tex = new Texture();
@@ -179,7 +178,6 @@ class ResourceManager {
                     vert.nz = aiMesh->mNormals[v].z;
                 }
 
-                // --- ИСПРАВЛЕНИЕ 1: Vertex Colors ---
                 // Low poly часто хранит цвета здесь
                 if (aiMesh->HasVertexColors(0)) {
                     vert.r = aiMesh->mColors[0][v].r;
@@ -201,14 +199,12 @@ class ResourceManager {
                 vertices.push_back(vert);
             }
 
-            // ... (Код индексов тот же) ...
             for (unsigned int f = 0; f < aiMesh->mNumFaces; f++) {
                 aiFace face = aiMesh->mFaces[f];
                 for (unsigned int j = 0; j < face.mNumIndices; j++) indices.push_back(face.mIndices[j]);
             }
             myMesh->numIndices = indices.size();
 
-            // --- ИСПРАВЛЕНИЕ 2: Загрузка текстуры или ФОЛЛБЭК ---
             aiString texPath;
             bool hasTexture = false;
 
@@ -227,17 +223,12 @@ class ResourceManager {
                 }
             }
 
-            // ЕСЛИ ТЕКСТУРЫ НЕТ — назначаем БЕЛУЮ ЗАГЛУШКУ
-            // Это критически важно. Если тут будет nullptr, ты потом подставишь ErrorTexture (фиолетовую).
-            // А нам нужно, чтобы умножался цвет вершины (vert.r/g/b) на 1.0 (белый).
             if (!hasTexture) {
                 myMesh->texture = whiteTexture;
             }
 
-            // ... (Дальше создание буферов GPU то же самое) ...
             size_t vSize = vertices.size() * sizeof(Vertex);
             size_t iSize = indices.size() * sizeof(Uint32);
-            // ... copy paste твоего кода создания буферов ...
 
             SDL_GPUBufferCreateInfo bInfo = {SDL_GPU_BUFFERUSAGE_VERTEX, (Uint32)vSize};
             myMesh->vertexBuffer = SDL_CreateGPUBuffer(device, &bInfo);
@@ -273,50 +264,5 @@ class ResourceManager {
         }
 
         return loadedMeshes;
-    }
-
-    SDL_GPUTexture* CreateErrorTexture(SDL_GPUDevice* device) {
-        // 1. Данные: 2x2 пикселя (RGBA)
-        // Фиолетовый: 255, 0, 255, 255 | Черный: 0, 0, 0, 255
-        uint8_t pixels[] = {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
-
-        SDL_GPUTextureCreateInfo texInfo = {};
-        texInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        texInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        texInfo.width = 2;
-        texInfo.height = 2;
-        texInfo.layer_count_or_depth = 1;
-        texInfo.num_levels = 1;
-        texInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-
-        SDL_GPUTexture* errorTex = SDL_CreateGPUTexture(device, &texInfo);
-
-        // 2. Загрузка данных на GPU
-        SDL_GPUTransferBufferCreateInfo transferInfo = {};
-        transferInfo.size = sizeof(pixels);
-        transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        SDL_GPUTransferBuffer* uploadBuffer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
-
-        // Копируем в буфер
-        uint8_t* data = (uint8_t*)SDL_MapGPUTransferBuffer(device, uploadBuffer, false);
-        SDL_memcpy(data, pixels, sizeof(pixels));
-        SDL_UnmapGPUTransferBuffer(device, uploadBuffer);
-
-        // Копируем из буфера в текстуру
-        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
-        SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmd);
-
-        SDL_GPUTextureTransferInfo source = {};
-        source.transfer_buffer = uploadBuffer;
-        source.offset = 0;
-        SDL_GPUTextureRegion dest = {errorTex, 0, 0, 0, 0, 0, 2, 2, 1};
-        SDL_UploadToGPUTexture(copyPass, &source, &dest, false);
-
-        SDL_EndGPUCopyPass(copyPass);
-        SDL_SubmitGPUCommandBuffer(cmd);
-
-        SDL_ReleaseGPUTransferBuffer(device, uploadBuffer);
-
-        return errorTex;
     }
 };
