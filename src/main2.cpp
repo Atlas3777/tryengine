@@ -132,12 +132,20 @@ int main(int argc, char* argv[]) {
         glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
         glm::mat4 proj = glm::perspective(glm::radians(70.0f), (float)WindowWidth / WindowHeight, 0.1f, 100.0f);
 
+        LightUniforms lightData{};
+        lightData.lightPos = glm::vec4(2.0f, 4.0f, 3.0f, 1.0f);    // Лампочка справа-сверху
+        lightData.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);  // Белый свет
+        lightData.viewPos = glm::vec4(camera.pos, 1.0f);           // Позиция камеры (на будущее)
+
+        // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
+        SDL_PushGPUFragmentUniformData(cmd, 0, &lightData, sizeof(LightUniforms));
         // РИСУЕМ ВСЕ ОБЪЕКТЫ
         for (auto& obj : scene) {
             if (!obj.mesh) continue;
 
             // 1. Uniforms (MVP)
             glm::mat4 model = obj.GetModelMatrix();
+            model = glm::rotate(model, SDL_GetTicks() / 1000.0f, glm::vec3(0.0f, 1.0f, 0.0f));
             UniformBufferObject ubo{};
             ubo.proj = proj;
             ubo.view = view;
