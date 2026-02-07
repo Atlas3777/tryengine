@@ -128,6 +128,8 @@ SDL_GPUGraphicsPipeline* Renderer::CreateGraphicsPipeline(SDL_GPUDevice& device,
     pipelineInfo.vertex_shader = vertexShader;
     pipelineInfo.fragment_shader = fragmentShader;
     pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    // pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_LINESTRIP;
+    // pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_LINELIST;
 
     pipelineInfo.vertex_input_state.num_vertex_buffers = 1;
     pipelineInfo.vertex_input_state.num_vertex_attributes = 4;

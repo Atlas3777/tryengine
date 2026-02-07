@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
         // Добавляем объекты
         scene.push_back({boxMesh, {0, 0, -5}, {0, 0, 0}, {0.01f, 0.01f, 0.01f}});   // Центр
         scene.push_back({boxMesh, {2, 0, -5}, {0, 45, 0}, {0.01f, 0.01f, 0.01f}});  // Справа
-        scene.push_back({redBox, {-2, 1, -6}, {45, 0, 0}, {1, 1, 1}});              // Слева
+        scene.push_back({redBox, {-2, 1, -6}, {0, 0, 0}, {1, 1, 1}});               // Слева
     } else {
         SDL_Log("Warning: No meshes loaded!");
     }

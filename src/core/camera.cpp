@@ -21,7 +21,7 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
             }
 
             float xoffset = event.motion.xrel;
-            float yoffset = -event.motion.yrel;  // инвертируем, т.к. Y идет сверху вниз
+            float yoffset = -event.motion.yrel;
 
             xoffset *= cam.sensitivity;
             yoffset *= cam.sensitivity;
@@ -29,11 +29,9 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
             cam.yaw += xoffset;
             cam.pitch += yoffset;
 
-            // Ограничиваем pitch, чтобы не "сделать сальто"
             if (cam.pitch > 89.0f) cam.pitch = 89.0f;
             if (cam.pitch < -89.0f) cam.pitch = -89.0f;
 
-            // Пересчитываем вектор направления камеры
             glm::vec3 front;
             front.x = cos(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch));
             front.y = sin(glm::radians(cam.pitch));
@@ -42,14 +40,28 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
         }
     }
 
-    // Управление клавишами
+    // === Пересчёт локального базиса камеры ===
+    // Правый вектор: перпендикулярен направлению взгляда и мировому "вверх"
+    glm::vec3 right = glm::normalize(glm::cross(cam.front, cam.up));
+
+    // Локальный "вверх": перпендикулярен направлению взгляда и правому вектору
+    glm::vec3 localUp;
+    float alignment = glm::abs(glm::dot(cam.front, cam.up));
+    // if (alignment > 0.99f) {
+    //     // Защита от вырождения при взгляде строго вверх/вниз
+    //     localUp = glm::normalize(cam.up);
+    // } else {
+    localUp = glm::normalize(glm::cross(right, cam.front));
+    // }
+
+    // === Управление перемещением ===
     const bool* keys = SDL_GetKeyboardState(nullptr);
     float currentSpeed = cam.speed * (float)deltaTime;
 
     if (keys[SDL_SCANCODE_W]) cam.pos += currentSpeed * cam.front;
     if (keys[SDL_SCANCODE_S]) cam.pos -= currentSpeed * cam.front;
-    if (keys[SDL_SCANCODE_A]) cam.pos -= glm::normalize(glm::cross(cam.front, cam.up)) * currentSpeed;
-    if (keys[SDL_SCANCODE_D]) cam.pos += glm::normalize(glm::cross(cam.front, cam.up)) * currentSpeed;
-    if (keys[SDL_SCANCODE_E]) cam.pos += currentSpeed * cam.up;
-    if (keys[SDL_SCANCODE_Q]) cam.pos -= currentSpeed * cam.up;
+    if (keys[SDL_SCANCODE_A]) cam.pos -= right * currentSpeed;  // Используем precomputed right
+    if (keys[SDL_SCANCODE_D]) cam.pos += right * currentSpeed;
+    if (keys[SDL_SCANCODE_E]) cam.pos += currentSpeed * localUp;  // Движение относительно взгляда
+    if (keys[SDL_SCANCODE_Q]) cam.pos -= currentSpeed * localUp;
 }
