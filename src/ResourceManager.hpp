@@ -138,10 +138,15 @@ class ResourceManager {
     // Загрузка модели (Mesh)
     // Возвращает массив мешей, так как один файл может содержать несколько частей
 
+    // Загрузка модели (Mesh) со склейкой по материалам (Static Batching)
     std::vector<Mesh*> LoadModel(const std::string& path) {
         Assimp::Importer importer;
-        const aiScene* scene =
-            importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+
+        // ВАЖНО: Добавлен aiProcess_PreTransformVertices!
+        // Он "запекает" все трансформации нодов (позицию, поворот, масштаб)
+        // прямо в вершины. Без него склеенные детали могут оказаться не на своих местах.
+        const aiScene* scene = importer.ReadFile(
+            path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals | aiProcess_PreTransformVertices);
 
         std::vector<Mesh*> loadedMeshes;
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -153,22 +158,35 @@ class ResourceManager {
         std::string directory = modelPath.parent_path().string();
         if (!directory.empty()) directory += "/";
 
+        // Структура для временного хранения склеенных данных
+        struct MergedMeshData {
+            std::vector<Vertex> vertices;
+            std::vector<Uint32> indices;
+        };
+
+        // Ключ - индекс материала, Значение - склеенные вершины и индексы
+        std::unordered_map<unsigned int, MergedMeshData> groupedMeshes;
+
+        // --- ШАГ 1: Группировка данных по материалам ---
         for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
             aiMesh* aiMesh = scene->mMeshes[i];
-            Mesh* myMesh = new Mesh();
+            unsigned int matIndex = aiMesh->mMaterialIndex;
 
-            // --- ПОЛУЧАЕМ ЦВЕТ МАТЕРИАЛА ---
-            aiMaterial* material = scene->mMaterials[aiMesh->mMaterialIndex];
+            // Получаем или создаем группу для этого материала
+            MergedMeshData& group = groupedMeshes[matIndex];
+
+            // Запоминаем текущее количество вершин в группе.
+            // Это нужно, чтобы правильно сдвинуть индексы для новых треугольников!
+            Uint32 vertexOffset = static_cast<Uint32>(group.vertices.size());
+
+            // --- Извлекаем цвет материала (фоллбэк, если нет vertex colors) ---
+            aiMaterial* material = scene->mMaterials[matIndex];
             aiColor4D diffuseColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-            // Пытаемся взять Base Color (PBR) или Diffuse (Legacy)
             if (AI_SUCCESS != material->Get(AI_MATKEY_BASE_COLOR, diffuseColor)) {
                 material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuseColor);
             }
 
-            std::vector<Vertex> vertices;
-            std::vector<Uint32> indices;
-
+            // 1. Копируем вершины
             for (unsigned int v = 0; v < aiMesh->mNumVertices; v++) {
                 Vertex vert{};
                 vert.x = aiMesh->mVertices[v].x;
@@ -181,14 +199,12 @@ class ResourceManager {
                     vert.nz = aiMesh->mNormals[v].z;
                 }
 
-                // Low poly часто хранит цвета здесь
                 if (aiMesh->HasVertexColors(0)) {
                     vert.r = aiMesh->mColors[0][v].r;
                     vert.g = aiMesh->mColors[0][v].g;
                     vert.b = aiMesh->mColors[0][v].b;
                     vert.a = aiMesh->mColors[0][v].a;
                 } else {
-                    // Если вертексных цветов нет, используем цвет материала
                     vert.r = diffuseColor.r;
                     vert.g = diffuseColor.g;
                     vert.b = diffuseColor.b;
@@ -199,26 +215,31 @@ class ResourceManager {
                     vert.u = aiMesh->mTextureCoords[0][v].x;
                     vert.v = aiMesh->mTextureCoords[0][v].y;
                 }
-                vertices.push_back(vert);
+                group.vertices.push_back(vert);
             }
 
+            // 2. Копируем индексы со сдвигом (vertexOffset)
             for (unsigned int f = 0; f < aiMesh->mNumFaces; f++) {
                 aiFace face = aiMesh->mFaces[f];
-                for (unsigned int j = 0; j < face.mNumIndices; j++) indices.push_back(face.mIndices[j]);
+                for (unsigned int j = 0; j < face.mNumIndices; j++) {
+                    group.indices.push_back(face.mIndices[j] + vertexOffset);
+                }
             }
-            myMesh->numIndices = static_cast<Uint32>(indices.size());
+        }
 
+        // --- ШАГ 2: Создание GPU буферов для каждой склеенной группы ---
+        for (auto& [matIndex, group] : groupedMeshes) {
+            Mesh* myMesh = new Mesh();
+            myMesh->numIndices = static_cast<Uint32>(group.indices.size());
+
+            aiMaterial* material = scene->mMaterials[matIndex];
             aiString texPath;
             bool hasTexture = false;
 
-            // Сначала ищем BASE COLOR текстуру (gltf pbr), потом DIFFUSE
             if (material->GetTexture(aiTextureType_BASE_COLOR, 0, &texPath) == AI_SUCCESS ||
                 material->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
-                // Важный момент: если текстура "встроена" (embedded), путь будет начинаться с "*"
                 if (texPath.data[0] == '*') {
-                    // Это встроенная текстура, тут нужен отдельный код разбора aiScene::mTextures
-                    // Для простоты пока скипнем и дадим белую, если не хочешь возиться с буферами в памяти
-                    SDL_Log("Embedded textures not fully supported yet in this snippet: %s", texPath.C_Str());
+                    SDL_Log("Embedded textures not fully supported yet: %s", texPath.C_Str());
                 } else {
                     std::string fullTexPath = directory + texPath.C_Str();
                     myMesh->texture = LoadTexture(fullTexPath);
@@ -230,8 +251,9 @@ class ResourceManager {
                 myMesh->texture = whiteTexture;
             }
 
-            Uint32 vSize = static_cast<Uint32>(vertices.size()) * sizeof(Vertex);
-            Uint32 iSize = static_cast<Uint32>(indices.size()) * sizeof(Uint32);
+            // Выделяем память и отправляем единый буфер в GPU
+            Uint32 vSize = static_cast<Uint32>(group.vertices.size()) * sizeof(Vertex);
+            Uint32 iSize = static_cast<Uint32>(group.indices.size()) * sizeof(Uint32);
 
             SDL_GPUBufferCreateInfo bInfo = {.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = vSize, .props = 0};
             myMesh->vertexBuffer = SDL_CreateGPUBuffer(device, &bInfo);
@@ -244,8 +266,9 @@ class ResourceManager {
                 .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = vSize + iSize, .props = 0};
             SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device, &tInfo);
             Uint8* ptr = (Uint8*)SDL_MapGPUTransferBuffer(device, tBuf, false);
-            memcpy(ptr, vertices.data(), vSize);
-            memcpy(ptr + vSize, indices.data(), iSize);
+
+            memcpy(ptr, group.vertices.data(), vSize);
+            memcpy(ptr + vSize, group.indices.data(), iSize);
             SDL_UnmapGPUTransferBuffer(device, tBuf);
 
             SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);

@@ -28,6 +28,9 @@ struct Mesh {
     Uint32 numIndices = 0;
     Texture* texture = nullptr;  // Ссылка на текстуру (не копия!)
 };
+struct MeshComponent {
+    Mesh* mesh;
+};
 
 struct TransformComponent {
     Mesh* mesh;          // Какой меш рисовать (ссылка)
