@@ -29,8 +29,7 @@ struct Mesh {
     Texture* texture = nullptr;  // Ссылка на текстуру (не копия!)
 };
 
-// Игровой объект — это то, что мы ставим на сцену
-struct GameObject {
+struct TransformComponent {
     Mesh* mesh;          // Какой меш рисовать (ссылка)
     glm::vec3 position;  // Где
     glm::vec3 rotation;  // Как повернут (Euler angles)

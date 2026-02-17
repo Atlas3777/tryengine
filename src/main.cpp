@@ -1,65 +1,40 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include <entt/entt.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <vector>
 
 #include "EngineTypes.hpp"
 #include "ResourceManager.hpp"
 #include "core/camera.hpp"
+#include "core/window_manager.hpp"
 #include "render/renderer.hpp"
 
 constexpr uint WindowWidth = 1280;
 constexpr uint WindowHeight = 720;
 
 int main(int, char*[]) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
-
-    SDL_Window* window = SDL_CreateWindow("tryengine", WindowWidth, WindowHeight, 0);
-    SDL_GPUDevice* device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
-    SDL_ClaimWindowForGPUDevice(device, window);
-
-    SDL_GPUPresentMode presentMode = SDL_GPU_PRESENTMODE_VSYNC;  // По умолчанию
-
-    if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
-        presentMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
-    } else if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_MAILBOX)) {
-        presentMode = SDL_GPU_PRESENTMODE_MAILBOX;
+    WindowManager windowManager;
+    if (!windowManager.Initialize(WindowWidth, WindowHeight, "tryengine")) {
+        SDL_Log("Failed to initialize WindowManager");
+        return -1;
     }
 
-    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode);
     Renderer renderer;
-    SDL_GPUShader* vertexShader = renderer.CreateVertexShader(*device);
-    SDL_GPUShader* fragmentShader = renderer.CreateFragmentShader(*device);
-    SDL_GPUTexture* depthTexture = renderer.CreateDepthTexture(*device, WindowWidth, WindowHeight);
-    SDL_GPUSampler* commonSampler = renderer.CreateSampler(*device);
-    SDL_GPUVertexBufferDescription vertexBufferDescriptions = renderer.CreateVertexBufferDescription();
-    SDL_GPUVertexAttribute vertexAttributes[4];
-    renderer.SetupVertexAttributes(vertexAttributes);
-    SDL_GPUColorTargetDescription colorTargetDescriptions[1];
-    renderer.SetupColorTargetDescription(colorTargetDescriptions, device, window);
+    renderer.Init(windowManager);
 
-    SDL_GPUGraphicsPipeline* pipeline = renderer.CreateGraphicsPipeline(
-        *device, vertexShader, fragmentShader, &vertexBufferDescriptions, vertexAttributes, colorTargetDescriptions);
+    ResourceManager resources(windowManager.device);
 
-    SDL_ReleaseGPUShader(device, vertexShader);
-    SDL_ReleaseGPUShader(device, fragmentShader);
-
-    ResourceManager resources(device);
-
-    std::vector<GameObject> scene;
-
+    std::vector<TransformComponent> scene;
     std::vector<Mesh*> boxMeshes = resources.LoadModel("assets/box/scene.gltf");
     std::vector<Mesh*> redBoxM = resources.LoadModel("assets/red_cube/red_cube.gltf");
 
-    if (!boxMeshes.empty()) {
+    if (!boxMeshes.empty() && !redBoxM.empty()) {
         Mesh* boxMesh = boxMeshes[0];
         Mesh* redBox = redBoxM[0];
-        // Добавляем объекты
-        scene.push_back({boxMesh, {0, 0, -5}, {222, 0, 0}, {0.01f, 0.01f, 0.01f}});  // Центр
-        scene.push_back({boxMesh, {2, 0, -5}, {0, 45, 0}, {0.01f, 0.01f, 0.01f}});   // Справа
-        scene.push_back({redBox, {-2, 1, -6}, {0, 0, 0}, {1, 1, 1}});                // Слева
+        scene.push_back({boxMesh, {0, 0, -5}, {222, 0, 0}, {0.01f, 0.01f, 0.01f}});
+        scene.push_back({boxMesh, {2, 0, -5}, {0, 45, 0}, {0.01f, 0.01f, 0.01f}});
+        scene.push_back({redBox, {-2, 1, -6}, {0, 0, 0}, {1, 1, 1}});
     } else {
         SDL_Log("Warning: No meshes loaded!");
     }
@@ -67,65 +42,34 @@ int main(int, char*[]) {
     Camera camera;
     camera.pos = glm::vec3(0.0f, 0.0f, -3.0f);
 
-    uint64_t lastTime = 0;
-    uint64_t currentTime = 0;
-    double deltaTime = 0;
-    double totalTime = 0;
-
+    uint64_t lastTime = SDL_GetTicksNS();
     double fpsTimer = 0.0;
     int frameCount = 0;
-
-    SDL_SetWindowRelativeMouseMode(window, true);
     bool running = true;
 
+    SDL_SetWindowRelativeMouseMode(windowManager.GetWindow(), true);
+
+    // --- ИГРОВОЙ ЦИКЛ ---
     while (running) {
-        currentTime = SDL_GetTicksNS();
-        deltaTime = static_cast<double>(currentTime - lastTime) / 1000000000.0;
+        uint64_t currentTime = SDL_GetTicksNS();
+        double deltaTime = static_cast<double>(currentTime - lastTime) / 1000000000.0;
         lastTime = currentTime;
-        totalTime = static_cast<double>(currentTime) / 1000000000.0;
+        double totalTime = static_cast<double>(currentTime) / 1000000000.0;
 
         fpsTimer += deltaTime;
         frameCount++;
 
-        if (fpsTimer >= 1.0) {  // Прошла одна секунда
+        if (fpsTimer >= 1.0) {
             SDL_Log("FPS: %d (ms per frame: %.3f)", frameCount, 1000.0 / frameCount);
-
-            fpsTimer -= 1.0;  // Сбрасываем таймер, сохраняя остаток для точности
-            frameCount = 0;   // Сбрасываем счетчик кадров
+            fpsTimer -= 1.0;
+            frameCount = 0;
         }
 
         UpdateCamera(camera, running, deltaTime);
 
-        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
-        SDL_GPUTexture* swapchainTexture;
-        Uint32 w, h;
-
-        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window, &swapchainTexture, &w, &h)) {
-            // Если не удалось получить текстуру (например, окно свернуто), просто
-            // сабмитим пустой буфер
-            SDL_SubmitGPUCommandBuffer(cmd);
-            continue;
-        }
-
-        // Настройка прохода рендера (Render Pass)
-        SDL_GPUColorTargetInfo colorTargetInfo{};
-        colorTargetInfo.texture = swapchainTexture;
-        colorTargetInfo.clear_color = {0.5f, 0.5f, 0.8f, 1.0f};
-        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;  // <--- ОЧИСТКА ЭКРАНА
-        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-
-        SDL_GPUDepthStencilTargetInfo depthTargetInfo{};
-        depthTargetInfo.texture = depthTexture;
-        depthTargetInfo.clear_depth = 1.0f;
-        depthTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;  // <--- ОЧИСТКА ГЛУБИНЫ
-        depthTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-        depthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-        depthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-
-        SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &colorTargetInfo, 1, &depthTargetInfo);
-
+        auto ctx = renderer.BeginFrame();
         // Биндим пайплайн (один раз, если он общий для всех кубов)
-        SDL_BindGPUGraphicsPipeline(pass, pipeline);
+        SDL_BindGPUGraphicsPipeline(ctx.pass, renderer.GetDefaultPipeline());
 
         // Матрицы камеры (View/Proj общие для всего кадра)
         glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
@@ -137,7 +81,7 @@ int main(int, char*[]) {
         lightData.viewPos = glm::vec4(camera.pos, 1.0f);           // Позиция камеры (на будущее)
 
         // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
-        SDL_PushGPUFragmentUniformData(cmd, 0, &lightData, sizeof(LightUniforms));
+        SDL_PushGPUFragmentUniformData(ctx.cmd, 0, &lightData, sizeof(LightUniforms));
 
         // РИСУЕМ ВСЕ ОБЪЕКТЫ
         for (auto& obj : scene) {
@@ -153,46 +97,28 @@ int main(int, char*[]) {
             ubo.model = model;
             ubo.normalMatrix = normalMatrix;
 
-            SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(UniformBufferObject));
+            SDL_PushGPUVertexUniformData(ctx.cmd, 0, &ubo, sizeof(UniformBufferObject));
 
             SDL_GPUTexture* textureToBind = obj.mesh->texture->handle;
 
-            SDL_GPUTextureSamplerBinding tsb = {textureToBind, commonSampler};
-            SDL_BindGPUFragmentSamplers(pass, 0, &tsb, 1);
+            SDL_GPUTextureSamplerBinding tsb = {textureToBind, renderer.GetCommonSampler()};
+            SDL_BindGPUFragmentSamplers(ctx.pass, 0, &tsb, 1);
 
             // 3. Вершины и Индексы
             SDL_GPUBufferBinding vb = {obj.mesh->vertexBuffer, 0};
-            SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+            SDL_BindGPUVertexBuffers(ctx.pass, 0, &vb, 1);
 
             SDL_GPUBufferBinding ib = {obj.mesh->indexBuffer, 0};
-            SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            SDL_BindGPUIndexBuffer(ctx.pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
             // 4. Draw call
-            SDL_DrawGPUIndexedPrimitives(pass, obj.mesh->numIndices, 1, 0, 0, 0);
+            SDL_DrawGPUIndexedPrimitives(ctx.pass, obj.mesh->numIndices, 1, 0, 0, 0);
         }
-
-        SDL_EndGPURenderPass(pass);
-        SDL_SubmitGPUCommandBuffer(cmd);
+        renderer.EndFrame(ctx);
     }
 
-    // --- КОНЕЦ ЦИКЛА ---
-
-    // ОЧИСТКА РЕСУРСОВ (Строго после цикла!)
-
-    // 1. Удаляем семплер
-    SDL_ReleaseGPUSampler(device, commonSampler);
-
-    // 2. Удаляем ресурсы движка (Меши и Текстуры)
-    resources.Cleanup();
-
-    // 3. Удаляем системные штуки
-    SDL_ReleaseGPUTexture(device, depthTexture);
-    SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
-
-    SDL_ReleaseWindowFromGPUDevice(device, window);
-    SDL_DestroyGPUDevice(device);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-
+    renderer.Cleanup();   // Удаляет пайплайн, семплер, текстуру глубины
+    resources.Cleanup();  // Удаляет меши и текстуры
+    windowManager.Terminate();
     return 0;
 }

@@ -1,16 +1,16 @@
-#ifndef WINDOW_MANAGER_H
-#define WINDOW_MANAGER_H
+#pragma once
 
 #include <SDL3/SDL.h>
 
 class WindowManager {
-public:
-    static bool Initialize(int width, int height, const char* title);
-    static void Terminate();
-    static SDL_Window* GetWindow();
+   public:
+    bool Initialize(int width, int height, const char* title);
+    void Terminate();
+    SDL_Window* GetWindow();
+    SDL_GPUDevice* device;
+    int w;
+    int h;
 
-private:
-    static SDL_Window* window;
+   private:
+    SDL_Window* window;
 };
-
-#endif // WINDOW_MANAGER_H

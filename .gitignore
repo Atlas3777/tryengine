@@ -26,6 +26,7 @@ compile_commands.json
 .vscode/
 .idea/
 .clangd/
+.zed/
 .cache/
 *.swp
 *.swo

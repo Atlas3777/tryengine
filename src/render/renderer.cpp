@@ -2,7 +2,93 @@
 
 #include <SDL3/SDL_gpu.h>
 
+#include <glm/gtc/matrix_inverse.hpp>
+
 #include "EngineTypes.hpp"
+#include "core/window_manager.hpp"
+#include "render/renderer.hpp"
+
+void Renderer::Init(WindowManager& windowManager) {
+    this->device = windowManager.device;
+    this->window = windowManager.GetWindow();
+
+    SDL_GPUShader* vertexShader = CreateVertexShader(*device);
+    SDL_GPUShader* fragmentShader = CreateFragmentShader(*device);
+
+    this->depthTexture = CreateDepthTexture(*device, (uint)windowManager.w, (uint)windowManager.h);
+    this->commonSampler = CreateSampler(*device);
+
+    SDL_GPUVertexBufferDescription vertexBufferDescriptions = CreateVertexBufferDescription();
+    SDL_GPUVertexAttribute vertexAttributes[4];
+    SetupVertexAttributes(vertexAttributes);
+
+    SDL_GPUColorTargetDescription colorTargetDescriptions[1];
+    SetupColorTargetDescription(colorTargetDescriptions, this->device, this->window);
+
+    this->pipeline = CreateGraphicsPipeline(*device, vertexShader, fragmentShader, &vertexBufferDescriptions,
+                                            vertexAttributes, colorTargetDescriptions);
+
+    SDL_ReleaseGPUShader(device, vertexShader);
+    SDL_ReleaseGPUShader(device, fragmentShader);
+}
+
+void Renderer::Cleanup() {
+    if (commonSampler) {
+        SDL_ReleaseGPUSampler(device, commonSampler);
+        commonSampler = nullptr;
+    }
+    if (depthTexture) {
+        SDL_ReleaseGPUTexture(device, depthTexture);
+        depthTexture = nullptr;
+    }
+    if (pipeline) {
+        SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+        pipeline = nullptr;
+    }
+}
+
+FrameContext Renderer::BeginFrame() {
+    FrameContext ctx;
+    ctx.cmd = SDL_AcquireGPUCommandBuffer(device);
+    SDL_GPUTexture* swapchainTexture;
+    Uint32 w, h;
+
+    if (!SDL_WaitAndAcquireGPUSwapchainTexture(ctx.cmd, window, &swapchainTexture, &w, &h)) {
+        SDL_SubmitGPUCommandBuffer(ctx.cmd);
+        // SDL_ReleaseGPUCommandBuffer(ctx.cmd); // если требуется
+        ctx.cmd = nullptr;
+        return ctx;
+    }
+
+    ctx.swapchainTexture = swapchainTexture;
+    ctx.w = w;
+    ctx.h = h;
+
+    ctx.colorTargetInfo = {};
+    ctx.colorTargetInfo.texture = swapchainTexture;
+    ctx.colorTargetInfo.clear_color = {0.5f, 0.5f, 0.8f, 1.0f};
+    ctx.colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    ctx.colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+    ctx.depthTargetInfo = {};
+    ctx.depthTargetInfo.texture = depthTexture;
+    ctx.depthTargetInfo.clear_depth = 1.0f;
+    ctx.depthTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    ctx.depthTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+    ctx.depthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+    ctx.depthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+
+    ctx.pass = SDL_BeginGPURenderPass(ctx.cmd, &ctx.colorTargetInfo, 1, &ctx.depthTargetInfo);
+    return ctx;
+}
+
+void Renderer::EndFrame(FrameContext& ctx) {
+    if (!ctx.cmd) return;
+    if (ctx.pass) SDL_EndGPURenderPass(ctx.pass);
+    SDL_SubmitGPUCommandBuffer(ctx.cmd);
+    // swapchainTexture ownership: SDL handles it after submit
+    // cmd will be released by SDL internally on submit
+}
 
 SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {
     size_t vertexCodeSize;
