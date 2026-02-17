@@ -8,6 +8,7 @@ Makefile
 *.spv
 # Сборочные файлы
 build/
+build_release/
 external/
 *.o
 *.a

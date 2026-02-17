@@ -1,23 +1,34 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <entt/entt.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <vector>
 
-#include "EngineTypes.h"
-#include "ResourceManager.h"
-#include "core/camera.h"
-#include "render/renderer.h"
+#include "EngineTypes.hpp"
+#include "ResourceManager.hpp"
+#include "core/camera.hpp"
+#include "render/renderer.hpp"
 
-constexpr float WindowWidth = 1920 / 1.5f;
-constexpr float WindowHeight = 1080 / 1.5f;
+constexpr uint WindowWidth = 1280;
+constexpr uint WindowHeight = 720;
 
-int main(int argc, char* argv[]) {
+int main(int, char*[]) {
     if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
 
     SDL_Window* window = SDL_CreateWindow("tryengine", WindowWidth, WindowHeight, 0);
     SDL_GPUDevice* device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
     SDL_ClaimWindowForGPUDevice(device, window);
 
+    SDL_GPUPresentMode presentMode = SDL_GPU_PRESENTMODE_VSYNC;  // По умолчанию
+
+    if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
+        presentMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+    } else if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_MAILBOX)) {
+        presentMode = SDL_GPU_PRESENTMODE_MAILBOX;
+    }
+
+    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode);
     Renderer renderer;
     SDL_GPUShader* vertexShader = renderer.CreateVertexShader(*device);
     SDL_GPUShader* fragmentShader = renderer.CreateFragmentShader(*device);
@@ -46,31 +57,44 @@ int main(int argc, char* argv[]) {
         Mesh* boxMesh = boxMeshes[0];
         Mesh* redBox = redBoxM[0];
         // Добавляем объекты
-        scene.push_back({boxMesh, {0, 0, -5}, {0, 0, 0}, {0.01f, 0.01f, 0.01f}});   // Центр
-        scene.push_back({boxMesh, {2, 0, -5}, {0, 45, 0}, {0.01f, 0.01f, 0.01f}});  // Справа
-        scene.push_back({redBox, {-2, 1, -6}, {0, 0, 0}, {1, 1, 1}});               // Слева
+        scene.push_back({boxMesh, {0, 0, -5}, {222, 0, 0}, {0.01f, 0.01f, 0.01f}});  // Центр
+        scene.push_back({boxMesh, {2, 0, -5}, {0, 45, 0}, {0.01f, 0.01f, 0.01f}});   // Справа
+        scene.push_back({redBox, {-2, 1, -6}, {0, 0, 0}, {1, 1, 1}});                // Слева
     } else {
         SDL_Log("Warning: No meshes loaded!");
     }
 
     Camera camera;
     camera.pos = glm::vec3(0.0f, 0.0f, -3.0f);
-    camera.front = glm::vec3(0.0f, 0.0f, -1.0f);
-    camera.up = glm::vec3(0.0f, 1.0f, 0.0f);
-    camera.yaw = -90.0f;
-    camera.sensitivity = 0.05f;
-    camera.speed = 2.5f;
 
-    uint64_t lastTime = SDL_GetTicksNS();
+    uint64_t lastTime = 0;
+    uint64_t currentTime = 0;
+    double deltaTime = 0;
+    double totalTime = 0;
 
+    double fpsTimer = 0.0;
+    int frameCount = 0;
+
+    SDL_SetWindowRelativeMouseMode(window, true);
     bool running = true;
+
     while (running) {
-        uint64_t currentTime = SDL_GetTicksNS();
-        double deltaTime = (currentTime - lastTime) / 1000000000.0;
+        currentTime = SDL_GetTicksNS();
+        deltaTime = static_cast<double>(currentTime - lastTime) / 1000000000.0;
         lastTime = currentTime;
+        totalTime = static_cast<double>(currentTime) / 1000000000.0;
+
+        fpsTimer += deltaTime;
+        frameCount++;
+
+        if (fpsTimer >= 1.0) {  // Прошла одна секунда
+            SDL_Log("FPS: %d (ms per frame: %.3f)", frameCount, 1000.0 / frameCount);
+
+            fpsTimer -= 1.0;  // Сбрасываем таймер, сохраняя остаток для точности
+            frameCount = 0;   // Сбрасываем счетчик кадров
+        }
 
         UpdateCamera(camera, running, deltaTime);
-        SDL_SetWindowRelativeMouseMode(window, true);
 
         SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device);
         SDL_GPUTexture* swapchainTexture;
@@ -121,11 +145,13 @@ int main(int argc, char* argv[]) {
 
             // 1. Uniforms (MVP)
             glm::mat4 model = obj.GetModelMatrix();
-            model = glm::rotate(model, SDL_GetTicks() / 1000.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::rotate(model, (float)totalTime, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::mat4 normalMatrix = glm::inverseTranspose(model);
             UniformBufferObject ubo{};
             ubo.proj = proj;
             ubo.view = view;
             ubo.model = model;
+            ubo.normalMatrix = normalMatrix;
 
             SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(UniformBufferObject));
 

@@ -16,8 +16,8 @@ struct Vertex {
 // Обертка над текстурой GPU
 struct Texture {
     SDL_GPUTexture* handle = nullptr;
-    int width = 0;
-    int height = 0;
+    Uint32 width = 0;
+    Uint32 height = 0;
     std::string path;  // для отладки
 };
 
@@ -52,6 +52,7 @@ struct UniformBufferObject {
     glm::mat4 model;  // Локальные -> Мировые
     glm::mat4 view;   // Мировые -> Камера
     glm::mat4 proj;   // Камера -> Экран
+    glm::mat4 normalMatrix;
 };
 
 struct LightUniforms {

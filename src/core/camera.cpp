@@ -1,4 +1,4 @@
-#include "core/camera.h"
+#include "core/camera.hpp"
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
@@ -6,8 +6,8 @@
 #include <SDL3/SDL_scancode.h>
 
 void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
-    static float lastX = 0.0f;
-    static float lastY = 0.0f;
+    // static float lastX = 0.0f;
+    // static float lastY = 0.0f;
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -15,8 +15,8 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
             running = false;
         } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
             if (cam.firstMouse) {
-                lastX = (float)event.motion.x;
-                lastY = (float)event.motion.y;
+                // lastX = (float)event.motion.x;
+                // lastY = (float)event.motion.y;
                 cam.firstMouse = false;
             }
 
@@ -33,9 +33,9 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
             if (cam.pitch < -89.0f) cam.pitch = -89.0f;
 
             glm::vec3 front;
-            front.x = cos(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch));
-            front.y = sin(glm::radians(cam.pitch));
-            front.z = sin(glm::radians(cam.yaw)) * cos(glm::radians(cam.pitch));
+            front.x = std::cos(glm::radians(cam.yaw)) * std::cos(glm::radians(cam.pitch));
+            front.y = std::sin(glm::radians(cam.pitch));
+            front.z = std::sin(glm::radians(cam.yaw)) * std::cos(glm::radians(cam.pitch));
             cam.front = glm::normalize(front);
         }
     }
@@ -46,7 +46,7 @@ void UpdateCamera(Camera& cam, bool& running, double deltaTime) {
 
     // Локальный "вверх": перпендикулярен направлению взгляда и правому вектору
     glm::vec3 localUp;
-    float alignment = glm::abs(glm::dot(cam.front, cam.up));
+    // float alignment = glm::abs(glm::dot(cam.front, cam.up));
     // if (alignment > 0.99f) {
     //     // Защита от вырождения при взгляде строго вверх/вниз
     //     localUp = glm::normalize(cam.up);

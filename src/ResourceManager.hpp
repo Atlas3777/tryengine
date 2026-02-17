@@ -4,7 +4,7 @@
 #include <assimp/Importer.hpp>
 #include <unordered_map>
 
-#include "EngineTypes.h"
+#include "EngineTypes.hpp"
 #include "SDL3/SDL_gpu.h"
 #include "SDL3/SDL_log.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -57,7 +57,7 @@ class ResourceManager {
         Uint8 pixels[4] = {r, g, b, a};
 
         // Упрощенная заливка для 1 пикселя
-        SDL_GPUTransferBufferCreateInfo tInfo = {SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, 4};
+        SDL_GPUTransferBufferCreateInfo tInfo = {.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = 4, .props = 0};
         SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device, &tInfo);
         Uint8* map = (Uint8*)SDL_MapGPUTransferBuffer(device, tBuf, false);
         memcpy(map, pixels, 4);
@@ -87,10 +87,12 @@ class ResourceManager {
             SDL_Log("Failed to load texture: %s", path.c_str());
             return nullptr;
         }
+        Uint32 width = (w > 0) ? static_cast<Uint32>(w) : 0;
+        Uint32 height = (h > 0) ? static_cast<Uint32>(h) : 0;
 
         Texture* tex = new Texture();
-        tex->width = w;
-        tex->height = h;
+        tex->width = width;
+        tex->height = height;
         tex->path = path;
 
         // Создаем текстуру в GPU
@@ -98,8 +100,8 @@ class ResourceManager {
         info.type = SDL_GPU_TEXTURETYPE_2D;
         info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        info.width = w;
-        info.height = h;
+        info.width = width;
+        info.height = height;
         info.layer_count_or_depth = 1;
         info.num_levels = 1;
 
@@ -108,8 +110,9 @@ class ResourceManager {
         // Заливаем данные (Upload)
         // ВНИМАНИЕ: Для краткости создаем временный transfer buffer.
         // В продакшене лучше иметь один общий буфер.
-        size_t dataSize = w * h * 4;
-        SDL_GPUTransferBufferCreateInfo tInfo = {SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, (Uint32)dataSize};
+        Uint32 dataSize = width * height * 4;
+        SDL_GPUTransferBufferCreateInfo tInfo = {
+            .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = dataSize, .props = 0};
         SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device, &tInfo);
 
         Uint8* map = (Uint8*)SDL_MapGPUTransferBuffer(device, tBuf, false);
@@ -203,7 +206,7 @@ class ResourceManager {
                 aiFace face = aiMesh->mFaces[f];
                 for (unsigned int j = 0; j < face.mNumIndices; j++) indices.push_back(face.mIndices[j]);
             }
-            myMesh->numIndices = indices.size();
+            myMesh->numIndices = static_cast<Uint32>(indices.size());
 
             aiString texPath;
             bool hasTexture = false;
@@ -227,17 +230,18 @@ class ResourceManager {
                 myMesh->texture = whiteTexture;
             }
 
-            size_t vSize = vertices.size() * sizeof(Vertex);
-            size_t iSize = indices.size() * sizeof(Uint32);
+            Uint32 vSize = static_cast<Uint32>(vertices.size()) * sizeof(Vertex);
+            Uint32 iSize = static_cast<Uint32>(indices.size()) * sizeof(Uint32);
 
-            SDL_GPUBufferCreateInfo bInfo = {SDL_GPU_BUFFERUSAGE_VERTEX, (Uint32)vSize};
+            SDL_GPUBufferCreateInfo bInfo = {.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = vSize, .props = 0};
             myMesh->vertexBuffer = SDL_CreateGPUBuffer(device, &bInfo);
 
             bInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
-            bInfo.size = (Uint32)iSize;
+            bInfo.size = iSize;
             myMesh->indexBuffer = SDL_CreateGPUBuffer(device, &bInfo);
 
-            SDL_GPUTransferBufferCreateInfo tInfo = {SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, (Uint32)(vSize + iSize)};
+            SDL_GPUTransferBufferCreateInfo tInfo = {
+                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = vSize + iSize, .props = 0};
             SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device, &tInfo);
             Uint8* ptr = (Uint8*)SDL_MapGPUTransferBuffer(device, tBuf, false);
             memcpy(ptr, vertices.data(), vSize);
@@ -248,7 +252,7 @@ class ResourceManager {
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
 
             SDL_GPUTransferBufferLocation src = {tBuf, 0};
-            SDL_GPUBufferRegion dst = {myMesh->vertexBuffer, 0, (Uint32)vSize};
+            SDL_GPUBufferRegion dst = {myMesh->vertexBuffer, 0, vSize};
             SDL_UploadToGPUBuffer(copy, &src, &dst, false);
 
             src.offset = vSize;

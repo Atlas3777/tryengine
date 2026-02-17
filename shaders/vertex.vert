@@ -15,6 +15,7 @@ layout(set = 1, binding = 0) uniform UniformBuffer {
     mat4 model;
     mat4 view;
     mat4 proj;
+    mat4 normalMatrix;
 };
 
 void main() {
@@ -22,11 +23,7 @@ void main() {
     vec4 worldPos = model * vec4(inPos, 1.0);
     outFragPos = vec3(worldPos);
 
-    // 2. Нормаль в мире
-    // ВАЖНО: Если ты будешь неравномерно скейлить (например 1, 5, 1), 
-    // то нормали сломаются. Правильно: mat3(transpose(inverse(model))) * inNormal
-    // Но для начала сойдет и так:
-    outNormal = mat3(model) * inNormal; 
+    outNormal = normalize(mat3(normalMatrix) * inNormal);
 
     // 3. Просто пробрасываем цвет и UV
     outColor = inColor;

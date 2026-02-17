@@ -1,9 +1,8 @@
-#include "render/renderer.h"
+#include "render/renderer.hpp"
 
 #include <SDL3/SDL_gpu.h>
-#include <stddef.h>
 
-#include "EngineTypes.h"
+#include "EngineTypes.hpp"
 
 SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {
     size_t vertexCodeSize;

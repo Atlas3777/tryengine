@@ -1,4 +1,4 @@
-#include "window_manager.h"
+#include "window_manager.hpp"
 
 SDL_Window* WindowManager::window = nullptr;
 
@@ -24,6 +24,4 @@ void WindowManager::Terminate() {
     SDL_Quit();
 }
 
-SDL_Window* WindowManager::GetWindow() {
-    return window;
-}
+SDL_Window* WindowManager::GetWindow() { return window; }
