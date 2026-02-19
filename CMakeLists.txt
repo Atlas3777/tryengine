@@ -84,19 +84,25 @@ FetchContent_Declare(entt
     GIT_TAG        v3.16.0
 )
 
-FetchContent_Declare(assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v5.4.3
+# FetchContent_Declare(assimp
+#     GIT_REPOSITORY https://github.com/assimp/assimp.git
+#     GIT_TAG        v5.4.3
+# )
+
+FetchContent_Declare(tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG        release # или конкретный тег, например v2.9.3
 )
 
-# Выкачиваем и подключаем всё объявленное выше
-FetchContent_MakeAvailable(glm SDL3 stb assimp entt)
+set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
+
+# Выкачиваем (добавь tinygltf в список)
+FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf)# Выкачиваем и подключаем всё объявленное выше
+# FetchContent_MakeAvailable(glm SDL3 stb assimp entt)
 
 # --- 5. Настройка таргетов и сборки движка ---
 
-# Создаем аккуратный интерфейсный таргет для stb (header-only)
-add_library(stb_image INTERFACE)
-target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 # Умный поиск исходников (CONFIGURE_DEPENDS заставит CMake реагировать на новые файлы)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
@@ -109,6 +115,12 @@ add_executable(tryengine ${SOURCES})
 
 # Указываем пути к заголовкам
 target_include_directories(tryengine PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
+add_library(tinygltf_lib INTERFACE)
+target_include_directories(tinygltf_lib SYSTEM INTERFACE ${tinygltf_SOURCE_DIR})
 
 # 2. Внешние заголовки как SYSTEM (это ключевой момент для подавления варнингов)
 target_include_directories(tryengine SYSTEM PRIVATE 
@@ -127,6 +139,7 @@ target_link_libraries(tryengine PRIVATE
     SDL3::SDL3
     glm::glm
     stb_image
-    assimp::assimp
+    # assimp::assimp
     EnTT::EnTT
+    tinygltf_lib
 )

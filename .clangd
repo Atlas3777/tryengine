@@ -1,2 +1,15 @@
+Index:
+  Background: Build
+
 CompileFlags:
   CompilationDatabase: "build"
+  # Обязательно раскомментируйте и проверьте путь к компилятору, 
+  # если используете стандартные библиотеки (STL)
+  # Add: ["-I/usr/include", "-I/usr/local/include"] 
+  # Compiler: /usr/bin/g++ # Или clang++, в зависимости от системы
+
+Diagnostics:
+  UnusedIncludes: Strict
+  ClangTidy:
+    Add: [bugprone-*, performance-*, readability-*]
+    Remove: [readability-uppercase-literal-suffix]

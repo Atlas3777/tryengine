@@ -33,7 +33,7 @@ struct MeshComponent {
 };
 
 struct TransformComponent {
-    Mesh* mesh;          // Какой меш рисовать (ссылка)
+    // Mesh* mesh;          // Какой меш рисовать (ссылка)
     glm::vec3 position;  // Где
     glm::vec3 rotation;  // Как повернут (Euler angles)
     glm::vec3 scale;     // Масштаб
@@ -48,6 +48,20 @@ struct TransformComponent {
         model = glm::scale(model, scale);
         return model;
     }
+};
+
+// Теперь материал владеет конвейером (pipeline) и текстурой
+struct Material {
+    SDL_GPUGraphicsPipeline* pipeline = nullptr;  // Шейдерная программа
+    Texture* diffuseTexture = nullptr;            // Основная текстура
+
+    // Параметры материала, которые мы можем менять
+    struct Properties {
+        glm::vec4 colorTint = glm::vec4(1.0f);  // Множитель цвета
+        float specularStrength = 0.5f;
+        float shininess = 32.0f;
+        float padding[2];  // Для выравнивания в GPU (16 байт)
+    } props;
 };
 
 struct UniformBufferObject {

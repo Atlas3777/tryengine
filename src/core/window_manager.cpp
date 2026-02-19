@@ -14,12 +14,12 @@ bool WindowManager::Initialize(int width, int height, const char* title) {
     }
 
     SDL_GPUPresentMode presentMode = SDL_GPU_PRESENTMODE_VSYNC;  // По умолчанию
-    if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
-        presentMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
-    } else if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_MAILBOX)) {
-        presentMode = SDL_GPU_PRESENTMODE_MAILBOX;
-    }
-    SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode);
+    // if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
+    //     presentMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+    // } else if (SDL_WindowSupportsGPUPresentMode(device, window, SDL_GPU_PRESENTMODE_MAILBOX)) {
+    //     presentMode = SDL_GPU_PRESENTMODE_MAILBOX;
+    // }
+    // SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, presentMode);
     return true;
 }
 

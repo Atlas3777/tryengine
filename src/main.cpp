@@ -1,6 +1,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <algorithm>
 #include <entt/entt.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <vector>
@@ -25,31 +26,31 @@ int main(int, char*[]) {
     renderer.Init(windowManager);
 
     ResourceManager resources(windowManager.device);
-
-    entt::registry reg;
-
     std::vector<Mesh*> boxMeshes = resources.LoadModel("assets/fantasy_game_inn/scene.gltf");
     std::vector<Mesh*> redBoxM = resources.LoadModel("assets/red_cube/red_cube.gltf");
-    std::vector<Mesh*> g = resources.LoadModel("assets/matilda/scene.gltf");
+    std::vector<Mesh*> matilda = resources.LoadModel("assets/matilda/scene.gltf");
+
+    entt::registry reg;
 
     if (!boxMeshes.empty() && !redBoxM.empty()) {
         // Создаем первую сущность (Box 1)
         auto e1 = reg.create();
         reg.emplace<MeshComponent>(e1, boxMeshes[0]);
-        reg.emplace<TransformComponent>(e1, nullptr, glm::vec3(-25.0f, -5.0f, 0), glm::vec3(0, 0, 0), glm::vec3(1.f));
+        reg.emplace<TransformComponent>(e1, glm::vec3(0.0f, 0.0f, 0), glm::vec3(0, 0, 0), glm::vec3(1));
 
         // // Создаем вторую сущность (Box 2)
-        // for (uint i = 0; i < g.size(); ++i) {
-        auto e2 = reg.create();
-        reg.emplace<MeshComponent>(e2, g[0]);
-        reg.emplace<TransformComponent>(e2, nullptr, glm::vec3(2, 0, -5), glm::vec3(0, 0, 0), glm::vec3(0.01f));
-        // }
+        for (uint i = 0; i < matilda.size(); ++i) {
+            auto e2 = reg.create();
+            reg.emplace<MeshComponent>(e2, matilda[i]);
+            reg.emplace<TransformComponent>(e2, glm::vec3(2, 0, -5), glm::vec3(0, 0, 0), glm::vec3(0.01f));
+        }
 
         // Создаем третью сущность (Red Box)
         auto e3 = reg.create();
         reg.emplace<MeshComponent>(e3, redBoxM[0]);
-        reg.emplace<TransformComponent>(e3, nullptr, glm::vec3(-2, 1, -6), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
+        reg.emplace<TransformComponent>(e3, glm::vec3(-2, 1, -6), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
     }
+
     Camera camera;
     camera.pos = glm::vec3(0.0f, 0.0f, -3.0f);
 
@@ -62,10 +63,24 @@ int main(int, char*[]) {
 
     // --- ИГРОВОЙ ЦИКЛ ---
     while (running) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                running = false;
+            }
+            // Обработка мыши ПРЯМО ТУТ
+            else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                camera.yaw += event.motion.xrel * camera.sensitivity;
+                camera.pitch -= event.motion.yrel * camera.sensitivity;  // Минус, чтобы не было инверсии
+
+                camera.pitch = std::min(camera.pitch, 89.0f);
+                camera.pitch = std::max(camera.pitch, -89.0f);
+            }
+        }
         uint64_t currentTime = SDL_GetTicksNS();
         double deltaTime = static_cast<double>(currentTime - lastTime) / 1000000000.0;
         lastTime = currentTime;
-        double totalTime = static_cast<double>(currentTime) / 1000000000.0;
+        // double totalTime = static_cast<double>(currentTime) / 1000000000.0;
 
         fpsTimer += deltaTime;
         frameCount++;
@@ -76,7 +91,7 @@ int main(int, char*[]) {
             frameCount = 0;
         }
 
-        UpdateCamera(camera, running, deltaTime);
+        UpdateCamera(camera, deltaTime);
 
         auto ctx = renderer.BeginFrame();
         // Биндим пайплайн (один раз, если он общий для всех кубов)
@@ -84,7 +99,7 @@ int main(int, char*[]) {
 
         // Матрицы камеры (View/Proj общие для всего кадра)
         glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
-        glm::mat4 proj = glm::perspective(glm::radians(70.0f), (float)WindowWidth / WindowHeight, 0.1f, 100.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(70.0f), (float)WindowWidth / WindowHeight, 0.05f, 100.0f);
 
         LightUniforms lightData{};
         lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);   // Лампочка справа-сверху
@@ -100,7 +115,9 @@ int main(int, char*[]) {
             auto& transform = view_entities.get<TransformComponent>(entity);
             auto& meshComp = view_entities.get<MeshComponent>(entity);
 
-            if (!meshComp.mesh) continue;
+            if (meshComp.mesh == nullptr) {
+                continue;
+            }
             glm::mat4 model = transform.GetModelMatrix();
             // model = glm::rotate(model, (float)totalTime, glm::vec3(0.0f, 1.0f, 0.0f));
             glm::mat4 normalMatrix = glm::inverseTranspose(model);

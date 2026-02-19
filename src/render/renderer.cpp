@@ -55,7 +55,6 @@ FrameContext Renderer::BeginFrame() {
 
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(ctx.cmd, window, &swapchainTexture, &w, &h)) {
         SDL_SubmitGPUCommandBuffer(ctx.cmd);
-        // SDL_ReleaseGPUCommandBuffer(ctx.cmd); // если требуется
         ctx.cmd = nullptr;
         return ctx;
     }
