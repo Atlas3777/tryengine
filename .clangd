@@ -11,5 +11,6 @@ CompileFlags:
 Diagnostics:
   UnusedIncludes: Strict
   ClangTidy:
-    Add: [bugprone-*, performance-*, readability-*]
-    Remove: [readability-uppercase-literal-suffix]
+    Add: [bugprone-*, performance-*]
+    # Remove: [readability-uppercase-literal-suffix]
+    Remove: [readability-*]

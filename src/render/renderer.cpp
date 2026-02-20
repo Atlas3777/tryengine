@@ -9,7 +9,7 @@
 #include "render/renderer.hpp"
 
 void Renderer::Init(WindowManager& windowManager) {
-    this->device = windowManager.device;
+    this->device = windowManager.GetDevice();
     this->window = windowManager.GetWindow();
 
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
@@ -24,6 +24,19 @@ void Renderer::Init(WindowManager& windowManager) {
 
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
     SetupColorTargetDescription(colorTargetDescriptions, this->device, this->window);
+
+    SDL_GPUTextureCreateInfo sceneTexInfo{};
+    sceneTexInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    // Формат должен быть фиксированным (например, R8G8B8A8), а не зависеть от swapchain
+    sceneTexInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    sceneTexInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    sceneTexInfo.width = (Uint32)windowManager.w;  // Пока делаем размером с окно
+    sceneTexInfo.height = (Uint32)windowManager.h;
+    sceneTexInfo.layer_count_or_depth = 1;
+    sceneTexInfo.num_levels = 1;
+    sceneTexInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+    this->sceneTexture = SDL_CreateGPUTexture(device, &sceneTexInfo);
 
     this->pipeline = CreateGraphicsPipeline(*device, vertexShader, fragmentShader, &vertexBufferDescriptions,
                                             vertexAttributes, colorTargetDescriptions);
@@ -63,11 +76,11 @@ FrameContext Renderer::BeginFrame() {
     ctx.w = w;
     ctx.h = h;
 
-    ctx.colorTargetInfo = {};
-    ctx.colorTargetInfo.texture = swapchainTexture;
-    ctx.colorTargetInfo.clear_color = {0.5f, 0.5f, 0.8f, 1.0f};
-    ctx.colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-    ctx.colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+    // ctx.colorTargetInfo = {};
+    // ctx.colorTargetInfo.texture = swapchainTexture;
+    // ctx.colorTargetInfo.clear_color = {0.5f, 0.5f, 0.8f, 1.0f};
+    // ctx.colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    // ctx.colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
     ctx.depthTargetInfo = {};
     ctx.depthTargetInfo.texture = depthTexture;
@@ -77,7 +90,6 @@ FrameContext Renderer::BeginFrame() {
     ctx.depthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
     ctx.depthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
 
-    ctx.pass = SDL_BeginGPURenderPass(ctx.cmd, &ctx.colorTargetInfo, 1, &ctx.depthTargetInfo);
     return ctx;
 }
 
@@ -179,7 +191,7 @@ void Renderer::SetupColorTargetDescription(SDL_GPUColorTargetDescription* colorT
     colorTargetDesc[0].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     colorTargetDesc[0].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
     colorTargetDesc[0].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-    colorTargetDesc[0].format = SDL_GetGPUSwapchainTextureFormat(device, window);
+    colorTargetDesc[0].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
 }
 
 SDL_GPUSampler* Renderer::CreateSampler(SDL_GPUDevice& device) {

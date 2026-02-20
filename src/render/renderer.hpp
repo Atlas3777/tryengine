@@ -23,6 +23,7 @@ class Renderer {
     SDL_GPUGraphicsPipeline* GetDefaultPipeline() const { return pipeline; }
     SDL_GPUSampler* GetCommonSampler() const { return commonSampler; }
     SDL_GPUDevice* GetDevice() const { return device; }
+    SDL_GPUTexture* sceneTexture = nullptr;
 
    private:
     SDL_GPUDevice* device = nullptr;

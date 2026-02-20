@@ -94,12 +94,19 @@ FetchContent_Declare(tinygltf
     GIT_TAG        release # или конкретный тег, например v2.9.3
 )
 
+
+# --- ImGui (ветка docking) ---
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        docking
+)
+
+
+
 set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
 
-# Выкачиваем (добавь tinygltf в список)
-FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf)# Выкачиваем и подключаем всё объявленное выше
-# FetchContent_MakeAvailable(glm SDL3 stb assimp entt)
+FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf imgui)# Выкачиваем и подключаем всё объявленное выше
 
 # --- 5. Настройка таргетов и сборки движка ---
 
@@ -110,9 +117,27 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     "src/*.hpp"
 )
 
-# Главный исполняемый файл нашего движка
 add_executable(tryengine ${SOURCES})
 
+# Теперь создаем библиотеку, используя путь, который подготовил FetchContent
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    # Бэккенды для SDL3 и SDL_GPU
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
+)
+
+# Настройка путей и зависимостей
+target_include_directories(imgui PUBLIC 
+    ${imgui_SOURCE_DIR} 
+    ${imgui_SOURCE_DIR}/backends
+)
+
+target_link_libraries(imgui PRIVATE SDL3::SDL3)
 # Указываем пути к заголовкам
 target_include_directories(tryengine PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
@@ -142,4 +167,5 @@ target_link_libraries(tryengine PRIVATE
     # assimp::assimp
     EnTT::EnTT
     tinygltf_lib
+    imgui
 )
