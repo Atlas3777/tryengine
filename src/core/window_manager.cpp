@@ -17,8 +17,8 @@ bool WindowManager::Initialize(int width, int height, const char* title) {
 
     // Убираем SDL_WINDOW_HIDDEN. В Wayland окно и так не покажется,
     // пока вы не начнете рисовать, но флаг HIDDEN может мешать инициализации GPU.
-    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
+    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_FULLSCREEN;
     window = SDL_CreateWindow(title, width, height, flags);
 
     if (!window) {
@@ -44,6 +44,21 @@ bool WindowManager::Initialize(int width, int height, const char* title) {
 
 SDL_Window* WindowManager::GetWindow() { return window; }
 SDL_GPUDevice* WindowManager::GetDevice() { return device; }
+
+void WindowManager::SetFullscreen(bool fullscreen) {
+    if (!window) return;
+
+    if (fullscreen) {
+        // SDL_SetWindowFullscreen(window, true) включает режим "Desktop Fullscreen"
+        if (!SDL_SetWindowFullscreen(window, true)) {
+            SDL_Log("Failed to set fullscreen: %s", SDL_GetError());
+        }
+    } else {
+        if (!SDL_SetWindowFullscreen(window, false)) {
+            SDL_Log("Failed to exit fullscreen: %s", SDL_GetError());
+        }
+    }
+}
 
 void WindowManager::Terminate() {
     if (device) {

@@ -5,6 +5,7 @@
 class WindowManager {
    public:
     bool Initialize(int width, int height, const char* title);
+    void SetFullscreen(bool fullscreen);
     void Terminate();
     SDL_Window* GetWindow();
     SDL_GPUDevice* GetDevice();

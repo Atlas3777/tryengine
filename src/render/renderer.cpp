@@ -14,8 +14,6 @@ void Renderer::Init(WindowManager& windowManager) {
 
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
     SDL_GPUShader* fragmentShader = CreateFragmentShader(*device);
-
-    this->depthTexture = CreateDepthTexture(*device, (uint)windowManager.w, (uint)windowManager.h);
     this->commonSampler = CreateSampler(*device);
 
     SDL_GPUVertexBufferDescription vertexBufferDescriptions = CreateVertexBufferDescription();
@@ -25,18 +23,8 @@ void Renderer::Init(WindowManager& windowManager) {
     SDL_GPUColorTargetDescription colorTargetDescriptions[1];
     SetupColorTargetDescription(colorTargetDescriptions, this->device, this->window);
 
-    SDL_GPUTextureCreateInfo sceneTexInfo{};
-    sceneTexInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    // Формат должен быть фиксированным (например, R8G8B8A8), а не зависеть от swapchain
-    sceneTexInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    sceneTexInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    sceneTexInfo.width = (Uint32)windowManager.w;  // Пока делаем размером с окно
-    sceneTexInfo.height = (Uint32)windowManager.h;
-    sceneTexInfo.layer_count_or_depth = 1;
-    sceneTexInfo.num_levels = 1;
-    sceneTexInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
-
-    this->sceneTexture = SDL_CreateGPUTexture(device, &sceneTexInfo);
+    // Создаем первичные Render Targets под размер окна
+    ResizeOffscreenTargets((Uint32)windowManager.w, (Uint32)windowManager.h);
 
     this->pipeline = CreateGraphicsPipeline(*device, vertexShader, fragmentShader, &vertexBufferDescriptions,
                                             vertexAttributes, colorTargetDescriptions);
@@ -46,59 +34,75 @@ void Renderer::Init(WindowManager& windowManager) {
 }
 
 void Renderer::Cleanup() {
-    if (commonSampler) {
-        SDL_ReleaseGPUSampler(device, commonSampler);
-        commonSampler = nullptr;
-    }
-    if (depthTexture) {
-        SDL_ReleaseGPUTexture(device, depthTexture);
-        depthTexture = nullptr;
-    }
-    if (pipeline) {
-        SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
-        pipeline = nullptr;
-    }
+    if (commonSampler) SDL_ReleaseGPUSampler(device, commonSampler);
+    if (depthTexture) SDL_ReleaseGPUTexture(device, depthTexture);
+    if (sceneTexture) SDL_ReleaseGPUTexture(device, sceneTexture);
+    if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
 }
 
 FrameContext Renderer::BeginFrame() {
     FrameContext ctx;
     ctx.cmd = SDL_AcquireGPUCommandBuffer(device);
-    SDL_GPUTexture* swapchainTexture;
-    Uint32 w, h;
 
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(ctx.cmd, window, &swapchainTexture, &w, &h)) {
+    if (!SDL_WaitAndAcquireGPUSwapchainTexture(ctx.cmd, window, &ctx.swapchainTexture, &ctx.w, &ctx.h)) {
         SDL_SubmitGPUCommandBuffer(ctx.cmd);
-        ctx.cmd = nullptr;
-        return ctx;
+        ctx.cmd = nullptr;  // Сигнал, что кадр пропущен
     }
-
-    ctx.swapchainTexture = swapchainTexture;
-    ctx.w = w;
-    ctx.h = h;
-
-    // ctx.colorTargetInfo = {};
-    // ctx.colorTargetInfo.texture = swapchainTexture;
-    // ctx.colorTargetInfo.clear_color = {0.5f, 0.5f, 0.8f, 1.0f};
-    // ctx.colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-    // ctx.colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-
-    ctx.depthTargetInfo = {};
-    ctx.depthTargetInfo.texture = depthTexture;
-    ctx.depthTargetInfo.clear_depth = 1.0f;
-    ctx.depthTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-    ctx.depthTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-    ctx.depthTargetInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
-    ctx.depthTargetInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-
     return ctx;
 }
 
 void Renderer::EndFrame(FrameContext& ctx) {
-    if (!ctx.cmd) return;
-    if (ctx.pass) SDL_EndGPURenderPass(ctx.pass);
-    SDL_SubmitGPUCommandBuffer(ctx.cmd);
-    // swapchainTexture ownership: SDL handles it after submit
-    // cmd will be released by SDL internally on submit
+    if (ctx.cmd) SDL_SubmitGPUCommandBuffer(ctx.cmd);
+}
+
+SDL_GPURenderPass* Renderer::BeginRenderPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* colorTarget,
+                                             SDL_GPUTexture* depthTarget, SDL_FColor clearColor) {
+    SDL_GPUColorTargetInfo colorInfo{};
+    colorInfo.texture = colorTarget;
+    colorInfo.clear_color = clearColor;
+    colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+    colorInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+    if (depthTarget) {
+        SDL_GPUDepthStencilTargetInfo depthInfo{};
+        depthInfo.texture = depthTarget;
+        depthInfo.clear_depth = 1.0f;
+        depthInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+        depthInfo.store_op = SDL_GPU_STOREOP_STORE;
+        depthInfo.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+        depthInfo.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        return SDL_BeginGPURenderPass(cmd, &colorInfo, 1, &depthInfo);
+    }
+
+    // Если глубина не передана, рендерим без нее (для UI)
+    return SDL_BeginGPURenderPass(cmd, &colorInfo, 1, nullptr);
+}
+
+void Renderer::ResizeOffscreenTargets(Uint32 width, Uint32 height) {
+    if (width == 0 || height == 0) return;
+    if (width == currentTargetWidth && height == currentTargetHeight && sceneTexture != nullptr) return;
+
+    // Ждем завершения работы GPU перед удалением текстур
+    SDL_WaitForGPUIdle(device);
+
+    if (sceneTexture) SDL_ReleaseGPUTexture(device, sceneTexture);
+    if (depthTexture) SDL_ReleaseGPUTexture(device, depthTexture);
+
+    currentTargetWidth = width;
+    currentTargetHeight = height;
+
+    SDL_GPUTextureCreateInfo sceneTexInfo{};
+    sceneTexInfo.type = SDL_GPU_TEXTURETYPE_2D;
+    sceneTexInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    sceneTexInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    sceneTexInfo.width = width;
+    sceneTexInfo.height = height;
+    sceneTexInfo.layer_count_or_depth = 1;
+    sceneTexInfo.num_levels = 1;
+    sceneTexInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
+
+    sceneTexture = SDL_CreateGPUTexture(device, &sceneTexInfo);
+    depthTexture = CreateDepthTexture(*device, width, height);
 }
 
 SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {

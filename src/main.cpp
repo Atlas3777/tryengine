@@ -33,7 +33,7 @@ int main(int, char*[]) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Управление клавиатурой
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Докинг (вкладки)
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // ТЕ САМЫЕ ОКНА (Multi-viewports)
+    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // ТЕ САМЫЕ ОКНА (Multi-viewports)
 
     ImGui::StyleColorsDark();
 
@@ -130,9 +130,40 @@ int main(int, char*[]) {
         ImGui::NewFrame();
 
         ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::DockSpaceOverViewport(viewport->ID);  // Передаем ID вьюпорта, а не сам указатель
 
-        // Рисуем тестовое окно ImGui
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGuiWindowFlags host_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                                             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                             ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+                                             ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+        ImGui::Begin("MainDockSpace", nullptr, host_window_flags);
+        ImGui::PopStyleVar(3);
+
+        ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceDock");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+
+        ImGui::End();
+
+        ImGui::Begin("Scene");
+        ImVec2 sceneViewportSize = ImGui::GetContentRegionAvail();
+
+        // Пересоздаем текстуры, если размер окна изменился
+        if (sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
+            renderer.ResizeOffscreenTargets((Uint32)sceneViewportSize.x, (Uint32)sceneViewportSize.y);
+
+            // Рисуем отрендеренную сцену в ImGui
+            // (ImTextureID) обычно напрямую кастуется в бекенде SDL_GPU
+            ImGui::Image((ImTextureID)renderer.GetSceneColorTexture(), sceneViewportSize);
+        }
+        ImGui::End();
         if (show_demo) ImGui::ShowDemoWindow(&show_demo);
 
         ImGui::Begin("Engine Control");
@@ -153,15 +184,9 @@ int main(int, char*[]) {
             sprintf(label, "Entity %d", node_id++);
 
             if (ImGui::TreeNode(label)) {
-                // Слайдеры для позиции
                 ImGui::DragFloat3("Position", &transform.position.x, 0.1f);
-
-                // Слайдеры для поворота (в градусах)
                 ImGui::DragFloat3("Rotation", &transform.rotation.x, 1.0f);
-
-                // Слайдер для масштаба
                 ImGui::DragFloat3("Scale", &transform.scale.x, 0.05f);
-
                 ImGui::TreePop();
             }
             ImGui::Separator();
@@ -176,66 +201,85 @@ int main(int, char*[]) {
         UpdateCamera(camera, deltaTime);
 
         auto ctx = renderer.BeginFrame();
+        if (!ctx.cmd) continue;
 
         ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, ctx.cmd);
-        ctx.pass = SDL_BeginGPURenderPass(ctx.cmd, &ctx.colorTargetInfo, 1, &ctx.depthTargetInfo);
 
-        // Биндим пайплайн (один раз, если он общий для всех кубов)
-        SDL_BindGPUGraphicsPipeline(ctx.pass, renderer.GetDefaultPipeline());
+        SDL_GPUTexture* sceneColor = renderer.GetSceneColorTexture();
+        SDL_GPUTexture* sceneDepth = renderer.GetSceneDepthTexture();
 
-        // Матрицы камеры (View/Proj общие для всего кадра)
-        glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
-        glm::mat4 proj = glm::perspective(glm::radians(70.0f), (float)WindowWidth / WindowHeight, 0.05f, 100.0f);
+        if (sceneColor && sceneDepth && sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
+            // Передаем нашу текстуру и цвет очистки
+            SDL_GPURenderPass* scenePass =
+                renderer.BeginRenderPass(ctx.cmd, sceneColor, sceneDepth, {0.2f, 0.3f, 0.4f, 1.0f});
 
-        LightUniforms lightData{};
-        lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);   // Лампочка справа-сверху
-        lightData.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);  // Белый свет
-        lightData.viewPos = glm::vec4(camera.pos, 1.0f);           // Позиция камеры (на будущее)
+            SDL_BindGPUGraphicsPipeline(scenePass, renderer.GetDefaultPipeline());
 
-        // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
-        SDL_PushGPUFragmentUniformData(ctx.cmd, 0, &lightData, sizeof(LightUniforms));
+            // ВАЖНО: Аспект ратио теперь зависит от размеров окна ImGui, а не окна ОС!
+            float aspect =
+                sceneViewportSize.x / sceneViewportSize.y;  // Биндим пайплайн (один раз, если он общий для всех кубов)
 
-        auto view_entities = reg.view<TransformComponent, MeshComponent>();
+            // Матрицы камеры (View/Proj общие для всего кадра)
+            glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
+            glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.05f, 100.0f);
 
-        for (auto entity : view_entities) {
-            auto& transform = view_entities.get<TransformComponent>(entity);
-            auto& meshComp = view_entities.get<MeshComponent>(entity);
+            LightUniforms lightData{};
+            lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);   // Лампочка справа-сверху
+            lightData.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);  // Белый свет
+            lightData.viewPos = glm::vec4(camera.pos, 1.0f);           // Позиция камеры (на будущее)
 
-            if (meshComp.mesh == nullptr) {
-                continue;
+            // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
+            SDL_PushGPUFragmentUniformData(ctx.cmd, 0, &lightData, sizeof(LightUniforms));
+
+            auto view_entities = reg.view<TransformComponent, MeshComponent>();
+
+            for (auto entity : view_entities) {
+                auto& transform = view_entities.get<TransformComponent>(entity);
+                auto& meshComp = view_entities.get<MeshComponent>(entity);
+
+                if (meshComp.mesh == nullptr) {
+                    continue;
+                }
+                glm::mat4 model = transform.GetModelMatrix();
+                // model = glm::rotate(model, (float)totalTime, glm::vec3(0.0f, 1.0f, 0.0f));
+                glm::mat4 normalMatrix = glm::inverseTranspose(model);
+                UniformBufferObject ubo{};
+                ubo.proj = proj;
+                ubo.view = view;
+                ubo.model = model;
+                ubo.normalMatrix = normalMatrix;
+                SDL_PushGPUVertexUniformData(ctx.cmd, 0, &ubo, sizeof(UniformBufferObject));
+
+                // 2. Текстуры (лучше вынести загрузку из цикла рендера!)
+                // Texture* debugTex = resources.LoadTexture("assets/test.png");
+                SDL_GPUTextureSamplerBinding tsb = {meshComp.mesh->texture->handle, renderer.GetCommonSampler()};
+                // SDL_GPUTextureSamplerBinding tsb = {debugTex->handle, renderer.GetCommonSampler()};
+                SDL_BindGPUFragmentSamplers(scenePass, 0, &tsb, 1);
+
+                // 3. Drawing
+                SDL_GPUBufferBinding vb = {meshComp.mesh->vertexBuffer, 0};
+                SDL_BindGPUVertexBuffers(scenePass, 0, &vb, 1);
+
+                SDL_GPUBufferBinding ib = {meshComp.mesh->indexBuffer, 0};
+                SDL_BindGPUIndexBuffer(scenePass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+                SDL_DrawGPUIndexedPrimitives(scenePass, meshComp.mesh->numIndices, 1, 0, 0, 0);
             }
-            glm::mat4 model = transform.GetModelMatrix();
-            // model = glm::rotate(model, (float)totalTime, glm::vec3(0.0f, 1.0f, 0.0f));
-            glm::mat4 normalMatrix = glm::inverseTranspose(model);
-            UniformBufferObject ubo{};
-            ubo.proj = proj;
-            ubo.view = view;
-            ubo.model = model;
-            ubo.normalMatrix = normalMatrix;
-            SDL_PushGPUVertexUniformData(ctx.cmd, 0, &ubo, sizeof(UniformBufferObject));
-
-            // 2. Текстуры (лучше вынести загрузку из цикла рендера!)
-            // Texture* debugTex = resources.LoadTexture("assets/test.png");
-            SDL_GPUTextureSamplerBinding tsb = {meshComp.mesh->texture->handle, renderer.GetCommonSampler()};
-            // SDL_GPUTextureSamplerBinding tsb = {debugTex->handle, renderer.GetCommonSampler()};
-            SDL_BindGPUFragmentSamplers(ctx.pass, 0, &tsb, 1);
-
-            // 3. Drawing
-            SDL_GPUBufferBinding vb = {meshComp.mesh->vertexBuffer, 0};
-            SDL_BindGPUVertexBuffers(ctx.pass, 0, &vb, 1);
-
-            SDL_GPUBufferBinding ib = {meshComp.mesh->indexBuffer, 0};
-            SDL_BindGPUIndexBuffer(ctx.pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-
-            SDL_DrawGPUIndexedPrimitives(ctx.pass, meshComp.mesh->numIndices, 1, 0, 0, 0);
+            SDL_EndGPURenderPass(scenePass);
         }
-        ImGui_ImplSDLGPU3_RenderDrawData(draw_data, ctx.cmd, ctx.pass);
+
+        SDL_GPURenderPass* uiPass =
+            renderer.BeginRenderPass(ctx.cmd, ctx.swapchainTexture, nullptr, {0.0f, 0.0f, 0.0f, 1.0f});
+        ImGui_ImplSDLGPU3_RenderDrawData(draw_data, ctx.cmd, uiPass);
+        SDL_EndGPURenderPass(uiPass);
+
+        // Отправляем команды на GPU
         renderer.EndFrame(ctx);
-        // --- 5. ОБНОВЛЕНИЕ ВНЕШНИХ ОКОН (Viewports) ---
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-        }
+
+        // if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        //     ImGui::UpdatePlatformWindows();
+        //     ImGui::RenderPlatformWindowsDefault();
+        // }
     }
 
     SDL_WaitForGPUIdle(windowManager.GetDevice());
