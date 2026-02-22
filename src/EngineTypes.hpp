@@ -33,7 +33,6 @@ struct MeshComponent {
 };
 
 struct TransformComponent {
-    // Mesh* mesh;          // Какой меш рисовать (ссылка)
     glm::vec3 position;  // Где
     glm::vec3 rotation;  // Как повернут (Euler angles)
     glm::vec3 scale;     // Масштаб

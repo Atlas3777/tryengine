@@ -24,7 +24,9 @@ void Renderer::Init(WindowManager& windowManager) {
     SetupColorTargetDescription(colorTargetDescriptions, this->device, this->window);
 
     // Создаем первичные Render Targets под размер окна
-    ResizeOffscreenTargets((Uint32)windowManager.w, (Uint32)windowManager.h);
+    int w, h;
+    windowManager.GetSize(w, h);
+    ResizeOffscreenTargets((Uint32)w, (Uint32)h);
 
     this->pipeline = CreateGraphicsPipeline(*device, vertexShader, fragmentShader, &vertexBufferDescriptions,
                                             vertexAttributes, colorTargetDescriptions);

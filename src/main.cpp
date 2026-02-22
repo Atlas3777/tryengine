@@ -15,8 +15,8 @@
 #include "core/window_manager.hpp"
 #include "render/renderer.hpp"
 
-constexpr uint WindowWidth = 1280;
-constexpr uint WindowHeight = 720;
+constexpr uint WindowWidth = (uint)(1920 / 1.5f);
+constexpr uint WindowHeight = (uint)(1080 / 1.5f);
 
 int main(int, char*[]) {
     WindowManager windowManager;
@@ -56,19 +56,16 @@ int main(int, char*[]) {
     entt::registry reg;
 
     if (!boxMeshes.empty() && !redBoxM.empty()) {
-        // Создаем первую сущность (Box 1)
         auto e1 = reg.create();
         reg.emplace<MeshComponent>(e1, boxMeshes[0]);
         reg.emplace<TransformComponent>(e1, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1));
 
-        // // Создаем вторую сущность (Box 2)
         for (uint i = 0; i < matilda.size(); ++i) {
             auto e2 = reg.create();
             reg.emplace<MeshComponent>(e2, matilda[i]);
             reg.emplace<TransformComponent>(e2, glm::vec3(2, 0, -5), glm::vec3(0, 0, 0), glm::vec3(0.01f));
         }
 
-        // Создаем третью сущность (Red Box)
         auto e3 = reg.create();
         reg.emplace<MeshComponent>(e3, redBoxM[0]);
         reg.emplace<TransformComponent>(e3, glm::vec3(-2, 1, -6), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
@@ -79,12 +76,14 @@ int main(int, char*[]) {
 
     uint64_t lastTime = SDL_GetTicksNS();
     double fpsTimer = 0.0;
-    int frameCount = 0;
+    // int frameCount = 0;
 
     bool running = true;
-    bool show_demo = true;  // Для теста
+    bool show_demo = true;     // Для теста
+    bool vsyncEnabled = true;  // По умолчанию включено, как в init_info
 
     bool isCursorCaptured = true;
+    bool fullScreen = true;
     SDL_SetWindowRelativeMouseMode(windowManager.GetWindow(), true);
 
     while (running) {
@@ -103,6 +102,13 @@ int main(int, char*[]) {
                 SDL_SetWindowRelativeMouseMode(windowManager.GetWindow(), isCursorCaptured);
             }
 
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F11) {
+                fullScreen = !fullScreen;
+
+                // Включаем или выключаем относительный режим мыши
+                windowManager.SetFullscreen(fullScreen);
+            }
+
             // Обработка движения камеры (только если мышь захвачена)
             if (isCursorCaptured && event.type == SDL_EVENT_MOUSE_MOTION) {
                 camera.yaw += event.motion.xrel * camera.sensitivity;
@@ -117,12 +123,12 @@ int main(int, char*[]) {
         // double totalTime = static_cast<double>(currentTime) / 1000000000.0;
 
         fpsTimer += deltaTime;
-        frameCount++;
+        // frameCount++;
 
         if (fpsTimer >= 1.0) {
             // SDL_Log("FPS: %d (ms per frame: %.3f)", frameCount, 1000.0 / frameCount);
             fpsTimer -= 1.0;
-            frameCount = 0;
+            // frameCount = 0;
         }
 
         ImGui_ImplSDLGPU3_NewFrame();
@@ -158,9 +164,6 @@ int main(int, char*[]) {
         // Пересоздаем текстуры, если размер окна изменился
         if (sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
             renderer.ResizeOffscreenTargets((Uint32)sceneViewportSize.x, (Uint32)sceneViewportSize.y);
-
-            // Рисуем отрендеренную сцену в ImGui
-            // (ImTextureID) обычно напрямую кастуется в бекенде SDL_GPU
             ImGui::Image((ImTextureID)renderer.GetSceneColorTexture(), sceneViewportSize);
         }
         ImGui::End();
@@ -169,6 +172,13 @@ int main(int, char*[]) {
         ImGui::Begin("Engine Control");
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
         ImGui::Checkbox("Show Demo Window", &show_demo);
+        if (ImGui::Checkbox("Enable VSync", &vsyncEnabled)) {
+            // Если состояние изменилось, вызываем метод WindowManager
+            windowManager.SetVSync(vsyncEnabled);
+
+            // Полезно вывести лог, чтобы видеть в консоли момент переключения
+            SDL_Log("VSync changed to: %s", vsyncEnabled ? "ON" : "OFF");
+        }
         ImGui::End();
 
         ImGui::Begin("Scene Hierarchy");
@@ -209,19 +219,16 @@ int main(int, char*[]) {
         SDL_GPUTexture* sceneDepth = renderer.GetSceneDepthTexture();
 
         if (sceneColor && sceneDepth && sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
-            // Передаем нашу текстуру и цвет очистки
             SDL_GPURenderPass* scenePass =
                 renderer.BeginRenderPass(ctx.cmd, sceneColor, sceneDepth, {0.2f, 0.3f, 0.4f, 1.0f});
-
             SDL_BindGPUGraphicsPipeline(scenePass, renderer.GetDefaultPipeline());
 
             // ВАЖНО: Аспект ратио теперь зависит от размеров окна ImGui, а не окна ОС!
-            float aspect =
-                sceneViewportSize.x / sceneViewportSize.y;  // Биндим пайплайн (один раз, если он общий для всех кубов)
+            float aspect = sceneViewportSize.x / sceneViewportSize.y;
 
             // Матрицы камеры (View/Proj общие для всего кадра)
             glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
-            glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.05f, 100.0f);
+            glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 100.0f);
 
             LightUniforms lightData{};
             lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);   // Лампочка справа-сверху
@@ -250,13 +257,9 @@ int main(int, char*[]) {
                 ubo.normalMatrix = normalMatrix;
                 SDL_PushGPUVertexUniformData(ctx.cmd, 0, &ubo, sizeof(UniformBufferObject));
 
-                // 2. Текстуры (лучше вынести загрузку из цикла рендера!)
-                // Texture* debugTex = resources.LoadTexture("assets/test.png");
                 SDL_GPUTextureSamplerBinding tsb = {meshComp.mesh->texture->handle, renderer.GetCommonSampler()};
-                // SDL_GPUTextureSamplerBinding tsb = {debugTex->handle, renderer.GetCommonSampler()};
                 SDL_BindGPUFragmentSamplers(scenePass, 0, &tsb, 1);
 
-                // 3. Drawing
                 SDL_GPUBufferBinding vb = {meshComp.mesh->vertexBuffer, 0};
                 SDL_BindGPUVertexBuffers(scenePass, 0, &vb, 1);
 
@@ -275,11 +278,6 @@ int main(int, char*[]) {
 
         // Отправляем команды на GPU
         renderer.EndFrame(ctx);
-
-        // if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        //     ImGui::UpdatePlatformWindows();
-        //     ImGui::RenderPlatformWindowsDefault();
-        // }
     }
 
     SDL_WaitForGPUIdle(windowManager.GetDevice());
