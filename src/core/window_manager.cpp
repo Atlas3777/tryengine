@@ -51,13 +51,7 @@ void WindowManager::SetVSync(bool enabled) {
 void WindowManager::SetFullscreen(bool fullscreen) {
     if (!m_window) return;
 
-    // В SDL3 для фулскрина используется SDL_SetWindowFullscreen(window, bool)
     SDL_SetWindowFullscreen(m_window, fullscreen);
-}
-
-void WindowManager::GetSize(int& width, int& height) const {
-    if (width) width = m_width;
-    if (height) height = m_height;
 }
 
 void WindowManager::Terminate() {

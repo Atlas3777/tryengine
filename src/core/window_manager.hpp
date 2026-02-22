@@ -9,6 +9,9 @@ class WindowManager {
     WindowManager() = default;
     ~WindowManager() { Terminate(); }  // Авто-очистка
 
+    struct WindowSize {
+        uint32_t w, h;
+    };
     // Запрещаем копирование, так как управляем уникальными ресурсами (GPU Device)
     WindowManager(const WindowManager&) = delete;
     WindowManager& operator=(const WindowManager&) = delete;
@@ -21,8 +24,12 @@ class WindowManager {
     SDL_GPUDevice* GetDevice() const { return m_device; }
 
     // Инкапсулируем размер
-    void GetSize(int& width, int& height) const;
 
+    WindowSize GetSize() const { return {(uint32_t)m_width, (uint32_t)m_height}; }
+    void UpdateSizeInternal(uint32_t w, uint32_t h) {
+        m_width = (int)w;
+        m_height = (int)h;
+    }
     void SetFullscreen(bool fullscreen);
     void SetVSync(bool enabled);
 

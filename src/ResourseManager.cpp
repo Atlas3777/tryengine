@@ -45,7 +45,7 @@ Texture* ResourceManager::CreateOnePixelTexture(Uint8 r, Uint8 g, Uint8 b, Uint8
     tex->handle = SDL_CreateGPUTexture(device, &info);
 
     Uint8 pixels[4] = {r, g, b, a};
-    SDL_GPUTransferBufferCreateInfo tInfo = {.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = 4};
+    SDL_GPUTransferBufferCreateInfo tInfo = {.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = 4, .props = 0};
     SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device, &tInfo);
 
     Uint8* map = (Uint8*)SDL_MapGPUTransferBuffer(device, tBuf, false);

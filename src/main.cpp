@@ -28,6 +28,8 @@ int main(int, char*[]) {
     Renderer renderer;
     renderer.Init(windowManager);
 
+    RenderTarget target(windowManager.GetDevice(), WindowWidth, WindowHeight, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -58,7 +60,7 @@ int main(int, char*[]) {
     if (!boxMeshes.empty() && !redBoxM.empty()) {
         auto e1 = reg.create();
         reg.emplace<MeshComponent>(e1, boxMeshes[0]);
-        reg.emplace<TransformComponent>(e1, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1));
+        reg.emplace<TransformComponent>(e1, glm::vec3(-31.f, -5.0f, -7), glm::vec3(0, 0, 0), glm::vec3(1));
 
         for (uint i = 0; i < matilda.size(); ++i) {
             auto e2 = reg.create();
@@ -161,10 +163,12 @@ int main(int, char*[]) {
         ImGui::Begin("Scene");
         ImVec2 sceneViewportSize = ImGui::GetContentRegionAvail();
 
-        // Пересоздаем текстуры, если размер окна изменился
+        // Проверяем, изменился ли размер и не равен ли он нулю
         if (sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
-            renderer.ResizeOffscreenTargets((Uint32)sceneViewportSize.x, (Uint32)sceneViewportSize.y);
-            ImGui::Image((ImTextureID)renderer.GetSceneColorTexture(), sceneViewportSize);
+            uint32_t newWidth = (uint32_t)sceneViewportSize.x;
+            uint32_t newHeight = (uint32_t)sceneViewportSize.y;
+            if (newWidth != target.GetWidth() || newHeight != target.GetHeight()) target.Resize(newWidth, newHeight);
+            ImGui::Image((ImTextureID)target.GetColor(), sceneViewportSize);
         }
         ImGui::End();
         if (show_demo) ImGui::ShowDemoWindow(&show_demo);
@@ -209,26 +213,24 @@ int main(int, char*[]) {
         ImDrawData* draw_data = ImGui::GetDrawData();
 
         UpdateCamera(camera, deltaTime);
+        auto cmd = SDL_AcquireGPUCommandBuffer(windowManager.GetDevice());
 
-        auto ctx = renderer.BeginFrame();
-        if (!ctx.cmd) continue;
+        SDL_GPUTexture* swapchainTexture = nullptr;
+        uint32_t swapW, swapH;
+        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, windowManager.GetWindow(), &swapchainTexture, &swapW, &swapH)) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+            continue;
+        }
+        windowManager.UpdateSizeInternal(swapW, swapH);
+        ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, cmd);
 
-        ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, ctx.cmd);
-
-        SDL_GPUTexture* sceneColor = renderer.GetSceneColorTexture();
-        SDL_GPUTexture* sceneDepth = renderer.GetSceneDepthTexture();
-
-        if (sceneColor && sceneDepth && sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
-            SDL_GPURenderPass* scenePass =
-                renderer.BeginRenderPass(ctx.cmd, sceneColor, sceneDepth, {0.2f, 0.3f, 0.4f, 1.0f});
+        if (sceneViewportSize.x > 0 && sceneViewportSize.y > 0) {
+            SDL_GPURenderPass* scenePass = renderer.BeginRenderPass(cmd, target, {0.69f, 0.77f, 0.87f, 1.0f});
             SDL_BindGPUGraphicsPipeline(scenePass, renderer.GetDefaultPipeline());
 
-            // ВАЖНО: Аспект ратио теперь зависит от размеров окна ImGui, а не окна ОС!
-            float aspect = sceneViewportSize.x / sceneViewportSize.y;
-
-            // Матрицы камеры (View/Proj общие для всего кадра)
-            glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
+            float aspect = (float)target.GetWidth() / (float)target.GetHeight();
             glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 100.0f);
+            glm::mat4 view = glm::lookAt(camera.pos, camera.pos + camera.front, camera.up);
 
             LightUniforms lightData{};
             lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);   // Лампочка справа-сверху
@@ -236,7 +238,7 @@ int main(int, char*[]) {
             lightData.viewPos = glm::vec4(camera.pos, 1.0f);           // Позиция камеры (на будущее)
 
             // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
-            SDL_PushGPUFragmentUniformData(ctx.cmd, 0, &lightData, sizeof(LightUniforms));
+            SDL_PushGPUFragmentUniformData(cmd, 0, &lightData, sizeof(LightUniforms));
 
             auto view_entities = reg.view<TransformComponent, MeshComponent>();
 
@@ -255,7 +257,7 @@ int main(int, char*[]) {
                 ubo.view = view;
                 ubo.model = model;
                 ubo.normalMatrix = normalMatrix;
-                SDL_PushGPUVertexUniformData(ctx.cmd, 0, &ubo, sizeof(UniformBufferObject));
+                SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(UniformBufferObject));
 
                 SDL_GPUTextureSamplerBinding tsb = {meshComp.mesh->texture->handle, renderer.GetCommonSampler()};
                 SDL_BindGPUFragmentSamplers(scenePass, 0, &tsb, 1);
@@ -271,20 +273,17 @@ int main(int, char*[]) {
             SDL_EndGPURenderPass(scenePass);
         }
 
-        SDL_GPURenderPass* uiPass =
-            renderer.BeginRenderPass(ctx.cmd, ctx.swapchainTexture, nullptr, {0.0f, 0.0f, 0.0f, 1.0f});
-        ImGui_ImplSDLGPU3_RenderDrawData(draw_data, ctx.cmd, uiPass);
+        SDL_GPURenderPass* uiPass = renderer.BeginRenderToWindow(cmd, swapchainTexture);
+        ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmd, uiPass);
         SDL_EndGPURenderPass(uiPass);
 
-        // Отправляем команды на GPU
-        renderer.EndFrame(ctx);
+        SDL_SubmitGPUCommandBuffer(cmd);
     }
 
     SDL_WaitForGPUIdle(windowManager.GetDevice());
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
-
     resources.Cleanup();  // Удаляет меши и текстуры
     renderer.Cleanup();   // Удаляет пайплайн, семплер, текстуру глубины
     windowManager.Terminate();
