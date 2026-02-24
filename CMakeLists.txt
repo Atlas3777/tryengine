@@ -154,10 +154,7 @@ target_include_directories(tryengine SYSTEM PRIVATE
     ${stb_SOURCE_DIR}
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    # Оставляем строгие проверки для ТВОЕГО кода
-    target_compile_options(tryengine PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
-endif()
+
 
 # Линковка
 target_link_libraries(tryengine PRIVATE
@@ -169,3 +166,20 @@ target_link_libraries(tryengine PRIVATE
     tinygltf_lib
     imgui
 )
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Твои строгие варнинги
+    # target_compile_options(tryengine PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+
+    if(USE_ASAN)
+        message(STATUS "ASAN IS ENABLED")
+        
+        # Перечисляем флаги через точку с запятой (список CMake)
+        set(ASAN_FLAGS "-fsanitize=address" "-fno-omit-frame-pointer" "-fsanitize=undefined")
+        
+        target_compile_options(tryengine PRIVATE ${ASAN_FLAGS})
+        target_link_options(tryengine PRIVATE ${ASAN_FLAGS})
+        
+        # target_compile_options(imgui PRIVATE ${ASAN_FLAGS})
+        # target_link_options(imgui PRIVATE ${ASAN_FLAGS})
+    endif()
+endif()

@@ -10,6 +10,7 @@ Makefile
 build/
 build_release/
 external/
+build-asan/
 *.o
 *.a
 *.so

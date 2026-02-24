@@ -5,12 +5,8 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "EngineTypes.hpp"
-#include "core/window_manager.hpp"
 
-void Renderer::Init(WindowManager& windowManager) {
-    this->device = windowManager.GetDevice();
-    this->window = windowManager.GetWindow();
-
+void Renderer::Init(SDL_GPUDevice* device) {
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
     SDL_GPUShader* fragmentShader = CreateFragmentShader(*device);
     this->commonSampler = CreateSampler(*device);

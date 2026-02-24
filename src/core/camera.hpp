@@ -3,8 +3,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "SDL3/SDL_events.h"
-
 struct Camera {
     glm::vec3 pos;
     glm::vec3 front = glm::vec3(0.0f, 0.0f, -1.f);

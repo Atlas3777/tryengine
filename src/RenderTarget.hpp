@@ -1,11 +1,11 @@
 #pragma once
 
-#include "SDL3/SDL_gpu.h"
+#include <SDL3/SDL_gpu.h>
 
 class RenderTarget {
    public:
-    RenderTarget(SDL_GPUDevice* device, uint32_t w, uint32_t h, SDL_GPUTextureFormat format)
-        : device(device), width(w), height(h), colorFormat(format) {
+    RenderTarget(SDL_GPUDevice* device, uint32_t w, uint32_t h, SDL_GPUTextureFormat format, bool useDepth = true)
+        : device(device), width(w), height(h), colorFormat(format), useDepth(useDepth) {
         Create();
     }
 
@@ -29,6 +29,7 @@ class RenderTarget {
     SDL_GPUTexture* GetDepth() const { return depthTexture; }
     uint32_t GetWidth() const { return width; }
     uint32_t GetHeight() const { return height; }
+    bool UseDepth() const { return useDepth; }
 
    private:
     SDL_GPUDevice* device;
@@ -38,6 +39,7 @@ class RenderTarget {
     uint32_t width;
     uint32_t height;
     SDL_GPUTextureFormat colorFormat;
+    bool useDepth;
 
     void Create() {
         SDL_GPUTextureCreateInfo colorInfo{};
@@ -49,6 +51,7 @@ class RenderTarget {
         colorInfo.layer_count_or_depth = 1;
         colorInfo.num_levels = 1;
         colorTexture = SDL_CreateGPUTexture(device, &colorInfo);
+        if (!useDepth) return;
 
         SDL_GPUTextureCreateInfo depthInfo{};
         depthInfo.type = SDL_GPU_TEXTURETYPE_2D;
