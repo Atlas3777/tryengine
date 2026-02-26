@@ -16,10 +16,8 @@ class RenderTarget {
 
     void Resize(uint32_t w, uint32_t h) {
         if (w == width && h == height) return;
-
         width = w;
         height = h;
-        // Освобождаем старое и создаем новое
         ReleaseResources();
         Create();
     }
@@ -39,7 +37,7 @@ class RenderTarget {
     uint32_t width;
     uint32_t height;
     SDL_GPUTextureFormat colorFormat;
-    bool useDepth;
+    const bool useDepth;
 
     void Create() {
         SDL_GPUTextureCreateInfo colorInfo{};

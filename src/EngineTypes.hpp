@@ -49,6 +49,21 @@ struct TransformComponent {
     }
 };
 
+struct CameraComponent {
+    float fov = 70.0f;
+    float nearPlane = 0.1f;
+    float farPlane = 100.0f;
+    float sensitivity = 0.05f;
+    float speed = 3.0f;
+
+    // Вычисляемые векторы (обновляются системой)
+    glm::vec3 front = {0.0f, 0.0f, -1.0f};
+    glm::vec3 up = {0.0f, 1.0f, 0.0f};
+    glm::vec3 right = {1.0f, 0.0f, 0.0f};
+
+    bool isActive = true;
+};
+
 // Теперь материал владеет конвейером (pipeline) и текстурой
 struct Material {
     SDL_GPUGraphicsPipeline* pipeline = nullptr;  // Шейдерная программа

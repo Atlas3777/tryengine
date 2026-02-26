@@ -11,8 +11,6 @@ struct EngineConfig {
             std::string_view arg = argv[i];
             if (arg == "--game") config.isEditorMode = false;
             if (arg == "--server") config.isServer = true;
-            // Тут легко добавить другие флаги, например:
-            // else if (arg == "--low-res") { config.width = 800; config.height = 600; }
         }
         return config;
     }

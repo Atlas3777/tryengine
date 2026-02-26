@@ -4,6 +4,7 @@ CMakeFiles/
 CMakeScripts/
 cmake_install.cmake
 Makefile
+imgui.ini
 # Если собираешь не в /build, а в корне (что не очень хорошо, но бывает)
 *.spv
 # Сборочные файлы

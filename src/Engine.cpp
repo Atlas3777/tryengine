@@ -1,12 +1,13 @@
 #include "Engine.hpp"
 
-#include <functional>
-
+#include "GraphicsContext.hpp"
 #include "RenderTarget.hpp"
 #include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlgpu3.h"
+
+Engine::Engine(EngineConfig config) { settings.isEditorMode = config.isEditorMode; }
 
 void Engine::MountHardware() {
-    // Создаем WindowManager
     graphicsContext = std::make_unique<GraphicsContext>();
 
     if (!graphicsContext->Initialize(1280, 720, "tryengine")) {
@@ -17,58 +18,68 @@ void Engine::MountHardware() {
     target =
         std::make_unique<RenderTarget>(graphicsContext->GetDevice(), 1280, 720, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
 
-    context = std::make_unique<EngineContext>();
-    if (context->isEditorModeEnable) {
+    if (this->settings.isEditorMode) {
         editor = std::make_unique<EditorLayer>(*graphicsContext);
     }
+    SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), true);
 }
 
-void Engine::ProcessInput() {
-    // 1. Сброс накопленных за прошлый кадр данных
-    memset(context->keyPressed, 0, sizeof(context->keyPressed));
-    context->mouseDeltaX = 0.0f;
-    context->mouseDeltaY = 0.0f;
+void Engine::UpdateTime() {
+    uint64_t currentTime = SDL_GetTicksNS();
+    if (time.lastTime == 0) {
+        time.lastTime = currentTime;
+    }
 
-    // 2. Клавиатура
-    context->keyboardState = (const bool*)SDL_GetKeyboardState(NULL);
+    time.deltaTime = static_cast<double>(currentTime - time.lastTime) / 1000000000.0;
+    time.lastTime = currentTime;
 
-    // 3. Состояние кнопок и координат мыши (Абсолютное)
-    // SDL_GetMouseState дает текущие X, Y и маску нажатых кнопок
-    context->mouseButtons = SDL_GetMouseState(&context->mouseX, &context->mouseY);
+    time.fpsTimer += time.deltaTime;
+    time.frameCount++;
 
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        ImGui_ImplSDL3_ProcessEvent(&event);
-
-        if (event.type == SDL_EVENT_QUIT) context->running = false;
-
-        // Движение мыши (Относительное - дельта)
-        if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            // Мы суммируем дельту, так как за один кадр может прийти несколько ивентов движения
-            context->mouseDeltaX += event.motion.xrel;
-            context->mouseDeltaY += event.motion.yrel;
-        }
-
-        if (event.type == SDL_EVENT_KEY_DOWN) {
-            if (!event.key.repeat) {
-                context->keyPressed[event.key.scancode] = true;
-            }
-
-            if (event.key.key == SDLK_ESCAPE) {
-                context->isCursorCaptured = !context->isCursorCaptured;
-                SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), context->isCursorCaptured);
-            }
-        }
+    if (time.fpsTimer >= 1.0) {
+        time.currentFPS = time.frameCount;
+        SDL_Log("FPS: %d (ms per frame: %.3f)", time.currentFPS, 1000.0 / time.currentFPS);
+        time.fpsTimer -= 1.0;
+        time.frameCount = 0;
     }
 }
 
-void Engine::Render(entt::registry& reg, RenderCallback userRenderFunc) {
-    if (context->isEditorModeEnable) {
-        // Передаем reg сюда
-        editor->RecordRenderGUICommands(*target, reg, *context);
+void Engine::PushCommand(const EngineCommand& cmd) {
+    std::lock_guard<std::mutex> lock(commandMutex);
+    commandQueue.push_back(cmd);
+}
+
+void Engine::DispatchCommands() {
+    for (const auto& cmd : commandQueue) {
+        std::visit(
+            [this](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, CmdSetVSync>) {
+                    settings.vSyncEnable = arg.enable;
+                    SDL_Log("VSync state changed to: %d", arg.enable);
+                    SDL_GPUPresentMode mode = arg.enable ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_MAILBOX;
+                    SDL_SetGPUSwapchainParameters(graphicsContext->GetDevice(), graphicsContext->GetWindow(),
+                                                  SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+                } else if constexpr (std::is_same_v<T, CmdSetFullscreen>) {
+                    settings.fullScreenEnable = arg.enable;
+                    SDL_SetWindowFullscreen(graphicsContext->GetWindow(), arg.enable);
+                    SDL_Log("Fullscreen state changed to: %d", arg.enable);
+                } else if constexpr (std::is_same_v<T, CmdToggleCursorCapture>) {
+                    input.isCursorCaptured = !input.isCursorCaptured;
+                    SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), input.isCursorCaptured);
+                    SDL_Log("Cursor capture toggled");
+                } else if constexpr (std::is_same_v<T, CmdQuit>) {
+                    isRunning = false;
+                }
+            },
+            cmd);
     }
-    ImGui::Render();
-    ImDrawData* draw_data = ImGui::GetDrawData();
+
+    commandQueue.clear();
+}
+
+void Engine::Render(entt::registry& reg, const RenderCallback& userRenderFunc) {
+    bool isEdit = settings.isEditorMode;
 
     auto cmd = SDL_AcquireGPUCommandBuffer(graphicsContext->GetDevice());
 
@@ -79,44 +90,33 @@ void Engine::Render(entt::registry& reg, RenderCallback userRenderFunc) {
         return;
     }
 
-    ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, cmd);
-    // --- ЛОГИКА РАЗМЕРА ---
-    if (context->isEditorModeEnable) {
-        // 1. В РЕЖИМЕ РЕДАКТОРА
-        // Мы НЕ меняем размер target здесь.
-        // Это уже делает EditorLayer внутри ImGui::Begin("Scene"),
-        // когда узнает размер своего окна через ImGui::GetContentRegionAvail().
+    if (isEdit) {
+        editor->RecordRenderGUICommands(*target, reg, *this);
     } else {
-        // 2. В РЕЖИМЕ ИГРЫ
-        // Target должен строго соответствовать размеру Swapchain
         if (target->GetWidth() != swapW || target->GetHeight() != swapH) {
             target->Resize(swapW, swapH);
         }
     }
 
-    // --- РЕНДЕРИНГ МИРА ---
-    // Теперь мы точно знаем, что target нужного размера (либо под ImGui, либо под окно)
     if (target->GetWidth() > 0 && target->GetHeight() > 0) {
         userRenderFunc(cmd, target.get());
     }
 
-    // 5. ФИНАЛЬНЫЙ ВЫВОД
-    if (context->isEditorModeEnable) {
-        // Вывод через ImGui
-        // ImGui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmd);
+    if (isEdit) {
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, cmd);
 
         SDL_GPUColorTargetInfo colorInfo{};
         colorInfo.texture = swapchainTexture;
         colorInfo.clear_color = {0, 0, 0, 1};
         colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
         colorInfo.store_op = SDL_GPU_STOREOP_STORE;
+
         auto guiPass = SDL_BeginGPURenderPass(cmd, &colorInfo, 1, nullptr);
 
         ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmd, guiPass);
         SDL_EndGPURenderPass(guiPass);
     } else {
-        // РЕЖИМ ИГРЫ: Просто копируем результат target в swapchain
-        // В SDL_GPU это делается через Blit
         SDL_GPUBlitInfo blitInfo{};
         blitInfo.source.texture = target->GetColor();
         blitInfo.source.w = target->GetWidth();
@@ -130,4 +130,43 @@ void Engine::Render(entt::registry& reg, RenderCallback userRenderFunc) {
     }
 
     SDL_SubmitGPUCommandBuffer(cmd);
+}
+
+void Engine::ProcessInput() {
+    memset(input.keyPressed, 0, sizeof(input.keyPressed));
+    input.mouseDeltaX = 0.0f;
+    input.mouseDeltaY = 0.0f;
+
+    input.keyboardState = (const bool*)SDL_GetKeyboardState(NULL);
+
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (settings.isEditorMode) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+        }
+
+        if (event.type == SDL_EVENT_QUIT) {
+            PushCommand(CmdQuit{});
+        }
+
+        if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            input.mouseDeltaX += event.motion.xrel;
+            input.mouseDeltaY += event.motion.yrel;
+        }
+
+        if (event.type == SDL_EVENT_KEY_DOWN) {
+            if (!event.key.repeat) {
+                input.keyPressed[event.key.scancode] = true;
+            }
+
+            // Вместо мгновенного применения, кидаем команду
+            if (event.key.key == SDLK_ESCAPE) {
+                PushCommand(CmdToggleCursorCapture{});
+            }
+            if (event.key.key == SDLK_F11) {
+                // Переключаем текущее состояние и кидаем команду
+                PushCommand(CmdSetFullscreen{!settings.fullScreenEnable});
+            }
+        }
+    }
 }

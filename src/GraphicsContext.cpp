@@ -3,7 +3,6 @@
 #include <string>
 
 bool GraphicsContext::Initialize(int width, int height, const std::string& title) {
-    // Настройки Wayland
     SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
@@ -11,7 +10,6 @@ bool GraphicsContext::Initialize(int width, int height, const std::string& title
         return false;
     }
 
-    // Убрал принудительный FULLSCREEN из флагов инициализации для гибкости
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
     m_window = SDL_CreateWindow(title.c_str(), width, height, flags);
@@ -20,7 +18,6 @@ bool GraphicsContext::Initialize(int width, int height, const std::string& title
         return false;
     }
 
-    // Создание GPU Device (SDL3 GPU API)
     m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
     if (!m_device) {
         SDL_Log("Failed to create GPU Device: %s", SDL_GetError());
@@ -33,24 +30,8 @@ bool GraphicsContext::Initialize(int width, int height, const std::string& title
     }
 
     // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_MAILBOX;
-
     // SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
     return true;
-}
-
-void GraphicsContext::SetVSync(bool enabled) {
-    if (!m_device || !m_window) return;
-    // SDL_GPU_PRESENTMODE_IMMEDIATE  -> Vsync выключен (может быть тиринг)
-    // SDL_GPU_PRESENTMODE_MAILBOX    -> Vsync выключен (без тиринга, если поддерживается)
-    SDL_GPUPresentMode mode = enabled ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_MAILBOX;
-
-    SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
-}
-
-void GraphicsContext::SetFullscreen(bool fullscreen) {
-    if (!m_window) return;
-
-    SDL_SetWindowFullscreen(m_window, fullscreen);
 }
 
 void GraphicsContext::Terminate() {

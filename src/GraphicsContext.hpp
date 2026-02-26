@@ -20,7 +20,6 @@ class GraphicsContext {
     SDL_Window* GetWindow() const { return m_window; }
     SDL_GPUDevice* GetDevice() const { return m_device; }
 
-    void SetFullscreen(bool fullscreen);
     void SetVSync(bool enabled);
 
    private:
