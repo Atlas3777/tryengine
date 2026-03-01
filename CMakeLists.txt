@@ -101,12 +101,15 @@ FetchContent_Declare(imgui
     GIT_TAG        docking
 )
 
-
+FetchContent_Declare(imguizmo
+    GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+    GIT_TAG master
+)
 
 set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
 
-FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf imgui)# Выкачиваем и подключаем всё объявленное выше
+FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf imgui imguizmo)# Выкачиваем и подключаем всё объявленное выше
 
 # --- 5. Настройка таргетов и сборки движка ---
 
@@ -129,12 +132,14 @@ add_library(imgui STATIC
     # Бэккенды для SDL3 и SDL_GPU
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
+    ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
 )
 
 # Настройка путей и зависимостей
 target_include_directories(imgui PUBLIC 
     ${imgui_SOURCE_DIR} 
     ${imgui_SOURCE_DIR}/backends
+    ${imguizmo_SOURCE_DIR}
 )
 
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
@@ -153,8 +158,6 @@ target_include_directories(tryengine SYSTEM PRIVATE
     ${entt_SOURCE_DIR}/src 
     ${stb_SOURCE_DIR}
 )
-
-
 
 # Линковка
 target_link_libraries(tryengine PRIVATE

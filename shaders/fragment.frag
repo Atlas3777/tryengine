@@ -1,7 +1,7 @@
 #version 450
 
-layout(location = 0) in vec3 inFragPos; // Позиция пикселя в мире
-layout(location = 1) in vec3 inNormal;  // Нормаль
+layout(location = 0) in vec3 inFragPos; 
+layout(location = 1) in vec3 inNormal;  
 layout(location = 2) in vec4 inColor;
 layout(location = 3) in vec2 inTexCoord;
 
@@ -12,11 +12,10 @@ layout(set = 2, binding = 0) uniform sampler2D texSampler;
 layout(set = 3, binding = 0) uniform LightBlock {
     vec4 lightPos;
     vec4 lightColor;
-    vec4 viewPos; // Позиция камеры (ты её уже передаешь из C++)
+    vec4 viewPos; 
 } light;
 
 void main() {
-    // Настройки материала (в будущем вынесем в отдельную структуру Material)
     float ambientStrength = 0.1;
     float specularStrength = 0.5; // Сила блика (яркость)
     float shininess = 32.0;       // "Блеск". Чем выше (64, 128, 256), тем меньше и четче блик.

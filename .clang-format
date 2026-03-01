@@ -3,4 +3,10 @@ Language: Cpp
 BasedOnStyle: Google  # Или LLVM, Chromium
 ColumnLimit: 120      # Установи желаемую длину строки
 IndentWidth: 4
+
+IncludeCategories:
+  - Regex: '^<imgui\.h>'
+    Priority: -1
+  - Regex: '^<ImGuizmo\.h>'
+    Priority: 1
 ---

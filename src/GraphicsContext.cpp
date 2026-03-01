@@ -29,8 +29,8 @@ bool GraphicsContext::Initialize(int width, int height, const std::string& title
         return false;
     }
 
-    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_MAILBOX;
-    // SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+    SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_MAILBOX;
+    SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
     return true;
 }
 

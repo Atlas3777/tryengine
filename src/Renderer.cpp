@@ -7,6 +7,7 @@
 #include "EngineTypes.hpp"
 
 void Renderer::Init(SDL_GPUDevice* device) {
+    this->device = device;  // ОБЯЗАТЕЛЬНО сохранить
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
     SDL_GPUShader* fragmentShader = CreateFragmentShader(*device);
     this->commonSampler = CreateSampler(*device);
@@ -25,8 +26,16 @@ void Renderer::Init(SDL_GPUDevice* device) {
 }
 
 void Renderer::Cleanup() {
-    if (commonSampler) SDL_ReleaseGPUSampler(device, commonSampler);
-    if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+    if (device) {
+        if (commonSampler) {
+            SDL_ReleaseGPUSampler(device, commonSampler);
+            commonSampler = nullptr;
+        }
+        if (pipeline) {
+            SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+            pipeline = nullptr;
+        }
+    }
 }
 
 SDL_GPURenderPass* Renderer::BeginRenderPass(SDL_GPUCommandBuffer* cmd, RenderTarget& target, SDL_FColor clearColor) {

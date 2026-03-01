@@ -1,0 +1,12 @@
+# Подавление утечек в системных библиотеках Wayland и декораций
+leak:libdecor-0.so
+leak:libwayland-client.so
+
+# Подавление утечек Fontconfig и Pango (работа со шрифтами)
+leak:libfontconfig.so
+leak:libpangoft2-1.0.so
+leak:libglib-2.0.so
+
+# Иногда помогает подавление по именам функций, если библиотеки меняют версии
+leak:FcFontRenderPrepare
+leak:g_thread_proxy

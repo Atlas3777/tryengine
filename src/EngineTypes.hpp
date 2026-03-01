@@ -1,6 +1,7 @@
 #pragma once
 #include <SDL3/SDL_gpu.h>
-
+#include <entt/entity/entity.hpp>
+// #include <entt/entity/fwd.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <string>
@@ -32,13 +33,20 @@ struct MeshComponent {
     Mesh* mesh;
 };
 
-struct TransformComponent {
-    glm::vec3 position;  // Где
-    glm::vec3 rotation;  // Как повернут (Euler angles)
-    glm::vec3 scale;     // Масштаб
+struct HierarchyComponent {
+    entt::entity parent = entt::null;
+};
 
-    // Матрица модели считается на лету
-    glm::mat4 GetModelMatrix() {
+struct TransformComponent {
+    glm::vec3 position{0.0f};
+    glm::vec3 rotation{0.0f};
+    glm::vec3 scale{1.0f};
+
+    // Кэшированная матрица в мировых координатах
+    glm::mat4 worldMatrix{1.0f};
+
+    // Генерирует локальную матрицу (относительно родителя)
+    glm::mat4 GetLocalMatrix() const {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, position);
         model = glm::rotate(model, glm::radians(rotation.x), {1, 0, 0});
@@ -61,8 +69,9 @@ struct CameraComponent {
     glm::vec3 up = {0.0f, 1.0f, 0.0f};
     glm::vec3 right = {1.0f, 0.0f, 0.0f};
 
-    bool isActive = true;
+    glm::mat4 viewMatrix = glm::mat4(1.0f);
 };
+struct MainCameraTag {};
 
 // Теперь материал владеет конвейером (pipeline) и текстурой
 struct Material {

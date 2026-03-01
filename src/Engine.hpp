@@ -17,7 +17,6 @@ class Engine {
     void UpdateTime();
     void DispatchCommands();
 
-    // Рендер оставляем как есть
     using RenderCallback = std::function<void(SDL_GPUCommandBuffer* cmd, RenderTarget* target)>;
     void Render(entt::registry& reg, const RenderCallback& userRenderFunc);
 

@@ -36,14 +36,15 @@ void Engine::UpdateTime() {
     time.fpsTimer += time.deltaTime;
     time.frameCount++;
 
-    if (time.fpsTimer >= 1.0) {
-        time.currentFPS = time.frameCount;
-        SDL_Log("FPS: %d (ms per frame: %.3f)", time.currentFPS, 1000.0 / time.currentFPS);
-        time.fpsTimer -= 1.0;
+    if (time.fpsTimer >= 1) {
+        time.currentFPS = static_cast<int>(std::round(time.frameCount / time.fpsTimer));
+
+        SDL_Log("FPS: %d", time.currentFPS);
+
+        time.fpsTimer = 0;  // Для VSync чистый сброс иногда дает более стабильные цифры
         time.frameCount = 0;
     }
 }
-
 void Engine::PushCommand(const EngineCommand& cmd) {
     std::lock_guard<std::mutex> lock(commandMutex);
     commandQueue.push_back(cmd);
@@ -95,6 +96,7 @@ void Engine::Render(entt::registry& reg, const RenderCallback& userRenderFunc) {
     } else {
         if (target->GetWidth() != swapW || target->GetHeight() != swapH) {
             target->Resize(swapW, swapH);
+            SDL_Log("Размер изменился");
         }
     }
 

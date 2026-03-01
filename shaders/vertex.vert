@@ -5,7 +5,6 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec4 inColor;
 layout(location = 3) in vec2 inTexCoord;
 
-// Передаем во фрагментный шейдер
 layout(location = 0) out vec3 outFragPos; // Позиция фрагмента в мире
 layout(location = 1) out vec3 outNormal;  // Нормаль в мире
 layout(location = 2) out vec4 outColor;   // Цвет вершины (если есть)
