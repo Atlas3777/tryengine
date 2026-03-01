@@ -5,20 +5,18 @@
 #include "EngineTypes.hpp"
 
 void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const InputState& input) {
-    auto view = reg.view<TransformComponent, CameraComponent>();
+    auto view = reg.view<TransformComponent, CameraComponent, EditorCameraTag>();
 
     for (auto entity : view) {
         auto& transform = view.get<TransformComponent>(entity);
         auto& cam = view.get<CameraComponent>(entity);
 
-        // 1. Поворот через мышь (используем mouseDelta из твоего InputState)
         if (input.isCursorCaptured) {
             transform.rotation.y += input.mouseDeltaX * cam.sensitivity;  // Yaw
             transform.rotation.x -= input.mouseDeltaY * cam.sensitivity;  // Pitch
             transform.rotation.x = std::clamp(transform.rotation.x, -89.0f, 89.0f);
         }
 
-        // 2. Обновление векторов направления
         glm::vec3 front;
         front.x = std::cos(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
         front.y = std::sin(glm::radians(transform.rotation.x));
@@ -28,7 +26,6 @@ void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const Input
         cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0, 1, 0)));
         cam.up = glm::normalize(glm::cross(cam.right, cam.front));
 
-        // 3. Движение (используем IsKeyDown из твоего InputState)
         float moveSpeed = cam.speed * static_cast<float>(deltaTime);
 
         if (input.IsKeyDown(SDL_SCANCODE_W)) transform.position += cam.front * moveSpeed;
@@ -41,31 +38,27 @@ void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const Input
         cam.viewMatrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
     }
 }
-void UpdateHierarchySystem(entt::registry& reg) {
-    // 1. Сортируем иерархию так, чтобы родители всегда были перед детьми
-    // Это гарантирует, что worldMatrix родителя уже вычислена к моменту обработки ребенка
-    reg.sort<HierarchyComponent>([&reg](const entt::entity lhs, const entt::entity rhs) {
-        const auto& h_lhs = reg.get<HierarchyComponent>(lhs);
-        const auto& h_rhs = reg.get<HierarchyComponent>(rhs);
+// TODO: Если у сущности есть HierarchyComponent, но нет TransformComponent, или если parent был удален, но ссылка
+// осталась — приложение упадет.
+void UpdateTransformSystem(entt::registry& reg) {
+    // 1. Сортируем сущности по глубине иерархии
+    // Это гарантирует, что родитель всегда обработается раньше ребенка
+    reg.sort<HierarchyComponent>([](const auto& lhs, const auto& rhs) { return lhs.depth < rhs.depth; });
 
-        // Если левый объект — родитель правого, он должен быть выше (меньше)
-        return h_rhs.parent == lhs;
-    });
+    auto view = reg.view<TransformComponent, HierarchyComponent>();
 
-    // 2. Проходим по всем объектам с трансформацией
-    auto view = reg.view<TransformComponent>();
+    view.each([&](entt::entity entity, TransformComponent& transform, HierarchyComponent& hierarchy) {
+        // Вычисляем локальную матрицу из pos/rot/scale
+        glm::mat4 localMatrix = transform.GetLocalMatrix();
 
-    // Используем обычный цикл, так как порядок важен (после sort)
-    view.each([&](entt::entity entity, TransformComponent& transform) {
-        auto* hierarchy = reg.try_get<HierarchyComponent>(entity);
-
-        if (hierarchy && hierarchy->parent != entt::null) {
-            // Если есть родитель, умножаем его мировую матрицу на нашу локальную
-            const auto& parentTransform = reg.get<TransformComponent>(hierarchy->parent);
-            transform.worldMatrix = parentTransform.worldMatrix * transform.GetLocalMatrix();
+        if (hierarchy.parent == entt::null) {
+            // Если корнь — мировая матрица равна локальной
+            transform.worldMatrix = localMatrix;
         } else {
-            // Если родителя нет, мировая матрица равна локальной
-            transform.worldMatrix = transform.GetLocalMatrix();
+            // Если есть родитель — умножаем его мировую на нашу локальную
+            // Важно: родитель уже обновлен благодаря сортировке!
+            auto& parentTransform = reg.get<TransformComponent>(hierarchy.parent);
+            transform.worldMatrix = parentTransform.worldMatrix * localMatrix;
         }
     });
 }

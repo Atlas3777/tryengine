@@ -35,7 +35,9 @@ struct MeshComponent {
 
 struct HierarchyComponent {
     entt::entity parent = entt::null;
+    int depth = 0;  // 0 для корней, 1 для детей и т.д.
 };
+struct DirtyComponent {};
 
 struct TransformComponent {
     glm::vec3 position{0.0f};
@@ -71,7 +73,7 @@ struct CameraComponent {
 
     glm::mat4 viewMatrix = glm::mat4(1.0f);
 };
-struct MainCameraTag {};
+struct EditorCameraTag {};
 
 // Теперь материал владеет конвейером (pipeline) и текстурой
 struct Material {
@@ -85,13 +87,6 @@ struct Material {
         float shininess = 32.0f;
         float padding[2];  // Для выравнивания в GPU (16 байт)
     } props;
-};
-
-struct UniformBufferObject {
-    glm::mat4 model;  // Локальные -> Мировые
-    glm::mat4 view;   // Мировые -> Камера
-    glm::mat4 proj;   // Камера -> Экран
-    glm::mat4 normalMatrix;
 };
 
 struct LightUniforms {

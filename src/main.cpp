@@ -28,29 +28,19 @@ int main(int argc, char* argv[]) {
     std::vector<Mesh*> taverna = resources.LoadModel("assets/fantasy_game_inn/scene.gltf");
     std::vector<Mesh*> redBoxM = resources.LoadModel("assets/red_cube/red_cube.gltf");
     // std::vector<Mesh*> matilda = resources.LoadModel("assets/matilda/scene.gltf");
-    // std::vector<Mesh*> skull = resources.LoadModel("assets/skull_downloadable/scene.gltf");
+    std::vector<Mesh*> skull = resources.LoadModel("assets/skull_downloadable/scene.gltf");
 
     entt::registry reg;
-
-    // auto e_parent = reg.create();
-    // reg.emplace<MeshComponent>(e_parent, taverna[0]);
-    // reg.emplace<TransformComponent>(e_parent, glm::vec3(0, 0, 0), glm::vec3(0), glm::vec3(1));
-
-    // // Создаем ребенка (Череп внутри таверны)
-    // auto e_child = reg.create();
-    // reg.emplace<MeshComponent>(e_child, skull[0]);
-    // reg.emplace<TransformComponent>(e_child, glm::vec3(0, 2, 0), glm::vec3(0), glm::vec3(0.5f));
-    // // Указываем связь:
-    // reg.emplace<HierarchyComponent>(e_child, e_parent);
 
     auto e1 = reg.create();
     reg.emplace<MeshComponent>(e1, taverna[0]);
     reg.emplace<TransformComponent>(e1, glm::vec3(-31.f, -5.0f, -7), glm::vec3(0, 0, 0), glm::vec3(1));
+    reg.emplace<HierarchyComponent>(e1);
 
-    // auto e2 = reg.create();
-    // reg.emplace<MeshComponent>(e2, skull[0]);
-    // reg.emplace<TransformComponent>(e2, glm::vec3(1.f, 2.f, 3.f), glm::vec3(0, 0, 0), glm::vec3(1));
-
+    auto e2 = reg.create();
+    reg.emplace<MeshComponent>(e2, skull[0]);
+    reg.emplace<TransformComponent>(e2, glm::vec3(1.f, 2.f, 3.f), glm::vec3(0, 0, 0), glm::vec3(1));
+    reg.emplace<HierarchyComponent>(e2);
     // for (uint i = 0; i < matilda.size(); ++i) {
     //     auto e2 = reg.create();
     //     reg.emplace<MeshComponent>(e2, matilda[i]);
@@ -60,12 +50,12 @@ int main(int argc, char* argv[]) {
     auto e3 = reg.create();
     reg.emplace<MeshComponent>(e3, redBoxM[0]);
     reg.emplace<TransformComponent>(e3, glm::vec3(-2, 1, -6), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
-    // reg.emplace<HierarchyComponent>(e3, e2);
+    reg.emplace<HierarchyComponent>(e3, e2, 1);
 
     auto mainCamera = reg.create();
     reg.emplace<TransformComponent>(mainCamera, glm::vec3(0, 2, 10), glm::vec3(0, -90, 0));
     reg.emplace<CameraComponent>(mainCamera);
-    reg.emplace<MainCameraTag>(mainCamera);
+    reg.emplace<EditorCameraTag>(mainCamera);
 
     while (engine.isRunning) {
         engine.ProcessInput();
@@ -73,9 +63,10 @@ int main(int argc, char* argv[]) {
         engine.DispatchCommands();
 
         UpdateEditorCameraSystem(reg, engine.time.deltaTime, engine.input);
-        UpdateHierarchySystem(reg);  // <--- ВАЖНО: обновляем матрицы перед рендером
+        UpdateTransformSystem(reg);
+
         engine.Render(reg, [&](SDL_GPUCommandBuffer* cmd, RenderTarget* target) {
-            auto camView = reg.view<MainCameraTag, TransformComponent, CameraComponent>();
+            auto camView = reg.view<EditorCameraTag, TransformComponent, CameraComponent>();
             entt::entity camEnt = camView.front();
 
             if (camEnt == entt::null) return;
@@ -96,7 +87,6 @@ int main(int argc, char* argv[]) {
             lightData.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             lightData.viewPos = glm::vec4(camPos, 1.0f);
 
-            // Отправляем данные во фрагментный шейдер (Slot 0 соответствует binding 0 в шейдере)
             SDL_PushGPUFragmentUniformData(cmd, 0, &lightData, sizeof(LightUniforms));
 
             auto view_entities = reg.view<TransformComponent, MeshComponent>();
@@ -108,15 +98,21 @@ int main(int argc, char* argv[]) {
                 if (meshComp.mesh == nullptr) {
                     continue;
                 }
-                glm::mat4 model = transform.worldMatrix;
-                glm::mat4 normalMatrix = glm::inverseTranspose(model);
-                UniformBufferObject ubo{};
-                ubo.proj = projMat;
-                ubo.view = viewMat;
-                ubo.model = model;
-                ubo.normalMatrix = normalMatrix;
-                SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(UniformBufferObject));
 
+                struct alignas(16) CombinedUBO {
+                    glm::mat4 view;
+                    glm::mat4 proj;
+                    glm::mat4 model;
+                    glm::mat4 normalMatrix;
+                } ubo;
+
+                // Заполняем данными
+                ubo.view = viewMat;
+                ubo.proj = projMat;
+                ubo.model = transform.worldMatrix;
+                ubo.normalMatrix = glm::inverseTranspose(ubo.model);
+
+                SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(CombinedUBO));
                 SDL_GPUTextureSamplerBinding tsb = {meshComp.mesh->texture->handle, renderer.GetCommonSampler()};
                 SDL_BindGPUFragmentSamplers(scenePass, 0, &tsb, 1);
 

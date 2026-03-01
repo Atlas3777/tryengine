@@ -115,7 +115,7 @@ void EditorLayer::DrawSceneViewport(RenderTarget& renderTarget, entt::registry& 
 void EditorLayer::HandleGizmos(RenderTarget& renderTarget, entt::registry& reg) {
     if (m_SelectedEntity == entt::null || !reg.valid(m_SelectedEntity)) return;
 
-    auto camView = reg.view<MainCameraTag, CameraComponent>();
+    auto camView = reg.view<EditorCameraTag, CameraComponent>();
     auto camEnt = camView.front();
     if (camEnt == entt::null) return;
 
