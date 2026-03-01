@@ -22,6 +22,7 @@ struct Texture {
     std::string path;  // для отладки
 };
 
+struct DirtyComponent {};
 // Меш — это геометрия + материал (текстура)
 struct Mesh {
     SDL_GPUBuffer* vertexBuffer = nullptr;
@@ -37,7 +38,6 @@ struct HierarchyComponent {
     entt::entity parent = entt::null;
     int depth = 0;  // 0 для корней, 1 для детей и т.д.
 };
-struct DirtyComponent {};
 
 struct TransformComponent {
     glm::vec3 position{0.0f};

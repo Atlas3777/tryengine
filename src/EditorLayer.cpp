@@ -5,6 +5,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
+#include <imgui_internal.h>
 
 #include "Engine.hpp"
 #include "EngineTypes.hpp"
@@ -149,67 +150,6 @@ void EditorLayer::HandleGizmos(RenderTarget& renderTarget, entt::registry& reg) 
     }
 }
 
-void EditorLayer::DrawHierarchy(entt::registry& reg) {
-    ImGui::Begin("Hierarchy");
-
-    // Контекстное меню для пустого пространства окна (создание сущностей)
-    if (ImGui::BeginPopupContextWindow("HierarchyContextMenu",
-                                       ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
-        if (ImGui::MenuItem("Create Empty Entity")) {
-            auto newEntity = reg.create();
-            reg.emplace<TransformComponent>(newEntity);  // По умолчанию даем трансформ
-            m_SelectedEntity = newEntity;
-        }
-        ImGui::EndPopup();
-    }
-
-    entt::entity entityToDestroy = entt::null;
-    auto view = reg.view<TransformComponent>();  // Или reg.storage<entt::entity>() если хочешь вообще все сущности
-
-    for (auto entity : view) {
-        ImGuiTreeNodeFlags flags = ((m_SelectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0);
-        flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-
-        // В будущем здесь можно брать NameComponent
-        std::string label = "Entity [" + std::to_string(static_cast<uint32_t>(entity)) + "]";
-        bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
-
-        if (ImGui::IsItemClicked()) {
-            m_SelectedEntity = entity;
-        }
-
-        // Контекстное меню для конкретной сущности (удаление)
-        bool entityDeleted = false;
-        if (ImGui::BeginPopupContextItem()) {
-            if (ImGui::MenuItem("Destroy Entity")) {
-                entityDeleted = true;
-            }
-            ImGui::EndPopup();
-        }
-
-        if (opened) {
-            ImGui::TreePop();
-        }
-
-        if (entityDeleted) {
-            entityToDestroy = entity;
-        }
-    }
-
-    // Сброс выделения
-    if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered()) {
-        m_SelectedEntity = entt::null;
-    }
-
-    // Обработка удаления вне цикла (чтобы не сломать итератор EnTT)
-    if (entityToDestroy != entt::null) {
-        if (m_SelectedEntity == entityToDestroy) m_SelectedEntity = entt::null;
-        reg.destroy(entityToDestroy);
-    }
-
-    ImGui::End();
-}
-
 void EditorLayer::DrawInspector(entt::registry& reg) {
     ImGui::Begin("Inspector");
 
@@ -338,4 +278,252 @@ void EditorLayer::DrawComponent(const std::string& name, entt::registry& reg, UI
     }
 
     ImGui::PopID();
+}
+void EditorLayer::DrawEntityNode(entt::entity entity, entt::registry& reg, entt::entity& entityToDestroy) {
+    ImGuiTreeNodeFlags flags = ((m_SelectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0);
+    flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+    bool hasChildren = false;
+    auto hierarchyView = reg.view<HierarchyComponent>();
+    for (auto child : hierarchyView) {
+        if (hierarchyView.get<HierarchyComponent>(child).parent == entity) {
+            hasChildren = true;
+            break;
+        }
+    }
+
+    if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
+
+    // Получаем имя сущности
+    std::string label = "Entity [" + std::to_string(static_cast<uint32_t>(entity)) + "]";
+    if (reg.all_of<TagComponent>(entity)) {
+        label = reg.get<TagComponent>(entity).tag;
+    }
+
+    // Обработка переименования (R)
+    if (m_EntityToRename == entity) {
+        flags &= ~ImGuiTreeNodeFlags_SpanAvailWidth;  // Убираем, чтобы InputText нормально встал
+        ImGui::SetKeyboardFocusHere();
+        if (ImGui::InputText("##rename", m_RenameBuffer, sizeof(m_RenameBuffer),
+                             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
+            if (!reg.all_of<TagComponent>(entity)) reg.emplace<TagComponent>(entity);
+            reg.get<TagComponent>(entity).tag = m_RenameBuffer;
+            m_EntityToRename = entt::null;
+        }
+        if (ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_EntityToRename = entt::null;  // Отмена по ESC
+        }
+    } else {
+        // Обычная отрисовка узла
+        bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
+
+        // Выделение
+        if (ImGui::IsItemClicked()) {
+            m_SelectedEntity = entity;
+        }
+
+        // --- Drag & Drop: Источник ---
+        if (ImGui::BeginDragDropSource()) {
+            ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &entity, sizeof(entt::entity));
+            ImGui::Text("Move %s", label.c_str());
+            ImGui::EndDragDropSource();
+        }
+
+        // --- Drag & Drop: Цель ---
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
+                entt::entity droppedEntity = *(entt::entity*)payload->Data;
+                ReparentEntity(droppedEntity, entity, reg);
+            }
+            ImGui::EndDragDropTarget();
+        }
+
+        // Контекстное меню
+        if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::MenuItem("Destroy Entity")) entityToDestroy = entity;
+            ImGui::EndPopup();
+        }
+
+        // Рекурсия детей
+        if (opened) {
+            if (hasChildren) {
+                for (auto child : hierarchyView) {
+                    if (hierarchyView.get<HierarchyComponent>(child).parent == entity) {
+                        DrawEntityNode(child, reg, entityToDestroy);
+                    }
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawHierarchy(entt::registry& reg) {
+    ImGui::Begin("Hierarchy");
+
+    entt::entity entityToDestroy = entt::null;
+
+    // --- Обработка горячих клавиш ---
+    HandleHierarchyShortcuts(reg, entityToDestroy);
+
+    if (ImGui::BeginPopupContextWindow("HierarchyContextMenu",
+                                       ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+        if (ImGui::MenuItem("Create Empty Entity")) {
+            auto newEntity = reg.create();
+            reg.emplace<TransformComponent>(newEntity);
+            reg.emplace<HierarchyComponent>(newEntity);  // Даем базовую иерархию
+            reg.emplace<TagComponent>(newEntity, "New Entity");
+            m_SelectedEntity = newEntity;
+        }
+        ImGui::EndPopup();
+    }
+
+    // Если перетаскиваем сущность в пустое место окна (сброс родителя в root)
+    if (ImGui::BeginDragDropTargetCustom(ImGui::GetCurrentWindow()->Rect(), ImGui::GetID("Hierarchy"))) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
+            entt::entity droppedEntity = *(entt::entity*)payload->Data;
+            ReparentEntity(droppedEntity, entt::null, reg);
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    // Отрисовка
+    for (auto [entity] : reg.storage<entt::entity>().each()) {
+        bool isRoot = true;
+        if (reg.all_of<HierarchyComponent>(entity)) {
+            if (reg.get<HierarchyComponent>(entity).parent != entt::null) {
+                isRoot = false;
+            }
+        }
+        if (isRoot) {
+            DrawEntityNode(entity, reg, entityToDestroy);
+        }
+    }
+
+    if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
+        m_SelectedEntity = entt::null;
+    }
+
+    if (entityToDestroy != entt::null) {
+        if (m_SelectedEntity == entityToDestroy) m_SelectedEntity = entt::null;
+        reg.destroy(entityToDestroy);  // Позже стоит сделать рекурсивным
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::HandleHierarchyShortcuts(entt::registry& reg, entt::entity& entityToDestroy) {
+    // Выполняем только если окно иерархии в фокусе и мы не печатаем текст
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::IsAnyItemActive()) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // HJKL Навигация (Эмуляция нажатия стрелочек для ImGui TreeNode)
+    if (ImGui::IsKeyPressed(ImGuiKey_J)) io.AddKeyEvent(ImGuiKey_DownArrow, true);
+    if (ImGui::IsKeyReleased(ImGuiKey_J)) io.AddKeyEvent(ImGuiKey_DownArrow, false);
+
+    if (ImGui::IsKeyPressed(ImGuiKey_K)) io.AddKeyEvent(ImGuiKey_UpArrow, true);
+    if (ImGui::IsKeyReleased(ImGuiKey_K)) io.AddKeyEvent(ImGuiKey_UpArrow, false);
+
+    if (ImGui::IsKeyPressed(ImGuiKey_L)) io.AddKeyEvent(ImGuiKey_RightArrow, true);
+    if (ImGui::IsKeyReleased(ImGuiKey_L)) io.AddKeyEvent(ImGuiKey_RightArrow, false);
+
+    if (ImGui::IsKeyPressed(ImGuiKey_H)) io.AddKeyEvent(ImGuiKey_LeftArrow, true);
+    if (ImGui::IsKeyReleased(ImGuiKey_H)) io.AddKeyEvent(ImGuiKey_LeftArrow, false);
+
+    // Действия над выделенной сущностью
+    if (m_SelectedEntity != entt::null && reg.valid(m_SelectedEntity)) {
+        // УДАЛЕНИЕ (D)
+        if (ImGui::IsKeyPressed(ImGuiKey_D)) {
+            entityToDestroy = m_SelectedEntity;
+        }
+        // ПЕРЕИМЕНОВАНИЕ (R)
+        if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+            m_EntityToRename = m_SelectedEntity;
+            std::string currentName =
+                reg.all_of<TagComponent>(m_SelectedEntity) ? reg.get<TagComponent>(m_SelectedEntity).tag : "";
+            strncpy(m_RenameBuffer, currentName.c_str(), sizeof(m_RenameBuffer));
+        }
+        // ВЫРЕЗАТЬ (X)
+        if (ImGui::IsKeyPressed(ImGuiKey_X)) {
+            m_ClipboardEntity = m_SelectedEntity;
+            m_IsCutOperation = true;
+        }
+        // КОПИРОВАТЬ (Y)
+        if (ImGui::IsKeyPressed(ImGuiKey_Y)) {
+            m_ClipboardEntity = m_SelectedEntity;
+            m_IsCutOperation = false;
+        }
+    }
+
+    // ВСТАВКА (P) - работает даже если ничего не выделено (в корень)
+    if (ImGui::IsKeyPressed(ImGuiKey_P) && m_ClipboardEntity != entt::null && reg.valid(m_ClipboardEntity)) {
+        if (m_IsCutOperation) {
+            // Перемещение
+            ReparentEntity(m_ClipboardEntity, m_SelectedEntity, reg);
+            m_ClipboardEntity = entt::null;  // Сбрасываем буфер после Cut->Paste
+        } else {
+            // Клонирование
+            entt::entity newEntity = CloneEntity(m_ClipboardEntity, reg);
+            ReparentEntity(newEntity, m_SelectedEntity, reg);
+        }
+    }
+}
+
+// Защита от циклических зависимостей (нельзя кинуть деда в внука)
+bool EditorLayer::IsDescendantOf(entt::entity child, entt::entity parent, entt::registry& reg) {
+    if (child == parent) return true;
+    if (!reg.all_of<HierarchyComponent>(child)) return false;
+
+    entt::entity curr = reg.get<HierarchyComponent>(child).parent;
+    while (curr != entt::null && reg.valid(curr)) {
+        if (curr == parent) return true;
+        if (!reg.all_of<HierarchyComponent>(curr)) break;
+        curr = reg.get<HierarchyComponent>(curr).parent;
+    }
+    return false;
+}
+
+void EditorLayer::ReparentEntity(entt::entity child, entt::entity newParent, entt::registry& reg) {
+    if (child == newParent) return;                                                // Нельзя вложить в себя
+    if (newParent != entt::null && IsDescendantOf(newParent, child, reg)) return;  // Нельзя вложить в своего потомка
+
+    if (!reg.all_of<HierarchyComponent>(child)) {
+        reg.emplace<HierarchyComponent>(child);
+    }
+
+    auto& hc = reg.get<HierarchyComponent>(child);
+    hc.parent = newParent;
+
+    // Опционально: здесь нужно пересчитать глубину (depth), если ты используешь ее для сортировки систем
+    hc.depth = 0;
+    if (newParent != entt::null && reg.all_of<HierarchyComponent>(newParent)) {
+        hc.depth = reg.get<HierarchyComponent>(newParent).depth + 1;
+    }
+}
+
+// Ручное клонирование компонентов (так как в C++ нет рефлексии)
+entt::entity EditorLayer::CloneEntity(entt::entity srcEntity, entt::registry& reg) {
+    entt::entity dest = reg.create();
+
+    if (reg.all_of<TagComponent>(srcEntity)) {
+        reg.emplace<TagComponent>(dest, reg.get<TagComponent>(srcEntity).tag + " (Copy)");
+    }
+    if (reg.all_of<TransformComponent>(srcEntity)) {
+        reg.emplace<TransformComponent>(dest, reg.get<TransformComponent>(srcEntity));
+    }
+    if (reg.all_of<HierarchyComponent>(srcEntity)) {
+        auto& srcHc = reg.get<HierarchyComponent>(srcEntity);
+        reg.emplace<HierarchyComponent>(dest, srcHc.parent, srcHc.depth);
+    }
+    if (reg.all_of<MeshComponent>(srcEntity)) {
+        reg.emplace<MeshComponent>(dest, reg.get<MeshComponent>(srcEntity));
+    }
+    if (reg.all_of<CameraComponent>(srcEntity)) {
+        reg.emplace<CameraComponent>(dest, reg.get<CameraComponent>(srcEntity));
+    }
+
+    // Внимание: клонирование детей здесь не реализовано.
+    // Для глубокого копирования (Deep Copy) потребуется рекурсивно искать потомков srcEntity и клонировать их тоже.
+    return dest;
 }

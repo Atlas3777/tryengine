@@ -80,7 +80,6 @@ int main(int argc, char* argv[]) {
             glm::vec3 camPos = transform.position;
 
             SDL_GPURenderPass* scenePass = renderer.BeginRenderPass(cmd, *target, {0.69f, 0.77f, 0.87f, 1.0f});
-            SDL_BindGPUGraphicsPipeline(scenePass, renderer.GetDefaultPipeline());
 
             LightUniforms lightData{};
             lightData.lightPos = glm::vec4(2.0f, 30.0f, 3.0f, 1.0f);
@@ -88,6 +87,8 @@ int main(int argc, char* argv[]) {
             lightData.viewPos = glm::vec4(camPos, 1.0f);
 
             SDL_PushGPUFragmentUniformData(cmd, 0, &lightData, sizeof(LightUniforms));
+
+            SDL_BindGPUGraphicsPipeline(scenePass, renderer.GetDefaultPipeline());
 
             auto view_entities = reg.view<TransformComponent, MeshComponent>();
 
