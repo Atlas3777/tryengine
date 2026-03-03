@@ -33,14 +33,19 @@ int main(int argc, char* argv[]) {
     entt::registry reg;
 
     auto e1 = reg.create();
+    reg.emplace<TagComponent>(e1, "Taverna");
     reg.emplace<MeshComponent>(e1, taverna[0]);
-    reg.emplace<TransformComponent>(e1, glm::vec3(-31.f, -5.0f, -7), glm::vec3(0, 0, 0), glm::vec3(1));
+    reg.emplace<TransformComponent>(
+        e1, TransformComponent{glm::vec3(0.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e1);
 
     auto e2 = reg.create();
+    reg.emplace<TagComponent>(e2, "Skull");
     reg.emplace<MeshComponent>(e2, skull[0]);
-    reg.emplace<TransformComponent>(e2, glm::vec3(1.f, 2.f, 3.f), glm::vec3(0, 0, 0), glm::vec3(1));
+    reg.emplace<TransformComponent>(
+        e2, TransformComponent{glm::vec3(0.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e2);
+
     // for (uint i = 0; i < matilda.size(); ++i) {
     //     auto e2 = reg.create();
     //     reg.emplace<MeshComponent>(e2, matilda[i]);
@@ -48,12 +53,16 @@ int main(int argc, char* argv[]) {
     // }
 
     auto e3 = reg.create();
+    reg.emplace<TagComponent>(e3, "Red Box");
     reg.emplace<MeshComponent>(e3, redBoxM[0]);
-    reg.emplace<TransformComponent>(e3, glm::vec3(-2, 1, -6), glm::vec3(0, 0, 0), glm::vec3(1, 1, 1));
+    reg.emplace<TransformComponent>(
+        e3, TransformComponent{glm::vec3(1.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e3, e2, 1);
 
     auto mainCamera = reg.create();
-    reg.emplace<TransformComponent>(mainCamera, glm::vec3(0, 2, 10), glm::vec3(0, -90, 0));
+    reg.emplace<TransformComponent>(
+        mainCamera,
+        TransformComponent{glm::vec3(0.f, 0.f, -2.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<CameraComponent>(mainCamera);
     reg.emplace<EditorCameraTag>(mainCamera);
 
@@ -107,7 +116,6 @@ int main(int argc, char* argv[]) {
                     glm::mat4 normalMatrix;
                 } ubo;
 
-                // Заполняем данными
                 ubo.view = viewMat;
                 ubo.proj = projMat;
                 ubo.model = transform.worldMatrix;

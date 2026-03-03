@@ -4,6 +4,7 @@
 // #include <entt/entity/fwd.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <string>
 
 // Структура вершины для шейдера
@@ -41,24 +42,27 @@ struct HierarchyComponent {
 
 struct TransformComponent {
     glm::vec3 position{0.0f};
-    glm::vec3 rotation{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};  // identity
     glm::vec3 scale{1.0f};
 
-    // Кэшированная матрица в мировых координатах
     glm::mat4 worldMatrix{1.0f};
 
-    // Генерирует локальную матрицу (относительно родителя)
     glm::mat4 GetLocalMatrix() const {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, position);
-        model = glm::rotate(model, glm::radians(rotation.x), {1, 0, 0});
-        model = glm::rotate(model, glm::radians(rotation.y), {0, 1, 0});
-        model = glm::rotate(model, glm::radians(rotation.z), {0, 0, 1});
+        model *= glm::mat4_cast(rotation);
         model = glm::scale(model, scale);
         return model;
     }
 };
 
+// Добавим простой компонент имени, если у тебя его еще нет
+struct TagComponent {
+    std::string tag;
+    TagComponent() = default;
+    TagComponent(const TagComponent&) = default;
+    TagComponent(const std::string& t) : tag(t) {}
+};
 struct CameraComponent {
     float fov = 70.0f;
     float nearPlane = 0.1f;

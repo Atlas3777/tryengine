@@ -96,7 +96,6 @@ void Engine::Render(entt::registry& reg, const RenderCallback& userRenderFunc) {
     } else {
         if (target->GetWidth() != swapW || target->GetHeight() != swapH) {
             target->Resize(swapW, swapH);
-            SDL_Log("Размер изменился");
         }
     }
 

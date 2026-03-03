@@ -11,14 +11,6 @@ class Engine;
 class GraphicsContext;
 class RenderTarget;
 
-// Добавим простой компонент имени, если у тебя его еще нет
-struct TagComponent {
-    std::string tag;
-    TagComponent() = default;
-    TagComponent(const TagComponent&) = default;
-    TagComponent(const std::string& t) : tag(t) {}
-};
-
 class EditorLayer {
    public:
     EditorLayer(GraphicsContext& context);

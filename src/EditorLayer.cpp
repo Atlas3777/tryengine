@@ -3,6 +3,8 @@
 #include <ImGuizmo.h>
 
 #include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_decompose.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 #include <imgui_internal.h>
@@ -121,35 +123,51 @@ void EditorLayer::HandleGizmos(RenderTarget& renderTarget, entt::registry& reg) 
     if (camEnt == entt::null) return;
 
     auto& camera = camView.get<CameraComponent>(camEnt);
+    auto& tc = reg.get<TransformComponent>(m_SelectedEntity);
+    auto& hc = reg.get<HierarchyComponent>(m_SelectedEntity);
 
+    // 1. Настройка пространства
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowWidth(),
                       ImGui::GetWindowHeight());
 
+    // Матрицы камеры
     glm::mat4 viewMat = camera.viewMatrix;
     float aspect = (float)renderTarget.GetWidth() / (float)renderTarget.GetHeight();
     glm::mat4 projMat = glm::perspective(glm::radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
 
-    auto& tc = reg.get<TransformComponent>(m_SelectedEntity);
-    glm::mat4 modelMat = tc.GetLocalMatrix();
+    // 2. РАБОТАЕМ С МИРОВОЙ МАТРИЦЕЙ
+    // Если мы в иерархии, нам нужна актуальная мировая матрица для ImGuizmo
+    glm::mat4 modelMatrix = tc.worldMatrix;
 
-    // Сетка (пока оставляем так, но лучше вынести в рендер)
-    // ImGuizmo::DrawGrid(glm::value_ptr(viewMat), glm::value_ptr(projMat), glm::value_ptr(glm::mat4(1.0f)), 20.f);
+    // ВАЖНО: ImGuizmo лучше работает, когда матрица "чистая".
+    // Иногда стоит пересобрать её из компонентов прямо перед Manipulate, если worldMatrix запаздывает на кадр
 
     ImGuizmo::Manipulate(glm::value_ptr(viewMat), glm::value_ptr(projMat), m_CurrentGizmoOperation, m_CurrentGizmoMode,
-                         glm::value_ptr(modelMat));
+                         glm::value_ptr(modelMatrix));
 
     if (ImGuizmo::IsUsing()) {
-        float mPos[3], mRot[3], mScale[3];
-        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(modelMat), mPos, mRot, mScale);
+        glm::mat4 localMatrix = modelMatrix;
 
-        tc.position = glm::make_vec3(mPos);
-        tc.rotation = glm::make_vec3(mRot);
-        tc.scale = glm::make_vec3(mScale);
+        if (hc.parent != entt::null && reg.all_of<TransformComponent>(hc.parent)) {
+            auto& parentTC = reg.get<TransformComponent>(hc.parent);
+            localMatrix = glm::inverse(parentTC.worldMatrix) * modelMatrix;
+        }
+
+        glm::vec3 skew;
+        glm::vec4 perspective;
+        glm::vec3 translation;
+        glm::vec3 scale;
+        glm::quat orientation;
+
+        glm::decompose(localMatrix, scale, orientation, translation, skew, perspective);
+
+        tc.position = translation;
+        tc.rotation = glm::normalize(orientation);
+        tc.scale = scale;
     }
 }
-
 void EditorLayer::DrawInspector(entt::registry& reg) {
     ImGui::Begin("Inspector");
 
@@ -162,7 +180,12 @@ void EditorLayer::DrawInspector(entt::registry& reg) {
 
         DrawComponent<TransformComponent>("Transform", reg, [](auto& tc) {
             ImGui::DragFloat3("Position", glm::value_ptr(tc.position), 0.1f);
-            ImGui::DragFloat3("Rotation", glm::value_ptr(tc.rotation), 1.0f);
+
+            glm::vec3 euler = glm::degrees(glm::eulerAngles(tc.rotation));
+            if (ImGui::DragFloat3("Rotation", glm::value_ptr(euler), 1.0f)) {
+                tc.rotation = glm::normalize(glm::quat(glm::radians(euler)));
+            }
+
             ImGui::DragFloat3("Scale", glm::value_ptr(tc.scale), 0.05f);
         });
 
