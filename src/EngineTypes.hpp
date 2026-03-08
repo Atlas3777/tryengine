@@ -78,7 +78,7 @@ struct CameraComponent {
     glm::mat4 viewMatrix = glm::mat4(1.0f);
 };
 struct EditorCameraTag {};
-
+struct SelectedTag {};
 // Теперь материал владеет конвейером (pipeline) и текстурой
 struct Material {
     SDL_GPUGraphicsPipeline* pipeline = nullptr;  // Шейдерная программа

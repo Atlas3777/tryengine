@@ -4,6 +4,7 @@
 #include <SDL3/SDL_main.h>
 #include <entt/entt.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 #include <vector>
@@ -16,8 +17,32 @@
 #include "ResourceManager.hpp"
 #include "systems/Systems.hpp"
 
+using namespace entt::literals;
+
+void RegisterReflection() {
+    // Используем внутренний хеш EnTT как ID и строку как имя
+    entt::meta_factory<TagComponent>()
+        .type(entt::type_hash<TagComponent>::value(), "TagComponent")
+        .data<&TagComponent::tag>("Tag");  // Для полей достаточно просто строки
+
+    entt::meta_factory<TransformComponent>()
+        .type(entt::type_hash<TransformComponent>::value(), "TransformComponent")
+        .data<&TransformComponent::position>("Position")
+        .data<&TransformComponent::rotation>("Rotation")
+        .data<&TransformComponent::scale>("Scale");
+
+    entt::meta_factory<HierarchyComponent>()
+        .type(entt::type_hash<HierarchyComponent>::value(), "HierarchyComponent")
+        .data<&HierarchyComponent::parent>("Parent")
+        .data<&HierarchyComponent::depth>("Depth");
+
+    entt::meta_factory<MeshComponent>()
+        .type(entt::type_hash<MeshComponent>::value(), "MeshComponent")
+        .data<&MeshComponent::mesh>("MeshPtr");
+}
 int main(int argc, char* argv[]) {
     const auto config = EngineConfig::Parse(argc, argv);
+    RegisterReflection();
     Engine engine(config);
     engine.MountHardware();
 
