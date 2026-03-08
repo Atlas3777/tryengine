@@ -1,11 +1,11 @@
 #pragma once
 #include <cstdint>
 
+#include "EngineCommands.hpp"
 #include "SDL3/SDL_scancode.h"
-
 struct EngineSettings {
     bool isEditorMode = true;
-    bool vSyncEnable = true;
+    PresentMode presentMode = PresentMode::VSync;
     bool fullScreenEnable = false;
 };
 

@@ -3,8 +3,8 @@
 #include <string>
 
 bool GraphicsContext::Initialize(int width, int height, const std::string& title) {
-    SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
-
+    // SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
+    // SDL_SetHint(SDL_HINT_X11_FORCE_OVERRIDE_REDIRECT, "1"); //Not Work
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return false;
@@ -28,8 +28,7 @@ bool GraphicsContext::Initialize(int width, int height, const std::string& title
         SDL_Log("GPU Claim window failed: %s", SDL_GetError());
         return false;
     }
-
-    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_MAILBOX;
+    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
     // SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
     return true;
 }

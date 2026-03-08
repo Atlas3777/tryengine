@@ -55,16 +55,59 @@ void Engine::DispatchCommands() {
         std::visit(
             [this](auto&& arg) {
                 using T = std::decay_t<decltype(arg)>;
-                if constexpr (std::is_same_v<T, CmdSetVSync>) {
-                    settings.vSyncEnable = arg.enable;
-                    SDL_Log("VSync state changed to: %d", arg.enable);
-                    SDL_GPUPresentMode mode = arg.enable ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_MAILBOX;
-                    SDL_SetGPUSwapchainParameters(graphicsContext->GetDevice(), graphicsContext->GetWindow(),
-                                                  SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+                // Внутри DispatchCommands, в обработке CmdSetPresentMode
+                if constexpr (std::is_same_v<T, CmdSetPresentMode>) {
+                    SDL_GPUDevice* device = graphicsContext->GetDevice();
+                    SDL_Window* window = graphicsContext->GetWindow();
+
+                    // 1. Маппинг нашего Enum на типы SDL
+                    SDL_GPUPresentMode targetMode;
+                    switch (arg.mode) {
+                        case PresentMode::Immediate:
+                            targetMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+                            break;
+                        case PresentMode::Mailbox:
+                            targetMode = SDL_GPU_PRESENTMODE_MAILBOX;
+                            break;
+                        case PresentMode::VSync:
+                            targetMode = SDL_GPU_PRESENTMODE_VSYNC;
+                            break;
+                    }
+
+                    if (!SDL_WindowSupportsGPUPresentMode(device, window, targetMode)) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Mode not supported, falling back...");
+                        if (targetMode == SDL_GPU_PRESENTMODE_MAILBOX) targetMode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+                        if (!SDL_WindowSupportsGPUPresentMode(device, window, targetMode))
+                            targetMode = SDL_GPU_PRESENTMODE_VSYNC;
+                    }
+
+                    // Применяем
+                    if (SDL_SetGPUSwapchainParameters(device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, targetMode)) {
+                        // ВАЖНО: Обновляем настройки двигателя реальным значением
+                        PresentMode actualMode;
+                        switch (targetMode) {
+                            case SDL_GPU_PRESENTMODE_IMMEDIATE:
+                                actualMode = PresentMode::Immediate;
+                                break;
+                            case SDL_GPU_PRESENTMODE_MAILBOX:
+                                actualMode = PresentMode::Mailbox;
+                                break;
+                            default:
+                                actualMode = PresentMode::VSync;
+                                break;
+                        }
+
+                        // Теперь GUI узнает об изменении на следующем кадре
+                        settings.presentMode = actualMode;
+                        SDL_Log("Present Mode applied: %d", (int)targetMode);
+                    }
                 } else if constexpr (std::is_same_v<T, CmdSetFullscreen>) {
                     settings.fullScreenEnable = arg.enable;
                     SDL_SetWindowFullscreen(graphicsContext->GetWindow(), arg.enable);
                     SDL_Log("Fullscreen state changed to: %d", arg.enable);
+                    const SDL_DisplayMode* mode =
+                        SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(GetGraphicsContext().GetWindow()));
+                    SDL_Log("Current Display Rate: %f", mode->refresh_rate);
                 } else if constexpr (std::is_same_v<T, CmdToggleCursorCapture>) {
                     input.isCursorCaptured = !input.isCursorCaptured;
                     SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), input.isCursorCaptured);

@@ -79,10 +79,22 @@ void EditorLayer::RecordRenderGUICommands(RenderTarget& renderTarget, entt::regi
 
 void EditorLayer::DrawEngineControl(Engine& engine) {
     ImGui::Begin("Engine Control");
-    if (ImGui::Checkbox("VSync Enable", &engine.settings.vSyncEnable)) {
-        engine.PushCommand(CmdSetVSync(engine.settings.vSyncEnable));
+
+    // Массив строк для отображения в комбо-боксе
+    const char* modes[] = {"Immediate (Uncapped)", "Mailbox (Fast)", "VSync (Locked)"};
+    int currentItem = static_cast<int>(engine.settings.presentMode);
+
+    if (ImGui::Combo("Sync Mode", &currentItem, modes, IM_ARRAYSIZE(modes))) {
+        engine.settings.presentMode = static_cast<PresentMode>(currentItem);
+        engine.PushCommand(CmdSetPresentMode(engine.settings.presentMode));
     }
+
+    ImGui::Separator();
     ImGui::Text("FPS: %d", engine.time.currentFPS);
+
+    // Подсказка для понимания разницы
+    if (currentItem == 0) ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Warning: Screen tearing possible");
+
     ImGui::End();
 }
 
