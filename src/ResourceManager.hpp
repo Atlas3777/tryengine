@@ -1,8 +1,7 @@
 #pragma once
 
-#include <tiny_gltf.h>
-
 #include <string>
+#include <tiny_gltf.h>
 #include <unordered_map>
 #include <vector>
 
@@ -21,6 +20,9 @@ class ResourceManager {
 
     void ProcessNode(const tinygltf::Model& model, int nodeIdx, const glm::mat4& parentTransform,
                      const std::string& directory, std::vector<Mesh*>& loadedMeshes);
+
+    void ComputeLocalAABB(const tinygltf::Accessor& posAcc, const glm::mat4& nodeTransform, glm::vec3& outMin,
+                          glm::vec3& outMax);
 
    public:
     ResourceManager(SDL_GPUDevice* dev);

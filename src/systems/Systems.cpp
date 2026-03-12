@@ -5,6 +5,7 @@
 #include "EngineTypes.hpp"
 
 void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const InputState& input) {
+    if (!input.IsMouseButtonDown(MouseButton::Right)) return;
     auto view = reg.view<TransformComponent, CameraComponent, EditorCameraTag>();
 
     for (auto entity : view) {
@@ -61,4 +62,31 @@ void UpdateTransformSystem(entt::registry& reg) {
             transform.worldMatrix = parentTransform.worldMatrix * localMatrix;
         }
     });
+}
+void UpdateAABBSystem(entt::registry& reg) {
+    auto view = reg.view<TransformComponent, MeshComponent, AABBComponent>();
+    for (auto entity : view) {
+        auto& transform = view.get<TransformComponent>(entity);
+        auto& mesh = view.get<MeshComponent>(entity);
+        auto& aabb = view.get<AABBComponent>(entity);
+
+        // Масштабируем и вращаем локальные границы
+        glm::mat4 model = transform.worldMatrix;
+        glm::vec3 min = mesh.mesh->localMin;
+        glm::vec3 max = mesh.mesh->localMax;
+
+        // Метод Джима Арво (быстрая трансформация AABB)
+        glm::vec3 worldMin = glm::vec3(model[3]);
+        glm::vec3 worldMax = worldMin;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                float a = model[j][i] * min[j];
+                float b = model[j][i] * max[j];
+                worldMin[i] += glm::min(a, b);
+                worldMax[i] += glm::max(a, b);
+            }
+        }
+        aabb.worldMin = worldMin;
+        aabb.worldMax = worldMax;
+    }
 }

@@ -1,9 +1,8 @@
-#include <stb_image.h>
-#include <tiny_gltf.h>
-
 #include <cstring>
 #include <filesystem>
 #include <glm/gtc/type_ptr.hpp>
+#include <stb_image.h>
+#include <tiny_gltf.h>
 
 #include "ResourceManager.hpp"
 #include "SDL3/SDL_log.h"
@@ -264,6 +263,12 @@ void ResourceManager::ProcessNode(const tinygltf::Model& model, int nodeIdx, con
             Uint32 vSize = vertices.size() * sizeof(Vertex);
             Uint32 iSize = indices.size() * sizeof(Uint32);
 
+            glm::vec3 aabbMin, aabbMax;
+            ComputeLocalAABB(posAcc, GetNodeMatrix(node), aabbMin, aabbMax);
+
+            myMesh->localMin = aabbMin;
+            myMesh->localMax = aabbMax;
+
             myMesh->vertexBuffer = SDL_CreateGPUBuffer(
                 device, new SDL_GPUBufferCreateInfo{.usage = SDL_GPU_BUFFERUSAGE_VERTEX, .size = vSize});
             myMesh->indexBuffer = SDL_CreateGPUBuffer(
@@ -325,4 +330,27 @@ std::vector<Mesh*> ResourceManager::LoadModel(const std::string& path) {
     }
 
     return loadedMeshes;
+}
+void ResourceManager::ComputeLocalAABB(const tinygltf::Accessor& posAcc, const glm::mat4& nodeTransform,
+                                       glm::vec3& outMin, glm::vec3& outMax) {
+    glm::vec3 localMin((float)posAcc.minValues[0], (float)posAcc.minValues[1], (float)posAcc.minValues[2]);
+
+    glm::vec3 localMax((float)posAcc.maxValues[0], (float)posAcc.maxValues[1], (float)posAcc.maxValues[2]);
+
+    glm::vec3 corners[8] = {
+        {localMin.x, localMin.y, localMin.z}, {localMax.x, localMin.y, localMin.z},
+        {localMin.x, localMax.y, localMin.z}, {localMax.x, localMax.y, localMin.z},
+        {localMin.x, localMin.y, localMax.z}, {localMax.x, localMin.y, localMax.z},
+        {localMin.x, localMax.y, localMax.z}, {localMax.x, localMax.y, localMax.z},
+    };
+
+    outMin = glm::vec3(FLT_MAX);
+    outMax = glm::vec3(-FLT_MAX);
+
+    for (int i = 0; i < 8; i++) {
+        glm::vec3 p = glm::vec3(nodeTransform * glm::vec4(corners[i], 1.0f));
+
+        outMin = glm::min(outMin, p);
+        outMax = glm::max(outMax, p);
+    }
 }

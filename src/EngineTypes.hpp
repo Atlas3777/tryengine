@@ -30,7 +30,15 @@ struct Mesh {
     SDL_GPUBuffer* indexBuffer = nullptr;
     Uint32 numIndices = 0;
     Texture* texture = nullptr;  // Ссылка на текстуру (не копия!)
+    glm::vec3 localMin;
+    glm::vec3 localMax;
 };
+
+struct AABBComponent {
+    glm::vec3 worldMin;
+    glm::vec3 worldMax;
+};
+
 struct MeshComponent {
     Mesh* mesh;
 };
@@ -67,7 +75,7 @@ struct CameraComponent {
     float fov = 70.0f;
     float nearPlane = 0.1f;
     float farPlane = 100.0f;
-    float sensitivity = 0.05f;
+    float sensitivity = 0.08f;
     float speed = 3.0f;
 
     // Вычисляемые векторы (обновляются системой)
@@ -97,4 +105,12 @@ struct LightUniforms {
     glm::vec4 lightPos;    // Позиция света (w не используем)
     glm::vec4 lightColor;  // Цвет света (w можно использовать как интенсивность)
     glm::vec4 viewPos;     // Позиция камеры (понадобится для бликов/Specular, добавим сразу)
+};
+enum class MouseButton : uint8_t {
+    Left = 1,    // Соответствует SDL_BUTTON_LEFT
+    Middle = 2,  // Соответствует SDL_BUTTON_MIDDLE
+    Right = 3,   // Соответствует SDL_BUTTON_RIGHT
+    X1 = 4,
+    X2 = 5,
+    Count
 };

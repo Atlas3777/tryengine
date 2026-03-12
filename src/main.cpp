@@ -17,10 +17,7 @@
 #include "ResourceManager.hpp"
 #include "systems/Systems.hpp"
 
-using namespace entt::literals;
-
 void RegisterReflection() {
-    // Используем внутренний хеш EnTT как ID и строку как имя
     entt::meta_factory<TagComponent>()
         .type(entt::type_hash<TagComponent>::value(), "TagComponent")
         .data<&TagComponent::tag>("Tag");  // Для полей достаточно просто строки
@@ -39,7 +36,12 @@ void RegisterReflection() {
     entt::meta_factory<MeshComponent>()
         .type(entt::type_hash<MeshComponent>::value(), "MeshComponent")
         .data<&MeshComponent::mesh>("MeshPtr");
+    entt::meta_factory<AABBComponent>()
+        .type(entt::type_hash<AABBComponent>::value(), "MeshComponent")
+        .data<&AABBComponent::worldMax>("Max")
+        .data<&AABBComponent::worldMin>("Min");
 }
+
 int main(int argc, char* argv[]) {
     const auto config = EngineConfig::Parse(argc, argv);
     RegisterReflection();
@@ -63,6 +65,7 @@ int main(int argc, char* argv[]) {
     reg.emplace<TransformComponent>(
         e1, TransformComponent{glm::vec3(0.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e1);
+    reg.emplace<AABBComponent>(e1);
 
     auto e2 = reg.create();
     reg.emplace<TagComponent>(e2, "Skull");
@@ -70,6 +73,7 @@ int main(int argc, char* argv[]) {
     reg.emplace<TransformComponent>(
         e2, TransformComponent{glm::vec3(0.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e2);
+    reg.emplace<AABBComponent>(e2);
 
     // for (uint i = 0; i < matilda.size(); ++i) {
     //     auto e2 = reg.create();
@@ -83,8 +87,10 @@ int main(int argc, char* argv[]) {
     reg.emplace<TransformComponent>(
         e3, TransformComponent{glm::vec3(1.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
     reg.emplace<HierarchyComponent>(e3, e2, 1);
+    reg.emplace<AABBComponent>(e3);
 
     auto mainCamera = reg.create();
+    reg.emplace<TagComponent>(mainCamera, "EditorCamera");
     reg.emplace<TransformComponent>(
         mainCamera,
         TransformComponent{glm::vec3(0.f, 0.f, -2.f), glm::quat(glm::radians(glm::vec3(0, 0, 0))), glm::vec3(1.f)});
@@ -96,8 +102,15 @@ int main(int argc, char* argv[]) {
         engine.UpdateTime();
         engine.DispatchCommands();
 
-        UpdateEditorCameraSystem(reg, engine.time.deltaTime, engine.input);
+        // UpdateEditorCameraSystem(reg, engine.time.deltaTime, engine.input);
+
+        // Обновляем логику редактора ПЕРЕД системами трансформации и рендером
+        if (engine.settings.isEditorMode) {
+            engine.GetEditorLayer().Update(engine, reg);
+        }
+
         UpdateTransformSystem(reg);
+        UpdateAABBSystem(reg);
 
         engine.Render(reg, [&](SDL_GPUCommandBuffer* cmd, RenderTarget* target) {
             auto camView = reg.view<EditorCameraTag, TransformComponent, CameraComponent>();

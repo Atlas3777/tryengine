@@ -23,6 +23,7 @@ class Engine {
     void PushCommand(const EngineCommand& cmd);
 
     GraphicsContext& GetGraphicsContext() const { return *graphicsContext.get(); }
+    EditorLayer& GetEditorLayer() const { return *editor.get(); }
     EngineSettings settings;
     TimeState time;
     InputState input;

@@ -170,17 +170,17 @@ void HierarchyPanel::HandleShortcuts(entt::registry& reg) {
 
     if (!selectedView.empty()) {
         // УДАЛЕНИЕ (D)
-        if (ImGui::IsKeyPressed(ImGuiKey_D)) {
-            m_EntitiesToDestroy.insert(m_EntitiesToDestroy.end(), selectedView.begin(), selectedView.end());
-        }
+        // if (ImGui::IsKeyPressed(ImGuiKey_D)) {
+        //     m_EntitiesToDestroy.insert(m_EntitiesToDestroy.end(), selectedView.begin(), selectedView.end());
+        // }
 
-        // ПЕРЕИМЕНОВАНИЕ (R)
-        if (ImGui::IsKeyPressed(ImGuiKey_R)) {
-            m_EntityToRename = selectedView.front();
-            std::string currentName =
-                reg.all_of<TagComponent>(m_EntityToRename) ? reg.get<TagComponent>(m_EntityToRename).tag : "";
-            strncpy(m_RenameBuffer, currentName.c_str(), sizeof(m_RenameBuffer));
-        }
+        // // ПЕРЕИМЕНОВАНИЕ (R)
+        // if (ImGui::IsKeyPressed(ImGuiKey_R)) {
+        //     m_EntityToRename = selectedView.front();
+        //     std::string currentName =
+        //         reg.all_of<TagComponent>(m_EntityToRename) ? reg.get<TagComponent>(m_EntityToRename).tag : "";
+        //     strncpy(m_RenameBuffer, currentName.c_str(), sizeof(m_RenameBuffer));
+        // }
 
         // ВЫРЕЗАТЬ (X)
         if (ImGui::IsKeyPressed(ImGuiKey_X)) {

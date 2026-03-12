@@ -8,6 +8,9 @@ enum class PresentMode {
     VSync       // Ограничен частотой монитора (Double Buffering / FIFO)
 };
 
+struct CmdSetCursorCapture {
+    bool enable;
+};
 struct CmdSetPresentMode {
     PresentMode mode;
     CmdSetPresentMode(PresentMode m) : mode(m) {}
@@ -32,4 +35,5 @@ struct CmdQuit {
 
 // 2. Объединяем их в один безопасный тип.
 // variant хранит внутри только один из этих типов в данный момент времени.
-using EngineCommand = std::variant<CmdSetPresentMode, CmdSetFullscreen, CmdToggleCursorCapture, CmdQuit>;
+using EngineCommand =
+    std::variant<CmdSetCursorCapture, CmdSetPresentMode, CmdSetFullscreen, CmdToggleCursorCapture, CmdQuit>;

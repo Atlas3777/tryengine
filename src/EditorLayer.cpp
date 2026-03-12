@@ -4,6 +4,7 @@
 
 #include <glm/gtc/type_ptr.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
+#include <algorithm>
 #include <glm/gtx/matrix_decompose.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
@@ -14,6 +15,7 @@
 #include "GraphicsContext.hpp"
 #include "HierarchyPanel.hpp"
 #include "InspectorPanel.hpp"
+#include "Math.hpp"
 #include "RenderTarget.hpp"
 
 EditorLayer::EditorLayer(GraphicsContext& context) {
@@ -121,10 +123,67 @@ void EditorLayer::DrawDockSpace() {
     ImGui::End();
 }
 
+void EditorLayer::Update(Engine& engine, entt::registry& reg) {
+    auto& input = engine.input;
+    double deltaTime = engine.time.deltaTime;
+
+    bool rightMouseDown = input.IsMouseButtonDown(MouseButton::Right);
+
+    if (m_ViewportHovered && rightMouseDown && !m_IsCameraMoving) {
+        m_IsCameraMoving = true;
+        engine.PushCommand(CmdSetCursorCapture{true});
+
+        // Блокируем ввод для ImGui
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    } else if (!rightMouseDown && m_IsCameraMoving) {
+        m_IsCameraMoving = false;
+        engine.PushCommand(CmdSetCursorCapture{false});
+
+        // Возвращаем ввод ImGui
+        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    }
+
+    // if (m_ViewportHovered && input.IsMouseButtonDown(MouseButton::Left)) {
+    //     PerformRaycast(reg, mX, mY, vW, vH);
+    // }
+
+    if (!m_IsCameraMoving) return;
+
+    auto view = reg.view<TransformComponent, CameraComponent, EditorCameraTag>();
+    auto entity = view.front();
+    auto& transform = view.get<TransformComponent>(entity);
+    auto& cam = view.get<CameraComponent>(entity);
+
+    // Мы уже точно знаем, что курсор захвачен (или команда на захват уже отправлена)
+    transform.rotation.y += input.mouseDeltaX * cam.sensitivity;  // Yaw
+    transform.rotation.x -= input.mouseDeltaY * cam.sensitivity;  // Pitch
+    transform.rotation.x = std::clamp(transform.rotation.x, -89.0f, 89.0f);
+
+    glm::vec3 front;
+    front.x = std::cos(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
+    front.y = std::sin(glm::radians(transform.rotation.x));
+    front.z = std::sin(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
+
+    cam.front = glm::normalize(front);
+    cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0, 1, 0)));
+    cam.up = glm::normalize(glm::cross(cam.right, cam.front));
+
+    float moveSpeed = cam.speed * static_cast<float>(deltaTime);
+
+    if (input.keyboardState[SDL_SCANCODE_W]) transform.position += cam.front * moveSpeed;
+    if (input.keyboardState[SDL_SCANCODE_S]) transform.position -= cam.front * moveSpeed;
+    if (input.keyboardState[SDL_SCANCODE_A]) transform.position -= cam.right * moveSpeed;
+    if (input.keyboardState[SDL_SCANCODE_D]) transform.position += cam.right * moveSpeed;
+    if (input.keyboardState[SDL_SCANCODE_E]) transform.position += cam.up * moveSpeed;
+    if (input.keyboardState[SDL_SCANCODE_Q]) transform.position -= cam.up * moveSpeed;
+
+    cam.viewMatrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
+}
 void EditorLayer::DrawSceneViewport(RenderTarget& renderTarget, entt::registry& reg) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Scene");
 
+    m_ViewportHovered = ImGui::IsWindowHovered();
     ImVec2 viewportSize = ImGui::GetContentRegionAvail();
 
     if (viewportSize.x > 0 && viewportSize.y > 0) {
@@ -135,11 +194,42 @@ void EditorLayer::DrawSceneViewport(RenderTarget& renderTarget, entt::registry& 
         ImGui::Image((ImTextureID)renderTarget.GetColor(), viewportSize);
     }
 
-    // Рисуем гизмо прямо поверх окна вьюпорта
     HandleGizmos(renderTarget, reg);
 
     ImGui::End();
     ImGui::PopStyleVar();
+}
+
+void EditorLayer::PerformRaycast(entt::registry& reg, float mX, float mY, float vW, float vH) {
+    auto camView = reg.view<EditorCameraTag, CameraComponent, TransformComponent>();
+    auto camEnt = camView.front();
+    if (camEnt == entt::null) return;
+
+    auto& camera = camView.get<CameraComponent>(camEnt);
+    auto& camTransform = camView.get<TransformComponent>(camEnt);
+
+    Ray ray = GetRayFromMouse(camera, camTransform, mX, mY, vW, vH);
+
+    entt::entity selected = entt::null;
+    float minT = std::numeric_limits<float>::max();
+
+    auto pickView = reg.view<AABBComponent>();
+    for (auto entity : pickView) {
+        float t;
+        if (RayIntersectsAABB(ray, pickView.get<AABBComponent>(entity), t)) {
+            if (t < minT) {
+                minT = t;
+                selected = entity;
+            }
+        }
+    }
+
+    auto oldSelected = reg.view<SelectedTag>();
+    reg.remove<SelectedTag>(oldSelected.begin(), oldSelected.end());
+
+    if (selected != entt::null) {
+        reg.emplace<SelectedTag>(selected);
+    }
 }
 
 void EditorLayer::HandleGizmos(RenderTarget& renderTarget, entt::registry& reg) {
@@ -155,23 +245,16 @@ void EditorLayer::HandleGizmos(RenderTarget& renderTarget, entt::registry& reg) 
     auto& tc = reg.get<TransformComponent>(selectedE);
     auto& hc = reg.get<HierarchyComponent>(selectedE);
 
-    // 1. Настройка пространства
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
     ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowWidth(),
                       ImGui::GetWindowHeight());
 
-    // Матрицы камеры
     glm::mat4 viewMat = camera.viewMatrix;
     float aspect = (float)renderTarget.GetWidth() / (float)renderTarget.GetHeight();
     glm::mat4 projMat = glm::perspective(glm::radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
 
-    // 2. РАБОТАЕМ С МИРОВОЙ МАТРИЦЕЙ
-    // Если мы в иерархии, нам нужна актуальная мировая матрица для ImGuizmo
     glm::mat4 modelMatrix = tc.worldMatrix;
-
-    // ВАЖНО: ImGuizmo лучше работает, когда матрица "чистая".
-    // Иногда стоит пересобрать её из компонентов прямо перед Manipulate, если worldMatrix запаздывает на кадр
 
     ImGuizmo::Manipulate(glm::value_ptr(viewMat), glm::value_ptr(projMat), m_CurrentGizmoOperation, m_CurrentGizmoMode,
                          glm::value_ptr(modelMatrix));

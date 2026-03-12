@@ -5,3 +5,4 @@
 #include "EngineState.hpp"
 void UpdateEditorCameraSystem(entt::registry& reg, double dt, const InputState& input);
 void UpdateTransformSystem(entt::registry& reg);
+void UpdateAABBSystem(entt::registry& reg);

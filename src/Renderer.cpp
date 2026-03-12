@@ -1,13 +1,12 @@
 #include "Renderer.hpp"
 
 #include <SDL3/SDL_gpu.h>
-
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "EngineTypes.hpp"
 
 void Renderer::Init(SDL_GPUDevice* device) {
-    this->device = device;  // ОБЯЗАТЕЛЬНО сохранить
+    this->device = device;
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
     SDL_GPUShader* fragmentShader = CreateFragmentShader(*device);
     this->commonSampler = CreateSampler(*device);

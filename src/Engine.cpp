@@ -21,7 +21,6 @@ void Engine::MountHardware() {
     if (this->settings.isEditorMode) {
         editor = std::make_unique<EditorLayer>(*graphicsContext);
     }
-    SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), true);
 }
 
 void Engine::UpdateTime() {
@@ -41,7 +40,7 @@ void Engine::UpdateTime() {
 
         SDL_Log("FPS: %d", time.currentFPS);
 
-        time.fpsTimer = 0;  // Для VSync чистый сброс иногда дает более стабильные цифры
+        time.fpsTimer = 0;
         time.frameCount = 0;
     }
 }
@@ -97,7 +96,6 @@ void Engine::DispatchCommands() {
                                 break;
                         }
 
-                        // Теперь GUI узнает об изменении на следующем кадре
                         settings.presentMode = actualMode;
                         SDL_Log("Present Mode applied: %d", (int)targetMode);
                     }
@@ -108,10 +106,10 @@ void Engine::DispatchCommands() {
                     const SDL_DisplayMode* mode =
                         SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(GetGraphicsContext().GetWindow()));
                     SDL_Log("Current Display Rate: %f", mode->refresh_rate);
-                } else if constexpr (std::is_same_v<T, CmdToggleCursorCapture>) {
-                    input.isCursorCaptured = !input.isCursorCaptured;
-                    SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), input.isCursorCaptured);
-                    SDL_Log("Cursor capture toggled");
+                } else if constexpr (std::is_same_v<T, CmdSetCursorCapture>) {
+                    input.isCursorCaptured = arg.enable;
+                    SDL_SetWindowRelativeMouseMode(graphicsContext->GetWindow(), arg.enable);
+                    SDL_Log("Cursor capture set to: %d", arg.enable);
                 } else if constexpr (std::is_same_v<T, CmdQuit>) {
                     isRunning = false;
                 }
@@ -196,6 +194,19 @@ void Engine::ProcessInput() {
         if (event.type == SDL_EVENT_MOUSE_MOTION) {
             input.mouseDeltaX += event.motion.xrel;
             input.mouseDeltaY += event.motion.yrel;
+            input.mouseX = event.motion.x;
+            input.mouseY = event.motion.y;
+        }
+
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (event.button.button < static_cast<uint8_t>(MouseButton::Count)) {
+                input.isMouseDown[event.button.button] = true;
+            }
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            if (event.button.button < static_cast<uint8_t>(MouseButton::Count)) {
+                input.isMouseDown[event.button.button] = false;
+            }
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN) {
@@ -203,10 +214,6 @@ void Engine::ProcessInput() {
                 input.keyPressed[event.key.scancode] = true;
             }
 
-            // Вместо мгновенного применения, кидаем команду
-            if (event.key.key == SDLK_ESCAPE) {
-                PushCommand(CmdToggleCursorCapture{});
-            }
             if (event.key.key == SDLK_F11) {
                 // Переключаем текущее состояние и кидаем команду
                 PushCommand(CmdSetFullscreen{!settings.fullScreenEnable});
