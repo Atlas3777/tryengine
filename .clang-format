@@ -1,7 +1,7 @@
 ---
 Language: Cpp
-BasedOnStyle: Google  # Или LLVM, Chromium
-ColumnLimit: 120      # Установи желаемую длину строки
+BasedOnStyle: Google
+ColumnLimit: 120
 IndentWidth: 4
 
 IncludeCategories:
@@ -9,4 +9,3 @@ IncludeCategories:
     Priority: -1
   - Regex: '^<ImGuizmo\.h>'
     Priority: 1
----

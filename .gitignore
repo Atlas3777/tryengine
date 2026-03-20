@@ -12,6 +12,7 @@ build/
 build_release/
 external/
 build-asan/
+cmake-build-debug/
 *.o
 *.a
 *.so
