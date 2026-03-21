@@ -6,11 +6,11 @@
 
 #include <entt/entt.hpp>
 
+#include "../../../engine/core/include/engine/core/Engine.hpp"
+#include "../../../engine/graphics/include/engine/graphics/GraphicsContext.hpp"
+#include "../../../engine/graphics/include/engine/graphics/RenderTarget.hpp"
 #include "editor/HierarchyPanel.hpp"
 #include "editor/InspectorPanel.hpp"
-#include "engine/Engine.hpp"
-#include "engine/GraphicsContext.hpp"
-#include "engine/RenderTarget.hpp"
 
 namespace editor {
 class EditorGUI {

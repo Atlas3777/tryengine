@@ -1,12 +1,12 @@
 #include <entt/entt.hpp>
 
+#include "../../engine/core/include/engine/core/Engine.hpp"
+#include "../../engine/graphics/include/engine/graphics/Renderer.hpp"
+#include "../../engine/resources/include/engine/resources/ResourceManager.hpp"
+#include "editor/BaseSystem.hpp"
 #include "editor/Components.hpp"
 #include "engine/Components.hpp"
-#include "engine/Engine.hpp"
-#include "engine/Renderer.hpp"
-#include "engine/ResourceManager.hpp"
 #include "glm/gtc/matrix_inverse.hpp"
-#include "editor/BaseSystem.hpp"
 
 namespace editor {
 using namespace engine::types;

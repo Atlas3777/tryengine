@@ -10,12 +10,12 @@
 #include <imgui_impl_sdlgpu3.h>
 #include <imgui_internal.h>
 
+#include "../../engine/core/include/engine/core/Components.hpp"
+#include "../../engine/core/include/engine/core/Engine.hpp"
+#include "../../engine/graphics/include/engine/graphics/RenderTarget.hpp"
 #include "editor/Components.hpp"
 #include "editor/HierarchyPanel.hpp"
 #include "editor/InspectorPanel.hpp"
-#include "engine/Components.hpp"
-#include "engine/Engine.hpp"
-#include "engine/RenderTarget.hpp"
 
 namespace editor {
 using namespace engine::types;

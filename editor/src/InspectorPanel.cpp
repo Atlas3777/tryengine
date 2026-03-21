@@ -4,8 +4,8 @@
 #include <entt/meta/meta.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "../../engine/core/include/engine/core/Components.hpp"
 #include "editor/Components.hpp"
-#include "engine/Components.hpp"
 
 namespace editor {
 using namespace engine::types;

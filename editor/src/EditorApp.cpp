@@ -3,15 +3,13 @@
 #include <entt/entt.hpp>
 
 #include "editor/Editor.hpp"
-#include "engine/Components.hpp"
-#include "engine/Engine.hpp"
-#include "engine/Renderer.hpp"
-#include "engine/Scene.hpp"
+#include "engine/core/Engine.hpp"
+#include "engine/graphics/Renderer.hpp"
 
 namespace editor {
 void EditorApp::Init() {
-    engine = std::make_unique<engine::Engine>();
-    graphicsContext = std::make_unique<engine::GraphicsContext>();
+    engine = std::make_unique<engine::core::Engine>();
+    graphicsContext = std::make_unique<engine::graphics::GraphicsContext>();
 
     if (!graphicsContext->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
@@ -20,13 +18,13 @@ void EditorApp::Init() {
     editor = std::make_unique<Editor>(*graphicsContext);
 
 
-    target = std::make_unique<engine::RenderTarget>(graphicsContext->GetDevice(), 1280, 720,
+    target = std::make_unique<engine::graphics::RenderTarget>(graphicsContext->GetDevice(), 1280, 720,
                                                     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
 
     editor->LoadGameLibrary("./libgame.so");
     engine->GetSceneManager().LoadScene("default.scene");
     engine::Renderer renderer;
-    renderer.Init(engine->GetGraphicsContext().GetDevice());
+    renderer.Init(graphicsContext->GetDevice());
 
     editor->Running = true;
 }

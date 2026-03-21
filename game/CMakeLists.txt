@@ -8,16 +8,16 @@ set_target_properties(game_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(game_obj PUBLIC include PRIVATE src)
 
-# Только API движка!
-target_link_libraries(game_obj PUBLIC engine_api)
+# Только ядро движка!
+target_link_libraries(game_obj PUBLIC engine_core)
 
 # .so для редактора
 add_library(game_shared SHARED $<TARGET_OBJECTS:game_obj>)
 target_include_directories(game_shared PUBLIC include)
-target_link_libraries(game_shared PUBLIC engine_api PRIVATE engine)
+target_link_libraries(game_shared PUBLIC engine_core)
 set_target_properties(game_shared PROPERTIES OUTPUT_NAME "game")
 
-# .a для клиента
+# .a для клиента/сервера
 add_library(game_static STATIC $<TARGET_OBJECTS:game_obj>)
 target_include_directories(game_static PUBLIC include)
-target_link_libraries(game_static PUBLIC engine_api PRIVATE engine)
+target_link_libraries(game_static PUBLIC engine_core)

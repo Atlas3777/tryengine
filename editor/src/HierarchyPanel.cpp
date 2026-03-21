@@ -1,7 +1,7 @@
 #include "editor/HierarchyPanel.hpp"
 
+#include "../../engine/core/include/engine/core/Components.hpp"
 #include "editor/Components.hpp"
-#include "engine/Components.hpp"
 #include "entt/entt.hpp"
 #include "imgui_internal.h"
 

@@ -1,9 +1,9 @@
 #include <entt/entt.hpp>
 
+#include "../../engine/core/include/engine/core/Components.hpp"
+#include "../../engine/core/include/engine/core/CoreTypes.hpp"
+#include "../../engine/core/include/engine/core/Input.hpp"
 #include "editor/Components.hpp"
-#include "engine/Components.hpp"
-#include "engine/EngineTypes.hpp"
-#include "engine/Input.hpp"
 
 namespace editor {
 using namespace engine::components;

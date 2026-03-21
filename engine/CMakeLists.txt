@@ -6,7 +6,6 @@ set(SDL3_TESTS OFF CACHE INTERNAL "")
 set(SDL3_EXAMPLES OFF CACHE INTERNAL "")
 set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
-
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
 set(BUILD_DOC OFF CACHE BOOL "" FORCE)
@@ -21,30 +20,6 @@ FetchContent_Declare(cereal   GIT_REPOSITORY https://github.com/USCiLab/cereal.g
 
 FetchContent_MakeAvailable(glm SDL3 stb entt tinygltf cereal)
 
-# header-only
-if(NOT TARGET stb_image)
-    add_library(stb_image INTERFACE)
-    target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
-endif()
-
-# ==================== API (только заголовки) ====================
-add_library(engine_api INTERFACE)
-target_include_directories(engine_api INTERFACE include)
-
-target_link_libraries(engine_api INTERFACE
-        glm::glm
-        EnTT::EnTT
-)
-
-# ==================== Реализация (скрытая) ====================
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
-file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/*.hpp")
-
-add_library(engine STATIC ${SOURCES} ${HEADERS})
-
-target_include_directories(engine PRIVATE src)
-
-target_link_libraries(engine
-        PUBLIC  engine_api
-        PRIVATE SDL3::SDL3 stb_image tinygltf cereal
-)
+add_subdirectory(core)
+add_subdirectory(resources)
+add_subdirectory(graphics)
