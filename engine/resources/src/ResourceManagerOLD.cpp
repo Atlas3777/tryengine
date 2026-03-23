@@ -1,17 +1,16 @@
-#include "engine/resources/ResourceManager.hpp"
-
 #include <filesystem>
 #include <glm/gtc/type_ptr.hpp>
 #include <stb_image.h>
 #include <tiny_gltf.h>
 
+#include "engine/resources/ResourceManagerOLD.hpp"
 #include "engine/resources/Types.hpp"
 namespace engine::resources {
-ResourceManager::ResourceManager(SDL_GPUDevice* dev) : device(dev) {
+ResourceManagerOLD::ResourceManagerOLD(SDL_GPUDevice* dev) : device(dev) {
     whiteTexture = CreateOnePixelTexture(255, 255, 255, 255);
 }
 
-void ResourceManager::Cleanup() {
+void ResourceManagerOLD::Cleanup() {
     for (auto& pair : textureCache) {
         if (pair.second->handle) SDL_ReleaseGPUTexture(device, pair.second->handle);
         delete pair.second;
@@ -26,7 +25,7 @@ void ResourceManager::Cleanup() {
     meshCache.clear();
 }
 
-TextureData* ResourceManager::CreateOnePixelTexture(Uint8 r, Uint8 g, Uint8 b, Uint8 a) {
+TextureData* ResourceManagerOLD::CreateOnePixelTexture(Uint8 r, Uint8 g, Uint8 b, Uint8 a) {
     TextureData* tex = new TextureData();
     tex->width = 1;
     tex->height = 1;
@@ -62,7 +61,7 @@ TextureData* ResourceManager::CreateOnePixelTexture(Uint8 r, Uint8 g, Uint8 b, U
     return tex;
 }
 
-TextureData* ResourceManager::LoadTexture(const std::string& path) {
+TextureData* ResourceManagerOLD::LoadTexture(const std::string& path) {
     if (textureCache.find(path) != textureCache.end()) {
         return textureCache[path];
     }
@@ -136,7 +135,7 @@ glm::mat4 GetNodeMatrix(const tinygltf::Node& node) {
 
 // Рекурсивная функция обхода дерева узлов
 
-void ResourceManager::ProcessNode(const tinygltf::Model& model, int nodeIdx, const glm::mat4& parentTransform,
+void ResourceManagerOLD::ProcessNode(const tinygltf::Model& model, int nodeIdx, const glm::mat4& parentTransform,
                                   const std::string& directory, std::vector<core::Mesh*>& loadedMeshes) {
     const auto& node = model.nodes[nodeIdx];
     glm::mat4 globalTransform = parentTransform * GetNodeMatrix(node);
@@ -307,7 +306,7 @@ void ResourceManager::ProcessNode(const tinygltf::Model& model, int nodeIdx, con
         ProcessNode(model, childIdx, globalTransform, directory, loadedMeshes);
     }
 }
-std::vector<Mesh*> ResourceManager::LoadModel(const std::string& path) {
+std::vector<Mesh*> ResourceManagerOLD::LoadModel(const std::string& path) {
     std::vector<Mesh*> loadedMeshes;
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -330,7 +329,7 @@ std::vector<Mesh*> ResourceManager::LoadModel(const std::string& path) {
 
     return loadedMeshes;
 }
-void ResourceManager::ComputeLocalAABB(const tinygltf::Accessor& posAcc, const glm::mat4& nodeTransform,
+void ResourceManagerOLD::ComputeLocalAABB(const tinygltf::Accessor& posAcc, const glm::mat4& nodeTransform,
                                        glm::vec3& outMin, glm::vec3& outMax) {
     vec3 localMin((float)posAcc.minValues[0], (float)posAcc.minValues[1], (float)posAcc.minValues[2]);
 

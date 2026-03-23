@@ -6,8 +6,15 @@
 
 namespace editor {
 
-Editor::Editor(engine::GraphicsContext& graphics_context) {
+Editor::Editor(engine::graphics::GraphicsContext& graphics_context) {
     editorGUI = std::make_unique<EditorGUI>(graphics_context);
+}
+void Editor::RecordEditorGUI() {
+    editorGUI->RecordRenderGUICommands();
+}
+
+void Editor::RenderEditorGUI() {
+
 }
 
 Editor::~Editor() {
@@ -43,7 +50,6 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
 
     // 4. Ищем нужные функции
     gameSO.updateGameSystems = reinterpret_cast<UpdateGameSystemsFn>(dlsym(gameSO.handle, "UpdateGameSystems"));
-    gameSO.Rendering = reinterpret_cast<RenderingFn>(dlsym(gameSO.handle, "Rendering"));
 
     // Проверка на ошибки dlsym
     const char* err = dlerror();
@@ -62,7 +68,6 @@ void Editor::UnloadGameLibrary() {
         dlclose(gameSO.handle);
         gameSO.handle = nullptr;
         gameSO.updateGameSystems = nullptr;
-        gameSO.Rendering = nullptr;
         std::cout << "[Editor] Библиотека игры выгружена.\n";
     }
 }

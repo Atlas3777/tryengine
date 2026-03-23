@@ -7,7 +7,7 @@ namespace engine::graphics {
 class GraphicsContext {
    public:
     GraphicsContext() = default;
-    ~GraphicsContext() { Terminate(); }  // Авто-очистка
+    ~GraphicsContext() { Terminate(); }
 
     // Запрещаем копирование, так как управляем уникальными ресурсами (GPU Device)
     GraphicsContext(const GraphicsContext&) = delete;

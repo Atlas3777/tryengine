@@ -9,7 +9,7 @@ namespace editor {
 
 class Editor {
 public:
-    Editor(engine::GraphicsContext& graphics_context);
+    Editor(engine::graphics::GraphicsContext& graphics_context);
     ~Editor();
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
@@ -25,7 +25,6 @@ public:
     void RecordEditorGUI();
     void RenderEditorGUI();
 
-
     // Возвращаем bool для проверки успеха загрузки
     bool LoadGameLibrary(const std::string& originalPath);
     void UnloadGameLibrary();
@@ -36,6 +35,7 @@ public:
     // Методы из твоего EditorApp (добавлены для консистентности)
     void editorCameraUpdate();
     void RenderEditorCamera();
+
 
 private:
     std::unique_ptr<EditorGUI> editorGUI;

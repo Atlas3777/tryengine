@@ -18,9 +18,10 @@
 #include "editor/InspectorPanel.hpp"
 
 namespace editor {
-using namespace engine::types;
-using namespace engine::components;
-EditorGUI::EditorGUI(engine::GraphicsContext& context) {
+using namespace engine::core;
+using namespace engine;
+
+EditorGUI::EditorGUI(engine::graphics::GraphicsContext& context) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -51,8 +52,8 @@ EditorGUI::~EditorGUI() {
     ImGui::DestroyContext();
 }
 
-void EditorGUI::RecordRenderGUICommands(engine::RenderTarget& renderTarget, entt::registry& reg,
-                                          engine::Engine& engine) {
+void EditorGUI::RecordRenderGUICommands(engine::graphics::RenderTarget& renderTarget, entt::registry& reg,
+                                        engine::core::Engine& engine) {
     // 1. Начало кадра ImGui
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -82,27 +83,6 @@ void EditorGUI::RecordRenderGUICommands(engine::RenderTarget& renderTarget, entt
     ImGui::Render();
 }
 
-void EditorGUI::DrawEngineControl(engine::Engine& engine) {
-    ImGui::Begin("Engine Control");
-
-    // Массив строк для отображения в комбо-боксе
-    const char* modes[] = {"Immediate (Uncapped)", "Mailbox (Fast)", "VSync (Locked)"};
-    int currentItem = static_cast<int>(engine.settings.presentMode);
-
-    if (ImGui::Combo("Sync Mode", &currentItem, modes, IM_ARRAYSIZE(modes))) {
-        engine.settings.presentMode = static_cast<engine::PresentMode>(currentItem);
-        engine.PushCommand(engine::CmdSetPresentMode(engine.settings.presentMode));
-    }
-
-    ImGui::Separator();
-    ImGui::Text("FPS: %d", engine.time.currentFPS);
-
-    // Подсказка для понимания разницы
-    if (currentItem == 0) ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Warning: Screen tearing possible");
-
-    ImGui::End();
-}
-
 void EditorGUI::DrawDockSpace() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
@@ -126,64 +106,28 @@ void EditorGUI::DrawDockSpace() {
     ImGui::End();
 }
 
-// void EditorLayer::Update(Engine& engine, entt::registry& reg) {
-//     auto& input = engine.input;
-//     double deltaTime = engine.time.deltaTime;
+void EditorGUI::DrawEngineControl(engine::core::Engine& engine) {
+    // ImGui::Begin("Engine Control");
+    //
+    // // Массив строк для отображения в комбо-боксе
+    // const char* modes[] = {"Immediate (Uncapped)", "Mailbox (Fast)", "VSync (Locked)"};
+    // int currentItem = static_cast<int>(engine.settings.presentMode);
+    //
+    // if (ImGui::Combo("Sync Mode", &currentItem, modes, IM_ARRAYSIZE(modes))) {
+    //     engine.settings.presentMode = static_cast<engine::PresentMode>(currentItem);
+    //     engine.PushCommand(engine::CmdSetPresentMode(engine.settings.presentMode));
+    // }
+    //
+    // ImGui::Separator();
+    // ImGui::Text("FPS: %d", engine.time.currentFPS);
+    //
+    // // Подсказка для понимания разницы
+    // if (currentItem == 0) ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Warning: Screen tearing possible");
+    //
+    // ImGui::End();
+}
 
-//     bool rightMouseDown = input.IsMouseButtonDown(MouseButton::Right);
-
-//     if (m_ViewportHovered && rightMouseDown && !m_IsCameraMoving) {
-//         m_IsCameraMoving = true;
-//         engine.PushCommand(CmdSetCursorCapture{true});
-
-//         // Блокируем ввод для ImGui
-//         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouse;
-//     } else if (!rightMouseDown && m_IsCameraMoving) {
-//         m_IsCameraMoving = false;
-//         engine.PushCommand(CmdSetCursorCapture{false});
-
-//         // Возвращаем ввод ImGui
-//         ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
-//     }
-
-//     // if (m_ViewportHovered && input.IsMouseButtonDown(MouseButton::Left)) {
-//     //     PerformRaycast(reg, mX, mY, vW, vH);
-//     // }
-
-//     if (!m_IsCameraMoving) return;
-
-//     auto view = reg.view<TransformComponent, CameraComponent, EditorCameraTag>();
-//     auto entity = view.front();
-//     auto& transform = view.get<TransformComponent>(entity);
-//     auto& cam = view.get<CameraComponent>(entity);
-
-//     // Мы уже точно знаем, что курсор захвачен (или команда на захват уже отправлена)
-//     transform.rotation.y += input.mouseDeltaX * cam.sensitivity;  // Yaw
-//     transform.rotation.x -= input.mouseDeltaY * cam.sensitivity;  // Pitch
-//     transform.rotation.x = std::clamp(transform.rotation.x, -89.0f, 89.0f);
-
-//     glm::vec3 front;
-//     front.x = std::cos(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
-//     front.y = std::sin(glm::radians(transform.rotation.x));
-//     front.z = std::sin(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
-
-//     cam.front = glm::normalize(front);
-//     cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0, 1, 0)));
-//     cam.up = glm::normalize(glm::cross(cam.right, cam.front));
-
-//     float moveSpeed = cam.speed * static_cast<float>(deltaTime);
-
-//     if (input.keyboardState[SDL_SCANCODE_W]) transform.position += cam.front * moveSpeed;
-//     if (input.keyboardState[SDL_SCANCODE_S]) transform.position -= cam.front * moveSpeed;
-//     if (input.keyboardState[SDL_SCANCODE_A]) transform.position -= cam.right * moveSpeed;
-//     if (input.keyboardState[SDL_SCANCODE_D]) transform.position += cam.right * moveSpeed;
-//     if (input.keyboardState[SDL_SCANCODE_E]) transform.position += cam.up * moveSpeed;
-//     if (input.keyboardState[SDL_SCANCODE_Q]) transform.position -= cam.up * moveSpeed;
-
-//     cam.viewMatrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
-// }
-
-void EditorGUI::DrawSceneViewport(engine::RenderTarget& renderTarget, entt::registry& reg) {
+void EditorGUI::DrawSceneViewport(engine::graphics::RenderTarget& renderTarget, entt::registry& reg) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Scene");
 
@@ -204,50 +148,18 @@ void EditorGUI::DrawSceneViewport(engine::RenderTarget& renderTarget, entt::regi
     ImGui::PopStyleVar();
 }
 
-// void EditorLayer::PerformRaycast(entt::registry& reg, float mX, float mY, float vW, float vH) {
-//     auto camView = reg.view<EditorCameraTag, CameraComponent, TransformComponent>();
-//     auto camEnt = camView.front();
-//     if (camEnt == entt::null) return;
-
-//     auto& camera = camView.get<CameraComponent>(camEnt);
-//     auto& camTransform = camView.get<TransformComponent>(camEnt);
-
-//     Ray ray = GetRayFromMouse(camera, camTransform, mX, mY, vW, vH);
-
-//     entt::entity selected = entt::null;
-//     float minT = std::numeric_limits<float>::max();
-
-//     auto pickView = reg.view<AABBComponent>();
-//     for (auto entity : pickView) {
-//         float t;
-//         if (RayIntersectsAABB(ray, pickView.get<AABBComponent>(entity), t)) {
-//             if (t < minT) {
-//                 minT = t;
-//                 selected = entity;
-//             }
-//         }
-//     }
-
-//     auto oldSelected = reg.view<SelectedTag>();
-//     reg.remove<SelectedTag>(oldSelected.begin(), oldSelected.end());
-
-//     if (selected != entt::null) {
-//         reg.emplace<SelectedTag>(selected);
-//     }
-// }
-
-void EditorGUI::HandleGizmos(engine::RenderTarget& renderTarget, entt::registry& reg) {
-    auto view = reg.view<SelectedTag, Transform, Hierarchy>();
+void EditorGUI::HandleGizmos(engine::graphics::RenderTarget& renderTarget, entt::registry& reg) {
+    auto view = reg.view<SelectedTag, engine::Transform, engine::Hierarchy>();
     auto selectedE = view.front();
     if (selectedE == entt::null || !reg.valid(selectedE)) return;
 
-    auto camView = reg.view<EditorCameraTag, Camera>();
+    auto camView = reg.view<EditorCameraTag, engine::Camera>();
     auto camEnt = camView.front();
     if (camEnt == entt::null) return;
 
-    auto& camera = camView.get<Camera>(camEnt);
-    auto& tc = reg.get<Transform>(selectedE);
-    auto& hc = reg.get<Hierarchy>(selectedE);
+    auto& camera = camView.get<engine::Camera>(camEnt);
+    auto& tc = reg.get<engine::Transform>(selectedE);
+    auto& hc = reg.get<engine::Hierarchy>(selectedE);
 
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();

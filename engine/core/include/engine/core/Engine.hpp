@@ -5,6 +5,7 @@
 #include "Clock.hpp"
 #include "EngineState.hpp"
 #include "Input.hpp"
+#include "InputTypes.hpp"
 #include "SceneManager.hpp"
 #include "engine/core/EngineCommands.hpp"
 
@@ -12,7 +13,7 @@ namespace engine::core {
 class Engine {
    public:
     Engine();
-    void ProcessInput();
+    void ProcessInput(InputState& input);
     void UpdateTime();
     void DispatchCommands();
 

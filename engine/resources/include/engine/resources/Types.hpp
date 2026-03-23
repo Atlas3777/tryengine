@@ -10,13 +10,13 @@ struct Vertex {
 };
 
 struct MeshData {
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<Vertex> vertexBuffer;
+    std::vector<uint32_t> indexBuffer;
 };
 
 struct TextureData {
-    int width;
-    int height;
+    uint32_t width;
+    uint32_t height;
     std::vector<uint8_t> pixels;
 };
 

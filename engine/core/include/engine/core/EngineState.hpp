@@ -7,7 +7,6 @@
 
 namespace engine::core {
 struct EngineSettings {
-    bool isEditorMode = true;
     PresentMode presentMode = PresentMode::VSync;
     bool fullScreenEnable = false;
 };

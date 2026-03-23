@@ -1,8 +1,8 @@
 #pragma once
 #include <SDL3/SDL_gpu.h>
-#include <glm/vec4.hpp>
-
-#include "engine/core/CoreTypes.hpp"
+#include <entt/core/fwd.hpp>
+#include <entt/resource/resource.hpp>
+#include <memory>
 
 namespace engine::graphics {
 
@@ -17,9 +17,9 @@ struct Mesh {
     SDL_GPUBuffer* indexBuffer;
     uint32_t numIndices;
 };
-struct LightUniforms {
-    glm::vec4 lightPos;    // Позиция света (w не используем)
-    glm::vec4 lightColor;  // Цвет света (w можно использовать как интенсивность)
-    glm::vec4 viewPos;     // Позиция камеры (понадобится для бликов/Specular, добавим сразу)
+
+struct MeshComponent {
+    entt::resource<Mesh> mesh;
+    entt::id_type resourceID;
 };
 }

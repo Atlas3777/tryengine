@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "engine/core/CoreTypes.hpp"
+#include "engine/resources/ResourceManagerOLD.hpp"
 
 namespace engine::graphics {
 void Renderer::Init(SDL_GPUDevice* device) {
@@ -55,14 +56,6 @@ SDL_GPURenderPass* Renderer::BeginRenderPass(SDL_GPUCommandBuffer* cmd, RenderTa
     return SDL_BeginGPURenderPass(cmd, &colorInfo, 1, &depthInfo);
 }
 
-SDL_GPURenderPass* Renderer::BeginRenderToWindow(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swapchain) {
-    SDL_GPUColorTargetInfo colorInfo{};
-    colorInfo.texture = swapchain;
-    colorInfo.clear_color = {0, 0, 0, 1};
-    colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-    colorInfo.store_op = SDL_GPU_STOREOP_STORE;
-    return SDL_BeginGPURenderPass(cmd, &colorInfo, 1, nullptr);
-};
 
 SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {
     size_t vertexCodeSize;
@@ -159,7 +152,7 @@ SDL_GPUVertexBufferDescription Renderer::CreateVertexBufferDescription() {
     vertexBufferDesc.slot = 0;
     vertexBufferDesc.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
     vertexBufferDesc.instance_step_rate = 0;
-    vertexBufferDesc.pitch = sizeof(Vertex);
+    vertexBufferDesc.pitch = sizeof(resources::Vertex);
     return vertexBufferDesc;
 }
 

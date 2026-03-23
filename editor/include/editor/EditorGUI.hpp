@@ -6,32 +6,29 @@
 
 #include <entt/entt.hpp>
 
-#include "../../../engine/core/include/engine/core/Engine.hpp"
-#include "../../../engine/graphics/include/engine/graphics/GraphicsContext.hpp"
-#include "../../../engine/graphics/include/engine/graphics/RenderTarget.hpp"
+#include "engine/core/Engine.hpp"
+#include "engine/graphics/GraphicsContext.hpp"
+#include "engine/graphics/RenderTarget.hpp"
 #include "editor/HierarchyPanel.hpp"
 #include "editor/InspectorPanel.hpp"
 
 namespace editor {
 class EditorGUI {
    public:
-    EditorGUI(engine::GraphicsContext& context);
+    EditorGUI(engine::graphics::GraphicsContext& context);
     ~EditorGUI();
 
-    void RecordRenderGUICommands(engine::RenderTarget& renderTarget, entt::registry& reg, engine::Engine& engine);
-
-    //void Update(engine::Engine& engine, entt::registry& reg);
+    void RecordRenderGUICommands(engine::graphics::RenderTarget& target, entt::registry& reg, engine::core::Engine& engine);
 
    private:
     std::unique_ptr<HierarchyPanel> hierarchy;
     std::unique_ptr<InspectorPanel> inspector;
     void DrawDockSpace();
-    void DrawSceneViewport(engine::RenderTarget& renderTarget, entt::registry& reg);
-    void DrawEngineControl(engine::Engine& engine);
+    void DrawSceneViewport(engine::graphics::RenderTarget& renderTarget, entt::registry& reg);
+    void DrawEngineControl(engine::core::Engine& engine);
     void DrawAddComponentButton(entt::registry& reg);
 
-    void HandleGizmos(engine::RenderTarget& renderTarget, entt::registry& reg);
-    //void PerformRaycast(entt::registry& reg, float mX, float mY, float vW, float vH);
+    void HandleGizmos(engine::graphics::RenderTarget& renderTarget, entt::registry& reg);
 
     float m_StoredMouseX = 0.0f, m_StoredMouseY = 0.0f;
     bool m_ViewportHovered = false;

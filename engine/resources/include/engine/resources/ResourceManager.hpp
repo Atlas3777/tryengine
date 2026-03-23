@@ -1,42 +1,47 @@
 #pragma once
+#include <entt/core/type_info.hpp>
 
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include "ICacheBase.hpp"
+#include "engine/graphics/Types.hpp"
 
-#include "SDL3/SDL_gpu.h"
-#include "engine/core/CoreTypes.hpp"
-
-namespace tinygltf {
-struct Accessor;
-class Model;
-}
 namespace engine::resources {
+
 class ResourceManager {
-   private:
-    SDL_GPUDevice* device;
-    std::unordered_map<std::string, core::Texture*> textureCache;
-    std::unordered_map<std::string, core::Mesh*> meshCache;
-    core::Texture* whiteTexture = nullptr;
+public:
+    // --- РЕГИСТРАЦИЯ ---
 
-    // Внутренний метод создания базовой текстуры
-    core::Texture* CreateOnePixelTexture(Uint8 r, Uint8 g, Uint8 b, Uint8 a);
+    // Регистрируем соответствие ID и файла (например, читая manifest.json при старте игры)
+    void RegisterAssetPath(entt::id_type id, const std::string& path) {
+        m_assetPaths[id] = path;
+    }
 
-    void ProcessNode(const tinygltf::Model& model, int nodeIdx, const core::mat4& parentTransform,
-                     const std::string& directory, std::vector<core::Mesh*>& loadedMeshes);
+    // Регистрируем кэш и его загрузчик (Точка сбора!)
+    template<typename T, typename Loader>
+    void RegisterCache(Loader loader) {
+        auto typeId = entt::type_hash<T>::value();
+        m_caches[typeId] = std::make_unique<CacheImpl<T, Loader>>(std::move(loader));
+    }
 
-    void ComputeLocalAABB(const tinygltf::Accessor& posAcc, const glm::mat4& nodeTransform, vec3& outMin, vec3& outMax);
+    // --- ИСПОЛЬЗОВАНИЕ ---
 
-   public:
-    ResourceManager(SDL_GPUDevice* dev);
-    ~ResourceManager() { Cleanup(); }
+    // Тот самый идеальный метод, который ты хотел
+    template<typename T>
+    entt::resource<T> Get(entt::id_type id) {
+        auto typeId = entt::type_hash<T>::value();
 
-    void Cleanup();
+        // Достаем типизированный кэш
+        auto* typedCache = static_cast<ITypedCache<T>*>(m_caches[typeId].get());
 
-    // Загрузка текстуры (с проверкой кеша)
-    core::Texture* LoadTexture(const std::string& path);
+        // Достаем путь к файлу из базы ассетов
+        const std::string& path = m_assetPaths.at(id);
 
-    // Загрузка модели (Mesh)
-    std::vector<core::Mesh*> LoadModel(const std::string& path);
+        // Вся грязная работа спрятана внутри!
+        return typedCache->GetOrLoad(id, path);
+    }
+
+private:
+    std::unordered_map<entt::id_type, std::string> m_assetPaths;
+    std::unordered_map<entt::id_type, std::unique_ptr<ICacheBase>> m_caches;
 };
-}  // namespace engine
+
+}

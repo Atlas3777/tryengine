@@ -1,7 +1,8 @@
 #pragma once
 #include <SDL3/SDL_gpu.h>
 
-#include "RenderTarget.hpp"
+#include "engine/graphics/RenderTarget.hpp"
+
 namespace engine::graphics {
 
 class Renderer {
@@ -10,7 +11,6 @@ class Renderer {
     void Cleanup();
 
     SDL_GPURenderPass* BeginRenderPass(SDL_GPUCommandBuffer* cmd, RenderTarget& target, SDL_FColor clearColor);
-    SDL_GPURenderPass* BeginRenderToWindow(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swapchain);
     SDL_GPUGraphicsPipeline* GetDefaultPipeline() const { return pipeline; }
     SDL_GPUSampler* GetCommonSampler() const { return commonSampler; }
 
