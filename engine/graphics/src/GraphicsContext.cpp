@@ -33,6 +33,7 @@ bool GraphicsContext::Initialize(const int width, const int height, const std::s
     return true;
 }
 
+
 void GraphicsContext::Terminate() {
     if (m_device) {
         if (m_window) {

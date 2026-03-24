@@ -3,9 +3,12 @@
 #include <imgui.h>
 
 #include <entt/entt.hpp>
+
+#include "IPanel.hpp"
 namespace editor {
-class InspectorPanel {
+class InspectorPanel : public IPanel {
    public:
+    const char* GetName() const override { return "Game"; }
     InspectorPanel() = default;
 
     void OnImGuiRender(entt::registry& reg);

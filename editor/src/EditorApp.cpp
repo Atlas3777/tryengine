@@ -6,6 +6,7 @@
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GpuMeshLoader.hpp"
 #include "engine/graphics/Renderer.hpp"
+#include "engine/resources/AssetDatabase.hpp"
 #include "engine/resources/GltfLoader.hpp"
 #include "engine/resources/ResourceManager.hpp"
 #include "engine/resources/Types.hpp"
@@ -21,15 +22,14 @@ void EditorApp::Init() {
     }
     editor = std::make_unique<Editor>(*graphicsContext);
 
-    engine::resources::ResourceManager resManager;
-
     using namespace entt::literals;
 
-    resManager.RegisterAssetPath("player_mesh"_hs, "assets/models/player.gltf");
-    resManager.RegisterAssetPath("level_config"_hs, "assets/configs/level1.json");
 
-    resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager, graphicsContext->GetDevice()));
+    engine::resources::ResourceManager resManager;
+    engine::resources::AssetDatabase assetDatabase;
+
     resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
+    resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager, graphicsContext->GetDevice()));
 
     renderSystem = std::make_unique<engine::graphics::RenderSystem>(graphicsContext->GetDevice());
 
@@ -55,12 +55,16 @@ void EditorApp::Run() {
             editor->gameSO.updateGameSystems(engine.get());
         }
 
-        editor->RecordEditorGUI();
+        editor->GetEditorGUI().RecordPanelsGpuCommands(*engine);
 
-        editor->RenderEditorCamera();
-        renderSystem->RenderScene();
+        const auto cmd = SDL_AcquireGPUCommandBuffer(graphicsContext->GetDevice());
 
-        editor->RenderEditorGUI();
+        SDL_GPUTexture* swapchainTexture = nullptr;
+        uint32_t w, h;
+        SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphicsContext->GetWindow(), &swapchainTexture, &w, &h);
+        editor->GetEditorGUI().RenderToPanel(cmd, *renderSystem, *engine);
+
+        editor->GetEditorGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
     }
 }
 

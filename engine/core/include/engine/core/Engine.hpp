@@ -2,11 +2,10 @@
 #include <mutex>
 #include <vector>
 
-#include "Clock.hpp"
-#include "EngineState.hpp"
-#include "Input.hpp"
-#include "InputTypes.hpp"
-#include "SceneManager.hpp"
+#include "engine/core/Clock.hpp"
+#include "engine/core/EngineState.hpp"
+#include "engine/core/InputTypes.hpp"
+#include "engine/core/SceneManager.hpp"
 #include "engine/core/EngineCommands.hpp"
 
 namespace engine::core {

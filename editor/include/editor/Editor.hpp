@@ -1,15 +1,17 @@
 #pragma once
-#include "editor/EditorGUI.hpp"
-#include "game/GameAPI.hpp"
-
 #include <memory>
 #include <string>
+
+#include "editor/EditorGUI.hpp"
+#include "game/GameAPI.hpp"
 
 namespace editor {
 
 class Editor {
-public:
-    Editor(engine::graphics::GraphicsContext& graphics_context);
+   public:
+    Editor(engine::graphics::GraphicsContext& graphics_context) {
+        editorGUI = std::make_unique<EditorGUI>(graphics_context);
+    };
     ~Editor();
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
@@ -22,9 +24,6 @@ public:
     // Храним состояние загруженной библиотеки
     GameLibrary gameSO;
 
-    void RecordEditorGUI();
-    void RenderEditorGUI();
-
     // Возвращаем bool для проверки успеха загрузки
     bool LoadGameLibrary(const std::string& originalPath);
     void UnloadGameLibrary();
@@ -34,11 +33,10 @@ public:
 
     // Методы из твоего EditorApp (добавлены для консистентности)
     void editorCameraUpdate();
-    void RenderEditorCamera();
+    EditorGUI& GetEditorGUI() { return *editorGUI; };
 
-
-private:
+   private:
     std::unique_ptr<EditorGUI> editorGUI;
 };
 
-} // namespace editor
+}  // namespace editor

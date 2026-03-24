@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace engine {
+namespace engine::core {
 
 Scene::Scene(std::string  name)
     : m_Name(std::move(name)) {

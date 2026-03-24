@@ -1,7 +1,6 @@
 #pragma once
 #include <SDL3/SDL_gpu.h>
 #include <entt/core/fwd.hpp>
-#include <entt/resource/resource.hpp>
 #include <memory>
 
 namespace engine::graphics {
@@ -18,8 +17,8 @@ struct Mesh {
     uint32_t numIndices;
 };
 
-struct MeshComponent {
-    entt::resource<Mesh> mesh;
-    entt::id_type resourceID;
-};
+// struct MeshComponent {
+//     entt::resource<Mesh> mesh;
+//     entt::id_type resourceID;
+// };
 }

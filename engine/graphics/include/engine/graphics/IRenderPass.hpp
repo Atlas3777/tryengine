@@ -1,7 +1,9 @@
 #pragma once
 
-#include <entt/entity/registry.hpp>
 #include <SDL3/SDL_gpu.h>
+#include <entt/entity/registry.hpp>
+
+#include "RenderProfile.hpp"
 
 namespace engine::graphics {
 // Базовый класс для любого этапа рендеринга

@@ -38,6 +38,19 @@ struct InputState {
     bool justPressed[static_cast<int>(Key::Count)] = {false};
     bool justReleased[static_cast<int>(Key::Count)] = {false};
 
+    bool IsDown(Key key) const {
+        return isDown[static_cast<uint16_t>(key)];
+    }
+
+    // 2. Вспомогательные методы для проверки состояний без каста снаружи
+    bool Pressed(Key key) const {
+        return justPressed[static_cast<uint16_t>(key)];
+    }
+
+    bool Released(Key key) const {
+        return justReleased[static_cast<uint16_t>(key)];
+    }
+
     float mouseX = 0.0f, mouseY = 0.0f;
     float mouseDeltaX = 0.0f, mouseDeltaY = 0.0f;
     bool mouseButtons[5] = {false};

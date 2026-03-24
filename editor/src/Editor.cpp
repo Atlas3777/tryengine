@@ -6,17 +6,6 @@
 
 namespace editor {
 
-Editor::Editor(engine::graphics::GraphicsContext& graphics_context) {
-    editorGUI = std::make_unique<EditorGUI>(graphics_context);
-}
-void Editor::RecordEditorGUI() {
-    editorGUI->RecordRenderGUICommands();
-}
-
-void Editor::RenderEditorGUI() {
-
-}
-
 Editor::~Editor() {
     UnloadGameLibrary(); // Обязательно освобождаем память при закрытии
 }

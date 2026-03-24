@@ -1,9 +1,10 @@
 #include <entt/entt.hpp>
 
 #include "../include/engine/core/Components.hpp"
+#include "engine/core/Engine.hpp"
 
 namespace engine {
-using namespace engine::components;
+using namespace engine::core;
 // TODO: Если у сущности есть Hierarchy, но нет Transform, или если parent был удален, но ссылка
 // осталась — приложение упадет.
 void UpdateTransformSystem(entt::registry& reg) {
@@ -29,30 +30,30 @@ void UpdateTransformSystem(entt::registry& reg) {
     });
 }
 void UpdateAABBSystem(entt::registry& reg) {
-    auto view = reg.view<Transform, engine::components::MeshRenderer, AABB>();
-    for (auto entity : view) {
-        auto& transform = view.get<Transform>(entity);
-        auto& mesh = view.get<engine::components::MeshRenderer>(entity);
-        auto& aabb = view.get<AABB>(entity);
-
-        // Масштабируем и вращаем локальные границы
-        mat4 model = transform.worldMatrix;
-        vec3 min = mesh.mesh->localMin;
-        vec3 max = mesh.mesh->localMax;
-
-        // Метод Джима Арво (быстрая трансформация AABB)
-        vec3 worldMin = vec3(model[3]);
-        vec3 worldMax = worldMin;
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                float a = model[j][i] * min[j];
-                float b = model[j][i] * max[j];
-                worldMin[i] += glm::min(a, b);
-                worldMax[i] += glm::max(a, b);
-            }
-        }
-        aabb.worldMin = worldMin;
-        aabb.worldMax = worldMax;
-    }
+    // auto view = reg.view<Transform, MeshRenderer, AABB>();
+    // for (auto entity : view) {
+    //     auto& transform = view.get<Transform>(entity);
+    //     auto& mesh = view.get<MeshRenderer>(entity);
+    //     auto& aabb = view.get<AABB>(entity);
+    //
+    //     // Масштабируем и вращаем локальные границы
+    //     mat4 model = transform.worldMatrix;
+    //     vec3 min = mesh.mesh->localMin;
+    //     vec3 max = mesh.mesh->localMax;
+    //
+    //     // Метод Джима Арво (быстрая трансформация AABB)
+    //     vec3 worldMin = vec3(model[3]);
+    //     vec3 worldMax = worldMin;
+    //     for (int i = 0; i < 3; i++) {
+    //         for (int j = 0; j < 3; j++) {
+    //             float a = model[j][i] * min[j];
+    //             float b = model[j][i] * max[j];
+    //             worldMin[i] += glm::min(a, b);
+    //             worldMax[i] += glm::max(a, b);
+    //         }
+    //     }
+    //     aabb.worldMin = worldMin;
+    //     aabb.worldMax = worldMax;
+    // }
 }
 }  // namespace engine

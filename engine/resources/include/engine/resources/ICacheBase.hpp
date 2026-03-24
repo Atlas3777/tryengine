@@ -1,15 +1,15 @@
 #pragma once
 #include <entt/resource/cache.hpp>
+#include <entt/resource/resource.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>
 
 namespace engine::resources {
-
-// 1. Базовый нешаблонный класс, чтобы хранить всё в одном map
 class ICacheBase {
    public:
     virtual ~ICacheBase() = default;
+    virtual void Purge() = 0;  // Метод для очистки неиспользуемых ресурсов
 };
 
 // 2. Шаблонный интерфейс, который знает про тип T, но НЕ ЗНАЕТ про лоадер
@@ -20,39 +20,29 @@ class ITypedCache : public ICacheBase {
     virtual entt::resource<T> GetOrLoad(entt::id_type id, const std::string& path) = 0;
 };
 
-// Вспомогательный лоадер-заглушка для EnTT
-template <typename T>
-struct DirectLoader {
-    using result_type = std::shared_ptr<T>;
-
-    // EnTT вызовет этот оператор и передаст в него наш готовый resourceObj
-    result_type operator()(std::shared_ptr<T> ptr) const {
-        return ptr;
-    }
-};
-
 template <typename T, typename Loader>
 class CacheImpl : public ITypedCache<T> {
-private:
-    // ВАЖНО: указываем DirectLoader вторым аргументом шаблона
-    entt::resource_cache<T, DirectLoader<T>> m_cache;
-    Loader m_loader;
+    // Теперь используем реальный Лоадер как часть типа кэша
+    entt::resource_cache<T, Loader> m_cache;
 
-public:
-    explicit CacheImpl(Loader loader) : m_loader(std::move(loader)) {}
+   public:
+    // Конструируем кэш, передавая ему настроенный лоадер
+    explicit CacheImpl(Loader&& loader) : m_cache(std::move(loader)) {}
 
     entt::resource<T> GetOrLoad(entt::id_type id, const std::string& path) override {
-        if (!m_cache.contains(id)) {
-            // 1. Твой GpuMeshLoader делает реальную работу
-            std::shared_ptr<T> resourceObj = m_loader(path);
+        // .first — это итератор на ресурс, .second — флаг "был ли загружен"
+        return m_cache.load(id, path).first->second;
+    }
 
-            // 2. Теперь вызываем load БЕЗ <...>.
-            // Он просто пробросит resourceObj в DirectLoader::operator()
-            m_cache.load(id, std::move(resourceObj));
+    void Purge() override {
+        for (auto it = m_cache.begin(); it != m_cache.end();) {
+            // .handle() возвращает ссылку на внутренний std::shared_ptr
+            if (it->second.handle().use_count() <= 1) {
+                it = m_cache.erase(it);
+            } else {
+                ++it;
+            }
         }
-
-        // 3. Возвращаем handle (в этой версии через operator[])
-        return m_cache[id];
     }
 };
-}  // namespace engine::resource
+}  // namespace engine::resources

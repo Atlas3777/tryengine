@@ -14,6 +14,8 @@ class GraphicsContext {
     GraphicsContext& operator=(const GraphicsContext&) = delete;
 
     bool Initialize(int width, int height, const std::string& title);
+    // SDL_GPUTexture* AcquireSwapchainTexture(SDL_GPUCommandBuffer* cmd) const;
+
     void Terminate();
 
     // Геттеры

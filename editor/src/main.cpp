@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
     //         entt::entity camEnt = camView.front();
     //
     //         if (camEnt == entt::null) return;
-    //
+    //x
     //         auto& camTransform = camView.get<Transform>(camEnt);
     //         auto& camera = camView.get<Camera>(camEnt);
     //

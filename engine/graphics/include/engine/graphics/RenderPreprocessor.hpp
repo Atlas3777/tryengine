@@ -1,4 +1,5 @@
 #pragma once
+#include <entt/entity/registry.hpp>
 
 namespace engine::graphics {
 class RenderPreprocessor {

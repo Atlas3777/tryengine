@@ -1,12 +1,27 @@
 #pragma once
 
 #include <entt/fwd.hpp>
+#include <entt/resource/resource.hpp>
 
-#include "CoreTypes.hpp"
+#include "engine/core/CoreTypes.hpp"
 
 namespace engine {
+namespace graphics {
+struct Texture;
+struct Mesh;
+}
 struct MeshRenderer {
-    Mesh* mesh;
+    entt::resource<graphics::Mesh> mesh;
+    entt::id_type assetid = entt::null;
+};
+
+// Сами данные материала (обычно это ресурс, как и Mesh)
+struct Material {
+    // entt::resource<graphics::Texture> diffuseMap;
+    entt::resource<graphics::Texture> normalMap;
+    vec4 baseColor{1.0f};
+    float roughness = 0.5f;
+    float metallic = 0.0f;
 };
 
 struct Hierarchy {
@@ -42,6 +57,7 @@ struct Tag {
     Tag(const Tag&) = default;
     Tag(const std::string& t) : tag(t) {}
 };
+struct MainCameraTag{};
 struct Camera {
     float fov = 70.0f;
     float nearPlane = 0.1f;

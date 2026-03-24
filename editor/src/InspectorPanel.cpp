@@ -6,10 +6,12 @@
 
 #include "../../engine/core/include/engine/core/Components.hpp"
 #include "editor/Components.hpp"
+#include "engine/core/Engine.hpp"
 
 namespace editor {
 using namespace engine::types;
-using namespace engine::components;
+using namespace engine::core;
+using namespace engine;
 
 void InspectorPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Inspector");

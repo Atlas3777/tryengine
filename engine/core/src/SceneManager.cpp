@@ -5,7 +5,7 @@
 // #include <cereal/archives/binary.hpp>
 // #include <fstream>
 
-namespace engine {
+namespace engine::core {
 
 Scene* SceneManager::CreateScene(const std::string& name) {
   // std::make_unique безопасно создаст новую сцену и удалит старую (если была)

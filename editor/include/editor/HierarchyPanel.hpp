@@ -5,9 +5,13 @@
 #include <entt/entity/entity.hpp>
 #include <vector>
 
+#include "IPanel.hpp"
+
 namespace editor {
-class HierarchyPanel {
+class HierarchyPanel : public IPanel {
    public:
+    const char* GetName() const override { return "Hierarchy"; }
+
     HierarchyPanel() = default;
 
     void OnImGuiRender(entt::registry& reg);
@@ -16,8 +20,6 @@ class HierarchyPanel {
     void DrawEntityNode(entt::entity entity, entt::registry& reg);
     void HandleShortcuts(entt::registry& reg);
 
-    // Вспомогательные методы для работы с иерархией лучше тоже держать здесь,
-    // чтобы не засорять глобальное пространство имен
     void ReparentEntity(entt::entity child, entt::entity newParent, entt::registry& reg);
     bool IsDescendantOf(entt::entity child, entt::entity parent, entt::registry& reg);
     entt::entity CloneEntity(entt::entity srcEntity, entt::registry& reg);

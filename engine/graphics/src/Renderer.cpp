@@ -5,6 +5,7 @@
 
 #include "engine/core/CoreTypes.hpp"
 #include "engine/resources/ResourceManagerOLD.hpp"
+#include "engine/resources/Types.hpp"
 
 namespace engine::graphics {
 void Renderer::Init(SDL_GPUDevice* device) {
