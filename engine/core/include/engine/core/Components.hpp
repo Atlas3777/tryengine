@@ -10,15 +10,17 @@ namespace graphics {
 struct Texture;
 struct Mesh;
 }
-struct MeshRenderer {
+struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
-    entt::id_type assetid = entt::null;
+    entt::id_type asset_id = entt::null;
 };
 
 // Сами данные материала (обычно это ресурс, как и Mesh)
-struct Material {
+struct MeshMaterial {
     // entt::resource<graphics::Texture> diffuseMap;
-    entt::resource<graphics::Texture> normalMap;
+    entt::resource<graphics::Texture> normal_map;
+    entt::id_type asset_id = entt::null;
+
     vec4 baseColor{1.0f};
     float roughness = 0.5f;
     float metallic = 0.0f;

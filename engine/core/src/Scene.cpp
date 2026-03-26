@@ -5,15 +5,16 @@
 namespace engine::core {
 
 Scene::Scene(std::string  name)
-    : m_Name(std::move(name)) {
+    : name_(std::move(name)) {
+    registry_ = std::make_unique<entt::registry>();
 }
-
-entt::entity Scene::CreateEntity() {
-  return m_Registry.create();
-}
-
-void Scene::DestroyEntity(entt::entity entity) {
-  m_Registry.destroy(entity);
-}
+//
+// entt::entity Scene::CreateEntity() {
+//   return registry_.create();
+// }
+//
+// void Scene::DestroyEntity(entt::entity entity) {
+//   registry_.destroy(entity);
+// }
 
 } // namespace engine

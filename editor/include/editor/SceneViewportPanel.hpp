@@ -1,8 +1,9 @@
 #pragma once
 #include <imgui.h>
 
-
+#include "Components.hpp"
 #include "IPanel.hpp"
+#include "engine/core/Components.hpp"
 namespace editor {
 class SceneViewportPanel : public BaseViewport {
    public:

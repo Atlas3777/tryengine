@@ -30,6 +30,7 @@ class Editor {
 
     void SaveScene();
     void SaveSceneForPlayMode();
+    void LoadDefaultScene();
 
     // Методы из твоего EditorApp (добавлены для консистентности)
     void editorCameraUpdate();

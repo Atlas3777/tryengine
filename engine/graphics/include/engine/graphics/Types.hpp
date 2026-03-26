@@ -12,13 +12,9 @@ struct Texture {
 };
 
 struct Mesh {
-    SDL_GPUBuffer* vertexBuffer;
-    SDL_GPUBuffer* indexBuffer;
-    uint32_t numIndices;
+    SDL_GPUBuffer* vertex_buffer;
+    SDL_GPUBuffer* index_buffer;
+    uint32_t num_indices;
 };
 
-// struct MeshComponent {
-//     entt::resource<Mesh> mesh;
-//     entt::id_type resourceID;
-// };
 }

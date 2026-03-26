@@ -30,7 +30,7 @@ public:
   bool SaveScene(const std::string& filepath);
 
   // Получение текущей активной сцены
-  Scene* GetActiveScene() const { return m_ActiveScene.get(); }
+  Scene* GetActiveScene() { return m_ActiveScene.get(); }
 
 private:
   // Менеджер эксклюзивно владеет активной сценой

@@ -1,4 +1,4 @@
-#include "../include/engine/graphics/GraphicsContext.hpp"
+#include "engine/graphics/GraphicsContext.hpp"
 
 #include <string>
 namespace engine::graphics {

@@ -2,7 +2,10 @@
 
 #include <imgui_impl_sdl3.h>
 
+#include "editor/BaseSystem.hpp"
+#include "editor/Components.hpp"
 #include "editor/Editor.hpp"
+#include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GpuMeshLoader.hpp"
 #include "engine/graphics/Renderer.hpp"
@@ -14,41 +17,57 @@
 namespace editor {
 void EditorApp::Init() {
     engine = std::make_unique<engine::core::Engine>();
-    graphicsContext = std::make_unique<engine::graphics::GraphicsContext>();
+    graphics_context_ = std::make_unique<engine::graphics::GraphicsContext>();
 
-    if (!graphicsContext->Initialize(1280, 720, "tryengine")) {
+    if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
         return;
     }
-    editor = std::make_unique<Editor>(*graphicsContext);
+    editor = std::make_unique<Editor>(*graphics_context_);
 
     using namespace entt::literals;
 
-
     engine::resources::ResourceManager resManager;
     engine::resources::AssetDatabase assetDatabase;
+    //
+    // resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
+    // resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager,
+    // graphicsContext->GetDevice()));
 
-    resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
-    resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager, graphicsContext->GetDevice()));
+    renderSystem = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
 
-    renderSystem = std::make_unique<engine::graphics::RenderSystem>(graphicsContext->GetDevice());
-
-
-    editor->LoadGameLibrary("./libgame.so");
+    editor->LoadGameLibrary("build/game/libgame.so");
+    // editor->LoadDefaultScene();
     engine->GetSceneManager().LoadScene("default.scene");
 
+    auto& registry = engine->GetSceneManager().GetActiveScene()->GetRegistry();
+
+    auto editorCamera = registry.create();
+    registry.emplace<engine::Tag>(editorCamera, "EditorCamera");
+    registry.emplace<engine::Transform>(editorCamera,
+    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<engine::Camera>(editorCamera);
+    registry.emplace<EditorCameraTag>(editorCamera);
+
+    auto gameCamera = registry.create();
+    registry.emplace<engine::Tag>(gameCamera, "GameCamera");
+    registry.emplace<engine::Transform>(gameCamera,
+    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<engine::Camera>(gameCamera);
+    registry.emplace<engine::MainCameraTag>(gameCamera);
 
     editor->Running = true;
 }
 
 void EditorApp::Run() {
     while (editor->Running) {
+        engine->GetClock().Update();
         UpdateInput();
 
         engine->ProcessInput(inputState);
-        engine->DispatchCommands();
+        // engine->DispatchCommands();
 
-        editor->editorCameraUpdate();
+        UpdateEditorCameraSystem(engine->GetSceneManager().GetActiveScene()->GetRegistry(), engine->GetClock().GetDeltaTime(), *(engine->input));
         // editor systems
 
         if (editor->PlayMode & editor->gameSO.IsValid()) {
@@ -57,20 +76,21 @@ void EditorApp::Run() {
 
         editor->GetEditorGUI().RecordPanelsGpuCommands(*engine);
 
-        const auto cmd = SDL_AcquireGPUCommandBuffer(graphicsContext->GetDevice());
+        const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 
         SDL_GPUTexture* swapchainTexture = nullptr;
         uint32_t w, h;
-        SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphicsContext->GetWindow(), &swapchainTexture, &w, &h);
+        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphics_context_->GetWindow(), &swapchainTexture, &w, &h)) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+            continue;
+        }
         editor->GetEditorGUI().RenderToPanel(cmd, *renderSystem, *engine);
 
         editor->GetEditorGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
     }
 }
 
-void EditorApp::Shutdown() {
-
-}
+void EditorApp::Shutdown() {}
 void EditorApp::UpdateInput() {
     inputState.ResetFrame();
 
@@ -138,4 +158,4 @@ void EditorApp::UpdateInput() {
         }
     }
 }
-}
+}  // namespace editor

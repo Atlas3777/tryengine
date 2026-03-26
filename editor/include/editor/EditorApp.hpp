@@ -13,8 +13,7 @@ class EditorApp {
     void UpdateInput();
     std::unique_ptr<Editor> editor;
     std::unique_ptr<engine::core::Engine> engine;
-    std::unique_ptr<engine::graphics::GraphicsContext> graphicsContext;
-    std::unique_ptr<engine::graphics::RenderTarget> renderTarget;
+    std::unique_ptr<engine::graphics::GraphicsContext> graphics_context_;
     std::unique_ptr<engine::graphics::RenderSystem> renderSystem;
 public:
     void Init();

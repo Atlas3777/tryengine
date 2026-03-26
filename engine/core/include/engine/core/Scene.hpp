@@ -21,18 +21,18 @@ public:
   Scene& operator=(Scene&&) = default;
 
   // Доступ к registry
-  entt::registry& GetRegistry() { return m_Registry; }
-  const entt::registry& GetRegistry() const { return m_Registry; }
+  entt::registry& GetRegistry() { return *registry_; }
+  // const entt::registry& GetRegistry() const { return registry_.get(); }
 
-  const std::string& GetName() const { return m_Name; }
+  const std::string& GetName() const { return name_; }
 
   // Создание сущности-хелпера (удобная обертка)
   entt::entity CreateEntity();
   void DestroyEntity(entt::entity entity);
 
 private:
-  std::string m_Name;
-  entt::registry m_Registry;
+  std::string name_;
+  std::unique_ptr<entt::registry> registry_;
 };
 
 } // namespace engine

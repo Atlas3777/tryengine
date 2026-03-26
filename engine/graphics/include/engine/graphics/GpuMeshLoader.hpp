@@ -16,18 +16,18 @@ class GpuMeshLoader {
     result_type operator()(const std::string& path) const {
         const auto mesh = resManager->Get<resources::MeshData>(1);
 
-        auto gpuMesh = std::shared_ptr<Mesh>(new Mesh(), [device = this->device](const Mesh* m) {
+        auto gpu_mesh = std::shared_ptr<Mesh>(new Mesh(), [device = this->device](const Mesh* m) {
             // Эта лямбда вызовется автоматически, когда ресурс удалится из кэша и сцены!
-            if (m->vertexBuffer) {
-                SDL_ReleaseGPUBuffer(device, m->vertexBuffer);
+            if (m->vertex_buffer) {
+                SDL_ReleaseGPUBuffer(device, m->vertex_buffer);
             }
-            if (m->indexBuffer) {
-                SDL_ReleaseGPUBuffer(device, m->indexBuffer);
+            if (m->index_buffer) {
+                SDL_ReleaseGPUBuffer(device, m->index_buffer);
             }
             delete m;  // Очищаем саму структуру Mesh из оперативной памяти
         });
 
-        gpuMesh->numIndices = mesh->indexBuffer.size();
+        gpu_mesh->num_indices = mesh->indexBuffer.size();
         const Uint32 vSize = mesh->vertexBuffer.size() * sizeof(resources::Vertex);
         const Uint32 iSize = mesh->indexBuffer.size() * sizeof(Uint32);
 
@@ -35,12 +35,12 @@ class GpuMeshLoader {
         vInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
         vInfo.size = vSize;
 
-        gpuMesh->vertexBuffer = SDL_CreateGPUBuffer(device, &vInfo);
+        gpu_mesh->vertex_buffer = SDL_CreateGPUBuffer(device, &vInfo);
 
         SDL_GPUBufferCreateInfo iInfo{};
         iInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
         iInfo.size = iSize;
-        gpuMesh->indexBuffer = SDL_CreateGPUBuffer(device, &iInfo);
+        gpu_mesh->index_buffer = SDL_CreateGPUBuffer(device, &iInfo);
 
         SDL_GPUTransferBufferCreateInfo tBuff{};
         tBuff.size = vSize + iSize;
@@ -57,11 +57,11 @@ class GpuMeshLoader {
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
 
         const SDL_GPUTransferBufferLocation transferBuffer{tBuf, 0};
-        const SDL_GPUBufferRegion bufferReg{gpuMesh->vertexBuffer, 0, vSize};
+        const SDL_GPUBufferRegion bufferReg{gpu_mesh->vertex_buffer, 0, vSize};
         SDL_UploadToGPUBuffer(copy, &transferBuffer, &bufferReg, false);
 
         const SDL_GPUTransferBufferLocation transferBuffer2{tBuf, vSize};
-        const SDL_GPUBufferRegion bufferReg2{gpuMesh->indexBuffer, 0, iSize};
+        const SDL_GPUBufferRegion bufferReg2{gpu_mesh->index_buffer, 0, iSize};
         SDL_UploadToGPUBuffer(copy, &transferBuffer2,&bufferReg2, false);
 
         SDL_EndGPUCopyPass(copy);
@@ -69,7 +69,7 @@ class GpuMeshLoader {
         SDL_SubmitGPUCommandBuffer(cmd);
         SDL_ReleaseGPUTransferBuffer(device, tBuf);
 
-        return gpuMesh;
+        return gpu_mesh;
     }
 
    private:

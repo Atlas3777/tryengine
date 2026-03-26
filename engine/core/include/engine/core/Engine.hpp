@@ -21,8 +21,7 @@ class Engine {
     SceneManager& GetSceneManager() const { return *sceneManager; }
     Clock& GetClock() const { return *clock; }
     EngineSettings settings;
-    InputState input;
-    bool isRunning = true;
+    InputState* input;
 
    private:
     std::unique_ptr<SceneManager> sceneManager;

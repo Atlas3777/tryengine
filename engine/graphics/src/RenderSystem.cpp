@@ -49,9 +49,9 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
 
     SDL_BindGPUGraphicsPipeline(scenePass, renderer_->GetDefaultPipeline());
 
-    for (auto view_entities = reg.view<Transform, MeshRenderer>(); auto entity : view_entities) {
+    for (auto view_entities = reg.view<Transform, MeshFilter>(); auto entity : view_entities) {
         auto& transform = view_entities.get<Transform>(entity);
-        auto& meshRenderer = view_entities.get<MeshRenderer>(entity);
+        auto& meshRenderer = view_entities.get<MeshFilter>(entity);
 
 
         struct alignas(16) CombinedUBO {
@@ -70,13 +70,13 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
         // SDL_GPUTextureSamplerBinding tsb = {renderer_->, renderer_->GetCommonSampler()};
         // SDL_BindGPUFragmentSamplers(scenePass, 0, &tsb, 1);
 
-        SDL_GPUBufferBinding vb = {meshRenderer.mesh->vertexBuffer, 0};
+        SDL_GPUBufferBinding vb = {meshRenderer.mesh->vertex_buffer, 0};
         SDL_BindGPUVertexBuffers(scenePass, 0, &vb, 1);
 
-        SDL_GPUBufferBinding ib = {meshRenderer.mesh->indexBuffer, 0};
+        SDL_GPUBufferBinding ib = {meshRenderer.mesh->index_buffer, 0};
         SDL_BindGPUIndexBuffer(scenePass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
-        SDL_DrawGPUIndexedPrimitives(scenePass, meshRenderer.mesh->numIndices, 1, 0, 0, 0);
+        SDL_DrawGPUIndexedPrimitives(scenePass, meshRenderer.mesh->num_indices, 1, 0, 0, 0);
     }
     SDL_EndGPURenderPass(scenePass);
 }

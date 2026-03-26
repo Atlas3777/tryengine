@@ -95,6 +95,8 @@ void EditorGUI::RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GP
 
     ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmd, guiPass);
     SDL_EndGPURenderPass(guiPass);
+
+    SDL_SubmitGPUCommandBuffer(cmd);
 }
 
 void EditorGUI::DrawDockSpace() {

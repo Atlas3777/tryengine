@@ -9,6 +9,9 @@ namespace editor {
 Editor::~Editor() {
     UnloadGameLibrary(); // Обязательно освобождаем память при закрытии
 }
+void Editor::LoadDefaultScene() {
+    // engine->
+}
 
 bool Editor::LoadGameLibrary(const std::string& originalPath) {
     // 1. Выгружаем предыдущую версию, если она была

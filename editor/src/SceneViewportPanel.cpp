@@ -1,6 +1,11 @@
+#include "editor/SceneViewportPanel.hpp"
+
+#include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_decompose.hpp>
+
 #include "editor/Components.hpp"
 #include "editor/EditorGUI.hpp"
-#include "editor/SceneViewportPanel.hpp"
 #include "engine/core/Components.hpp"
 
 namespace editor {
@@ -23,13 +28,13 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
                       ImGui::GetWindowHeight());
 
     glm::mat4 viewMat = camera.viewMatrix;
-    float aspect = (float)target_.GetWidth() / (float)target_.GetHeight();
+    float aspect = (float)target_->GetWidth() / (float)target_->GetHeight();
     glm::mat4 projMat = glm::perspective(glm::radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
 
     glm::mat4 modelMatrix = tc.worldMatrix;
 
-    ImGuizmo::Manipulate(glm::value_ptr(viewMat), glm::value_ptr(projMat), m_CurrentGizmoOperation, m_CurrentGizmoMode,
-                         glm::value_ptr(modelMatrix));
+    // ImGuizmo::Manipulate(glm::value_ptr(viewMat), glm::value_ptr(projMat), m_CurrentGizmoOperation, m_CurrentGizmoMode,
+    //                      glm::value_ptr(modelMatrix));
 
     if (ImGuizmo::IsUsing()) {
         glm::mat4 localMatrix = modelMatrix;

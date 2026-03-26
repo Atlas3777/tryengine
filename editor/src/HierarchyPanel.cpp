@@ -1,13 +1,15 @@
 #include "editor/HierarchyPanel.hpp"
 
-#include "../../engine/core/include/engine/core/Components.hpp"
 #include "editor/Components.hpp"
+#include "engine/core/Components.hpp"
+#include "engine/core/Engine.hpp"
 #include "entt/entt.hpp"
 #include "imgui_internal.h"
 
 namespace editor {
 using namespace engine::types;
-using namespace engine::components;
+using namespace engine::core;
+using namespace engine;
 
 void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Hierarchy");

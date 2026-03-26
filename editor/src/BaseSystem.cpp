@@ -1,14 +1,15 @@
 #include <entt/entt.hpp>
 
-#include "../../engine/core/include/engine/core/CoreTypes.hpp"
+#include "engine/core/CoreTypes.hpp"
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
 namespace editor {
-using namespace engine::core;
-using namespace engine;
-void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const InputState& input) {
+void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engine::core::InputState& input) {
+    using namespace engine;
+    using namespace engine::core;
+
     if (!input.mouseButtons[3]) return;
     auto view = reg.view<engine::Transform, engine::Camera, EditorCameraTag>();
 

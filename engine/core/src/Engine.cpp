@@ -3,7 +3,8 @@
 
 namespace engine::core {
 Engine::Engine() {
-
+    sceneManager = std::make_unique<SceneManager>();
+    clock = std::make_unique<Clock>();
 }
 
 void Engine::UpdateTime() {
@@ -15,5 +16,8 @@ void Engine::PushCommand(const EngineCommand& cmd) {
     commandQueue.push_back(cmd);
 }
 
+void Engine::ProcessInput(InputState& input2) {
+    input = &input2;
+}
 
 }  // namespace engine
