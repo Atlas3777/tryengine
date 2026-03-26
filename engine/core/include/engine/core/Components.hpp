@@ -21,7 +21,7 @@ struct MeshMaterial {
     entt::resource<graphics::Texture> normal_map;
     entt::id_type asset_id = entt::null;
 
-    vec4 baseColor{1.0f};
+    vec4 base_color{1.0f};
     float roughness = 0.5f;
     float metallic = 0.0f;
 };
@@ -36,7 +36,7 @@ struct Transform {
     quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     vec3 scale{1.0f};
 
-    mat4 worldMatrix{1.0f};
+    mat4 world_matrix{1.0f};
 
     mat4 GetLocalMatrix() const {
         mat4 model = mat4(1.0f);
@@ -48,8 +48,8 @@ struct Transform {
 };
 
 struct AABB {
-    vec3 worldMin;
-    vec3 worldMax;
+    vec3 world_min;
+    vec3 world_max;
 };
 
 // Добавим простой компонент имени, если у тебя его еще нет
@@ -62,8 +62,8 @@ struct Tag {
 struct MainCameraTag{};
 struct Camera {
     float fov = 70.0f;
-    float nearPlane = 0.1f;
-    float farPlane = 100.0f;
+    float near_plane = 0.1f;
+    float far_plane = 100.0f;
     float sensitivity = 0.08f;
     float speed = 3.0f;
 
@@ -72,6 +72,6 @@ struct Camera {
     vec3 up = {0.0f, 1.0f, 0.0f};
     vec3 right = {1.0f, 0.0f, 0.0f};
 
-    mat4 viewMatrix = mat4(1.0f);
+    mat4 view_matrix = mat4(1.0f);
 };
 }  // namespace engine::components

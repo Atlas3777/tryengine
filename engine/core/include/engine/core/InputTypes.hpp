@@ -42,7 +42,6 @@ struct InputState {
         return isDown[static_cast<uint16_t>(key)];
     }
 
-    // 2. Вспомогательные методы для проверки состояний без каста снаружи
     bool Pressed(Key key) const {
         return justPressed[static_cast<uint16_t>(key)];
     }

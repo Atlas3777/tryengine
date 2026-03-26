@@ -16,65 +16,48 @@
 
 namespace editor {
 void EditorApp::Init() {
-    engine = std::make_unique<engine::core::Engine>();
+    engine_ = std::make_unique<engine::core::Engine>();
     graphics_context_ = std::make_unique<engine::graphics::GraphicsContext>();
 
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
         return;
     }
-    editor = std::make_unique<Editor>(*graphics_context_);
+    editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
+    render_system_ = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
+    engine_->SetInputSource(&this->input_state_);
 
     using namespace entt::literals;
 
     engine::resources::ResourceManager resManager;
     engine::resources::AssetDatabase assetDatabase;
-    //
+
     // resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
     // resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager,
     // graphicsContext->GetDevice()));
 
-    renderSystem = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
+    editor_->LoadGameLibrary("build/game/libgame.so");
+    editor_->LoadDefaultScene();
 
-    editor->LoadGameLibrary("build/game/libgame.so");
-    // editor->LoadDefaultScene();
-    engine->GetSceneManager().LoadScene("default.scene");
-
-    auto& registry = engine->GetSceneManager().GetActiveScene()->GetRegistry();
-
-    auto editorCamera = registry.create();
-    registry.emplace<engine::Tag>(editorCamera, "EditorCamera");
-    registry.emplace<engine::Transform>(editorCamera,
-    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
-    registry.emplace<engine::Camera>(editorCamera);
-    registry.emplace<EditorCameraTag>(editorCamera);
-
-    auto gameCamera = registry.create();
-    registry.emplace<engine::Tag>(gameCamera, "GameCamera");
-    registry.emplace<engine::Transform>(gameCamera,
-    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
-    registry.emplace<engine::Camera>(gameCamera);
-    registry.emplace<engine::MainCameraTag>(gameCamera);
-
-    editor->Running = true;
+    editor_->Running = true;
 }
 
 void EditorApp::Run() {
-    while (editor->Running) {
-        engine->GetClock().Update();
+    while (editor_->Running) {
         UpdateInput();
+        engine_->GetClock().Update();
 
-        engine->ProcessInput(inputState);
         // engine->DispatchCommands();
 
-        UpdateEditorCameraSystem(engine->GetSceneManager().GetActiveScene()->GetRegistry(), engine->GetClock().GetDeltaTime(), *(engine->input));
+        UpdateEditorCameraSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry(),
+                                 engine_->GetClock().GetDeltaTime(), engine_->GetInput());
         // editor systems
 
-        if (editor->PlayMode & editor->gameSO.IsValid()) {
-            editor->gameSO.updateGameSystems(engine.get());
+        if (editor_->PlayMode & editor_->gameSO.IsValid()) {
+            editor_->gameSO.updateGameSystems(engine_.get());
         }
 
-        editor->GetEditorGUI().RecordPanelsGpuCommands(*engine);
+        editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_);
 
         const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 
@@ -84,15 +67,15 @@ void EditorApp::Run() {
             SDL_SubmitGPUCommandBuffer(cmd);
             continue;
         }
-        editor->GetEditorGUI().RenderToPanel(cmd, *renderSystem, *engine);
+        editor_->GetEditorGUI().RenderToPanel(cmd, *render_system_, *engine_);
 
-        editor->GetEditorGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
+        editor_->GetEditorGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
     }
 }
 
 void EditorApp::Shutdown() {}
 void EditorApp::UpdateInput() {
-    inputState.ResetFrame();
+    input_state_.ResetFrame();
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -102,7 +85,7 @@ void EditorApp::UpdateInput() {
         switch (event.type) {
             case SDL_EVENT_QUIT: {
                 // Закрываем редактор при нажатии на крестик окна
-                editor->Running = false;
+                editor_->Running = false;
                 // engine->PushCommand(CmdQuit{}); // Раскомментируй, если движку тоже надо знать о выходе
                 break;
             }
@@ -111,24 +94,24 @@ void EditorApp::UpdateInput() {
                 auto key = static_cast<engine::core::Key>(event.key.scancode);
 
                 if (!event.key.repeat) {
-                    inputState.justPressed[static_cast<int>(key)] = true;
+                    input_state_.justPressed[static_cast<int>(key)] = true;
                 }
-                inputState.isDown[static_cast<int>(key)] = true;
+                input_state_.isDown[static_cast<int>(key)] = true;
                 break;
             }
 
             case SDL_EVENT_KEY_UP: {
                 auto key = static_cast<engine::core::Key>(event.key.scancode);
-                inputState.justReleased[static_cast<int>(key)] = true;
-                inputState.isDown[static_cast<int>(key)] = false;
+                input_state_.justReleased[static_cast<int>(key)] = true;
+                input_state_.isDown[static_cast<int>(key)] = false;
                 break;
             }
 
             case SDL_EVENT_MOUSE_MOTION: {
-                inputState.mouseX = event.motion.x;
-                inputState.mouseY = event.motion.y;
-                inputState.mouseDeltaX += event.motion.xrel;
-                inputState.mouseDeltaY += event.motion.yrel;
+                input_state_.mouseX = event.motion.x;
+                input_state_.mouseY = event.motion.y;
+                input_state_.mouseDeltaX += event.motion.xrel;
+                input_state_.mouseDeltaY += event.motion.yrel;
                 break;
             }
 
@@ -136,7 +119,7 @@ void EditorApp::UpdateInput() {
                 // В SDL_BUTTON_LEFT = 1, поэтому вычитаем 1, чтобы попасть в индексы 0-4 нашего массива
                 int btnIdx = event.button.button - 1;
                 if (btnIdx >= 0 && btnIdx < 5) {
-                    inputState.mouseButtons[btnIdx] = true;
+                    input_state_.mouseButtons[btnIdx] = true;
                 }
                 break;
             }
@@ -144,7 +127,7 @@ void EditorApp::UpdateInput() {
             case SDL_EVENT_MOUSE_BUTTON_UP: {
                 int btnIdx = event.button.button - 1;
                 if (btnIdx >= 0 && btnIdx < 5) {
-                    inputState.mouseButtons[btnIdx] = false;
+                    input_state_.mouseButtons[btnIdx] = false;
                 }
                 break;
             }

@@ -9,32 +9,23 @@ namespace engine::core {
 
 class SceneManager {
 public:
-  SceneManager() = default;
-  ~SceneManager() = default;
+    SceneManager() = default;
+    SceneManager(const SceneManager&) = delete;
+    SceneManager& operator=(const SceneManager&) = delete;
+    SceneManager(SceneManager&&) = default;
+    SceneManager& operator=(SceneManager&&) = default;
 
-  // Запрещаем копирование менеджера
-  SceneManager(const SceneManager&) = delete;
-  SceneManager& operator=(const SceneManager&) = delete;
+    ~SceneManager() = default;
 
-  // Разрешаем перемещение
-  SceneManager(SceneManager&&) = default;
-  SceneManager& operator=(SceneManager&&) = default;
+    Scene* CreateScene(const std::string& name);
 
-  // Создает новую пустую сцену и делает её активной
-  Scene* CreateScene(const std::string& name);
+    bool LoadScene(const std::string& filepath);
+    bool SaveScene(const std::string& filepath);
 
-  // Загружает сцену из файла (используя EnTT snapshot loader под капотом)
-  bool LoadScene(const std::string& filepath);
-
-  // Сохраняет текущую сцену (используя EnTT snapshot)
-  bool SaveScene(const std::string& filepath);
-
-  // Получение текущей активной сцены
-  Scene* GetActiveScene() { return m_ActiveScene.get(); }
+    Scene* GetActiveScene() { return active_scene_.get(); }
 
 private:
-  // Менеджер эксклюзивно владеет активной сценой
-  std::unique_ptr<Scene> m_ActiveScene = nullptr;
+    std::unique_ptr<Scene> active_scene_ = nullptr;
 };
 
-} // namespace engine
+}  // namespace engine::core

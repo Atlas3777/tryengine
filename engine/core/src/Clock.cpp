@@ -7,14 +7,12 @@ Clock::Clock() {
 }
 
 const TimeState& Clock::Update() {
-    auto currentTime = std::chrono::steady_clock::now();
+    const auto currentTime = std::chrono::steady_clock::now();
 
-    // Вычисляем разницу (duration)
     const std::chrono::duration<double> elapsed = currentTime - lastTime;
     state.deltaTime = elapsed.count();
     lastTime = currentTime;
 
-    // Считаем FPS
     state.fpsTimer += state.deltaTime;
     state.frameCount++;
 

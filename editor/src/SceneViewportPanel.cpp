@@ -27,11 +27,11 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, ImGui::GetWindowWidth(),
                       ImGui::GetWindowHeight());
 
-    glm::mat4 viewMat = camera.viewMatrix;
+    glm::mat4 viewMat = camera.view_matrix;
     float aspect = (float)target_->GetWidth() / (float)target_->GetHeight();
-    glm::mat4 projMat = glm::perspective(glm::radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
+    glm::mat4 projMat = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
 
-    glm::mat4 modelMatrix = tc.worldMatrix;
+    glm::mat4 modelMatrix = tc.world_matrix;
 
     // ImGuizmo::Manipulate(glm::value_ptr(viewMat), glm::value_ptr(projMat), m_CurrentGizmoOperation, m_CurrentGizmoMode,
     //                      glm::value_ptr(modelMatrix));
@@ -41,7 +41,7 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
 
         if (hc.parent != entt::null && reg.all_of<engine::Transform>(hc.parent)) {
             auto& parentTC = reg.get<engine::Transform>(hc.parent);
-            localMatrix = glm::inverse(parentTC.worldMatrix) * modelMatrix;
+            localMatrix = glm::inverse(parentTC.world_matrix) * modelMatrix;
         }
 
         glm::vec3 skew;

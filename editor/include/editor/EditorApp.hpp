@@ -8,16 +8,20 @@
 
 namespace editor {
 class EditorApp {
-    private:
-    engine::core::InputState inputState;
-    void UpdateInput();
-    std::unique_ptr<Editor> editor;
-    std::unique_ptr<engine::core::Engine> engine;
-    std::unique_ptr<engine::graphics::GraphicsContext> graphics_context_;
-    std::unique_ptr<engine::graphics::RenderSystem> renderSystem;
 public:
     void Init();
     void Run();
     void Shutdown();
+
+private:
+    void UpdateInput();
+
+    std::unique_ptr<engine::graphics::GraphicsContext> graphics_context_;
+    std::unique_ptr<engine::graphics::RenderSystem> render_system_;
+    std::unique_ptr<engine::core::Engine> engine_;
+
+    std::unique_ptr<Editor> editor_;
+
+    engine::core::InputState input_state_;
 };
-}
+}  // namespace editor

@@ -13,8 +13,8 @@ namespace engine::core {
 
 Scene* SceneManager::CreateScene(const std::string& name) {
     // std::make_unique безопасно создаст новую сцену и удалит старую (если была)
-    m_ActiveScene = std::make_unique<Scene>(name);
-    return m_ActiveScene.get();
+    active_scene_ = std::make_unique<Scene>(name);
+    return active_scene_.get();
 }
 
 bool SceneManager::LoadScene(const std::string& filepath) {
@@ -37,12 +37,12 @@ bool SceneManager::LoadScene(const std::string& filepath) {
     std::cout << "Loading scene from: " << filepath << "\n";
 
     // Перемещаем владение новой сценой в менеджер
-    m_ActiveScene = std::move(newScene);
+    active_scene_ = std::move(newScene);
     return true;
 }
 
 bool SceneManager::SaveScene(const std::string& filepath) {
-    if (!m_ActiveScene) return false;
+    if (!active_scene_) return false;
 
     // Пример сериализации через entt::snapshot
     /*

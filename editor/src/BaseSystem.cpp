@@ -41,7 +41,7 @@ void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engin
         if (input.IsDown(Key::E)) transform.position += cam.up * moveSpeed;
         if (input.IsDown(Key::Q)) transform.position -= cam.up * moveSpeed;
 
-        cam.viewMatrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
+        cam.view_matrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
     }
 }
 }  // namespace editor

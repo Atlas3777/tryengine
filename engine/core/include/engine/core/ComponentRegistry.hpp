@@ -17,12 +17,12 @@ public:
   template<typename T>
   void RegisterForSerialization() {
     // Запоминаем, как сохранять тип T
-    m_SaveCallbacks.push_back([](entt::snapshot& snap, cereal::BinaryOutputArchive& ar) {
+    save_callbacks_.push_back([](entt::snapshot& snap, cereal::BinaryOutputArchive& ar) {
         snap.get<T>(ar);
     });
 
     // Запоминаем, как загружать тип T
-    m_LoadCallbacks.push_back([](entt::snapshot_loader& loader, cereal::BinaryInputArchive& ar) {
+    load_callbacks_.push_back([](entt::snapshot_loader& loader, cereal::BinaryInputArchive& ar) {
         loader.get<T>(ar);
     });
   }
@@ -32,7 +32,7 @@ public:
     entt::snapshot snap{reg};
     snap.get<entt::entity>(ar); // Сущности всегда сохраняем первыми!
 
-    for (auto& callback : m_SaveCallbacks) {
+    for (auto& callback : save_callbacks_) {
       callback(snap, ar);     // Вызываем .get<T>(ar) для всех зарегистрированных типов
     }
   }
@@ -42,15 +42,15 @@ public:
     entt::snapshot_loader loader{reg};
     loader.get<entt::entity>(ar);
 
-    for (auto& callback : m_LoadCallbacks) {
+    for (auto& callback : load_callbacks_) {
       callback(loader, ar);
     }
     loader.orphans(); // Удаляем пустые сущности, если что-то пошло не так
   }
 
 private:
-  std::vector<SaveCallback> m_SaveCallbacks;
-  std::vector<LoadCallback> m_LoadCallbacks;
+  std::vector<SaveCallback> save_callbacks_;
+  std::vector<LoadCallback> load_callbacks_;
 };
 
 } // namespace engine

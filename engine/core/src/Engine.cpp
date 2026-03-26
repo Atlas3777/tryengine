@@ -1,4 +1,5 @@
 #include "engine/core/Engine.hpp"
+
 #include "engine/core/Clock.hpp"
 
 namespace engine::core {
@@ -7,8 +8,11 @@ Engine::Engine() {
     clock = std::make_unique<Clock>();
 }
 
-void Engine::UpdateTime() {
+void Engine::UpdateTime() const {
     clock->Update();
+}
+void Engine::DispatchCommands() {
+    // TODO: Реализовать обработку очереди команд
 }
 
 void Engine::PushCommand(const EngineCommand& cmd) {
@@ -16,8 +20,4 @@ void Engine::PushCommand(const EngineCommand& cmd) {
     commandQueue.push_back(cmd);
 }
 
-void Engine::ProcessInput(InputState& input2) {
-    input = &input2;
-}
-
-}  // namespace engine
+}  // namespace engine::core

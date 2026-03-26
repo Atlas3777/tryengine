@@ -3,30 +3,31 @@
 #include <vector>
 
 #include "engine/core/Clock.hpp"
-#include "engine/core/EngineState.hpp"
+#include "engine/core/EngineCommands.hpp"
 #include "engine/core/InputTypes.hpp"
 #include "engine/core/SceneManager.hpp"
-#include "engine/core/EngineCommands.hpp"
 
 namespace engine::core {
 class Engine {
-   public:
+public:
     Engine();
-    void ProcessInput(InputState& input);
-    void UpdateTime();
+    void UpdateTime() const;
     void DispatchCommands();
-
     void PushCommand(const EngineCommand& cmd);
 
-    SceneManager& GetSceneManager() const { return *sceneManager; }
-    Clock& GetClock() const { return *clock; }
-    EngineSettings settings;
-    InputState* input;
+    void SetInputSource(InputState* source) { input = source; }
 
-   private:
+    [[nodiscard]] SceneManager& GetSceneManager() const { return *sceneManager; }
+    [[nodiscard]] Clock& GetClock() const { return *clock; }
+    [[nodiscard]] InputState& GetInput() const { return *input; }
+
+private:
     std::unique_ptr<SceneManager> sceneManager;
     std::unique_ptr<Clock> clock;
+
+    InputState* input = nullptr;
+
     std::vector<EngineCommand> commandQueue;
     std::mutex commandMutex;
 };
-}  // namespace engine
+}  // namespace engine::core

@@ -9,22 +9,14 @@ namespace editor {
 
 class Editor {
    public:
-    Editor(engine::graphics::GraphicsContext& graphics_context) {
-        editorGUI = std::make_unique<EditorGUI>(graphics_context);
-    };
-    ~Editor();
+    Editor(engine::core::Engine& eng, engine::graphics::GraphicsContext& graphics_context);
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
     Editor(Editor&&) noexcept = delete;
     Editor& operator=(Editor&&) noexcept = delete;
 
-    bool Running = false;
-    bool PlayMode = false;
+    ~Editor();
 
-    // Храним состояние загруженной библиотеки
-    GameLibrary gameSO;
-
-    // Возвращаем bool для проверки успеха загрузки
     bool LoadGameLibrary(const std::string& originalPath);
     void UnloadGameLibrary();
 
@@ -32,11 +24,16 @@ class Editor {
     void SaveSceneForPlayMode();
     void LoadDefaultScene();
 
-    // Методы из твоего EditorApp (добавлены для консистентности)
     void editorCameraUpdate();
-    EditorGUI& GetEditorGUI() { return *editorGUI; };
+
+    EditorGUI& GetEditorGUI() { return *editorGUI; }
+
+    bool Running = false;
+    bool PlayMode = false;
+    GameLibrary gameSO;
 
    private:
+    engine::core::Engine& engine_;
     std::unique_ptr<EditorGUI> editorGUI;
 };
 

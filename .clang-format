@@ -3,9 +3,50 @@ Language: Cpp
 BasedOnStyle: Google
 ColumnLimit: 120
 IndentWidth: 4
+AccessModifierOffset: -4 # Выравнивает public/private по левому краю класса (вместо отступа в 2 пробела)
 
+# Улучшенная сортировка инклудов
 IncludeCategories:
   - Regex: '^<imgui\.h>'
-    Priority: -1
+    Priority: 0
   - Regex: '^<ImGuizmo\.h>'
     Priority: 1
+  - Regex: '^<.*' # Системные заголовочные файлы <...>
+    Priority: 2
+  - Regex: '^".*' # Пользовательские заголовочные файлы "..."
+    Priority: 3
+
+# Правила для современных фишек C++
+Standard: Latest
+DerivePointerAlignment: false
+PointerAlignment: Left # int* ptr; вместо int *ptr; (стиль Google/Bjarne)
+
+# Оформление блоков и скобок
+AllowShortFunctionsOnASingleLine: Inline # Разрешает только тривиальные методы в одну строку
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  BeforeElse: false
+  BeforeCatch: false
+  SplitEmptyFunction: true
+
+# Выравнивание (делает код более табличным и читаемым)
+AlignAfterOpenBracket: Align
+AlignOperands: true
+AlignTrailingComments: true
+
+# Обработка списков инициализации (важно для конструкторов)
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: NextLine
+
+# Прочее
+SpaceAfterCStyleCast: true
+SpacesInContainerLiterals: false
+FixNamespaceComments: true # Автоматически добавляет // namespace name в конце

@@ -16,8 +16,8 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
     auto& cameraComp = camView.get<Camera>(camera_entity);
 
     float aspect = static_cast<float>(target->GetWidth()) / static_cast<float>(target->GetHeight());
-    glm::mat4 projMat = glm::perspective(glm::radians(cameraComp.fov), aspect, cameraComp.nearPlane, cameraComp.farPlane);
-    glm::mat4 viewMat = cameraComp.viewMatrix;
+    glm::mat4 projMat = glm::perspective(glm::radians(cameraComp.fov), aspect, cameraComp.near_plane, cameraComp.far_plane);
+    glm::mat4 viewMat = cameraComp.view_matrix;
     glm::vec3 camPos = camTransform.position;
 
     // SDL_GPURenderPass* scenePass = renderer.BeginRenderPass(cmd, *target, {0.69f, 0.77f, 0.87f, 1.0f});
@@ -63,7 +63,7 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
 
         ubo.view = viewMat;
         ubo.proj = projMat;
-        ubo.model = transform.worldMatrix;
+        ubo.model = transform.world_matrix;
         ubo.normalMatrix = glm::inverseTranspose(ubo.model);
 
         // SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(CombinedUBO));

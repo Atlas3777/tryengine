@@ -1,18 +1,22 @@
 #include "editor/Editor.hpp"
-#include "game/GameAPI.hpp"
+
 #include <dlfcn.h>
-#include <iostream>
 #include <filesystem>
+#include <iostream>
+
+#include "editor/Components.hpp"
+#include "engine/core/Components.hpp"
+#include "game/GameAPI.hpp"
 
 namespace editor {
 
-Editor::~Editor() {
-    UnloadGameLibrary(); // Обязательно освобождаем память при закрытии
-}
-void Editor::LoadDefaultScene() {
-    // engine->
+Editor::Editor(engine::core::Engine& eng, engine::graphics::GraphicsContext& graphics_context) : engine_(eng) {
+    editorGUI = std::make_unique<EditorGUI>(graphics_context);
 }
 
+Editor::~Editor() {
+    UnloadGameLibrary();  // Обязательно освобождаем память при закрытии
+}
 bool Editor::LoadGameLibrary(const std::string& originalPath) {
     // 1. Выгружаем предыдущую версию, если она была
     UnloadGameLibrary();
@@ -47,7 +51,7 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
     const char* err = dlerror();
     if (err || !gameSO.IsValid()) {
         std::cerr << "[Editor] Ошибка dlsym: " << (err ? err : "Символы не найдены") << '\n';
-        UnloadGameLibrary(); // Откат, если функции не найдены
+        UnloadGameLibrary();  // Откат, если функции не найдены
         return false;
     }
 
@@ -62,6 +66,27 @@ void Editor::UnloadGameLibrary() {
         gameSO.updateGameSystems = nullptr;
         std::cout << "[Editor] Библиотека игры выгружена.\n";
     }
+}
+
+void Editor::LoadDefaultScene() {
+    engine_.GetSceneManager().LoadScene("default_scene");
+    auto& registry = engine_.GetSceneManager().GetActiveScene()->GetRegistry();
+
+    auto editorCamera = registry.create();
+    registry.emplace<engine::Tag>(editorCamera, "EditorCamera");
+    registry.emplace<engine::Transform>(editorCamera,
+    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<engine::Camera>(editorCamera);
+    registry.emplace<EditorCameraTag>(editorCamera);
+
+
+
+    auto gameCamera = registry.create();
+    registry.emplace<engine::Tag>(gameCamera, "GameCamera");
+    registry.emplace<engine::Transform>(gameCamera,
+    engine::Transform{glm::vec3(0.f, 0.f, -2.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<engine::Camera>(gameCamera);
+    registry.emplace<engine::MainCameraTag>(gameCamera);
 }
 
 } // namespace editor

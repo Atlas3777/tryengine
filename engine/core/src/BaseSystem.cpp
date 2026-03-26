@@ -20,12 +20,12 @@ void UpdateTransformSystem(entt::registry& reg) {
 
         if (hierarchy.parent == entt::null) {
             // Если корнь — мировая матрица равна локальной
-            transform.worldMatrix = localMatrix;
+            transform.world_matrix = localMatrix;
         } else {
             // Если есть родитель — умножаем его мировую на нашу локальную
             // Важно: родитель уже обновлен благодаря сортировке!
             auto& parentTransform = reg.get<Transform>(hierarchy.parent);
-            transform.worldMatrix = parentTransform.worldMatrix * localMatrix;
+            transform.world_matrix = parentTransform.world_matrix * localMatrix;
         }
     });
 }
