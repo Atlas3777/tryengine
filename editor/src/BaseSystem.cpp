@@ -10,7 +10,7 @@ void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engin
     using namespace engine;
     using namespace engine::core;
 
-    if (!input.mouseButtons[3]) return;
+    if (!input.IsMouseDown(Mouse::Right)) return;
     auto view = reg.view<engine::Transform, engine::Camera, EditorCameraTag>();
 
     for (auto entity : view) {

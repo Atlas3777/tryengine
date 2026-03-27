@@ -38,7 +38,8 @@ void EditorApp::Init() {
     }
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
     render_system_ = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
-    engine_->SetInputSource(&this->input_state_);
+    // UpdateInput();
+    engine_->SetInputSource(&(this->input_state_));
 
     using namespace entt::literals;
 
@@ -133,9 +134,12 @@ void EditorApp::UpdateInput() {
             }
 
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                // В SDL_BUTTON_LEFT = 1, поэтому вычитаем 1, чтобы попасть в индексы 0-4 нашего массива
                 int btnIdx = event.button.button - 1;
                 if (btnIdx >= 0 && btnIdx < 5) {
+                    // Если кнопка еще не была нажата в прошлом кадре, значит это "свежее" нажатие
+                    if (!input_state_.mouseButtons[btnIdx]) {
+                        input_state_.mouseJustPressed[btnIdx] = true;
+                    }
                     input_state_.mouseButtons[btnIdx] = true;
                 }
                 break;
@@ -144,6 +148,7 @@ void EditorApp::UpdateInput() {
             case SDL_EVENT_MOUSE_BUTTON_UP: {
                 int btnIdx = event.button.button - 1;
                 if (btnIdx >= 0 && btnIdx < 5) {
+                    input_state_.mouseJustReleased[btnIdx] = true;
                     input_state_.mouseButtons[btnIdx] = false;
                 }
                 break;

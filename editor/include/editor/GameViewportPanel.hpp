@@ -6,11 +6,12 @@
 
 namespace editor {
 class GameViewportPanel : public BaseViewport {
-   public:
+public:
     GameViewportPanel(SDL_GPUDevice* device) : BaseViewport(device) {}
     const char* GetName() const override { return "Game"; }
 
     void OnImGuiRender(entt::registry& reg) override {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
         ImGui::Begin("Game");
 
         // Тут можно добавить логику поиска "активной" камеры в ECS
@@ -18,6 +19,7 @@ class GameViewportPanel : public BaseViewport {
         DrawTexture();
 
         ImGui::End();
+        ImGui::PopStyleVar();
     }
     void OnRender(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& rs, entt::registry& reg) override {
         const auto mainCamera = reg.view<engine::Camera, engine::MainCameraTag>().front();

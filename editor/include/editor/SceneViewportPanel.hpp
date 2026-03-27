@@ -6,8 +6,8 @@
 #include "engine/core/Components.hpp"
 namespace editor {
 class SceneViewportPanel : public BaseViewport {
-   public:
-    SceneViewportPanel(SDL_GPUDevice* device):BaseViewport(device){}
+public:
+    SceneViewportPanel(SDL_GPUDevice* device) : BaseViewport(device) {}
 
     const char* GetName() const override { return "Scene"; }
 
@@ -27,7 +27,7 @@ class SceneViewportPanel : public BaseViewport {
         rs.RenderScene(reg, mainCamera, target_.get(), cmd);
     }
 
-   private:
+private:
     void HandleGizmos(entt::registry& reg);
 };
 }  // namespace editor

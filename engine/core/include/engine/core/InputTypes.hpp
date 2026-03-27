@@ -33,6 +33,15 @@ enum class Key : uint16_t {
     Count = 512 // Задает размер массива, совпадает с SDL_SCANCODE_COUNT
 };
 
+enum class Mouse : uint8_t {
+    Left = 0,
+    Middle = 1,
+    Right = 2,
+    X1 = 3,
+    X2 = 4,
+    Count = 5
+};
+
 struct InputState {
     bool isDown[static_cast<int>(Key::Count)] = {false};
     bool justPressed[static_cast<int>(Key::Count)] = {false};
@@ -52,21 +61,35 @@ struct InputState {
 
     float mouseX = 0.0f, mouseY = 0.0f;
     float mouseDeltaX = 0.0f, mouseDeltaY = 0.0f;
-    bool mouseButtons[5] = {false};
-    /*
-        #define SDL_BUTTON_LEFT      1
-        #define SDL_BUTTON_MIDDLE    2
-        #define SDL_BUTTON_RIGHT     3
-        #define SDL_BUTTON_X1        4
-        #define SDL_BUTTON_X2        5
-    */
 
-    // Вспомогательная функция для сброса однокадровых событий
+    bool mouseButtons[static_cast<int>(Mouse::Count)] = {false};
+    bool mouseJustPressed[static_cast<int>(Mouse::Count)] = {false};
+    bool mouseJustReleased[static_cast<int>(Mouse::Count)] = {false};
+
+    // Теперь принимаем Mouse вместо int
+    bool IsMouseDown(Mouse button) const {
+        return mouseButtons[static_cast<int>(button)];
+    }
+
+    bool MousePressed(Mouse button) const {
+        return mouseJustPressed[static_cast<int>(button)];
+    }
+
+    bool MouseReleased(Mouse button) const {
+        return mouseJustReleased[static_cast<int>(button)];
+    }
+
     void ResetFrame() {
         for (int i = 0; i < static_cast<int>(Key::Count); ++i) {
             justPressed[i] = false;
             justReleased[i] = false;
         }
+
+        for (int i = 0; i < static_cast<int>(Mouse::Count); ++i) {
+            mouseJustPressed[i] = false;
+            mouseJustReleased[i] = false;
+        }
+
         mouseDeltaX = 0.0f;
         mouseDeltaY = 0.0f;
     }
