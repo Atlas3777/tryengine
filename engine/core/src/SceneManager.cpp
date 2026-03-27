@@ -1,13 +1,11 @@
-#include "../include/engine/core/SceneManager.hpp"
+#include "engine/core/SceneManager.hpp"
 
+#include <cereal/archives/binary.hpp>
 #include <fstream>
 #include <glm/fwd.hpp>
 #include <iostream>
 
 #include "engine/core/Components.hpp"
-// Здесь вам понадобятся архивы (например, cereal), о которых писалось в документации EnTT
-// #include <cereal/archives/binary.hpp>
-// #include <fstream>
 
 namespace engine::core {
 
@@ -30,8 +28,7 @@ bool SceneManager::LoadScene(const std::string& filepath) {
     // cereal::BinaryInputArchive input(is);
     // entt::snapshot_loader{newScene->GetRegistry()}
     //     .get<entt::entity>(input)
-    //     .get<Transform>(input)  // Список ваших компонентов
-    //     .get<Mesh>(input)
+    //     .get<Transform>(input)
     //     .orphans();
 
     std::cout << "Loading scene from: " << filepath << "\n";

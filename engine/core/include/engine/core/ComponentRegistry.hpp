@@ -1,56 +1,69 @@
 #pragma once
 
-#include <entt/entt.hpp>
 #include <cereal/archives/binary.hpp>
-#include <functional>
-#include <vector>
+#include <entt/entt.hpp>
 
-namespace engine::core {
-
+namespace engine::resources {
+class ResourceManager;
+}
 class ComponentRegistry {
 public:
-  // Сигнатуры функций, которые принимают уже созданные архивы и снапшоты
-  using SaveCallback = std::function<void(entt::snapshot&, cereal::BinaryOutputArchive&)>;
-  using LoadCallback = std::function<void(entt::snapshot_loader&, cereal::BinaryInputArchive&)>;
-
-  // Метод для регистрации любого компонента T
-  template<typename T>
-  void RegisterForSerialization() {
-    // Запоминаем, как сохранять тип T
-    save_callbacks_.push_back([](entt::snapshot& snap, cereal::BinaryOutputArchive& ar) {
-        snap.get<T>(ar);
-    });
-
-    // Запоминаем, как загружать тип T
-    load_callbacks_.push_back([](entt::snapshot_loader& loader, cereal::BinaryInputArchive& ar) {
-        loader.get<T>(ar);
-    });
-  }
-
-  // Вызывается при сохранении сцены
-  void Serialize(entt::registry& reg, cereal::BinaryOutputArchive& ar) {
-    entt::snapshot snap{reg};
-    snap.get<entt::entity>(ar); // Сущности всегда сохраняем первыми!
-
-    for (auto& callback : save_callbacks_) {
-      callback(snap, ar);     // Вызываем .get<T>(ar) для всех зарегистрированных типов
+    template<typename T>
+    void Register() {
+        // serializers_.push_back(&SerializeImpl<T>);
+        // deserializers_.push_back(&DeserializeImpl<T>);
+        // post_load_.push_back(&PostLoadImpl<T>);
     }
-  }
 
-  // Вызывается при загрузке сцены
-  void Deserialize(entt::registry& reg, cereal::BinaryInputArchive& ar) {
-    entt::snapshot_loader loader{reg};
-    loader.get<entt::entity>(ar);
+    void Serialize(const entt::registry& reg, cereal::BinaryOutputArchive& ar) {
+        entt::snapshot snap{reg};
+        snap.get<entt::entity>(ar);
 
-    for (auto& callback : load_callbacks_) {
-      callback(loader, ar);
+        for (auto fn : serializers_) {
+            fn(snap, ar);
+        }
     }
-    loader.orphans(); // Удаляем пустые сущности, если что-то пошло не так
-  }
+
+    void Deserialize(entt::registry& reg, cereal::BinaryInputArchive& ar) {
+        entt::snapshot_loader loader{reg};
+        loader.get<entt::entity>(ar);
+
+        for (auto fn : deserializers_) {
+            fn(loader, ar);
+        }
+
+        loader.orphans();
+    }
+
+    void PostLoad(entt::registry& reg, engine::resources::ResourceManager& rm) {
+        for (auto fn : post_load_) {
+            fn(reg, rm);
+        }
+    }
 
 private:
-  std::vector<SaveCallback> save_callbacks_;
-  std::vector<LoadCallback> load_callbacks_;
-};
+    using SaveFn = void(*)(entt::snapshot&, cereal::BinaryOutputArchive&);
+    using LoadFn = void(*)(entt::snapshot_loader&, cereal::BinaryInputArchive&);
+    using PostFn = void(*)(entt::registry&, engine::resources::ResourceManager&);
 
-} // namespace engine
+    std::vector<SaveFn> serializers_;
+    std::vector<LoadFn> deserializers_;
+    std::vector<PostFn> post_load_;
+
+    // template<typename T>
+    // static void SerializeImpl(entt::snapshot& snap, cereal::BinaryOutputArchive& ar) {
+    //     SerializationTraits<T>::Save(snap, ar);
+    // }
+    //
+    // template<typename T>
+    // static void DeserializeImpl(entt::snapshot_loader& loader, cereal::BinaryInputArchive& ar) {
+    //     SerializationTraits<T>::Load(loader, ar);
+    // }
+    //
+    // template<typename T>
+    // static void PostLoadImpl(entt::registry& reg, engine::resources::ResourceManager& rm) {
+    //     if constexpr (requires { SerializationTraits<T>::PostLoad(reg, rm); }) {
+    //         SerializationTraits<T>::PostLoad(reg, rm);
+    //     }
+    // }
+};

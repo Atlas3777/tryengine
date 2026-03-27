@@ -1,4 +1,4 @@
-#include "editor/EditorApp.hpp"
+
 
 int main() {
     editor::EditorApp editor_app;

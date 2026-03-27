@@ -4,12 +4,13 @@
 #include <entt/resource/resource.hpp>
 
 #include "engine/core/CoreTypes.hpp"
+#include "engine/core/GLMSerialization.hpp"
 
 namespace engine {
 namespace graphics {
 struct Texture;
 struct Mesh;
-}
+}  // namespace graphics
 struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
     entt::id_type asset_id = entt::null;
@@ -45,6 +46,11 @@ struct Transform {
         model = glm::scale(model, scale);
         return model;
     }
+
+    template <class Archive>
+    void serialize(Archive& archive) {
+        archive(position, rotation, scale);  // Перечисляем все поля, которые нужно сохранить/загрузить
+    }
 };
 
 struct AABB {
@@ -59,7 +65,7 @@ struct Tag {
     Tag(const Tag&) = default;
     Tag(const std::string& t) : tag(t) {}
 };
-struct MainCameraTag{};
+struct MainCameraTag {};
 struct Camera {
     float fov = 70.0f;
     float near_plane = 0.1f;
@@ -74,4 +80,4 @@ struct Camera {
 
     mat4 view_matrix = mat4(1.0f);
 };
-}  // namespace engine::components
+}  // namespace engine

@@ -5,6 +5,7 @@
 #include "editor/BaseSystem.hpp"
 #include "editor/Components.hpp"
 #include "editor/Editor.hpp"
+#include "editor/Reflection.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GpuMeshLoader.hpp"
@@ -13,6 +14,18 @@
 #include "engine/resources/GltfLoader.hpp"
 #include "engine/resources/ResourceManager.hpp"
 #include "engine/resources/Types.hpp"
+
+struct AA {
+    float x, y;
+};
+
+struct AAA {
+    float x, y;
+    template<class Archive>
+        void serialize(Archive & archive) {
+        archive(x, y); // Перечисляем все поля, которые нужно сохранить/загрузить
+    }
+};
 
 namespace editor {
 void EditorApp::Init() {
@@ -32,12 +45,16 @@ void EditorApp::Init() {
     engine::resources::ResourceManager resManager;
     engine::resources::AssetDatabase assetDatabase;
 
+    // SDL_Log("Transform sizes -> AA: %zu bytes, AAA: %zu bytes", sizeof(AA), sizeof(AAA));
+
     // resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
     // resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager,
     // graphicsContext->GetDevice()));
 
     editor_->LoadGameLibrary("build/game/libgame.so");
     editor_->LoadDefaultScene();
+
+    RegisterRef();
 
     editor_->Running = true;
 }
