@@ -7,23 +7,44 @@ namespace glm {
 
 template<class Archive>
 void serialize(Archive& archive, vec3& v) {
-    archive(v.x, v.y, v.z);
+    archive(
+        cereal::make_nvp("x", v.x),
+        cereal::make_nvp("y", v.y),
+        cereal::make_nvp("z", v.z)
+    );
+}
+
+template<class Archive>
+void serialize(Archive& archive, vec4& v) {
+    archive(
+        cereal::make_nvp("x", v.x),
+        cereal::make_nvp("y", v.y),
+        cereal::make_nvp("z", v.z),
+        cereal::make_nvp("w", v.w)
+    );
 }
 
 template<class Archive>
 void serialize(Archive& archive, quat& q) {
-    archive(q.x, q.y, q.z, q.w);
+    // Для кватерниона лучше оставить стандартные компоненты,
+    // но дать им имена, чтобы не запутаться в порядке x,y,z,w
+    archive(
+        cereal::make_nvp("x", q.x),
+        cereal::make_nvp("y", q.y),
+        cereal::make_nvp("z", q.z),
+        cereal::make_nvp("w", q.w)
+    );
 }
 
 template<class Archive>
 void serialize(Archive& archive, mat4& m) {
-    // Матрицу можно сохранить как 4 колонки vec4
-    archive(m[0], m[1], m[2], m[3]);
+    // Матрицу удобнее всего читать как массив колонок
+    archive(
+        cereal::make_nvp("col0", m[0]),
+        cereal::make_nvp("col1", m[1]),
+        cereal::make_nvp("col2", m[2]),
+        cereal::make_nvp("col3", m[3])
+    );
 }
 
-// Если используешь vec4, добавь и его
-template<class Archive>
-void serialize(Archive& archive, vec4& v) {
-    archive(v.x, v.y, v.z, v.w);
-}
-}
+} // namespace glm

@@ -4,14 +4,14 @@
 echo "Компиляция шейдеров..."
 
 # Компиляция фрагментного шейдера
-glslc shaders/fragment.frag -o shaders/fragment.spv
+glslc engine/graphics/assets/shaders/fragment.frag -o engine/graphics/assets/shaders/fragment.spv
 if [ $? -ne 0 ]; then
     echo "Ошибка при компиляции фрагментного шейдера"
     exit 1
 fi
 
 # Компиляция вершинного шейдера
-glslc shaders/vertex.vert -o shaders/vertex.spv
+glslc engine/graphics/assets/shaders/vertex.vert -o engine/graphics/assets/shaders/vertex.spv
 if [ $? -ne 0 ]; then
     echo "Ошибка при компиляции вершинного шейдера"
     exit 1

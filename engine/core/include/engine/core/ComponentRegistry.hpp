@@ -3,12 +3,11 @@
 #include <cereal/archives/binary.hpp>
 #include <entt/entt.hpp>
 
-namespace engine::resources {
-class ResourceManager;
-}
+#include "ResourceManager.hpp"
+namespace engine::core {
 class ComponentRegistry {
 public:
-    template<typename T>
+    template <typename T>
     void Register() {
         // serializers_.push_back(&SerializeImpl<T>);
         // deserializers_.push_back(&DeserializeImpl<T>);
@@ -35,16 +34,16 @@ public:
         loader.orphans();
     }
 
-    void PostLoad(entt::registry& reg, engine::resources::ResourceManager& rm) {
+    void PostLoad(entt::registry& reg, ResourceManager& rm) {
         for (auto fn : post_load_) {
             fn(reg, rm);
         }
     }
 
 private:
-    using SaveFn = void(*)(entt::snapshot&, cereal::BinaryOutputArchive&);
-    using LoadFn = void(*)(entt::snapshot_loader&, cereal::BinaryInputArchive&);
-    using PostFn = void(*)(entt::registry&, engine::resources::ResourceManager&);
+    using SaveFn = void (*)(entt::snapshot&, cereal::BinaryOutputArchive&);
+    using LoadFn = void (*)(entt::snapshot_loader&, cereal::BinaryInputArchive&);
+    using PostFn = void (*)(entt::registry&, ResourceManager&);
 
     std::vector<SaveFn> serializers_;
     std::vector<LoadFn> deserializers_;
@@ -67,3 +66,4 @@ private:
     //     }
     // }
 };
+}  // namespace engine::core

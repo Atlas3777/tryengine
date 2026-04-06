@@ -10,7 +10,7 @@
 namespace engine::graphics {
 class RenderSystem {
    public:
-    RenderSystem(SDL_GPUDevice* device) : m_device(device) {
+    RenderSystem(SDL_GPUDevice* device) : device_(device) {
         renderer_ = std::make_unique<Renderer>();
         renderer_->Init(device);
     };
@@ -20,8 +20,10 @@ class RenderSystem {
 
     void RenderScene(entt::registry& reg, entt::entity camera_entity, RenderTarget* target, SDL_GPUCommandBuffer* cmd);
 
+    Renderer& GetRenderer() const { return *renderer_; }
+
    private:
-    SDL_GPUDevice* m_device = nullptr;
+    SDL_GPUDevice* device_ = nullptr;
 
     std::unique_ptr<RenderPreprocessor> render_preprocessor_;
     std::unique_ptr<Renderer> renderer_;

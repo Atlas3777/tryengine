@@ -6,42 +6,47 @@
 #include "engine/core/Engine.hpp"
 
 namespace editor {
-void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engine::core::InputState& input) {
-    using namespace engine;
-    using namespace engine::core;
+using namespace engine;
+using namespace engine::core;
 
-    if (!input.IsMouseDown(Mouse::Right)) return;
+void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engine::core::InputState& input) {
     auto view = reg.view<engine::Transform, engine::Camera, EditorCameraTag>();
 
     for (auto entity : view) {
         auto& transform = view.get<engine::Transform>(entity);
         auto& cam = view.get<Camera>(entity);
 
-        // if (input.isCursorCaptured) {
-            transform.rotation.y += input.mouseDeltaX * cam.sensitivity;  // Yaw
-            transform.rotation.x -= input.mouseDeltaY * cam.sensitivity;  // Pitch
-            transform.rotation.x = std::clamp(transform.rotation.x, -89.0f, 89.0f);
-        // }
+        // 1. Вращение
+        if (input.IsMouseDown(Mouse::Right)) {
+            // Создаем кватернионы вращения вокруг осей мира (или локальных)
+            // Важно: для Yaw используем глобальную ось Y (0,1,0), чтобы не было "завала" горизонта
+            float yawSign = 1.0f;
+            glm::quat qYaw = glm::angleAxis(glm::radians(-input.mouseDeltaX * cam.sensitivity), glm::vec3(0, 1, 0));
 
-        vec3 front;
-        front.x = std::cos(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
-        front.y = std::sin(glm::radians(transform.rotation.x));
-        front.z = std::sin(glm::radians(transform.rotation.y)) * std::cos(glm::radians(transform.rotation.x));
+            // Для Pitch используем локальную ось Right
+            glm::vec3 right = transform.rotation * glm::vec3(1, 0, 0);
+            glm::quat qPitch = glm::angleAxis(glm::radians(-input.mouseDeltaY * cam.sensitivity), right);
 
-        cam.front = glm::normalize(front);
-        cam.right = glm::normalize(glm::cross(cam.front, glm::vec3(0, 1, 0)));
-        cam.up = glm::normalize(glm::cross(cam.right, cam.front));
+            transform.rotation = qYaw * qPitch * transform.rotation;
+            transform.rotation = glm::normalize(transform.rotation);
+        }
 
-        float moveSpeed = cam.speed * static_cast<float>(deltaTime);
+        // 2. Получаем векторы направления из кватерниона
+        // В GLM: по умолчанию Forward — это (0, 0, -1)
+        glm::vec3 front = transform.rotation * glm::vec3(0, 0, -1);
+        glm::vec3 right = transform.rotation * glm::vec3(1, 0, 0);
+        glm::vec3 up    = transform.rotation * glm::vec3(0, 1, 0);
 
-        if (input.IsDown(Key::W)) transform.position += cam.front * moveSpeed;
-        if (input.IsDown(Key::S)) transform.position -= cam.front * moveSpeed;
-        if (input.IsDown(Key::A)) transform.position -= cam.right * moveSpeed;
-        if (input.IsDown(Key::D)) transform.position += cam.right * moveSpeed;
-        if (input.IsDown(Key::E)) transform.position += cam.up * moveSpeed;
-        if (input.IsDown(Key::Q)) transform.position -= cam.up * moveSpeed;
-
-        cam.view_matrix = glm::lookAt(transform.position, transform.position + cam.front, cam.up);
+        // 3. Движение
+        if (input.IsMouseDown(Mouse::Right)) {
+            float moveSpeed = cam.speed * static_cast<float>(deltaTime);
+            if (input.IsDown(Key::W)) transform.position += front * moveSpeed;
+            if (input.IsDown(Key::S)) transform.position -= front * moveSpeed;
+            if (input.IsDown(Key::A)) transform.position -= right * moveSpeed;
+            if (input.IsDown(Key::D)) transform.position += right * moveSpeed;
+            if (input.IsDown(Key::E)) transform.position += up * moveSpeed;
+            if (input.IsDown(Key::Q)) transform.position -= up * moveSpeed;
+        }
     }
 }
 }  // namespace editor

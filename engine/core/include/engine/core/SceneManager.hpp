@@ -22,7 +22,7 @@ public:
     bool LoadScene(const std::string& filepath);
     bool SaveScene(const std::string& filepath);
 
-    Scene* GetActiveScene() { return active_scene_.get(); }
+    [[nodiscard]] Scene* GetActiveScene() const { return active_scene_.get(); }
 
 private:
     std::unique_ptr<Scene> active_scene_ = nullptr;

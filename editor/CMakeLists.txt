@@ -1,9 +1,13 @@
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
-FetchContent_Declare(imgui    GIT_REPOSITORY https://github.com/ocornut/imgui.git            GIT_TAG docking)
+FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG docking)
 FetchContent_Declare(imguizmo GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master)
-FetchContent_MakeAvailable(imgui imguizmo)
+FetchContent_Declare(stb      GIT_REPOSITORY https://github.com/nothings/stb.git    GIT_TAG master)
+FetchContent_Declare(tinygltf GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.0)
+
+FetchContent_MakeAvailable(imgui imguizmo stb tinygltf)
+
 
 add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
@@ -21,7 +25,16 @@ target_include_directories(imgui_lib PUBLIC
         ${imgui_SOURCE_DIR}/backends
         ${imguizmo_SOURCE_DIR}
 )
+
+if (NOT TARGET imgui_filebrowser)
+    add_library(imgui_filebrowser INTERFACE)
+    target_include_directories(imgui_filebrowser INTERFACE ${imgui_filebrowser_SOURCE_DIR})
+    # Привязываем к основной либе ImGui, чтобы заголовки виделись корректно
+    target_link_libraries(imgui_filebrowser INTERFACE imgui_lib)
+endif ()
+
 target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
+
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/editor/*.hpp")
@@ -36,10 +49,14 @@ target_link_libraries(editor PRIVATE
         engine_resources
         engine_graphics
         imgui_lib
+        imgui_filebrowser
         ${CMAKE_DL_LIBS}
+
+        tinygltf
+        stb_image
 )
 
-if(TARGET game_shared)
+if (TARGET game_shared)
     add_dependencies(editor game_shared)
     add_custom_command(TARGET editor POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -47,4 +64,4 @@ if(TARGET game_shared)
             $<TARGET_FILE_DIR:editor>
             COMMENT "Copying game shared library → editor output dir"
     )
-endif()
+endif ()

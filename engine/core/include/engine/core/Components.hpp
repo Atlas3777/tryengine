@@ -1,6 +1,6 @@
 #pragma once
 
-#include <entt/fwd.hpp>
+#include <entt/entity/entity.hpp>
 #include <entt/resource/resource.hpp>
 
 #include "engine/core/CoreTypes.hpp"
@@ -13,23 +13,15 @@ struct Mesh;
 }  // namespace graphics
 struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
-    entt::id_type asset_id = entt::null;
+    uint64_t asset_id = 0;
 };
 
-// Сами данные материала (обычно это ресурс, как и Mesh)
-struct MeshMaterial {
-    // entt::resource<graphics::Texture> diffuseMap;
-    entt::resource<graphics::Texture> normal_map;
-    entt::id_type asset_id = entt::null;
-
-    vec4 base_color{1.0f};
-    float roughness = 0.5f;
-    float metallic = 0.0f;
-};
-
-struct Hierarchy {
-    entt::entity parent = entt::null;
-    int depth = 0;  // 0 для корней, 1 для детей и т.д.
+struct Relationship {
+    std::size_t children{};
+    entt::entity first{entt::null};
+    entt::entity prev{entt::null};
+    entt::entity next{entt::null};
+    entt::entity parent{entt::null};
 };
 
 struct Transform {
@@ -49,7 +41,8 @@ struct Transform {
 
     template <class Archive>
     void serialize(Archive& archive) {
-        archive(position, rotation, scale);  // Перечисляем все поля, которые нужно сохранить/загрузить
+        archive(cereal::make_nvp("position", position), cereal::make_nvp("rotation", rotation),
+                cereal::make_nvp("scale", scale));
     }
 };
 
@@ -67,17 +60,15 @@ struct Tag {
 };
 struct MainCameraTag {};
 struct Camera {
-    float fov = 70.0f;
+    glm::mat4 view_matrix{1.0f};
+
+    // Параметры проекции
+    float fov = 45.0f;
     float near_plane = 0.1f;
     float far_plane = 100.0f;
-    float sensitivity = 0.08f;
-    float speed = 3.0f;
 
-    // Вычисляемые векторы (обновляются системой)
-    vec3 front = {0.0f, 0.0f, -1.0f};
-    vec3 up = {0.0f, 1.0f, 0.0f};
-    vec3 right = {1.0f, 0.0f, 0.0f};
-
-    mat4 view_matrix = mat4(1.0f);
+    // Параметры управления (для системы ввода)
+    float sensitivity = 0.1f;
+    float speed = 5.0f;
 };
 }  // namespace engine

@@ -3,32 +3,49 @@
 #include "../include/engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
-namespace engine {
-using namespace engine::core;
-// TODO: Если у сущности есть Hierarchy, но нет Transform, или если parent был удален, но ссылка
-// осталась — приложение упадет.
+namespace engine::core {
 void UpdateTransformSystem(entt::registry& reg) {
-    // 1. Сортируем сущности по глубине иерархии
-    // Это гарантирует, что родитель всегда обработается раньше ребенка
-    reg.sort<Hierarchy>([](const auto& lhs, const auto& rhs) { return lhs.depth < rhs.depth; });
+    // Лямбда для рекурсивного обхода дерева
+    auto update_node = [&](auto& self, entt::entity entity, const glm::mat4& parentMatrix) -> void {
+        auto& transform = reg.get<Transform>(entity);
+        transform.world_matrix = parentMatrix * transform.GetLocalMatrix();
 
-    auto view = reg.view<Transform, Hierarchy>();
-
-    view.each([&](entt::entity entity, Transform& transform, Hierarchy& hierarchy) {
-        // Вычисляем локальную матрицу из pos/rot/scale
-        glm::mat4 localMatrix = transform.GetLocalMatrix();
-
-        if (hierarchy.parent == entt::null) {
-            // Если корнь — мировая матрица равна локальной
-            transform.world_matrix = localMatrix;
-        } else {
-            // Если есть родитель — умножаем его мировую на нашу локальную
-            // Важно: родитель уже обновлен благодаря сортировке!
-            auto& parentTransform = reg.get<Transform>(hierarchy.parent);
-            transform.world_matrix = parentTransform.world_matrix * localMatrix;
+        if (auto* rel = reg.try_get<Relationship>(entity)) {
+            entt::entity curr = rel->first;
+            while (curr != entt::null) {
+                // Передаем текущую мировую матрицу как родительскую для детей
+                self(self, curr, transform.world_matrix);
+                curr = reg.get<Relationship>(curr).next;
+            }
         }
-    });
+    };
+
+    // 1. Находим все сущности, у которых есть Transform и Relationship (корни дерева)
+    auto view = reg.view<Transform, Relationship>();
+    for (auto entity : view) {
+        if (view.get<Relationship>(entity).parent == entt::null) {
+            update_node(update_node, entity, glm::mat4(1.0f));
+        }
+    }
+
+    // 2. Одиночные сущности, у которых есть Transform, но нет Relationship
+    auto noRelView = reg.view<Transform>(entt::exclude<Relationship>);
+    for (auto entity : noRelView) {
+        auto& transform = noRelView.get<Transform>(entity);
+        transform.world_matrix = transform.GetLocalMatrix();
+    }
 }
+
+void UpdateCameraMatrices(entt::registry& reg) {
+    auto view = reg.view<Transform, Camera>();
+    for (const auto entity : view) {
+        auto& transform = view.get<Transform>(entity);
+        auto& cam = view.get<Camera>(entity);
+
+        cam.view_matrix = glm::inverse(transform.world_matrix);
+    }
+}
+
 void UpdateAABBSystem(entt::registry& reg) {
     // auto view = reg.view<Transform, MeshRenderer, AABB>();
     // for (auto entity : view) {

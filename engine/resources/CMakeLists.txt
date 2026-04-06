@@ -12,5 +12,4 @@ target_include_directories(engine_resources PUBLIC include PRIVATE src)
 
 target_link_libraries(engine_resources
         PUBLIC engine_core
-        PRIVATE tinygltf stb_image
 )

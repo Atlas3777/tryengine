@@ -4,7 +4,6 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "engine/core/CoreTypes.hpp"
-#include "engine/resources/ResourceManagerOLD.hpp"
 #include "engine/resources/Types.hpp"
 
 namespace engine::graphics {

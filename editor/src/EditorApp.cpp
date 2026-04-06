@@ -2,66 +2,53 @@
 
 #include <imgui_impl_sdl3.h>
 
+#include "engine/core/AssetDatabase.hpp"
+#include "engine/core/ResourceManager.hpp"
 #include "editor/BaseSystem.hpp"
 #include "editor/Components.hpp"
 #include "editor/Editor.hpp"
 #include "editor/Reflection.hpp"
+#include "editor/Spawner.hpp"
+#include "engine/core/BaseSystem.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GpuMeshLoader.hpp"
 #include "engine/graphics/Renderer.hpp"
-#include "engine/resources/AssetDatabase.hpp"
-#include "engine/resources/GltfLoader.hpp"
-#include "engine/resources/ResourceManager.hpp"
+#include "engine/resources/TMeshLoader.hpp"
 #include "engine/resources/Types.hpp"
-
-struct AA {
-    float x, y;
-};
-
-struct AAA {
-    float x, y;
-    template<class Archive>
-        void serialize(Archive & archive) {
-        archive(x, y); // Перечисляем все поля, которые нужно сохранить/загрузить
-    }
-};
 
 namespace editor {
 void EditorApp::Init() {
     engine_ = std::make_unique<engine::core::Engine>();
-    graphics_context_ = std::make_unique<engine::graphics::GraphicsContext>();
+    engine_->SetInputSource(&(this->input_state_));
 
+    graphics_context_ = std::make_unique<engine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
         return;
     }
-    editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
+
     render_system_ = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
-    // UpdateInput();
-    engine_->SetInputSource(&(this->input_state_));
 
-    using namespace entt::literals;
+    editor_ = std::make_unique<Editor>(*engine_, *graphics_context_, *render_system_);
 
-    engine::resources::ResourceManager resManager;
-    engine::resources::AssetDatabase assetDatabase;
+    editor_->RegisterAssetsImporters();
+    editor_->RegisterResourceLoaders();
 
-    // SDL_Log("Transform sizes -> AA: %zu bytes, AAA: %zu bytes", sizeof(AA), sizeof(AAA));
-
-    // resManager.RegisterCache<engine::resources::MeshData>(engine::resources::GltfLoader(resManager));
-    // resManager.RegisterCache<engine::graphics::Mesh>(engine::graphics::GpuMeshLoader(resManager,
-    // graphicsContext->GetDevice()));
+    editor_->GetImportSystem().Refresh();
+    engine_->GetResourceManager().GetAssetDatabase().Refresh();
 
     editor_->LoadGameLibrary("build/game/libgame.so");
-    editor_->LoadDefaultScene();
+    editor_->LoadDefaultScene(*render_system_);
 
     RegisterRef();
 
-    editor_->Running = true;
+    editor_->running = true;
 }
 
+
 void EditorApp::Run() {
-    while (editor_->Running) {
+    while (editor_->running) {
         UpdateInput();
         engine_->GetClock().Update();
 
@@ -69,9 +56,13 @@ void EditorApp::Run() {
 
         UpdateEditorCameraSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry(),
                                  engine_->GetClock().GetDeltaTime(), engine_->GetInput());
+        core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
+        core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
+
+
         // editor systems
 
-        if (editor_->PlayMode & editor_->gameSO.IsValid()) {
+        if (editor_->play_pode & editor_->gameSO.IsValid()) {
             editor_->gameSO.updateGameSystems(engine_.get());
         }
 
@@ -91,7 +82,9 @@ void EditorApp::Run() {
     }
 }
 
-void EditorApp::Shutdown() {}
+void EditorApp::Shutdown() {
+    std::cout << "EditorApp shutting down..." << std::endl;
+}
 void EditorApp::UpdateInput() {
     input_state_.ResetFrame();
 
@@ -103,7 +96,7 @@ void EditorApp::UpdateInput() {
         switch (event.type) {
             case SDL_EVENT_QUIT: {
                 // Закрываем редактор при нажатии на крестик окна
-                editor_->Running = false;
+                editor_->running = false;
                 // engine->PushCommand(CmdQuit{}); // Раскомментируй, если движку тоже надо знать о выходе
                 break;
             }

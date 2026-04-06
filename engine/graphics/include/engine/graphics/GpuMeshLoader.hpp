@@ -2,8 +2,8 @@
 
 #include <memory>
 
+#include "engine/core/ResourceManager.hpp"
 #include "engine/graphics/Types.hpp"
-#include "engine/resources/ResourceManager.hpp"
 #include "engine/resources/Types.hpp"
 
 namespace engine::graphics {
@@ -11,10 +11,10 @@ class GpuMeshLoader {
    public:
     using result_type = std::shared_ptr<Mesh>;
 
-    explicit GpuMeshLoader(resources::ResourceManager& res, SDL_GPUDevice* device) : resManager(&res), device(device) {}
+    explicit GpuMeshLoader(core::ResourceManager& res, SDL_GPUDevice* device) : resManager(&res), device(device) {}
 
-    result_type operator()(const std::string& path) const {
-        const auto mesh = resManager->Get<resources::MeshData>(1);
+    result_type operator()(uint64_t id, const std::string& path) const {
+        const auto mesh = resManager->Get<resources::MeshData>(id);
 
         auto gpu_mesh = std::shared_ptr<Mesh>(new Mesh(), [device = this->device](const Mesh* m) {
             // Эта лямбда вызовется автоматически, когда ресурс удалится из кэша и сцены!
@@ -73,7 +73,7 @@ class GpuMeshLoader {
     }
 
    private:
-    resources::ResourceManager* resManager;
+    core::ResourceManager* resManager;
     SDL_GPUDevice* device;
 };
 }  // namespace engine::graphics
