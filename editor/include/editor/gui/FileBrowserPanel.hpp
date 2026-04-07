@@ -3,7 +3,6 @@
 
 #include <filesystem>
 
-#include "engine/core/AssetDatabase.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
 

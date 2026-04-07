@@ -2,7 +2,7 @@
 #include <mutex>
 
 #include "engine/core/Clock.hpp"
-#include "engine/core/InputTypes.hpp"
+#include "engine/core/InputState.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 

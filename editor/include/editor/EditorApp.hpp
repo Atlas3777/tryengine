@@ -4,7 +4,7 @@
 #include "Spawner.hpp"
 #include "editor/Editor.hpp"
 #include "engine/core/Engine.hpp"
-#include "engine/core/InputTypes.hpp"
+#include "engine/core/InputState.hpp"
 #include "engine/graphics/RenderSystem.hpp"
 
 namespace editor {

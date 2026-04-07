@@ -1,17 +1,10 @@
 #pragma once
 #include <cereal/cereal.hpp>
 #include <string>
-#include <unordered_map>
 #include <vector>
-#include <cereal/types/unordered_map.hpp>
-#include <cereal/cereal.hpp>
 #include <cereal/types/string.hpp>
-#include <cereal/types/unordered_map.hpp>
 #include <cereal/types/vector.hpp>
-#include <string>
-#include <unordered_map>
-#include <vector>
-#include <cereal/types/utility.hpp> // Для поддержки std::pair
+#include <cereal/types/utility.hpp>
 #include "engine/core/Components.hpp"
 
 namespace editor {

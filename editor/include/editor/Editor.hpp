@@ -24,9 +24,8 @@ class Editor {
 
     void SaveScene();
     void SaveSceneForPlayMode();
-    void LoadDefaultScene(engine::graphics::RenderSystem& render_system);
+    void LoadDefaultScene() const;
 
-    void EditorCameraUpdate();
 
     void RegisterAssetsImporters() const;
     void RegisterResourceLoaders() const;
@@ -35,7 +34,7 @@ class Editor {
     ImportSystem& GetImportSystem() { return *import_system_; }
 
     bool running = false;
-    bool play_pode = false;
+    bool play_mode = false;
     GameLibrary gameSO;
 
    private:
