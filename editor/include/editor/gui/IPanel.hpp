@@ -3,6 +3,7 @@
 
 #include <entt/entity/fwd.hpp>
 
+#include "engine/core/InputState.hpp"
 #include "engine/graphics/RenderSystem.hpp"
 #include "engine/graphics/RenderTarget.hpp"
 
@@ -12,6 +13,7 @@ class IPanel {
     bool is_visible_ = true;
     virtual ~IPanel() = default;
     virtual const char* GetName() const = 0;
+    virtual void OnUpdate(double dt, const engine::core::InputState& input, entt::registry& reg) {}
     virtual void OnRender(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& rs, entt::registry& reg) {}
     virtual void OnImGuiRender(entt::registry& reg) = 0;
 };

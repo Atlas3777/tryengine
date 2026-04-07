@@ -6,14 +6,12 @@
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 
-namespace engine::core {
-class AssetDatabase;
-}
 namespace editor {
 class EditorGUI {
 public:
     EditorGUI(const engine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner);
     ~EditorGUI();
+    void UpdatePanels(const engine::core::Engine& engine) const;
     void RecordPanelsGpuCommands(const engine::core::Engine& engine);
     void RenderToPanel(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& render_system,
                        const engine::core::Engine& engine) const;

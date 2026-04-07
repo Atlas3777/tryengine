@@ -47,8 +47,8 @@ void EditorApp::Run() {
         UpdateInput();
         engine_->GetClock().Update();
 
-        UpdateEditorCameraSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry(),
-                                 engine_->GetClock().GetDeltaTime(), engine_->GetInput());
+        editor_->GetEditorGUI().UpdatePanels(*engine_);
+
         engine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
         engine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
 

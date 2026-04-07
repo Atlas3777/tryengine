@@ -1,23 +1,20 @@
 #include <entt/entt.hpp>
 
-#include "engine/core/CoreTypes.hpp"
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
 namespace editor {
-using namespace engine;
-using namespace engine::core;
 
-void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engine::core::InputState& input) {
+void UpdateEditorCameraSystem(entt::registry& reg, const double delta_time, const engine::core::InputState& input) {
     auto view = reg.view<engine::Transform, engine::Camera, EditorCameraTag>();
 
     for (auto entity : view) {
         auto& transform = view.get<engine::Transform>(entity);
-        auto& cam = view.get<Camera>(entity);
+        auto& cam = view.get<engine::Camera>(entity);
 
         // 1. Вращение
-        if (input.IsMouseDown(Mouse::Right)) {
+        if (input.IsMouseDown(engine::core::Mouse::Right)) {
             // Создаем кватернионы вращения вокруг осей мира (или локальных)
             // Важно: для Yaw используем глобальную ось Y (0,1,0), чтобы не было "завала" горизонта
             float yawSign = 1.0f;
@@ -35,17 +32,23 @@ void UpdateEditorCameraSystem(entt::registry& reg, double deltaTime, const engin
         // В GLM: по умолчанию Forward — это (0, 0, -1)
         glm::vec3 front = transform.rotation * glm::vec3(0, 0, -1);
         glm::vec3 right = transform.rotation * glm::vec3(1, 0, 0);
-        glm::vec3 up    = transform.rotation * glm::vec3(0, 1, 0);
+        glm::vec3 up = transform.rotation * glm::vec3(0, 1, 0);
 
         // 3. Движение
-        if (input.IsMouseDown(Mouse::Right)) {
-            float moveSpeed = cam.speed * static_cast<float>(deltaTime);
-            if (input.IsDown(Key::W)) transform.position += front * moveSpeed;
-            if (input.IsDown(Key::S)) transform.position -= front * moveSpeed;
-            if (input.IsDown(Key::A)) transform.position -= right * moveSpeed;
-            if (input.IsDown(Key::D)) transform.position += right * moveSpeed;
-            if (input.IsDown(Key::E)) transform.position += up * moveSpeed;
-            if (input.IsDown(Key::Q)) transform.position -= up * moveSpeed;
+        if (input.IsMouseDown(engine::core::Mouse::Right)) {
+            float moveSpeed = cam.speed * static_cast<float>(delta_time);
+            if (input.IsDown(engine::core::Key::W))
+                transform.position += front * moveSpeed;
+            if (input.IsDown(engine::core::Key::S))
+                transform.position -= front * moveSpeed;
+            if (input.IsDown(engine::core::Key::A))
+                transform.position -= right * moveSpeed;
+            if (input.IsDown(engine::core::Key::D))
+                transform.position += right * moveSpeed;
+            if (input.IsDown(engine::core::Key::E))
+                transform.position += up * moveSpeed;
+            if (input.IsDown(engine::core::Key::Q))
+                transform.position -= up * moveSpeed;
         }
     }
 }

@@ -11,16 +11,15 @@ FileBrowserPanel::FileBrowserPanel(ImportSystem& import_system) : import_system_
     if (!std::filesystem::exists(root_directory_)) {
         std::filesystem::create_directories(root_directory_);
     }
+
     selected_directory_ = root_directory_;
 }
 
 void FileBrowserPanel::OnImGuiRender(entt::registry& reg) {
-    // --- ПЕРВОЕ ОКНО: Дерево папок ---
     ImGui::Begin("Project Tree");
     DrawDirectoryTree(root_directory_);
     ImGui::End();
 
-    // --- ВТОРОЕ ОКНО: Содержимое папки (Сетка) ---
     ImGui::Begin("Project Content");
     DrawDirectoryContent();
     ImGui::End();
@@ -32,13 +31,20 @@ void FileBrowserPanel::DrawDirectoryTree(const std::filesystem::path& directoryP
         filenameString = directoryPath.string();
     }
 
-    ImGuiTreeNodeFlags flags =
-        ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
+                             | ImGuiTreeNodeFlags_OpenOnDoubleClick
+                             | ImGuiTreeNodeFlags_SpanAvailWidth;
 
+    if (directoryPath == root_directory_) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+    }
+
+    // Подсветка выбранной папки
     if (selected_directory_ == directoryPath) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
+    // Проверяем наличие вложенных папок
     bool has_subdirs = false;
     for (const auto& entry : std::filesystem::directory_iterator(directoryPath)) {
         if (entry.is_directory()) {
@@ -47,16 +53,20 @@ void FileBrowserPanel::DrawDirectoryTree(const std::filesystem::path& directoryP
         }
     }
 
+    // Если папок внутри нет — рисуем как лист (без стрелочки)
     if (!has_subdirs) {
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
 
-    std::string pathStr = directoryPath.string();
-    ImGui::PushID(pathStr.c_str());
+    ImGui::PushID(directoryPath.string().c_str());
 
-    // Рисуем узел. В качестве имени используем filenameString
-    bool opened = ImGui::TreeNodeEx(filenameString.c_str(), flags);
+    // Используем иконку-заглушку. Если есть FontAwesome, замени на ICON_FA_FOLDER
+    const char* icon = has_subdirs ? "(+) " : "( ) ";
+    std::string label = icon + filenameString;
 
+    bool opened = ImGui::TreeNodeEx(label.c_str(), flags);
+
+    // Логика выделения: клик по строке, но не по стрелке развертывания
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
         selected_directory_ = directoryPath;
     }
@@ -85,61 +95,61 @@ void FileBrowserPanel::DrawDirectoryContent() {
         ImGui::Separator();
     }
 
-    // --- Настройка сетки (Grid) ---
     float padding = 16.0f;
-    float thumbnailSize = 64.0f;  // Размер иконки
-    float cellSize = thumbnailSize + padding;
+    float thumbnail_size = 64.0f;  // Размер иконки
+    float cell_size = thumbnail_size + padding;
 
-    float panelWidth = ImGui::GetContentRegionAvail().x;
-    int columnCount = (int) (panelWidth / cellSize);
-    if (columnCount < 1)
-        columnCount = 1;
+    float panel_width = ImGui::GetContentRegionAvail().x;
+    int column_count = static_cast<int>(panel_width / cell_size);
+    if (column_count < 1)
+        column_count = 1;
 
-    if (ImGui::BeginTable("ContentTable", columnCount)) {
+    if (ImGui::BeginTable("ContentTable", column_count)) {
         for (const auto& entry : std::filesystem::directory_iterator(selected_directory_)) {
+            const auto& path = entry.path();
+
+            if (path.extension() == ".meta") {
+                continue;
+            }
+
             ImGui::TableNextColumn();
 
-            const auto& path = entry.path();
-            std::string filenameString = path.filename().string();
+            std::string filename_string = path.filename().string();
 
             // PushID для предотвращения конфликтов в правой панели
             ImGui::PushID(path.string().c_str());
 
             if (entry.is_directory()) {
                 // Заглушка для папки
-                ImGui::Button("[DIR]", ImVec2(thumbnailSize, thumbnailSize));
+                ImGui::Button("[DIR]", ImVec2(thumbnail_size, thumbnail_size));
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     selected_directory_ = path;
                 }
             } else {
                 // Заглушка для файла
-                ImGui::Button("[FILE]", ImVec2(thumbnailSize, thumbnailSize));
+                ImGui::Button("[FILE]", ImVec2(thumbnail_size, thumbnail_size));
 
                 // --- ЛОГИКА DRAG & DROP ---
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
 
-                    // 1. Получаем путь относительно корня проекта (папки game)
-                    // root_path_ в ImportSystem — это current_path() / "game"
-                    // Нам нужно получить путь вида "game/assets/..."
-
-                    std::filesystem::path relativePath = std::filesystem::relative(path, std::filesystem::current_path());
-                    std::string itemPath = relativePath.generic_string(); // Используем generic_string для кроссплатформенных слешей
+                    std::filesystem::path relative_path = std::filesystem::relative(path, std::filesystem::current_path());
+                    std::string itemPath = relative_path.generic_string();
 
                     try {
                         uint64_t id = import_system_.GetId(itemPath);
                         ImGui::SetDragDropPayload("CONTENT_BROWSER_ID", &id, sizeof(uint64_t));
                         ImGui::Text("ID: %llu", id);
                     } catch (const std::out_of_range& e) {
-                        ImGui::TextDisabled("Not imported: %s", filenameString.c_str());
+                        ImGui::TextDisabled("Not imported: %s", filename_string.c_str());
                     }
 
-                    ImGui::Text("Spawning: %s", filenameString.c_str());
+                    ImGui::Text("Spawning: %s", filename_string.c_str());
                     ImGui::EndDragDropSource();
                 }
             }
 
             // Текст под иконкой
-            ImGui::TextWrapped("%s", filenameString.c_str());
+            ImGui::TextWrapped("%s", filename_string.c_str());
 
             ImGui::PopID();
         }

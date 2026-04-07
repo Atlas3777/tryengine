@@ -16,6 +16,8 @@ public:
 
     const char* GetName() const override { return "Scene"; }
 
+    void OnUpdate(double dt, const engine::core::InputState& input, entt::registry& reg) override;
+
     void OnImGuiRender(entt::registry& reg) override {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
         ImGui::Begin("Scene");
@@ -47,9 +49,7 @@ private:
     Spawner& spawner_;
     void HandleGizmos(entt::registry& reg);
 
-
     ImGuizmo::OPERATION current_gizmo_operation_ = ImGuizmo::TRANSLATE;
     ImGuizmo::MODE current_gizmo_mode_ = ImGuizmo::LOCAL;
-
 };
 }  // namespace editor

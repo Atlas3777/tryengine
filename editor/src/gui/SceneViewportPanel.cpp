@@ -4,11 +4,19 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include "editor/BaseSystem.hpp"
 #include "editor/Components.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/core/Components.hpp"
 
 namespace editor {
+
+void SceneViewportPanel::OnUpdate(double dt, const engine::core::InputState& input, entt::registry& reg) {
+    if (!is_focused_ && !is_hovered_)
+        return;
+    UpdateEditorCameraSystem(reg, dt, input);
+}
+
 void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     if (ImGui::IsWindowFocused()) {
         if (ImGui::IsKeyPressed(ImGuiKey_W))
@@ -55,8 +63,8 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     glm::mat4 modelMatrix = transform.world_matrix;
 
     // --- 4. Рендер и манипуляция ---
-    ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), current_gizmo_operation_, current_gizmo_mode_,
-                         glm::value_ptr(modelMatrix));
+    ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), current_gizmo_operation_,
+                         current_gizmo_mode_, glm::value_ptr(modelMatrix));
 
     if (ImGuizmo::IsUsing()) {
         glm::mat4 localMatrix = modelMatrix;

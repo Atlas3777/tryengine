@@ -49,6 +49,12 @@ EditorGUI::~EditorGUI() {
     ImGui::DestroyContext();
 }
 
+void EditorGUI::UpdatePanels(const engine::core::Engine& engine) const {
+    for (const auto& panel : panels_) {
+        panel->OnUpdate(engine.GetClock().GetDeltaTime(), engine.GetInput(), engine.GetSceneManager().GetActiveScene()->GetRegistry());
+    }
+}
+
 void EditorGUI::RecordPanelsGpuCommands(const engine::core::Engine& engine) {
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
