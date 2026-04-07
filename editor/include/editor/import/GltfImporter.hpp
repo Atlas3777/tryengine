@@ -6,7 +6,6 @@
 #include "editor/meta/AssetHeader.hpp"
 #include "editor/meta/ModelAssetMap.hpp"
 
-// Forward declaration, чтобы не тащить весь tiny_gltf_v3.h в хедер
 struct tg3_model;
 
 namespace editor {
@@ -33,6 +32,12 @@ private:
     void ProcessMaterials(const tg3_model* m, uint64_t main_uuid,
                           const std::filesystem::path& projectAssetsDir,
                           const std::filesystem::path& assetStem);
+
+    void ProcessTextures(const tg3_model* m, uint64_t main_uuid,
+                                   const std::filesystem::path& artifactDir,
+                                   const std::filesystem::path& projectAssetsDir,
+                                   const std::filesystem::path& assetStem,
+                                   ModelAssetMap& asset_map);
 
     void ProcessMeshes(const tg3_model* m, uint64_t main_uuid,
                        const std::filesystem::path& artifactDir,

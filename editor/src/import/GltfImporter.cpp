@@ -10,6 +10,9 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include "stb_image_write.h"
+#include "stb_image.h"
+
 #include "engine/resources/Types.hpp"
 #include "tiny_gltf_v3.h"
 
@@ -22,6 +25,15 @@ namespace {
 
 constexpr uint64_t MESH_SALT = 0x10000000;
 constexpr uint64_t MATERIAL_SALT = 0x20000000;
+constexpr uint64_t TEXTURE_SALT = 0x30000000;
+
+// Вспомогательная структура для заголовка текстуры в артефактах
+struct TextureHeader {
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;
+    uint32_t dataSize;
+};
 
 uint64_t CombineID(uint64_t main_uuid, uint32_t sub_index, uint64_t salt) {
     uint64_t id = main_uuid ^ salt;
@@ -64,6 +76,7 @@ void SaveMeshBinary(const std::filesystem::path& path, const engine::resources::
     os.write(reinterpret_cast<const char*>(data.vertexBuffer.data()), v_count * sizeof(engine::resources::Vertex));
     os.write(reinterpret_cast<const char*>(data.indexBuffer.data()), i_count * sizeof(uint32_t));
 }
+
 
 }  // namespace
 
@@ -120,6 +133,9 @@ AssetHeader GltfImporter::ReadIdentification(const std::filesystem::path& metaPa
 bool GltfImporter::GenerateArtifact(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath,
                                     const std::filesystem::path& artifactDir, const std::filesystem::path& cacheDir,
                                     const std::filesystem::path& projectAssetsDir) {
+    if (!std::filesystem::exists(cacheDir))
+        std::filesystem::create_directories(cacheDir);
+
     AssetHeader header = ReadIdentification(metaPath);
 
     ModelAssetMap asset_map;
@@ -153,6 +169,8 @@ bool GltfImporter::GenerateArtifact(const std::filesystem::path& assetPath, cons
     // 2. Обработка данных
     ProcessMaterials(m, header.main_uuid, projectAssetsDir, assetPath.stem());
 
+    ProcessTextures(m, header.main_uuid, artifactDir, projectAssetsDir, assetPath.stem(), asset_map);
+
     std::vector<std::vector<uint64_t>> mesh_primitive_guids;
     ProcessMeshes(m, header.main_uuid, artifactDir, asset_map, mesh_primitive_guids);
 
@@ -175,6 +193,95 @@ bool GltfImporter::GenerateArtifact(const std::filesystem::path& assetPath, cons
 // =============================================================================
 // Приватные методы парсинга
 // =============================================================================
+
+void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid,
+                                   const std::filesystem::path& artifactDir,
+                                   const std::filesystem::path& projectAssetsDir,
+                                   const std::filesystem::path& assetStem,
+                                   ModelAssetMap& asset_map) {
+
+    std::filesystem::path texSourceDir = projectAssetsDir / "Textures" / assetStem;
+    std::filesystem::create_directories(texSourceDir);
+
+    for (uint32_t i = 0; i < m->images_count; ++i) {
+        const tg3_image& gltf_img = m->images[i];
+        uint64_t tex_id = CombineID(main_uuid, i, TEXTURE_SALT);
+
+        // 1. ПОЛУЧАЕМ СЖАТЫЕ ДАННЫЕ (PNG/JPG) ИЗ GLB
+        const uint8_t* compressed_data = nullptr;
+        size_t compressed_size = 0;
+
+        if (gltf_img.image.count > 0) {
+            // Если данные уже почему-то скопированы в image
+            compressed_data = gltf_img.image.data;
+            compressed_size = gltf_img.image.count;
+        } else if (gltf_img.buffer_view >= 0) {
+            // ТИПИЧНЫЙ СЛУЧАЙ ДЛЯ GLB: берем из buffer_view
+            const tg3_buffer_view& bv = m->buffer_views[gltf_img.buffer_view];
+            const tg3_buffer& buf = m->buffers[bv.buffer];
+            compressed_data = buf.data.data + bv.byte_offset;
+            compressed_size = bv.byte_length;
+        }
+
+        if (!compressed_data || compressed_size == 0) continue;
+
+        // Определяем расширение (по mime_type или сигнатуре)
+        std::string ext = ".png";
+        if (gltf_img.mime_type.len > 0) {
+            std::string mime(gltf_img.mime_type.data, gltf_img.mime_type.len);
+            if (mime == "image/jpeg") ext = ".jpg";
+        }
+
+        std::string base_name = gltf_img.name.len > 0
+            ? std::string(gltf_img.name.data, gltf_img.name.len)
+            : ("Texture_" + std::to_string(i));
+
+        std::filesystem::path assetPath = texSourceDir / (base_name + ext);
+        std::filesystem::path metaPath = texSourceDir / (base_name + ext + ".meta");
+
+        // --- А: СОХРАНЯЕМ В ASSETS (оригинальный сжатый файл) ---
+        {
+            std::ofstream os(assetPath, std::ios::binary);
+            os.write(reinterpret_cast<const char*>(compressed_data), compressed_size);
+        }
+
+        // --- Б: СОЗДАЕМ META ФАЙЛ ---
+        {
+            AssetHeader texMeta;
+            texMeta.main_uuid = tex_id;
+            std::ofstream os(metaPath);
+            cereal::JSONOutputArchive archive(os);
+            archive(cereal::make_nvp("header", texMeta));
+        }
+
+        // --- В: СОЗДАЕМ АРТЕФАКТ (Декодируем в RGBA для GPU) ---
+        int width, height, channels;
+        // Разжимаем PNG/JPG в сырые пиксели
+        unsigned char* pixels = stbi_load_from_memory(compressed_data, (int)compressed_size,
+                                                      &width, &height, &channels, 4); // Принудительно 4 канала (RGBA)
+
+        if (pixels) {
+            std::string artName = std::to_string(tex_id) + ".tex";
+            std::filesystem::path artPath = artifactDir / artName;
+            std::ofstream artOs(artPath, std::ios::binary);
+
+            if (artOs.is_open()) {
+                TextureHeader head;
+                head.width = (uint32_t)width;
+                head.height = (uint32_t)height;
+                head.channels = 4;
+                head.dataSize = (uint32_t)(width * height * 4);
+
+                artOs.write(reinterpret_cast<const char*>(&head), sizeof(TextureHeader));
+                artOs.write(reinterpret_cast<const char*>(pixels), head.dataSize);
+            }
+
+            stbi_image_free(pixels);
+            asset_map.sub_assets.push_back({tex_id, artName});
+        }
+    }
+}
+
 
 void GltfImporter::ProcessMaterials(const tg3_model* m, uint64_t main_uuid,
                                     const std::filesystem::path& projectAssetsDir,

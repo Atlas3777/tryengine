@@ -5,8 +5,8 @@
 #include <fstream>
 #include <iostream>
 
-#include "editor/meta/AssetHeader.hpp" // Убедись, что путь правильный
-#include "editor/meta/ModelAssetMap.hpp" // Путь к твоему файлу со структурой ModelAssetMap
+#include "editor/meta/AssetHeader.hpp"    // Убедись, что путь правильный
+#include "editor/meta/ModelAssetMap.hpp"  // Путь к твоему файлу со структурой ModelAssetMap
 
 namespace editor {
 
@@ -17,8 +17,10 @@ void ImportSystem::Refresh() {
     }
 
     // Создаем базовые директории, если их нет
-    if (!std::filesystem::exists(artefacts_directory_)) std::filesystem::create_directories(artefacts_directory_);
-    if (!std::filesystem::exists(cache_directory_)) std::filesystem::create_directories(cache_directory_);
+    if (!std::filesystem::exists(artefacts_directory_))
+        std::filesystem::create_directories(artefacts_directory_);
+    if (!std::filesystem::exists(cache_directory_))
+        std::filesystem::create_directories(cache_directory_);
 
     id_to_path_.clear();
     path_to_id_.clear();
@@ -44,8 +46,9 @@ void ImportSystem::Refresh() {
                 std::filesystem::path artifactDir = artefacts_directory_ / std::to_string(uuid);
                 std::filesystem::path cacheDir = cache_directory_ / std::to_string(uuid);
 
-                if (!std::filesystem::exists(artifactDir)) std::filesystem::create_directories(artifactDir);
-                if (!std::filesystem::exists(cacheDir)) std::filesystem::create_directories(cacheDir);
+                if (!std::filesystem::exists(artifactDir))
+                    std::filesystem::create_directories(artifactDir);
+
 
                 // 2. Генерируем артефакты и кэш
                 importer->GenerateArtifact(assetPath, metaPath, artifactDir, cacheDir, assets_directory_);
@@ -55,7 +58,8 @@ void ImportSystem::Refresh() {
                 AssetHeader header = importer->ReadIdentification(metaPath);
 
                 // Записываем путь к основному исходнику (game/assets/lance.glb)
-                std::string relativeAssetPath = std::filesystem::relative(assetPath, std::filesystem::current_path()).string();
+                std::string relativeAssetPath =
+                    std::filesystem::relative(assetPath, std::filesystem::current_path()).string();
                 id_to_path_[header.main_uuid] = relativeAssetPath;
                 path_to_id_[relativeAssetPath] = header.main_uuid;
 
@@ -74,7 +78,8 @@ void ImportSystem::Refresh() {
                         // Мапим саб-ассеты (game/artefacts/{main_guid}/{sub_guid}.bin)
                         for (const auto& [sub_id, sub_filename] : asset_map.sub_assets) {
                             std::filesystem::path subAssetAbsPath = artifactDir / sub_filename;
-                            std::string subAssetRelPath = std::filesystem::relative(subAssetAbsPath, std::filesystem::current_path()).string();
+                            std::string subAssetRelPath =
+                                std::filesystem::relative(subAssetAbsPath, std::filesystem::current_path()).string();
 
                             id_to_path_[sub_id] = subAssetRelPath;
                             path_to_id_[subAssetRelPath] = sub_id;
@@ -87,12 +92,6 @@ void ImportSystem::Refresh() {
             }
         }
     }
-
-    // // Вывод для проверки:
-    // std::cout << "--- Registered Assets ---" << std::endl;
-    // for (const auto& entry : id_to_path_) {
-    //     std::cout << "ID: " << entry.first << " -> Path: " << entry.second << std::endl;
-    // }
 }
 
 }  // namespace editor

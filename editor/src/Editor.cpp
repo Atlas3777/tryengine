@@ -7,6 +7,7 @@
 #include "editor/Components.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/import/GltfImporter.hpp"
+#include "editor/import/ImageImporter.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/graphics/GpuMeshLoader.hpp"
@@ -30,6 +31,7 @@ Editor::~Editor() {
 }
 void Editor::RegisterAssetsImporters() const {
     import_system_->RegisterImporter<GltfImporter>(".glb");
+    import_system_->RegisterImporter<ImageImporter>(".png");
 }
 void Editor::RegisterResourceLoaders() const {
     auto& res_manager_ = engine_.GetResourceManager();
