@@ -7,7 +7,7 @@
 
 #include "stb_image.h"
 
-namespace editor {
+namespace tryeditor {
 
 namespace {
 struct TextureHeader {
@@ -99,4 +99,4 @@ bool ImageImporter::GenerateArtifact(const std::filesystem::path& assetPath, con
     return true;
 }
 
-}  // namespace editor
+}  // namespace tryeditor

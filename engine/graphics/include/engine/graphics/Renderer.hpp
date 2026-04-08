@@ -3,7 +3,7 @@
 
 #include "engine/graphics/RenderTarget.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 
 class Renderer {
    public:
@@ -32,4 +32,4 @@ class Renderer {
                                                     const SDL_GPUVertexAttribute* vertexAttributes,
                                                     const SDL_GPUColorTargetDescription* colorTargetDesc);
 };
-}  // namespace engine
+}  // namespace tryengine

@@ -3,7 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <string>
-namespace engine::graphics {
+namespace tryengine::graphics {
 class GraphicsContext {
    public:
     GraphicsContext() = default;
@@ -26,4 +26,4 @@ class GraphicsContext {
     SDL_Window* m_window = nullptr;
     SDL_GPUDevice* m_device = nullptr;
 };
-} // namespace engine
+} // namespace tryengine

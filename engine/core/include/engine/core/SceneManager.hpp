@@ -5,7 +5,7 @@
 
 #include "Scene.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 
 class SceneManager {
 public:
@@ -28,4 +28,4 @@ private:
     std::unique_ptr<Scene> active_scene_ = nullptr;
 };
 
-}  // namespace engine::core
+}  // namespace tryengine::core

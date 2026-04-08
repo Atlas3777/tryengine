@@ -7,7 +7,7 @@
 #include "RenderTarget.hpp"
 #include "Renderer.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 class RenderSystem {
    public:
     RenderSystem(SDL_GPUDevice* device) : device_(device) {
@@ -29,4 +29,4 @@ class RenderSystem {
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<RenderPipeline> render_pipeline_;
 };
-}  // namespace engine::graphics
+}  // namespace tryengine::graphics

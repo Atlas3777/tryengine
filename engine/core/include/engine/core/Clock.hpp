@@ -1,7 +1,7 @@
 #pragma once
 #include <chrono>
 
-namespace engine::core {
+namespace tryengine::core {
 
 struct TimeState {
     double deltaTime = 0.0;
@@ -27,4 +27,4 @@ private:
     std::chrono::steady_clock::time_point lastTime;
 };
 
-} // namespace engine::core
+} // namespace tryengine::core

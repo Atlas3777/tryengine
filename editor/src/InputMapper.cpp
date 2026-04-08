@@ -1,12 +1,12 @@
 #include "editor/InputMapper.hpp"
 
-namespace editor {
+namespace tryeditor {
 
-void InputMapper::ProcessEvent(const SDL_Event& event, engine::core::InputState& state) {
+void InputMapper::ProcessEvent(const SDL_Event& event, tryengine::core::InputState& state) {
     switch (event.type) {
         case SDL_EVENT_KEY_DOWN: {
             auto key = static_cast<uint16_t>(event.key.scancode);
-            if (key < static_cast<uint16_t>(engine::core::Key::Count)) {
+            if (key < static_cast<uint16_t>(tryengine::core::Key::Count)) {
                 if (!event.key.repeat) {
                     state.justPressed[key] = true;
                 }
@@ -17,7 +17,7 @@ void InputMapper::ProcessEvent(const SDL_Event& event, engine::core::InputState&
 
         case SDL_EVENT_KEY_UP: {
             auto key = static_cast<uint16_t>(event.key.scancode);
-            if (key < static_cast<uint16_t>(engine::core::Key::Count)) {
+            if (key < static_cast<uint16_t>(tryengine::core::Key::Count)) {
                 state.justReleased[key] = true;
                 state.isDown[key] = false;
             }
@@ -34,7 +34,7 @@ void InputMapper::ProcessEvent(const SDL_Event& event, engine::core::InputState&
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN: {
             int btnIdx = event.button.button - 1;
-            if (btnIdx >= 0 && btnIdx < static_cast<int>(engine::core::Mouse::Count)) {
+            if (btnIdx >= 0 && btnIdx < static_cast<int>(tryengine::core::Mouse::Count)) {
                 if (!state.mouseButtons[btnIdx]) {
                     state.mouseJustPressed[btnIdx] = true;
                 }
@@ -45,7 +45,7 @@ void InputMapper::ProcessEvent(const SDL_Event& event, engine::core::InputState&
 
         case SDL_EVENT_MOUSE_BUTTON_UP: {
             int btnIdx = event.button.button - 1;
-            if (btnIdx >= 0 && btnIdx < static_cast<int>(engine::core::Mouse::Count)) {
+            if (btnIdx >= 0 && btnIdx < static_cast<int>(tryengine::core::Mouse::Count)) {
                 state.mouseJustReleased[btnIdx] = true;
                 state.mouseButtons[btnIdx] = false;
             }
@@ -59,4 +59,4 @@ void InputMapper::ProcessEvent(const SDL_Event& event, engine::core::InputState&
     }
 }
 
-} // namespace editor
+} // namespace tryeditor

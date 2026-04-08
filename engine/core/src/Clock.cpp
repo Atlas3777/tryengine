@@ -1,6 +1,6 @@
 #include "engine/core/Clock.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 
 Clock::Clock() {
     lastTime = std::chrono::steady_clock::now();
@@ -25,4 +25,4 @@ const TimeState& Clock::Update() {
     return state;
 }
 
-} // namespace engine::core
+} // namespace tryengine::core

@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace engine::core {
+namespace tryengine::core {
 
 using AssetID = uint64_t;
 
@@ -35,4 +35,4 @@ private:
     std::unordered_map<AssetID, std::string> id_to_path_;
 };
 
-} // namespace engine::core
+} // namespace tryengine::core

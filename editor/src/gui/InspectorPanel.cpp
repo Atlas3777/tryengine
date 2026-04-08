@@ -8,10 +8,10 @@
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
-namespace editor {
-using namespace engine::types;
-using namespace engine::core;
-using namespace engine;
+namespace tryeditor {
+using namespace tryengine::types;
+using namespace tryengine::core;
+using namespace tryengine;
 
 void InspectorPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Inspector");
@@ -217,4 +217,4 @@ void InspectorPanel::DrawAddComponentButton(entt::registry& reg, entt::entity en
         ImGui::EndPopup();
     }
 }
-}  // namespace editor
+}  // namespace tryeditor

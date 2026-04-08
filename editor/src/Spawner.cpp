@@ -3,9 +3,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-namespace editor {
+namespace tryeditor {
 
-void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) {
+void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) const {
     auto path = import_system_.GetHierarchyPath(asset_id);
     std::cout << "[Spawner] Opening hierarchy: " << path << std::endl;
 
@@ -33,16 +33,16 @@ void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) {
         entt::entity entity = entities[i];
 
         // Имя и Трансформ
-        reg.emplace<engine::Tag>(entity, nodeData.name.empty() ? "New Node" : nodeData.name);
-        reg.emplace<engine::Transform>(entity, nodeData.local_transform);
+        reg.emplace<tryengine::Tag>(entity, nodeData.name.empty() ? "New Node" : nodeData.name);
+        reg.emplace<tryengine::Transform>(entity, nodeData.local_transform);
 
-        auto& rel = reg.get_or_emplace<engine::Relationship>(entity);
+        auto& rel = reg.get_or_emplace<tryengine::Relationship>(entity);
         entt::entity last_child = entt::null;
 
         for (int32_t childIdx : nodeData.children_indices) {
             if (childIdx >= 0 && childIdx < entities.size()) {
                 entt::entity childEntity = entities[childIdx];
-                auto& childRel = reg.get_or_emplace<engine::Relationship>(childEntity);
+                auto& childRel = reg.get_or_emplace<tryengine::Relationship>(childEntity);
 
                 childRel.parent = entity;
                 rel.children++;
@@ -51,7 +51,7 @@ void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) {
                 if (last_child == entt::null) {
                     rel.first = childEntity;
                 } else {
-                    reg.get<engine::Relationship>(last_child).next = childEntity;
+                    reg.get<tryengine::Relationship>(last_child).next = childEntity;
                     childRel.prev = last_child;
                 }
                 last_child = childEntity;
@@ -65,7 +65,7 @@ void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) {
             // return nullptr;
         }
 
-        engine::graphics::Texture* tex = new engine::graphics::Texture();
+        tryengine::graphics::Texture* tex = new tryengine::graphics::Texture();
         tex->width = static_cast<Uint32>(w);
         tex->height = static_cast<Uint32>(h);
         // tex->path = path;
@@ -104,19 +104,19 @@ void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) {
         // Рендер компоненты (если есть меш)
         if (nodeData.mesh_id != 0) {
             // Загружаем меш через ResourceManager
-            auto meshRes = resource_manager_.Get<engine::graphics::Mesh>(nodeData.mesh_id);
-            reg.emplace<engine::MeshFilter>(entity, meshRes, nodeData.mesh_id);
+            auto meshRes = resource_manager_.Get<tryengine::graphics::Mesh>(nodeData.mesh_id);
+            reg.emplace<tryengine::MeshFilter>(entity, meshRes, nodeData.mesh_id);
 
 
-            engine::graphics::Material* mat = new engine::graphics::Material(); // Выделяем память
+            tryengine::graphics::Material* mat = new tryengine::graphics::Material(); // Выделяем память
             mat->name = "BasicStatic";
             mat->pipeline = render_system_.GetRenderer().GetDefaultPipeline();
 
-            auto* matInstance = new engine::graphics::MaterialInstance(mat);
+            auto* matInstance = new tryengine::graphics::MaterialInstance(mat);
             matInstance->SetTexture(0, tex->handle, render_system_.GetRenderer().GetCommonSampler());
 
-            reg.emplace<engine::graphics::MeshRenderer>(entity, matInstance);
+            reg.emplace<tryengine::graphics::MeshRenderer>(entity, matInstance);
         }
     }
 }
-}  // namespace editor
+}  // namespace tryeditor

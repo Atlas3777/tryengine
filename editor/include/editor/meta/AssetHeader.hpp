@@ -1,7 +1,7 @@
 #pragma once
 #include <cereal/cereal.hpp>
 
-namespace editor {
+namespace tryeditor {
 struct AssetHeader {
     uint64_t main_uuid;
 
@@ -10,4 +10,4 @@ struct AssetHeader {
         archive(cereal::make_nvp("main_guid", main_uuid));
     }
 };
-}  // namespace engine::resources
+}  // namespace tryengine::resources

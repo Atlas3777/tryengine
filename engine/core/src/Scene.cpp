@@ -2,10 +2,10 @@
 
 #include <utility>
 
-namespace engine::core {
+namespace tryengine::core {
 
 Scene::Scene(std::string  name)
     : name_(std::move(name)) {
     registry_ = std::make_unique<entt::registry>();
 }
-} // namespace engine
+} // namespace tryengine

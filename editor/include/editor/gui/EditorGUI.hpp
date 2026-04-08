@@ -6,19 +6,19 @@
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 
-namespace editor {
+namespace tryeditor {
 class EditorGUI {
 public:
-    EditorGUI(const engine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner);
+    EditorGUI(const tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner);
     ~EditorGUI();
-    void UpdatePanels(const engine::core::Engine& engine) const;
-    void RecordPanelsGpuCommands(const engine::core::Engine& engine);
-    void RenderToPanel(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& render_system,
-                       const engine::core::Engine& engine) const;
+    void UpdatePanels(const tryengine::core::Engine& engine) const;
+    void RecordPanelsGpuCommands(const tryengine::core::Engine& engine);
+    void RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
+                       const tryengine::core::Engine& engine) const;
     void RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GPUCommandBuffer* cmd);
 
 private:
     void DrawDockSpace();
     std::vector<std::unique_ptr<IPanel>> panels_;
 };
-}  // namespace editor
+}  // namespace tryeditor

@@ -3,11 +3,11 @@
 
 #include "engine/core/InputState.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 class InputMapper {
 public:
-    static void ProcessEvent(const SDL_Event& event, engine::core::InputState& state);
+    static void ProcessEvent(const SDL_Event& event, tryengine::core::InputState& state);
 };
 
-} // namespace editor
+} // namespace tryeditor

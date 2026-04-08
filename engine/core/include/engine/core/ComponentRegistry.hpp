@@ -4,7 +4,7 @@
 #include <entt/entt.hpp>
 
 #include "ResourceManager.hpp"
-namespace engine::core {
+namespace tryengine::core {
 class ComponentRegistry {
 public:
     template <typename T>
@@ -60,10 +60,10 @@ private:
     // }
     //
     // template<typename T>
-    // static void PostLoadImpl(entt::registry& reg, engine::resources::ResourceManager& rm) {
+    // static void PostLoadImpl(entt::registry& reg, tryengine::resources::ResourceManager& rm) {
     //     if constexpr (requires { SerializationTraits<T>::PostLoad(reg, rm); }) {
     //         SerializationTraits<T>::PostLoad(reg, rm);
     //     }
     // }
 };
-}  // namespace engine::core
+}  // namespace tryengine::core

@@ -6,7 +6,7 @@
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 class Engine {
 public:
     Engine();
@@ -26,4 +26,4 @@ private:
 
     InputState* input = nullptr;
 };
-}  // namespace engine::core
+}  // namespace tryengine::core

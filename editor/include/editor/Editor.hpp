@@ -6,12 +6,12 @@
 #include "gui/EditorGUI.hpp"
 #include "import/ImportSystem.hpp"
 
-namespace editor {
+namespace tryeditor {
 class Spawner;
 
 class Editor {
    public:
-    Editor(engine::core::Engine& eng, engine::graphics::GraphicsContext& graphics_context, engine::graphics::RenderSystem& render_system);
+    Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context, tryengine::graphics::RenderSystem& render_system);
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
     Editor(Editor&&) noexcept = delete;
@@ -42,8 +42,8 @@ class Editor {
     std::unique_ptr<EditorGUI> editor_gui_;
     std::unique_ptr<Spawner> spawner_;
 
-    engine::graphics::GraphicsContext& graphics_context_;
-    engine::core::Engine& engine_;
+    tryengine::graphics::GraphicsContext& graphics_context_;
+    tryengine::core::Engine& engine_;
 };
 
-}  // namespace editor
+}  // namespace tryeditor

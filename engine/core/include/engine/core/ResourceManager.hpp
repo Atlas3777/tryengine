@@ -5,7 +5,7 @@
 #include "engine/core/ICacheBase.hpp"
 #include "engine/core/AssetDatabase.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 class ResourceManager {
    public:
     ResourceManager() {
@@ -41,4 +41,4 @@ class ResourceManager {
     std::unique_ptr<AssetDatabase> asset_database_;
     std::unordered_map<entt::id_type, std::unique_ptr<ICacheBase>> caches_;
 };
-}  // namespace engine::resources
+}  // namespace tryengine::resources

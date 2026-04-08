@@ -1,7 +1,7 @@
 #include "engine/graphics/GraphicsContext.hpp"
 
 #include <string>
-namespace engine::graphics {
+namespace tryengine::graphics {
 bool GraphicsContext::Initialize(const int width, const int height, const std::string& title) {
     // SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
     // SDL_SetHint(SDL_HINT_X11_FORCE_OVERRIDE_REDIRECT, "1"); //Not Work
@@ -50,4 +50,4 @@ void GraphicsContext::Terminate() {
 
     SDL_Quit();
 }
-} // namespace engine
+} // namespace tryengine

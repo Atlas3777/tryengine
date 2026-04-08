@@ -16,7 +16,7 @@
 #include "engine/resources/Types.hpp"
 #include "tiny_gltf_v3.h"
 
-namespace editor {
+namespace tryeditor {
 
 // =============================================================================
 // Локальные вспомогательные функции (Скрыты в анонимном namespace)
@@ -66,14 +66,14 @@ int FindAttribute(const tg3_primitive& prim, const char* name) {
     return -1;
 }
 
-void SaveMeshBinary(const std::filesystem::path& path, const engine::resources::MeshData& data) {
+void SaveMeshBinary(const std::filesystem::path& path, const tryengine::resources::MeshData& data) {
     std::ofstream os(path, std::ios::binary);
     const uint32_t v_count = static_cast<uint32_t>(data.vertexBuffer.size());
     const uint32_t i_count = static_cast<uint32_t>(data.indexBuffer.size());
 
     os.write(reinterpret_cast<const char*>(&v_count), sizeof(uint32_t));
     os.write(reinterpret_cast<const char*>(&i_count), sizeof(uint32_t));
-    os.write(reinterpret_cast<const char*>(data.vertexBuffer.data()), v_count * sizeof(engine::resources::Vertex));
+    os.write(reinterpret_cast<const char*>(data.vertexBuffer.data()), v_count * sizeof(tryengine::resources::Vertex));
     os.write(reinterpret_cast<const char*>(data.indexBuffer.data()), i_count * sizeof(uint32_t));
 }
 
@@ -320,7 +320,7 @@ void GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const s
         const tg3_mesh& gltf_mesh = m->meshes[i];
         for (uint32_t p = 0; p < gltf_mesh.primitives_count; ++p) {
             const tg3_primitive& prim = gltf_mesh.primitives[p];
-            engine::resources::MeshData engine_mesh;
+            tryengine::resources::MeshData engine_mesh;
 
             int pos_idx = FindAttribute(prim, "POSITION");
             int norm_idx = FindAttribute(prim, "NORMAL");
@@ -345,7 +345,7 @@ void GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const s
                 const tg3_accessor* color_acc = (color_idx >= 0) ? &m->accessors[color_idx] : nullptr;
 
                 for (uint32_t v = 0; v < v_count; ++v) {
-                    engine::resources::Vertex& vertex = engine_mesh.vertexBuffer[v];
+                    tryengine::resources::Vertex& vertex = engine_mesh.vertexBuffer[v];
 
                     const float* pos = reinterpret_cast<const float*>(pos_data + (v * pos_stride));
                     vertex.x = pos[0];
@@ -506,4 +506,4 @@ void GltfImporter::ProcessNodes(const tg3_model* m, const std::vector<std::vecto
     }
 }
 
-}  // namespace editor
+}  // namespace tryeditor

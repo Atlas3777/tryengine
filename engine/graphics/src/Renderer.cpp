@@ -6,7 +6,7 @@
 #include "engine/core/CoreTypes.hpp"
 #include "engine/resources/Types.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 void Renderer::Init(SDL_GPUDevice* device) {
     this->device = device;
     SDL_GPUShader* vertexShader = CreateVertexShader(*device);
@@ -59,7 +59,7 @@ SDL_GPURenderPass* Renderer::BeginRenderPass(SDL_GPUCommandBuffer* cmd, RenderTa
 
 SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {
     size_t vertexCodeSize;
-    void* vertexCode = SDL_LoadFile("engine/graphics/assets/shaders/vertex.spv", &vertexCodeSize);
+    void* vertexCode = SDL_LoadFile("tryengine/graphics/assets/shaders/vertex.spv", &vertexCodeSize);
 
     SDL_GPUShaderCreateInfo vertexInfo;
     vertexInfo.code = (Uint8*)vertexCode;
@@ -79,7 +79,7 @@ SDL_GPUShader* Renderer::CreateVertexShader(SDL_GPUDevice& device) {
 
 SDL_GPUShader* Renderer::CreateFragmentShader(SDL_GPUDevice& device) {
     size_t fragmentCodeSize;
-    void* fragmentCode = SDL_LoadFile("engine/graphics/assets/shaders/fragment.spv", &fragmentCodeSize);
+    void* fragmentCode = SDL_LoadFile("tryengine/graphics/assets/shaders/fragment.spv", &fragmentCodeSize);
 
     SDL_GPUShaderCreateInfo fragmentInfo{};
     fragmentInfo.code = (Uint8*)fragmentCode;
@@ -185,4 +185,4 @@ SDL_GPUGraphicsPipeline* Renderer::CreateGraphicsPipeline(SDL_GPUDevice& device,
 
     return SDL_CreateGPUGraphicsPipeline(&device, &pipelineInfo);
 }
-}  // namespace engine
+}  // namespace tryengine

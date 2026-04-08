@@ -6,7 +6,7 @@
 #include "engine/graphics/Types.hpp"
 #include "engine/resources/Types.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 class GpuMeshLoader {
    public:
     using result_type = std::shared_ptr<Mesh>;
@@ -76,4 +76,4 @@ class GpuMeshLoader {
     core::ResourceManager* resManager;
     SDL_GPUDevice* device;
 };
-}  // namespace engine::graphics
+}  // namespace tryengine::graphics

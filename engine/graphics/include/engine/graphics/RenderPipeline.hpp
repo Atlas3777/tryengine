@@ -1,7 +1,7 @@
 #pragma once
 #include "IRenderPass.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 class RenderPipeline {
    public:
     explicit RenderPipeline();
@@ -10,4 +10,4 @@ class RenderPipeline {
    private:
     std::vector<IRenderPass*> RenderPasses;
 };
-}  // namespace engine::graphics
+}  // namespace tryengine::graphics

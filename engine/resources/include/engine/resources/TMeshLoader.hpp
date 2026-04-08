@@ -4,7 +4,7 @@
 
 #include "engine/core/ResourceManager.hpp"
 
-namespace engine::resources {
+namespace tryengine::resources {
 
 class TMeshLoader {
 public:
@@ -51,4 +51,4 @@ public:
 private:
     core::ResourceManager* res;
 };
-}  // namespace engine::resources
+}  // namespace tryengine::resources

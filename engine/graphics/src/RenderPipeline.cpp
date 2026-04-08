@@ -1,6 +1,6 @@
 #include "engine/graphics/RenderPipeline.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 RenderPipeline::RenderPipeline() {
 
 }
@@ -8,4 +8,4 @@ void RenderPipeline::Execute() {
 
 }
 
-}  // namespace engine::graphics
+}  // namespace tryengine::graphics

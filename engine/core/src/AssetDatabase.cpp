@@ -2,7 +2,7 @@
 #include <iostream>
 #include <charconv>
 
-namespace engine::core {
+namespace tryengine::core {
 
 void AssetDatabase::Refresh() {
     id_to_path_.clear();
@@ -44,4 +44,4 @@ void AssetDatabase::Refresh() {
         std::cout << "ID: " << id << " -> " << path << std::endl;
     }
 }
-} // namespace engine::core
+} // namespace tryengine::core

@@ -7,7 +7,7 @@
 
 #include "IPanel.hpp"
 
-namespace editor {
+namespace tryeditor {
 class HierarchyPanel : public IPanel {
    public:
     const char* GetName() const override { return "Hierarchy"; }
@@ -36,4 +36,4 @@ class HierarchyPanel : public IPanel {
 
     bool m_IsCutOperation = false;
 };
-}  // namespace editor
+}  // namespace tryeditor

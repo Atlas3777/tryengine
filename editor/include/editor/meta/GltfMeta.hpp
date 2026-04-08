@@ -3,7 +3,7 @@
 
 #include "editor/meta/AssetHeader.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 struct GltfImportSettings {
     float scale;

@@ -7,7 +7,7 @@
 
 #include "engine/core/Components.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 
 Scene* SceneManager::CreateScene(const std::string& name) {
     // std::make_unique безопасно создаст новую сцену и удалит старую (если была)
@@ -56,4 +56,4 @@ bool SceneManager::SaveScene(const std::string& filepath) {
     return true;
 }
 
-}  // namespace engine::core
+}  // namespace tryengine::core

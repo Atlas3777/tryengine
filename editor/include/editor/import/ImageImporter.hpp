@@ -3,7 +3,7 @@
 
 #include "editor/import/IAssetImporter.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 class ImageImporter : public IAssetImporter {
 public:
@@ -16,4 +16,4 @@ public:
                           const std::filesystem::path& projectAssetsDir) override;
 };
 
-}  // namespace editor
+}  // namespace tryeditor

@@ -1,8 +1,7 @@
+#include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
 
-#include "engine/core/Clock.hpp"
-
-namespace engine::core {
+namespace tryengine::core {
 Engine::Engine() {
     scene_manager_ = std::make_unique<SceneManager>();
     clock = std::make_unique<Clock>();
@@ -13,4 +12,4 @@ void Engine::UpdateTime() const {
     clock->Update();
 }
 
-}  // namespace engine::core
+}  // namespace tryengine::core

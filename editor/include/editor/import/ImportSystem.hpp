@@ -6,7 +6,7 @@
 
 #include "IAssetImporter.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 class ImportSystem {
 public:
@@ -40,4 +40,4 @@ private:
     std::unordered_map<std::string, uint64_t> path_to_id_;
 };
 
-}  // namespace editor
+}  // namespace tryeditor

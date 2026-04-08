@@ -2,7 +2,7 @@
 #include <glm/ext/vector_common.hpp>
 #include <glm/fwd.hpp>
 
-namespace engine::core {
+namespace tryengine::core {
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
@@ -43,4 +43,4 @@ Ray GetRayFromMouse(const CameraComponent& cam, const TransformComponent& camTra
 
     return {camTransform.position, rayWorld, 1.0f / rayWorld};
 }
-}  // namespace engine
+}  // namespace tryengine

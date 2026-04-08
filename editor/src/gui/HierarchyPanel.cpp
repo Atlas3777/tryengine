@@ -6,10 +6,10 @@
 #include "entt/entt.hpp"
 #include "imgui_internal.h"
 
-namespace editor {
-using namespace engine::types;
-using namespace engine::core;
-using namespace engine;
+namespace tryeditor {
+using namespace tryengine::types;
+using namespace tryengine::core;
+using namespace tryengine;
 
 void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Hierarchy");
@@ -286,4 +286,4 @@ void HierarchyPanel::DestroyEntityRecursive(entt::entity entity, entt::registry&
 
     destroy_recursive(destroy_recursive, entity);
 }
-}  // namespace editor
+}  // namespace tryeditor

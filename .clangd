@@ -3,9 +3,7 @@ Index:
 
 CompileFlags:
   CompilationDatabase: "build"
-  # Обязательно раскомментируйте и проверьте путь к компилятору, 
-  # если используете стандартные библиотеки (STL)
-  # Add: ["-I/usr/include", "-I/usr/local/include"] 
+  # Add: ["-I/usr/include", "-I/usr/local/include"]
   # Compiler: /usr/bin/g++ # Или clang++, в зависимости от системы
 
 Diagnostics:

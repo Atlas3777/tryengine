@@ -1,9 +1,9 @@
 #include <entt/entt.hpp>
 
-#include "../include/engine/core/Components.hpp"
+#include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
-namespace engine::core {
+namespace tryengine::core {
 void UpdateTransformSystem(entt::registry& reg) {
     // Лямбда для рекурсивного обхода дерева
     auto update_node = [&](auto& self, entt::entity entity, const glm::mat4& parentMatrix) -> void {
@@ -73,4 +73,4 @@ void UpdateAABBSystem(entt::registry& reg) {
     //     aabb.worldMax = worldMax;
     // }
 }
-}  // namespace engine
+}  // namespace tryengine

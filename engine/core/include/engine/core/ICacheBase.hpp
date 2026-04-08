@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace engine::core {
+namespace tryengine::core {
 class ICacheBase {
    public:
     virtual ~ICacheBase() = default;
@@ -46,4 +46,4 @@ class CacheImpl : public ITypedCache<T> {
         }
     }
 };
-}  // namespace engine::resources
+}  // namespace tryengine::resources

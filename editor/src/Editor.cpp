@@ -16,10 +16,10 @@
 #include "engine/resources/Types.hpp"
 #include "game/GameAPI.hpp"
 
-namespace editor {
+namespace tryeditor {
 
-Editor::Editor(engine::core::Engine& eng, engine::graphics::GraphicsContext& graphics_context,
-               engine::graphics::RenderSystem& render_system)
+Editor::Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
+               tryengine::graphics::RenderSystem& render_system)
     : graphics_context_(graphics_context), engine_(eng) {
     import_system_ = std::make_unique<ImportSystem>();
     spawner_ = std::make_unique<Spawner>(graphics_context, eng.GetResourceManager(), render_system, *import_system_);
@@ -35,9 +35,9 @@ void Editor::RegisterAssetsImporters() const {
 }
 void Editor::RegisterResourceLoaders() const {
     auto& res_manager_ = engine_.GetResourceManager();
-    res_manager_.RegisterLoader<engine::resources::MeshData>(engine::resources::TMeshLoader(res_manager_));
-    res_manager_.RegisterLoader<engine::graphics::Mesh>(
-        engine::graphics::GpuMeshLoader(res_manager_, graphics_context_.GetDevice()));
+    res_manager_.RegisterLoader<tryengine::resources::MeshData>(tryengine::resources::TMeshLoader(res_manager_));
+    res_manager_.RegisterLoader<tryengine::graphics::Mesh>(
+        tryengine::graphics::GpuMeshLoader(res_manager_, graphics_context_.GetDevice()));
 }
 
 bool Editor::LoadGameLibrary(const std::string& originalPath) {
@@ -95,18 +95,18 @@ void Editor::LoadDefaultScene() const {
     auto& registry = engine_.GetSceneManager().GetActiveScene()->GetRegistry();
 
     const auto editorCamera = registry.create();
-    registry.emplace<engine::Tag>(editorCamera, "EditorCamera");
-    registry.emplace<engine::Transform>(
-        editorCamera, engine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});  // Позиция Z = 10
-    registry.emplace<engine::Camera>(editorCamera);
+    registry.emplace<tryengine::Tag>(editorCamera, "EditorCamera");
+    registry.emplace<tryengine::Transform>(
+        editorCamera, tryengine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});  // Позиция Z = 10
+    registry.emplace<tryengine::Camera>(editorCamera);
     registry.emplace<EditorCameraTag>(editorCamera);
 
     const auto gameCamera = registry.create();
-    registry.emplace<engine::Tag>(gameCamera, "GameCamera");
-    registry.emplace<engine::Transform>(gameCamera,
-                                        engine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    registry.emplace<engine::Camera>(gameCamera);
-    registry.emplace<engine::MainCameraTag>(gameCamera);
+    registry.emplace<tryengine::Tag>(gameCamera, "GameCamera");
+    registry.emplace<tryengine::Transform>(gameCamera,
+                                        tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Camera>(gameCamera);
+    registry.emplace<tryengine::MainCameraTag>(gameCamera);
 }
 
-}  // namespace editor
+}  // namespace tryeditor

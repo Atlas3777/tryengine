@@ -2,7 +2,6 @@
 
 #include <imgui_impl_sdl3.h>
 
-#include "editor/BaseSystem.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
 #include "editor/Reflection.hpp"
@@ -12,18 +11,18 @@
 #include "engine/core/Engine.hpp"
 #include "engine/core/ResourceManager.hpp"
 
-namespace editor {
+namespace tryeditor {
 void EditorApp::Init() {
-    engine_ = std::make_unique<engine::core::Engine>();
+    engine_ = std::make_unique<tryengine::core::Engine>();
     engine_->SetInputSource(&(this->input_state_));
 
-    graphics_context_ = std::make_unique<engine::graphics::GraphicsContext>();
+    graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
         return;
     }
 
-    render_system_ = std::make_unique<engine::graphics::RenderSystem>(graphics_context_->GetDevice());
+    render_system_ = std::make_unique<tryengine::graphics::RenderSystem>(graphics_context_->GetDevice());
 
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_, *render_system_);
 
@@ -49,8 +48,8 @@ void EditorApp::Run() {
 
         editor_->GetEditorGUI().UpdatePanels(*engine_);
 
-        engine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
-        engine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
+        tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
+        tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
 
         if (editor_->play_mode & editor_->gameSO.IsValid()) {
             editor_->gameSO.updateGameSystems(engine_.get());
@@ -91,4 +90,4 @@ void EditorApp::UpdateInput() {
 void EditorApp::Shutdown() {
     std::cout << "EditorApp shutting down..." << std::endl;
 }
-}  // namespace editor
+}  // namespace tryeditor

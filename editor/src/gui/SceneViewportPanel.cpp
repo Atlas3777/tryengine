@@ -9,9 +9,9 @@
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/core/Components.hpp"
 
-namespace editor {
+namespace tryeditor {
 
-void SceneViewportPanel::OnUpdate(double dt, const engine::core::InputState& input, entt::registry& reg) {
+void SceneViewportPanel::OnUpdate(double dt, const tryengine::core::InputState& input, entt::registry& reg) {
     if (!is_focused_ && !is_hovered_)
         return;
     UpdateEditorCameraSystem(reg, dt, input);
@@ -32,19 +32,19 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     }
 
     // --- 2. Логика выбора сущности ---
-    const auto view = reg.view<SelectedTag, engine::Transform, engine::Relationship>();
+    const auto view = reg.view<SelectedTag, tryengine::Transform, tryengine::Relationship>();
     const auto selected_entity = view.front();
     if (selected_entity == entt::null || !reg.valid(selected_entity))
         return;
 
-    const auto cam_view = reg.view<EditorCameraTag, engine::Camera>();
+    const auto cam_view = reg.view<EditorCameraTag, tryengine::Camera>();
     const auto cam_ent = cam_view.front();
     if (cam_ent == entt::null)
         return;
 
-    const auto& camera = cam_view.get<engine::Camera>(cam_ent);
-    auto& transform = reg.get<engine::Transform>(selected_entity);
-    const auto& relationship = reg.get<engine::Relationship>(selected_entity);
+    const auto& camera = cam_view.get<tryengine::Camera>(cam_ent);
+    auto& transform = reg.get<tryengine::Transform>(selected_entity);
+    const auto& relationship = reg.get<tryengine::Relationship>(selected_entity);
 
     // --- 3. Настройка ImGuizmo ---
     ImGuizmo::SetOrthographic(false);
@@ -70,15 +70,15 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
         glm::mat4 localMatrix = modelMatrix;
 
         // Если есть родитель, переводим измененную мировую матрицу обратно в локальные координаты
-        if (relationship.parent != entt::null && reg.all_of<engine::Transform>(relationship.parent)) {
-            const auto& parent_transform = reg.get<engine::Transform>(relationship.parent);
+        if (relationship.parent != entt::null && reg.all_of<tryengine::Transform>(relationship.parent)) {
+            const auto& parent_transform = reg.get<tryengine::Transform>(relationship.parent);
             localMatrix = glm::inverse(parent_transform.world_matrix) * modelMatrix;
         }
 
         glm::vec3 skew;
         glm::vec4 perspective;
-        engine::vec3 translation;
-        engine::vec3 scale;
+        tryengine::vec3 translation;
+        tryengine::vec3 scale;
         glm::quat orientation;
 
         // Разлагаем локальную матрицу на компоненты Transform
@@ -89,4 +89,4 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
         transform.scale = scale;
     }
 };
-}  // namespace editor
+}  // namespace tryeditor

@@ -6,7 +6,7 @@
 #include "engine/core/CoreTypes.hpp"
 #include "engine/core/GLMSerialization.hpp"
 
-namespace engine {
+namespace tryengine {
 namespace graphics {
 struct Texture;
 struct Mesh;
@@ -71,4 +71,4 @@ struct Camera {
     float sensitivity = 0.1f;
     float speed = 5.0f;
 };
-}  // namespace engine
+}  // namespace tryengine

@@ -3,7 +3,7 @@
 
 #include "editor/meta/AssetHeader.hpp"
 
-namespace editor {
+namespace tryeditor {
 class IAssetImporter {
 public:
     virtual ~IAssetImporter() = default;
@@ -15,4 +15,4 @@ public:
                                     const std::filesystem::path& cacheDir,
                                     const std::filesystem::path& projectAssetsDir) = 0;
 };
-}  // namespace editor
+}  // namespace tryeditor

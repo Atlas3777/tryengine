@@ -5,7 +5,7 @@
 
 #include "RenderProfile.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 // Базовый класс для любого этапа рендеринга
 class IRenderPass {
 public:

@@ -8,7 +8,7 @@ set_target_properties(game_obj PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(game_obj PUBLIC include PRIVATE src)
 
-# Только ядро движка!
+# Только ядро движка
 target_link_libraries(game_obj PUBLIC engine_core)
 
 # .so для редактора

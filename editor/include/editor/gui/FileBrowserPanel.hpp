@@ -6,7 +6,7 @@
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 class FileBrowserPanel : public IPanel {
 public:
@@ -25,4 +25,4 @@ private:
     std::filesystem::path selected_directory_;
 };
 
-} // namespace editor
+} // namespace tryeditor

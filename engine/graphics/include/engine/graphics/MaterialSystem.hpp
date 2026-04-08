@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 
 // 1. Поддерживаемые типы данных в шейдере
 enum class ShaderParamType { Float, Int, Vec2, Vec3, Vec4, Mat3, Mat4 };

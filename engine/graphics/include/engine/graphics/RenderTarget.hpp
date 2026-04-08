@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_gpu.h>
-namespace engine::graphics {
+namespace tryengine::graphics {
 class RenderTarget {
    public:
     RenderTarget(SDL_GPUDevice* device, uint32_t w, uint32_t h, SDL_GPUTextureFormat format, bool useDepth = true)
@@ -69,4 +69,4 @@ class RenderTarget {
         depthTexture = nullptr;
     }
 };
-} // namespace engine
+} // namespace tryengine

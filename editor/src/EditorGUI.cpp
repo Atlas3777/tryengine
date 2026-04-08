@@ -14,12 +14,16 @@
 #include "editor/gui/SceneViewportPanel.hpp"
 #include "engine/core/Engine.hpp"
 
-namespace editor {
+namespace tryeditor {
 
-EditorGUI::EditorGUI(const engine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner) {
+EditorGUI::EditorGUI(const tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
+
+    static std::string ini_path = (std::filesystem::current_path() / "tryeditor" / "imgui.ini").string();
+    io.IniFilename = ini_path.c_str();
+
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
@@ -49,13 +53,14 @@ EditorGUI::~EditorGUI() {
     ImGui::DestroyContext();
 }
 
-void EditorGUI::UpdatePanels(const engine::core::Engine& engine) const {
+void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
-        panel->OnUpdate(engine.GetClock().GetDeltaTime(), engine.GetInput(), engine.GetSceneManager().GetActiveScene()->GetRegistry());
+        panel->OnUpdate(engine.GetClock().GetDeltaTime(), engine.GetInput(),
+                        engine.GetSceneManager().GetActiveScene()->GetRegistry());
     }
 }
 
-void EditorGUI::RecordPanelsGpuCommands(const engine::core::Engine& engine) {
+void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine) {
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -71,8 +76,8 @@ void EditorGUI::RecordPanelsGpuCommands(const engine::core::Engine& engine) {
     ImGui::Render();
 }
 
-void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& render_system,
-                              const engine::core::Engine& engine) const {
+void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
+                              const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
         panel->OnRender(cmd, render_system, engine.GetSceneManager().GetActiveScene()->GetRegistry());
     }
@@ -119,4 +124,4 @@ void EditorGUI::DrawDockSpace() {
     ImGui::End();
 }
 
-}  // namespace editor
+}  // namespace tryeditor

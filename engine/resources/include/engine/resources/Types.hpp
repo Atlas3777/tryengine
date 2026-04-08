@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
-namespace engine::resources {
+namespace tryengine::resources {
 
 struct Vertex {
     float x, y, z;
@@ -19,7 +20,15 @@ struct MeshData {
 struct TextureData {
     uint32_t width;
     uint32_t height;
+    uint32_t channels;  // Добавили информацию о каналах
     std::vector<uint8_t> pixels;
 };
 
-}
+struct TextureHeader {
+    uint32_t width;
+    uint32_t height;
+    uint32_t channels;
+    uint32_t dataSize;
+};
+
+}  // namespace tryengine::resources

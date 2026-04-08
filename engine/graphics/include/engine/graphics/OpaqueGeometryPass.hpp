@@ -5,7 +5,7 @@
 #include "engine/graphics/RenderProfile.hpp"
 #include "engine/graphics/IRenderPass.hpp"
 
-namespace engine::graphics{
+namespace tryengine::graphics{
 
 class OpaqueGeometryPass : public IRenderPass {
 public:

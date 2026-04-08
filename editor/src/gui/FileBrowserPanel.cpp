@@ -3,7 +3,7 @@
 #include "editor/import/ImportSystem.hpp"
 #include "engine/core/AssetDatabase.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 FileBrowserPanel::FileBrowserPanel(ImportSystem& import_system) : import_system_(import_system) {
     root_directory_ = std::filesystem::current_path() / "game/assets/";
@@ -157,4 +157,4 @@ void FileBrowserPanel::DrawDirectoryContent() {
     }
 }
 
-}  // namespace editor
+}  // namespace tryeditor

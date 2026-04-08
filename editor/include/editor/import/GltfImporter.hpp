@@ -8,7 +8,7 @@
 
 struct tg3_model;
 
-namespace editor {
+namespace tryeditor {
 
 class GltfImporter : public IAssetImporter {
 public:
@@ -49,4 +49,4 @@ private:
                       ModelAssetMap& asset_map);
 };
 
-}  // namespace editor
+}  // namespace tryeditor

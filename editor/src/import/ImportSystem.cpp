@@ -8,7 +8,7 @@
 #include "editor/meta/AssetHeader.hpp"    // Убедись, что путь правильный
 #include "editor/meta/ModelAssetMap.hpp"  // Путь к твоему файлу со структурой ModelAssetMap
 
-namespace editor {
+namespace tryeditor {
 
 void ImportSystem::Refresh() {
     if (!std::filesystem::exists(assets_directory_)) {
@@ -94,4 +94,4 @@ void ImportSystem::Refresh() {
     }
 }
 
-}  // namespace editor
+}  // namespace tryeditor

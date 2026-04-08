@@ -7,11 +7,11 @@
 #include <cereal/types/utility.hpp>
 #include "engine/core/Components.hpp"
 
-namespace editor {
+namespace tryeditor {
 
 struct ModelNodeData {
     std::string name;
-    engine::Transform local_transform;
+    tryengine::Transform local_transform;
     std::vector<int32_t> children_indices;
 
     uint64_t mesh_id = 0;
@@ -39,4 +39,4 @@ struct ModelAssetMap {
     }
 };
 
-}  // namespace editor
+}  // namespace tryeditor

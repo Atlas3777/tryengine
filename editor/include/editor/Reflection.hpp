@@ -6,46 +6,46 @@
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
 
-namespace editor {
+namespace tryeditor {
 void RegisterRef() {
-    entt::meta_factory<engine::Tag>()
-        .type(entt::type_hash<engine::Tag>::value(), "TagComponent")
-        .data<&engine::Tag::tag>("Tag");  // Для полей достаточно просто строки
+    entt::meta_factory<tryengine::Tag>()
+        .type(entt::type_hash<tryengine::Tag>::value(), "TagComponent")
+        .data<&tryengine::Tag::tag>("Tag");  // Для полей достаточно просто строки
 
-    entt::meta_factory<engine::Transform>()
-        .type(entt::type_hash<engine::Transform>::value(), "TransformComponent")
-        .data<&engine::Transform::position>("Position")
-        .data<&engine::Transform::rotation>("Rotation")
-        .data<&engine::Transform::scale>("Scale");
+    entt::meta_factory<tryengine::Transform>()
+        .type(entt::type_hash<tryengine::Transform>::value(), "TransformComponent")
+        .data<&tryengine::Transform::position>("Position")
+        .data<&tryengine::Transform::rotation>("Rotation")
+        .data<&tryengine::Transform::scale>("Scale");
 
-    entt::meta_factory<engine::Relationship>()
-        .type(entt::type_hash<engine::Relationship>::value(), "Relationship")
-        .data<&engine::Relationship::children>("Children Count")
-        .data<&engine::Relationship::first>("First Child")
-        .data<&engine::Relationship::prev>("Prev Sibling")
-        .data<&engine::Relationship::next>("Next Sibling")
-        .data<&engine::Relationship::parent>("Parent");
+    entt::meta_factory<tryengine::Relationship>()
+        .type(entt::type_hash<tryengine::Relationship>::value(), "Relationship")
+        .data<&tryengine::Relationship::children>("Children Count")
+        .data<&tryengine::Relationship::first>("First Child")
+        .data<&tryengine::Relationship::prev>("Prev Sibling")
+        .data<&tryengine::Relationship::next>("Next Sibling")
+        .data<&tryengine::Relationship::parent>("Parent");
 
-    entt::meta_factory<engine::Camera>()
-        .type(entt::type_hash<engine::Camera>::value(), "CameraComponent")
-        .data<&engine::Camera::fov>("FOV")
-        .data<&engine::Camera::near_plane>("Near Plane")
-        .data<&engine::Camera::far_plane>("Far Plane")
-        .data<&engine::Camera::sensitivity>("Sensitivity")
-        .data<&engine::Camera::speed>("Speed")
+    entt::meta_factory<tryengine::Camera>()
+        .type(entt::type_hash<tryengine::Camera>::value(), "CameraComponent")
+        .data<&tryengine::Camera::fov>("FOV")
+        .data<&tryengine::Camera::near_plane>("Near Plane")
+        .data<&tryengine::Camera::far_plane>("Far Plane")
+        .data<&tryengine::Camera::sensitivity>("Sensitivity")
+        .data<&tryengine::Camera::speed>("Speed")
         ;
 
     entt::meta_factory<EditorCameraTag>().type(entt::type_hash<EditorCameraTag>::value(), "EditorCameraTag");
 
-    entt::meta_factory<engine::MainCameraTag>().type(entt::type_hash<engine::MainCameraTag>::value(), "MainCameraTag");
+    entt::meta_factory<tryengine::MainCameraTag>().type(entt::type_hash<tryengine::MainCameraTag>::value(), "MainCameraTag");
 
-    entt::meta_factory<engine::MeshFilter>()
-        .type(entt::type_hash<engine::MeshFilter>::value(), "MeshFilter")
-        .data<&engine::MeshFilter::asset_id>("asset_id")
-        .data<&engine::MeshFilter::mesh>("mesh_ptr");
+    entt::meta_factory<tryengine::MeshFilter>()
+        .type(entt::type_hash<tryengine::MeshFilter>::value(), "MeshFilter")
+        .data<&tryengine::MeshFilter::asset_id>("asset_id")
+        .data<&tryengine::MeshFilter::mesh>("mesh_ptr");
 
-    entt::meta_factory<engine::graphics::MeshRenderer>()
-        .type(entt::type_hash<engine::graphics::MeshRenderer>::value(), "MeshRenderer")
-        .data<&engine::graphics::MeshRenderer::material_instance>("material_instance");
+    entt::meta_factory<tryengine::graphics::MeshRenderer>()
+        .type(entt::type_hash<tryengine::graphics::MeshRenderer>::value(), "MeshRenderer")
+        .data<&tryengine::graphics::MeshRenderer::material_instance>("material_instance");
 };
-}  // namespace editor
+}  // namespace tryeditor

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace editor {
+namespace tryeditor {
 struct EditorCameraTag {};
 struct SelectedTag {};
-}  // namespace editor
+}  // namespace tryeditor

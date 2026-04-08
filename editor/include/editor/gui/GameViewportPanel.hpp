@@ -4,7 +4,7 @@
 #include "IPanel.hpp"
 #include "engine/core/Components.hpp"
 
-namespace editor {
+namespace tryeditor {
 class GameViewportPanel : public BaseViewport {
 public:
     GameViewportPanel(SDL_GPUDevice* device) : BaseViewport(device) {}
@@ -21,9 +21,9 @@ public:
         ImGui::End();
         ImGui::PopStyleVar();
     }
-    void OnRender(SDL_GPUCommandBuffer* cmd, engine::graphics::RenderSystem& rs, entt::registry& reg) override {
-        const auto mainCamera = reg.view<engine::Camera, engine::MainCameraTag>().front();
+    void OnRender(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& rs, entt::registry& reg) override {
+        const auto mainCamera = reg.view<tryengine::Camera, tryengine::MainCameraTag>().front();
         rs.RenderScene(reg, mainCamera, target_.get(), cmd);
     }
 };
-}  // namespace editor
+}  // namespace tryeditor

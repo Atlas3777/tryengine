@@ -5,7 +5,7 @@
 #include <entt/entt.hpp>
 
 #include "IPanel.hpp"
-namespace editor {
+namespace tryeditor {
 class InspectorPanel : public IPanel {
    public:
     const char* GetName() const override { return "Game"; }
@@ -19,4 +19,4 @@ class InspectorPanel : public IPanel {
     void DrawUnregisteredComponent(entt::registry& reg, entt::entity entity, entt::id_type id);
     void DrawAddComponentButton(entt::registry& reg, entt::entity entity);
 };
-}  // namespace editor
+}  // namespace tryeditor

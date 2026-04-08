@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-namespace engine::core {
+namespace tryengine::core {
 
 // Полностью совпадает с USB стандартом (и SDL_Scancode)
 enum class Key : uint16_t {
@@ -95,4 +95,4 @@ struct InputState {
     }
 };
 
-} // namespace engine::core
+} // namespace tryengine::core

@@ -10,23 +10,23 @@
 #include "engine/graphics/Types.hpp"
 #include "import/ImportSystem.hpp"
 
-namespace editor {
+namespace tryeditor {
 class Spawner {
 public:
-    Spawner(engine::graphics::GraphicsContext& graphics_context, engine::core::ResourceManager& resource_manager,
-            engine::graphics::RenderSystem& render_system, ImportSystem& import_system)
+    Spawner(tryengine::graphics::GraphicsContext& graphics_context, tryengine::core::ResourceManager& resource_manager,
+            tryengine::graphics::RenderSystem& render_system, ImportSystem& import_system)
         : resource_manager_(resource_manager),
           render_system_(render_system),
           graphics_context_(graphics_context),
           import_system_(import_system) {};
 
-    void Spawn(entt::registry& reg, uint64_t asset_id);
+    void Spawn(entt::registry& reg, uint64_t asset_id) const;
 
 private:
-    engine::core::ResourceManager& resource_manager_;
-    engine::graphics::RenderSystem& render_system_;
-    engine::graphics::GraphicsContext& graphics_context_;
+    tryengine::core::ResourceManager& resource_manager_;
+    tryengine::graphics::RenderSystem& render_system_;
+    tryengine::graphics::GraphicsContext& graphics_context_;
     ImportSystem& import_system_;
 };
 
-}  // namespace editor
+}  // namespace tryeditor

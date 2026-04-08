@@ -7,9 +7,12 @@
 #include "engine/core/InputState.hpp"
 #include "engine/graphics/RenderSystem.hpp"
 
-namespace editor {
+namespace tryeditor {
 class EditorApp {
 public:
+    EditorApp() = default;
+    EditorApp(const EditorApp&) = delete;
+    EditorApp& operator=(const EditorApp&) = delete;
     void Init();
     void Run();
     void Shutdown();
@@ -17,12 +20,10 @@ public:
 private:
     void UpdateInput();
 
-    std::unique_ptr<engine::graphics::GraphicsContext> graphics_context_;
-    std::unique_ptr<engine::graphics::RenderSystem> render_system_;
-    std::unique_ptr<engine::core::Engine> engine_;
-
+    std::unique_ptr<tryengine::graphics::GraphicsContext> graphics_context_;
+    std::unique_ptr<tryengine::graphics::RenderSystem> render_system_;
+    std::unique_ptr<tryengine::core::Engine> engine_;
     std::unique_ptr<Editor> editor_;
-
-    engine::core::InputState input_state_;
+    tryengine::core::InputState input_state_;
 };
-}  // namespace editor
+}  // namespace tryeditor

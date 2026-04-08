@@ -6,7 +6,7 @@
 #include "engine/graphics/MaterialSystem.hpp"
 #include "engine/graphics/Types.hpp"
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 
 void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, RenderTarget* target, SDL_GPUCommandBuffer* cmd) {
     auto camView = reg.view<Camera, Transform>();
@@ -104,4 +104,4 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
 
     SDL_EndGPURenderPass(scenePass);
 }
-}  // namespace engine::graphics
+}  // namespace tryengine::graphics

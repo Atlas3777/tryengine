@@ -1,9 +1,8 @@
 #pragma once
 #include <SDL3/SDL_gpu.h>
-#include <entt/core/fwd.hpp>
 #include <memory>
 
-namespace engine::graphics {
+namespace tryengine::graphics {
 
 struct Texture {
     SDL_GPUTexture* handle;

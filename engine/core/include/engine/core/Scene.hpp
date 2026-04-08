@@ -3,7 +3,7 @@
 #include <entt/entt.hpp>
 #include <string>
 
-namespace engine::core {
+namespace tryengine::core {
 
 class Scene {
 public:
@@ -24,4 +24,4 @@ private:
   std::unique_ptr<entt::registry> registry_;
 };
 
-} // namespace engine
+} // namespace tryengine
