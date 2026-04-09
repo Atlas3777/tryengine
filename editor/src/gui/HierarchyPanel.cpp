@@ -15,8 +15,9 @@ void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Hierarchy");
 
     HandleShortcuts(reg);
+    bool isMouseCaptured = SDL_GetWindowRelativeMouseMode(SDL_GL_GetCurrentWindow());
 
-    if (ImGui::BeginPopupContextWindow("HierarchyContextMenu",
+    if (!isMouseCaptured && ImGui::BeginPopupContextWindow("HierarchyContextMenu",
                                        ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
         if (ImGui::MenuItem("Create Empty Entity")) {
             auto newEntity = reg.create();

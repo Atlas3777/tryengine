@@ -68,7 +68,7 @@ struct Camera {
     float far_plane = 100.0f;
 
     // Параметры управления (для системы ввода)
-    float sensitivity = 0.1f;
+    float sensitivity = 0.06f;
     float speed = 5.0f;
 };
 }  // namespace tryengine

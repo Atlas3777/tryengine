@@ -12,7 +12,7 @@
 namespace tryeditor {
 class SceneViewportPanel : public BaseViewport {
 public:
-    SceneViewportPanel(SDL_GPUDevice* device, Spawner& spawner) : BaseViewport(device), spawner_(spawner) {}
+    SceneViewportPanel(tryengine::graphics::GraphicsContext& context, Spawner& spawner) : BaseViewport(context), spawner_(spawner) {}
 
     const char* GetName() const override { return "Scene"; }
 
@@ -22,7 +22,26 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
         ImGui::Begin("Scene");
 
+        if (is_input_captured_) {
+            ImGuiIO& io = ImGui::GetIO();
+            io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+        }
+
         DrawTexture();
+
+        // 1. Начинаем захват при зажатии ПКМ
+        if (is_hovered_ && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            SetInputCapture(true);
+        }
+
+        // 2. Если захвачено - держим фокус и ждем отпускания
+        if (is_input_captured_) {
+            ImGui::SetWindowFocus();
+
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                SetInputCapture(false);
+            }
+        }
 
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ID")) {
@@ -46,10 +65,11 @@ public:
     }
 
 private:
-    Spawner& spawner_;
     void HandleGizmos(entt::registry& reg);
-
+    bool is_camera_controlled_ = false;
     ImGuizmo::OPERATION current_gizmo_operation_ = ImGuizmo::TRANSLATE;
     ImGuizmo::MODE current_gizmo_mode_ = ImGuizmo::LOCAL;
+
+    Spawner& spawner_;
 };
 }  // namespace tryeditor

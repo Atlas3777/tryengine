@@ -4,7 +4,7 @@
 
 extern "C" {
 
-  void UpdateGameSystems(engine::core::Engine* engine) {
+  void UpdateGameSystems(tryengine::core::Engine* engine) {
       std::printf("UpdateGameSystems\n");
     // SDL_Log("Updating Game Systems...");
     // Вся логика обновления игровых систем теперь здесь

@@ -7,16 +7,30 @@
 namespace tryeditor {
 class GameViewportPanel : public BaseViewport {
 public:
-    GameViewportPanel(SDL_GPUDevice* device) : BaseViewport(device) {}
+    GameViewportPanel(tryengine::graphics::GraphicsContext& context) : BaseViewport(context) {}
     const char* GetName() const override { return "Game"; }
 
     void OnImGuiRender(entt::registry& reg) override {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
         ImGui::Begin("Game");
 
-        // Тут можно добавить логику поиска "активной" камеры в ECS
-        // Если камеры нет — рисовать заглушку "No Camera Found"
         DrawTexture();
+
+        // 1. Захватываем ввод по обычному клику (ЛКМ) на окно игры
+        if (is_hovered_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            SetInputCapture(true);
+        }
+
+        // 2. Если мы в игре
+        if (is_input_captured_) {
+            // Удерживаем фокус на окне игры, чтобы ImGui отправлял клавиатуру сюда
+            ImGui::SetWindowFocus();
+
+            // Освобождаем мышь по нажатию Escape
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                SetInputCapture(false);
+            }
+        }
 
         ImGui::End();
         ImGui::PopStyleVar();

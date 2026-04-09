@@ -16,12 +16,12 @@
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(const tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner) {
+EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
 
-    static std::string ini_path = (std::filesystem::current_path() / "tryeditor" / "imgui.ini").string();
+    static std::string ini_path = (std::filesystem::current_path() / "editor" / "imgui.ini").string();
     io.IniFilename = ini_path.c_str();
 
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -40,8 +40,8 @@ EditorGUI::EditorGUI(const tryengine::graphics::GraphicsContext& context, Import
     init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
     ImGui_ImplSDLGPU3_Init(&init_info);
 
-    panels_.emplace_back(std::make_unique<SceneViewportPanel>(context.GetDevice(), spawner));
-    panels_.emplace_back(std::make_unique<GameViewportPanel>(context.GetDevice()));
+    panels_.emplace_back(std::make_unique<SceneViewportPanel>(context, spawner));
+    panels_.emplace_back(std::make_unique<GameViewportPanel>(context));
     panels_.emplace_back(std::make_unique<InspectorPanel>());
     panels_.emplace_back(std::make_unique<HierarchyPanel>());
     panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system));

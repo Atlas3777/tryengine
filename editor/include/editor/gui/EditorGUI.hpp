@@ -9,7 +9,7 @@
 namespace tryeditor {
 class EditorGUI {
 public:
-    EditorGUI(const tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner);
+    EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner);
     ~EditorGUI();
     void UpdatePanels(const tryengine::core::Engine& engine) const;
     void RecordPanelsGpuCommands(const tryengine::core::Engine& engine);

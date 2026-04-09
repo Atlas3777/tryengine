@@ -14,6 +14,7 @@ namespace tryeditor {
 void SceneViewportPanel::OnUpdate(double dt, const tryengine::core::InputState& input, entt::registry& reg) {
     if (!is_focused_ && !is_hovered_)
         return;
+    if (!is_input_captured_) return;
     UpdateEditorCameraSystem(reg, dt, input);
 }
 
