@@ -7,10 +7,10 @@ AccessModifierOffset: -4 # Выравнивает public/private по левом
 
 # Улучшенная сортировка инклудов
 IncludeCategories:
-#  - Regex: '^<imgui\.h>'
-#    Priority: 0
-#  - Regex: '^<ImGuizmo\.h>'
-#    Priority: 1
+  - Regex: '^<imgui\.h>'
+    Priority: 0
+  - Regex: '^<ImGuizmo\.h>'
+    Priority: 1
   - Regex: '^<.*' # Системные заголовочные файлы <...>
     Priority: 2
   - Regex: '^".*' # Пользовательские заголовочные файлы "..."

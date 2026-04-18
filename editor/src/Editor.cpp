@@ -6,13 +6,22 @@
 
 #include "editor/Components.hpp"
 #include "editor/Spawner.hpp"
+#include "editor/asset_factories/MaterialAssetFactory.hpp"
+#include "editor/asset_factories/ShaderAssetFactory.hpp"
+#include "editor/asset_inspector/MaterialAssetInspector.hpp"
+#include "editor/asset_inspector/ShaderAssetInspector.hpp"
+#include "editor/asset_inspector/TextureAssetInspector.hpp"
+#include "editor/import/GlslShaderImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
-#include "editor/import/ImageImporter.hpp"
+#include "editor/import/TextureImporter.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/ResourceManager.hpp"
-#include "engine/graphics/GpuMeshLoader.hpp"
+#include "engine/graphics/MaterialLoader.hpp"
+#include "engine/graphics/MeshLoader.hpp"
+#include "engine/graphics/ShaderAssetLoader.hpp"
 #include "engine/graphics/Types.hpp"
-#include "engine/resources/TMeshLoader.hpp"
+#include "engine/resources/MeshDataLoader.hpp"
+#include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
 #include "game/GameAPI.hpp"
 
@@ -21,23 +30,48 @@ namespace tryeditor {
 Editor::Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
                tryengine::graphics::RenderSystem& render_system)
     : graphics_context_(graphics_context), engine_(eng) {
+    editor_context_ = std::make_unique<EditorContext>();
+    asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
+
+    assets_factory_ = std::make_unique<AssetsFactoryManager>();
     import_system_ = std::make_unique<ImportSystem>();
     spawner_ = std::make_unique<Spawner>(graphics_context, eng.GetResourceManager(), render_system, *import_system_);
-    editor_gui_ = std::make_unique<EditorGUI>(graphics_context, *import_system_, *spawner_);
+    editor_gui_ = std::make_unique<EditorGUI>(graphics_context, *import_system_, *spawner_, *editor_context_,
+                                              *assets_factory_, *asset_inspector_manager_);
 }
 
 Editor::~Editor() {
     UnloadGameLibrary();
 }
-void Editor::RegisterAssetsImporters() const {
-    import_system_->RegisterImporter<GltfImporter>(".glb");
-    import_system_->RegisterImporter<ImageImporter>(".png");
+
+void Editor::RegisterAssetsFactories() const {
+    assets_factory_->RegisterFactory<ShaderAssetFactory>();
+    assets_factory_->RegisterFactory<MaterialAssetFactory>();
 }
+
+void Editor::RegisterAssetsInspector() const {
+    asset_inspector_manager_->RegisterInspector<ShaderAssetInspector>("shader");
+    asset_inspector_manager_->RegisterInspector<TextureAssetInspector>("texture", *import_system_);
+    asset_inspector_manager_->RegisterInspector<MaterialAssetInspector>("material");
+}
+
+void Editor::RegisterAssetsImporters() const {
+    import_system_->RegisterImporter<GlslShaderImporter>({".vert", ".frag"});
+    import_system_->RegisterImporter<GltfImporter>({".glb", ".gltf"}, *assets_factory_);
+    import_system_->RegisterImporter<TextureImporter>({".png", ".jpg"});
+}
+
 void Editor::RegisterResourceLoaders() const {
     auto& res_manager_ = engine_.GetResourceManager();
-    res_manager_.RegisterLoader<tryengine::resources::MeshData>(tryengine::resources::TMeshLoader(res_manager_));
+    res_manager_.RegisterLoader<tryengine::resources::MeshData>(tryengine::resources::MeshDataLoader(res_manager_));
     res_manager_.RegisterLoader<tryengine::graphics::Mesh>(
-        tryengine::graphics::GpuMeshLoader(res_manager_, graphics_context_.GetDevice()));
+        tryengine::graphics::MeshLoader(res_manager_, graphics_context_.GetDevice()));
+
+    res_manager_.RegisterLoader<tryengine::graphics::Texture>(
+        tryengine::graphics::TextureLoader(res_manager_, graphics_context_.GetDevice()));
+    res_manager_.RegisterLoader<tryengine::graphics::Shader>(
+        tryengine::graphics::ShaderAssetLoader(res_manager_, graphics_context_.GetDevice()));
+    res_manager_.RegisterLoader<tryengine::graphics::Material>(tryengine::graphics::MaterialLoader(res_manager_));
 }
 
 bool Editor::LoadGameLibrary(const std::string& originalPath) {
@@ -103,8 +137,8 @@ void Editor::LoadDefaultScene() const {
 
     const auto gameCamera = registry.create();
     registry.emplace<tryengine::Tag>(gameCamera, "GameCamera");
-    registry.emplace<tryengine::Transform>(gameCamera,
-                                        tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Transform>(
+        gameCamera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
     registry.emplace<tryengine::Camera>(gameCamera);
     registry.emplace<tryengine::MainCameraTag>(gameCamera);
 }

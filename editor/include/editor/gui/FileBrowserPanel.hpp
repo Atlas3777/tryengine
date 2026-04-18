@@ -1,25 +1,28 @@
 #pragma once
+#include <filesystem>
 #include <imgui.h>
 
-#include <filesystem>
-
+#include "editor/EditorContext.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
 
 namespace tryeditor {
+class AssetsFactoryManager;
 
 class FileBrowserPanel : public IPanel {
 public:
-    FileBrowserPanel(ImportSystem& import_system);
-
+    FileBrowserPanel(ImportSystem& import_system, EditorContext& editor_context, AssetsFactoryManager& factory_manager);
     const char* GetName() const override { return "FileBrowserPanel"; }
 
     void OnImGuiRender(entt::registry& reg) override;
 
 private:
-    ImportSystem& import_system_;
     void DrawDirectoryTree(const std::filesystem::path& directoryPath);
     void DrawDirectoryContent();
+
+    ImportSystem& import_system_;
+    EditorContext& editor_context_;
+    AssetsFactoryManager& factory_manager_;
 
     std::filesystem::path root_directory_;
     std::filesystem::path selected_directory_;

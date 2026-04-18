@@ -16,7 +16,9 @@
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner) {
+EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner,
+                     EditorContext& editor_context, AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager)
+    : editor_context_(editor_context) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -42,9 +44,9 @@ EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem
 
     panels_.emplace_back(std::make_unique<SceneViewportPanel>(context, spawner));
     panels_.emplace_back(std::make_unique<GameViewportPanel>(context));
-    panels_.emplace_back(std::make_unique<InspectorPanel>());
+    panels_.emplace_back(std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager));
     panels_.emplace_back(std::make_unique<HierarchyPanel>());
-    panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system));
+    panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager));
 }
 
 EditorGUI::~EditorGUI() {

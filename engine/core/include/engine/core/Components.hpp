@@ -8,11 +8,16 @@
 
 namespace tryengine {
 namespace graphics {
-struct Texture;
+struct Material;
 struct Mesh;
 }  // namespace graphics
+
 struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
+    uint64_t asset_id = 0;
+};
+struct MeshRenderer {
+    entt::resource<graphics::Material> material;
     uint64_t asset_id = 0;
 };
 

@@ -20,7 +20,7 @@ public:
         auto it = id_to_path_.find(id);
 
         if (it == id_to_path_.end()) {
-            std::cerr << "Warning: AssetID " << id << " not found!" << std::endl;
+            std::cerr << "ASSET DATABASE: Warning: Path to asset with id = " << id << " not found!" << std::endl;
             return "";
         }
 

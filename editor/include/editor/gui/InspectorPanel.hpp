@@ -1,22 +1,34 @@
 #pragma once
 
-#include <imgui.h>
-
 #include <entt/entt.hpp>
 
-#include "IPanel.hpp"
+#include "editor/EditorContext.hpp"
+#include "editor/asset_inspector/AssetInspectorManager.hpp"
+#include "editor/gui/IPanel.hpp"
+#include "editor/import/ImportSystem.hpp"
 namespace tryeditor {
 class InspectorPanel : public IPanel {
-   public:
+public:
+    InspectorPanel(EditorContext& editor_context, ImportSystem& import_system_,
+                   AssetInspectorManager& asset_inspector_manager_)
+        : import_system_(import_system_),
+          asset_inspector_manager_(asset_inspector_manager_),
+          editor_context_(editor_context) {};
     const char* GetName() const override { return "Game"; }
-    InspectorPanel() = default;
 
     void OnImGuiRender(entt::registry& reg);
 
-   private:
+private:
+    void DrawEntityInspector(entt::registry& reg);
+    void DrawAssetInspector(const std::filesystem::path& path) const;
+
     void DrawMetaComponent(entt::registry& reg, entt::entity entity, entt::meta_type type);
     void DrawMetaField(entt::meta_any& instance, entt::meta_data data);
     void DrawUnregisteredComponent(entt::registry& reg, entt::entity entity, entt::id_type id);
     void DrawAddComponentButton(entt::registry& reg, entt::entity entity);
+
+    ImportSystem& import_system_;
+    AssetInspectorManager& asset_inspector_manager_;
+    EditorContext& editor_context_;
 };
 }  // namespace tryeditor

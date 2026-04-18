@@ -5,7 +5,6 @@
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
 #include "editor/Reflection.hpp"
-#include "editor/Spawner.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/BaseSystem.hpp"
 #include "engine/core/Engine.hpp"
@@ -28,6 +27,8 @@ void EditorApp::Init() {
 
     editor_->RegisterAssetsImporters();
     editor_->RegisterResourceLoaders();
+    editor_->RegisterAssetsFactories();
+    editor_->RegisterAssetsInspector();
 
     editor_->GetImportSystem().Refresh();
 

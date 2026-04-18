@@ -29,93 +29,42 @@ void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) const {
 
     // 2. Итерируемся по данным и настраиваем компоненты
     for (size_t i = 0; i < asset_map.nodes.size(); ++i) {
-        const auto& nodeData = asset_map.nodes[i];
+        const auto& node_data = asset_map.nodes[i];
         entt::entity entity = entities[i];
 
         // Имя и Трансформ
-        reg.emplace<tryengine::Tag>(entity, nodeData.name.empty() ? "New Node" : nodeData.name);
-        reg.emplace<tryengine::Transform>(entity, nodeData.local_transform);
+        reg.emplace<tryengine::Tag>(entity, node_data.name.empty() ? "New Node" : node_data.name);
+        reg.emplace<tryengine::Transform>(entity, node_data.local_transform);
 
         auto& rel = reg.get_or_emplace<tryengine::Relationship>(entity);
         entt::entity last_child = entt::null;
 
-        for (int32_t childIdx : nodeData.children_indices) {
-            if (childIdx >= 0 && childIdx < entities.size()) {
-                entt::entity childEntity = entities[childIdx];
-                auto& childRel = reg.get_or_emplace<tryengine::Relationship>(childEntity);
+        for (int32_t child_idx : node_data.children_indices) {
+            if (child_idx >= 0 && child_idx < entities.size()) {
+                entt::entity child_entity = entities[child_idx];
+                auto& childRel = reg.get_or_emplace<tryengine::Relationship>(child_entity);
 
                 childRel.parent = entity;
                 rel.children++;
 
                 // Выстраиваем цепочку сиблингов (next/prev)
                 if (last_child == entt::null) {
-                    rel.first = childEntity;
+                    rel.first = child_entity;
                 } else {
-                    reg.get<tryengine::Relationship>(last_child).next = childEntity;
+                    reg.get<tryengine::Relationship>(last_child).next = child_entity;
                     childRel.prev = last_child;
                 }
-                last_child = childEntity;
+                last_child = child_entity;
             }
         }
 
-        int w, h, c;
-        unsigned char* data = stbi_load("game/assets/test.png", &w, &h, &c, STBI_rgb_alpha);
-        if (!data) {
-            SDL_Log("Failed to load texture: %s", path.c_str());
-            // return nullptr;
-        }
-
-        tryengine::graphics::Texture* tex = new tryengine::graphics::Texture();
-        tex->width = static_cast<Uint32>(w);
-        tex->height = static_cast<Uint32>(h);
-        // tex->path = path;
-
-        SDL_GPUTextureCreateInfo info{};
-        info.type = SDL_GPU_TEXTURETYPE_2D;
-        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        info.width = tex->width;
-        info.height = tex->height;
-        info.layer_count_or_depth = 1;
-        info.num_levels = 1;
-
-        tex->handle = SDL_CreateGPUTexture(graphics_context_.GetDevice(), &info);
-
-        Uint32 dataSize = tex->width * tex->height * 4;
-        SDL_GPUTransferBufferCreateInfo tInfo = {.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = dataSize};
-        SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(graphics_context_.GetDevice(), &tInfo);
-
-        Uint8* map = (Uint8*)SDL_MapGPUTransferBuffer(graphics_context_.GetDevice(), tBuf, false);
-        std::memcpy(map, data, dataSize);
-        SDL_UnmapGPUTransferBuffer(graphics_context_.GetDevice(), tBuf);
-
-        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(graphics_context_.GetDevice());
-        SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
-        SDL_GPUTextureTransferInfo src = {tBuf, 0, 0, 0};
-        SDL_GPUTextureRegion dst = {tex->handle, 0, 0, 0, 0, 0, tex->width, tex->height, 1};
-        SDL_UploadToGPUTexture(copy, &src, &dst, false);
-        SDL_EndGPUCopyPass(copy);
-        SDL_SubmitGPUCommandBuffer(cmd);
-
-        SDL_ReleaseGPUTransferBuffer(graphics_context_.GetDevice(), tBuf);
-        stbi_image_free(data);
-
-
         // Рендер компоненты (если есть меш)
-        if (nodeData.mesh_id != 0) {
-            // Загружаем меш через ResourceManager
-            auto meshRes = resource_manager_.Get<tryengine::graphics::Mesh>(nodeData.mesh_id);
-            reg.emplace<tryengine::MeshFilter>(entity, meshRes, nodeData.mesh_id);
+        if (node_data.mesh_id != 0) {
+            auto mesh_resource = resource_manager_.Get<tryengine::graphics::Mesh>(node_data.mesh_id);
+            reg.emplace<tryengine::MeshFilter>(entity, mesh_resource, node_data.mesh_id);
 
-
-            tryengine::graphics::Material* mat = new tryengine::graphics::Material(); // Выделяем память
-            mat->name = "BasicStatic";
-            mat->pipeline = render_system_.GetRenderer().GetDefaultPipeline();
-
-            auto* matInstance = new tryengine::graphics::MaterialInstance(mat);
-            matInstance->SetTexture(0, tex->handle, render_system_.GetRenderer().GetCommonSampler());
-
-            reg.emplace<tryengine::graphics::MeshRenderer>(entity, matInstance);
+            auto material_resource = resource_manager_.Get<tryengine::graphics::Material>(node_data.material_id);
+            reg.emplace<tryengine::MeshRenderer>(entity, material_resource, node_data.material_id);
         }
     }
 }

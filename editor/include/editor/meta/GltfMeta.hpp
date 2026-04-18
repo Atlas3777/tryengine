@@ -1,23 +1,23 @@
 #pragma once
 #include <cereal/archives/json.hpp>
 
-#include "editor/meta/AssetHeader.hpp"
+#include "editor/meta/AssetMetaHeader.hpp"
 
 namespace tryeditor {
 
 struct GltfImportSettings {
     float scale;
-    //some
+    // some
 };
 
 struct GltfMeta {
-    AssetHeader asset_header;
+    AssetMetaHeader asset_header;
     GltfImportSettings import_settings;
 };
 
 template <class Archive>
-void serialize(Archive& archive, AssetHeader& header) {
-    archive(cereal::make_nvp("uuid", header.main_uuid));
+void serialize(Archive& archive, AssetMetaHeader& header) {
+    archive(cereal::make_nvp("uuid", header.guid));
 }
 
 template <class Archive>
@@ -29,4 +29,4 @@ template <class Archive>
 void serialize(Archive& archive, GltfMeta& meta) {
     archive(cereal::make_nvp("header", meta.asset_header), cereal::make_nvp("settings", meta.import_settings));
 }
-}  // namespace engine::resources
+}  // namespace tryeditor

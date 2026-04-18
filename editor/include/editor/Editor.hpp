@@ -2,6 +2,8 @@
 #include <memory>
 #include <string>
 
+#include "asset_factories/AssetsFactoryManager.hpp"
+#include "asset_inspector/AssetInspectorManager.hpp"
 #include "game/GameAPI.hpp"
 #include "gui/EditorGUI.hpp"
 #include "import/ImportSystem.hpp"
@@ -10,8 +12,9 @@ namespace tryeditor {
 class Spawner;
 
 class Editor {
-   public:
-    Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context, tryengine::graphics::RenderSystem& render_system);
+public:
+    Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
+           tryengine::graphics::RenderSystem& render_system);
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
     Editor(Editor&&) noexcept = delete;
@@ -26,9 +29,10 @@ class Editor {
     void SaveSceneForPlayMode();
     void LoadDefaultScene() const;
 
-
-    void RegisterAssetsImporters() const;
     void RegisterResourceLoaders() const;
+    void RegisterAssetsImporters() const;
+    void RegisterAssetsFactories() const;
+    void RegisterAssetsInspector() const;
 
     EditorGUI& GetEditorGUI() { return *editor_gui_; }
     ImportSystem& GetImportSystem() { return *import_system_; }
@@ -37,8 +41,11 @@ class Editor {
     bool play_mode = false;
     GameLibrary gameSO;
 
-   private:
+private:
     std::unique_ptr<ImportSystem> import_system_;
+    std::unique_ptr<AssetsFactoryManager> assets_factory_;
+    std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
+    std::unique_ptr<EditorContext> editor_context_;
     std::unique_ptr<EditorGUI> editor_gui_;
     std::unique_ptr<Spawner> spawner_;
 

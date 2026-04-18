@@ -1,10 +1,11 @@
 #pragma once
 #include <imgui.h>
-
-#include <iostream>
 #include <ImGuizmo.h>
 
+#include <iostream>
+
 #include "editor/Components.hpp"
+#include "editor/EditorGUIUtils.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "engine/core/Components.hpp"
@@ -43,12 +44,21 @@ public:
             }
         }
 
+        // Внутри SceneViewportPanel::OnImGuiRender
         if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ID")) {
-                const uint64_t asset_id = *static_cast<const uint64_t*>(payload->Data);
-                std::cout << "SUCCESS! Dropped file into Viewport: " << asset_id << std::endl;
-
-                spawner_.Spawn(reg, asset_id);
+            // Используем твой новый тег "ASSET_BROWSER_ITEM"
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_BROWSER_ITEM")) {
+                // Проверяем, что это подходящий тип (например, Prefab или Mesh)
+                // Если твой импортер помечает .glb как Prefab:
+                if (const auto* data = static_cast<const AssetPayload*>(payload->Data);
+                    data->expected_asset_type == tryengine::AssetType::Gltf)
+                {
+                    std::cout << "Spawning asset ID: " << data->asset_id << std::endl;
+                    spawner_.Spawn(reg, data->asset_id);
+                } else {
+                    // Можно вывести лог или визуальное предупреждение, что тип не тот
+                    std::cout << "Wrong asset type for spawning!" << std::endl;
+                }
             }
             ImGui::EndDragDropTarget();
         }

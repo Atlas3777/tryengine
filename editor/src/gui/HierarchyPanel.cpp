@@ -56,13 +56,13 @@ void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
         reg.clear<SelectedTag>();
     }
 
-    if (!m_EntitiesToDestroy.empty()) {
-        for (auto e : m_EntitiesToDestroy) {
+    if (!entities_to_destroy_.empty()) {
+        for (auto e : entities_to_destroy_) {
             if (reg.valid(e)) {
                 DestroyEntityRecursive(e, reg);
             }
         }
-        m_EntitiesToDestroy.clear();
+        entities_to_destroy_.clear();
     }
 
     ImGui::End();
@@ -83,17 +83,17 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
         label = tag->tag;
     }
 
-    if (m_EntityToRename == entity) {
+    if (entity_to_rename_ == entity) {
         flags &= ~ImGuiTreeNodeFlags_SpanAvailWidth;
         ImGui::SetKeyboardFocusHere();
-        if (ImGui::InputText("##rename", m_RenameBuffer, sizeof(m_RenameBuffer),
+        if (ImGui::InputText("##rename", rename_buffer_, sizeof(rename_buffer_),
                              ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
             if (!reg.all_of<Tag>(entity)) reg.emplace<Tag>(entity);
-            reg.get<Tag>(entity).tag = m_RenameBuffer;
-            m_EntityToRename = entt::null;
+            reg.get<Tag>(entity).tag = rename_buffer_;
+            entity_to_rename_ = entt::null;
         }
         if (ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            m_EntityToRename = entt::null;
+            entity_to_rename_ = entt::null;
         }
     } else {
         bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
@@ -125,7 +125,7 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
 
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Destroy Entity")) {
-                m_EntitiesToDestroy.push_back(entity);
+                entities_to_destroy_.push_back(entity);
             }
             ImGui::EndPopup();
         }
@@ -176,25 +176,25 @@ void HierarchyPanel::HandleShortcuts(entt::registry& reg) {
 
         // ВЫРЕЗАТЬ (X)
         if (ImGui::IsKeyPressed(ImGuiKey_X)) {
-            m_ClipboardEntities.assign(selectedView.begin(), selectedView.end());
-            m_IsCutOperation = true;
+            clipboard_entities_.assign(selectedView.begin(), selectedView.end());
+            is_cut_operation_ = true;
         }
 
         // КОПИРОВАТЬ (Y)
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) {
-            m_ClipboardEntities.assign(selectedView.begin(), selectedView.end());
-            m_IsCutOperation = false;
+            clipboard_entities_.assign(selectedView.begin(), selectedView.end());
+            is_cut_operation_ = false;
         }
     }
 
     // ВСТАВКА (P)
-    if (ImGui::IsKeyPressed(ImGuiKey_P) && !m_ClipboardEntities.empty()) {
+    if (ImGui::IsKeyPressed(ImGuiKey_P) && !clipboard_entities_.empty()) {
         entt::entity targetParent = selectedView.empty() ? entt::null : selectedView.front();
 
-        for (entt::entity clipboardEntity : m_ClipboardEntities) {
+        for (entt::entity clipboardEntity : clipboard_entities_) {
             if (!reg.valid(clipboardEntity)) continue;
 
-            if (m_IsCutOperation) {
+            if (is_cut_operation_) {
                 ReparentEntity(clipboardEntity, targetParent, reg);
             } else {
                 entt::entity newEntity = CloneEntity(clipboardEntity, reg);
@@ -202,8 +202,8 @@ void HierarchyPanel::HandleShortcuts(entt::registry& reg) {
             }
         }
 
-        if (m_IsCutOperation) {
-            m_ClipboardEntities.clear();
+        if (is_cut_operation_) {
+            clipboard_entities_.clear();
         }
     }
 }

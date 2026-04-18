@@ -16,10 +16,10 @@ void AssetDatabase::Refresh() {
         if (!guidDirEntry.is_directory()) continue;
 
         // Проходим по файлам внутри папки GUID
-        for (const auto& fileEntry : std::filesystem::directory_iterator(guidDirEntry.path())) {
-            if (!fileEntry.is_regular_file()) continue;
+        for (const auto& directory_entry : std::filesystem::directory_iterator(guidDirEntry.path())) {
+            if (!directory_entry.is_regular_file()) continue;
 
-            const auto& filePath = fileEntry.path();
+            const auto& filePath = directory_entry.path();
 
             // Получаем имя файла без расширения (это наш AssetID)
             std::string fileName = filePath.stem().string();
@@ -38,10 +38,10 @@ void AssetDatabase::Refresh() {
         }
     }
 
-    // Отладка
-    std::cout << "--- Registered Assets ---" << std::endl;
-    for (const auto& [id, path] : id_to_path_) {
-        std::cout << "ID: " << id << " -> " << path << std::endl;
-    }
+    // // Отладка
+    // std::cout << "--- Registered Assets ---" << std::endl;
+    // for (const auto& [id, path] : id_to_path_) {
+    //     std::cout << "ID: " << id << " -> " << path << std::endl;
+    // }
 }
 } // namespace tryengine::core

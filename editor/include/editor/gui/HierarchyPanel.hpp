@@ -21,19 +21,16 @@ class HierarchyPanel : public IPanel {
     void HandleShortcuts(entt::registry& reg);
 
     void ReparentEntity(entt::entity child, entt::entity newParent, entt::registry& reg);
-    bool IsDescendantOf(entt::entity child, entt::entity parent, entt::registry& reg);
     entt::entity CloneEntity(entt::entity srcEntity, entt::registry& reg);
 
     void DestroyEntityRecursive(entt::entity entity, entt::registry& reg);
 
-   private:
     // Состояние панели (UI State)
-    std::vector<entt::entity> m_EntitiesToDestroy;
-    std::vector<entt::entity> m_ClipboardEntities;
+    std::vector<entt::entity> entities_to_destroy_;
+    std::vector<entt::entity> clipboard_entities_;
 
-    entt::entity m_EntityToRename = entt::null;
-    char m_RenameBuffer[256] = "";
-
-    bool m_IsCutOperation = false;
+    entt::entity entity_to_rename_ = entt::null;
+    char rename_buffer_[256] = "";
+    bool is_cut_operation_ = false;
 };
 }  // namespace tryeditor

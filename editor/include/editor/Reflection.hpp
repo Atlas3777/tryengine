@@ -5,6 +5,7 @@
 
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
+#include "engine/resources/AssetTypes.hpp"
 
 namespace tryeditor {
 void RegisterRef() {
@@ -32,20 +33,23 @@ void RegisterRef() {
         .data<&tryengine::Camera::near_plane>("Near Plane")
         .data<&tryengine::Camera::far_plane>("Far Plane")
         .data<&tryengine::Camera::sensitivity>("Sensitivity")
-        .data<&tryengine::Camera::speed>("Speed")
-        ;
+        .data<&tryengine::Camera::speed>("Speed");
 
-    entt::meta_factory<EditorCameraTag>().type(entt::type_hash<EditorCameraTag>::value(), "EditorCameraTag");
+    entt::meta_factory<EditorCameraTag>()
+        .type(entt::type_hash<EditorCameraTag>::value(), "EditorCameraTag");
 
-    entt::meta_factory<tryengine::MainCameraTag>().type(entt::type_hash<tryengine::MainCameraTag>::value(), "MainCameraTag");
+    entt::meta_factory<tryengine::MainCameraTag>()
+        .type(entt::type_hash<tryengine::MainCameraTag>::value(),"MainCameraTag");
 
     entt::meta_factory<tryengine::MeshFilter>()
         .type(entt::type_hash<tryengine::MeshFilter>::value(), "MeshFilter")
         .data<&tryengine::MeshFilter::asset_id>("asset_id")
         .data<&tryengine::MeshFilter::mesh>("mesh_ptr");
 
-    entt::meta_factory<tryengine::graphics::MeshRenderer>()
-        .type(entt::type_hash<tryengine::graphics::MeshRenderer>::value(), "MeshRenderer")
-        .data<&tryengine::graphics::MeshRenderer::material_instance>("material_instance");
+    entt::meta_factory<tryengine::MeshRenderer>()
+        .type(entt::type_hash<tryengine::MeshRenderer>::value(), "MeshRenderer")
+        .data<&tryengine::MeshRenderer::material>("material_instance")
+        .data<&tryengine::MeshRenderer::asset_id>("material_instance")
+        .custom<tryengine::AssetTypeID>(tryengine::AssetType::Material);
 };
 }  // namespace tryeditor
