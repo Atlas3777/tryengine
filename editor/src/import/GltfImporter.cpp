@@ -307,19 +307,19 @@ void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const
             AssetMetaHeader header;
             header.guid = tex_id;
             header.asset_type = "texture";
-            header.importer_type = "ImporterImporter";
+            header.importer_type = "TextureImporter";
 
-            TextureImportSettings texMeta;
+            TextureImportSettings texture_import_settings;
 
-            texMeta.min_filter = minF;
-            texMeta.mag_filter = magF;
-            texMeta.address_u = wrapU;
-            texMeta.address_v = wrapV;
+            texture_import_settings.min_filter = minF;
+            texture_import_settings.mag_filter = magF;
+            texture_import_settings.address_u = wrapU;
+            texture_import_settings.address_v = wrapV;
 
             std::ofstream os(metaPath);
             cereal::JSONOutputArchive archive(os);
             archive(cereal::make_nvp("header", header));
-            archive(cereal::make_nvp("settings", texMeta));
+            archive(cereal::make_nvp("settings", texture_import_settings));
         }
 
         // --- 4. Создание Артефакта (Бинарник .tex) ---
