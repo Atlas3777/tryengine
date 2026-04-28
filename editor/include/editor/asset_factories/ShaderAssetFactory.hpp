@@ -5,41 +5,37 @@
 #include <random>
 
 #include "editor/asset_factories/IAssetFactory.hpp"
+#include "editor/import/ImportSystem.hpp"
 #include "engine/graphics/MaterialSystem.hpp"
 
 namespace tryeditor {
 
 class ShaderAssetFactory : public IAssetFactory {
 public:
-    // 1. Для GUI (вызывается из FileBrowser)
+    explicit ShaderAssetFactory(ImportSystem& import_system) : import_system_(import_system) {}
+
     uint64_t CreateDefault(const std::filesystem::path& directory) override {
-        // Создаем с дефолтными параметрами
-        tryengine::graphics::ShaderAsset default_def;
-        return Create(directory, "NewShader.shader", default_def);
+        tryengine::graphics::ShaderAsset default_shader;
+        return Create(directory, "NewShader.shader", default_shader);
     }
 
     uint64_t Create(const std::filesystem::path& directory, const std::string& name,
                     const tryengine::graphics::ShaderAsset& def) {
         const std::filesystem::path asset_path = directory / name;
 
-        // Сохраняем ИСХОДНЫЙ файл (JSON)
-        {
-            std::ofstream os(asset_path);
-            cereal::JSONOutputArchive archive(os);
-            archive(cereal::make_nvp("data", def));
-        }
+        AssetMetaHeader header = CreateMeta(asset_path);
+        import_system_.SaveNativeAsset<tryengine::graphics::ShaderAsset>(asset_path, def, header);
 
-        uint64_t guid = CreateMeta(asset_path);
-        CreateArtefact(guid, def);
+        import_system_.Refresh();
 
-        return guid;
+        return header.guid;
     }
 
     [[nodiscard]] std::string GetActionName() const override { return "Shader Asset"; }
 
 private:
-    uint64_t CreateMeta(const std::filesystem::path& asset_path) {
-        std::filesystem::path meta_path = asset_path.string() + ".meta";  // myshader.shader.meta
+    AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
+        const std::filesystem::path meta_path = asset_path.string() + ".meta";
 
         std::random_device rd;
         std::mt19937_64 id(rd());
@@ -50,26 +46,12 @@ private:
         asset_header.importer_type = "native";
         asset_header.asset_type = "shader";
 
-        // 3. Сохраняем МЕТА-ФАЙЛ (JSON)
-        {
-            std::ofstream os(meta_path);
-            cereal::JSONOutputArchive archive(os);
-            archive(cereal::make_nvp("header", asset_header));
-        }
-        return asset_id;
+        MetaSerializer::WriteHeaderOnly(meta_path, asset_header);
+        return asset_header;
     }
 
-    void CreateArtefact(uint64_t id, const tryengine::graphics::ShaderAsset& def) {
-        std::filesystem::path folder = artefacts_dir_ / std::to_string(id);
-        std::filesystem::create_directories(folder);
 
-        std::filesystem::path path = folder / (std::to_string(id) + ".shd");
-
-        std::ofstream os(path, std::ios::binary);
-        cereal::BinaryOutputArchive archive(os);
-        archive(def);
-    }
-    std::filesystem::path artefacts_dir_ = std::filesystem::current_path() / "game" / "artefacts";
+    ImportSystem& import_system_;
 };
 
 }  // namespace tryeditor

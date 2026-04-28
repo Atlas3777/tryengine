@@ -51,7 +51,6 @@ public:
 private:
     std::unordered_map<std::type_index, std::unique_ptr<IAssetFactory>> type_map_;
     std::vector<IAssetFactory*> gui_factories_;
-    const std::filesystem::path asset_dir = "game/assets";
 };
 
 }  // namespace tryeditor

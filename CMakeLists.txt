@@ -34,7 +34,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND USE_ASAN)
 endif()
 
 # ==================== МОДУЛИ ====================
-add_subdirectory(engine)
+add_subdirectory(engine_source)
 add_subdirectory(game)
 add_subdirectory(editor)
 add_subdirectory(game_client)

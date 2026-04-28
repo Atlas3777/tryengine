@@ -10,24 +10,29 @@
 struct tg3_model;
 
 namespace tryeditor {
+class ImportSystem;
 class AssetsFactoryManager;
 
-class GltfImporter : public IAssetImporter {
+struct GltfImportSettings {
+    bool extract_materials = true;
+
+    template <class Archive>
+    void serialize(Archive& archive) {
+        archive(cereal::make_nvp("extract_materials", extract_materials));
+    }
+};
+class GltfImporter : public BaseTypedImporter<GltfImportSettings> {
 public:
-    GltfImporter(AssetsFactoryManager& assets_factory) : assets_factory_(assets_factory) {};
+    GltfImporter(AssetsFactoryManager& assets_factory, ImportSystem& import_system)
+        : assets_factory_(assets_factory), import_system_(import_system) {};
     ~GltfImporter() override = default;
 
     std::string GetName() const override { return "GltfImporter"; }
+    std::string GetAssetType() const override { return "gltf"; }
 
-    // --- IAssetImporter Interface ---
-    uint64_t GenerateMeta(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath) override;
+    AssetMetaHeader GenerateMeta(const std::filesystem::path& asset_path, const std::filesystem::path& meta_path);
 
-    AssetMetaHeader ReadIdentification(const std::filesystem::path& meta_path) override;
-
-    bool GenerateArtifact(const std::filesystem::path& asset_path, const std::filesystem::path& metaPath,
-                          const std::filesystem::path& artifact_dir, const std::filesystem::path& cacheDir,
-                          const std::filesystem::path& project_assets_dir) override;
-    bool HasHierarchy() const override { return true; };
+    bool GenerateArtifact(const AssetContext& asset_context, const GltfImportSettings& settings) override;
 
 private:
     // --- Внутренние этапы импорта ---
@@ -39,13 +44,15 @@ private:
                          const std::filesystem::path& projectAssetsDir, const std::filesystem::path& assetStem,
                          ModelAssetMap& asset_map);
 
-    void ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const std::filesystem::path& artifactDir,
-                       ModelAssetMap& asset_map, std::vector<std::vector<uint64_t>>& out_mesh_primitive_guids);
+    std::vector<std::vector<uint64_t>> ProcessMeshes(const tg3_model* m, uint64_t main_uuid,
+                                                                   const std::filesystem::path& artifact_dir,
+                                                                   ModelAssetMap& asset_map);
 
     void ProcessNodes(const tg3_model* m, const std::vector<std::vector<uint64_t>>& mesh_primitive_guids,
                       const std::vector<uint64_t>& material_guids, ModelAssetMap& asset_map);
 
     AssetsFactoryManager& assets_factory_;
+    ImportSystem& import_system_;
 };
 
 }  // namespace tryeditor

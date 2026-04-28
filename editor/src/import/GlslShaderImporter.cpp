@@ -1,60 +1,36 @@
+#include "editor/import/GlslShaderImporter.hpp"
+
 #include <cereal/archives/json.hpp>
 #include <fstream>
 #include <iostream>
 #include <random>
 
-#include "editor/import/GlslShaderImporter.hpp"
-#include "editor/meta/ModelAssetMap.hpp"  // Используем ту же структуру для кэша
+#include "editor/meta/MetaSerializer.hpp"
 
 namespace tryeditor {
 
-uint64_t GlslShaderImporter::GenerateMeta(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath) {
-    AssetMetaHeader header{};
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
-    static std::uniform_int_distribution<uint64_t> dis;
+bool GlslShaderImporter::GenerateArtifact(const AssetContext& asset_context, const GlslShaderImportSettings& settings) {
+    auto header = MetaSerializer::ReadHeader(asset_context.meta_path);
 
-    header.guid = dis(gen);
-    header.asset_type = "glsl_shader";
-    header.importer_type = "native";
+    std::string guid_str = std::to_string(header->guid);
+    std::filesystem::path asset_artifact_dir = asset_context.artifacts_dir / guid_str;
 
-    std::ofstream os(metaPath);
-    if (os.is_open()) {
-        cereal::JSONOutputArchive archive(os);
-        archive(cereal::make_nvp("header", header));
+    if (!std::filesystem::exists(asset_artifact_dir)) {
+        std::filesystem::create_directories(asset_artifact_dir);
     }
-    return header.guid;
-}
 
-AssetMetaHeader GlslShaderImporter::ReadIdentification(const std::filesystem::path& metaPath) {
-    AssetMetaHeader header{};
-    std::ifstream is(metaPath);
-    if (is.is_open()) {
-        cereal::JSONInputArchive archive(is);
-        archive(cereal::make_nvp("header", header));
-    }
-    return header;
-}
+    std::string spv_filename = guid_str + ".spv";
+    std::filesystem::path output_path = asset_artifact_dir / spv_filename;
 
-bool GlslShaderImporter::GenerateArtifact(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath,
-                                      const std::filesystem::path& artifactDir,
-                                      const std::filesystem::path& cacheDir,
-                                      const std::filesystem::path& projectAssetsDir) {
-
-    AssetMetaHeader header = ReadIdentification(metaPath);
-
-    // Имя выходного файла артефакта
-    std::string spvName = std::to_string(header.guid) + ".spv";
-    std::filesystem::path outputPath = artifactDir / spvName;
-
-    // 1. Компиляция
-    if (!CompileGLSLToSPIRV(assetPath, outputPath)) {
-        std::cerr << "[ShaderImporter] Failed to compile: " << assetPath << std::endl;
+    // 4. Компиляция
+    if (!CompileGLSLToSPIRV(asset_context.asset_path, output_path)) {
+        std::cerr << "[ShaderImporter] Failed to compile: " << asset_context.asset_path << std::endl;
         return false;
     }
 
+    std::cout << "[ShaderImporter] Compiled " << asset_context.asset_path.filename() << " -> "
+              << output_path.relative_path() << std::endl;
 
-    std::cout << "[ShaderImporter] Compiled " << assetPath.filename() << " -> " << spvName << std::endl;
     return true;
 }
 
@@ -68,4 +44,4 @@ bool GlslShaderImporter::CompileGLSLToSPIRV(const std::filesystem::path& input, 
     return result == 0;
 }
 
-} // namespace tryeditor
+}  // namespace tryeditor

@@ -1,16 +1,13 @@
 #pragma once
-#include <cereal/archives/json.hpp>
-#include <filesystem>
-#include <fstream>
 #include <imgui.h>
+
+#include <filesystem>
 #include <iostream>
 
 #include "IAssetInspector.hpp"
 #include "editor/import/ImportSystem.hpp"
-#include "editor/meta/TextureImportSettings.hpp"
-#include "engine/resources/Types.hpp"
-// Предположим, заголовок меты живет здесь
-#include "editor/meta/AssetMetaHeader.hpp"
+#include "editor/import/TextureImporter.hpp"
+#include "editor/meta/MetaSerializer.hpp"
 
 namespace tryeditor {
 
@@ -32,17 +29,15 @@ public:
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Unsaved changes *");
         }
 
-        // Кнопка растянута на всю ширину
         bool save_triggered = ImGui::Button("Save & Reimport", ImVec2(-1, 30));
 
-        // Hotkey Ctrl+S
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::GetIO().KeyCtrl &&
             ImGui::IsKeyPressed(ImGuiKey_S)) {
             save_triggered = true;
         }
 
         if (save_triggered && is_asset_dirty_) {
-            SaveAndReimport();
+            SaveAndReimport(asset_path);
         }
     }
 
@@ -50,21 +45,12 @@ private:
     void LoadMeta(const std::filesystem::path& asset_path) {
         current_asset_path_ = asset_path;
         current_meta_path_ = asset_path.string() + ".meta";
-        is_asset_dirty_ = false;
 
-        if (std::filesystem::exists(current_meta_path_)) {
-            try {
-                std::ifstream is(current_meta_path_);
-                cereal::JSONInputArchive archive(is);
-
-                // Читаем раздельно, как в импортере
-                archive(cereal::make_nvp("header", current_header_));
-                archive(cereal::make_nvp("settings", current_settings_));
-
-            } catch (const std::exception& e) {
-                std::cerr << "[TextureAssetInspector] Ошибка чтения меты: " << e.what() << '\n';
-            }
+        if (!MetaSerializer::Read(current_meta_path_, current_header_, current_settings_)) {
+            std::cerr << "[TextureAssetInspector] Ошибка загрузки .meta или настроек для " << asset_path << '\n';
         }
+
+        is_asset_dirty_ = false;
     }
 
     void DrawSettings() {
@@ -108,36 +94,14 @@ private:
         }
     }
 
-    void SaveAndReimport() {
-        // 1. Сохраняем обновленный .meta файл с раздельной структурой
-        try {
-            std::ofstream os(current_meta_path_);
-            cereal::JSONOutputArchive archive(os);
-            archive(cereal::make_nvp("header", current_header_));
-            archive(cereal::make_nvp("settings", current_settings_));
-        } catch (const std::exception& e) {
-            std::cerr << "[TextureAssetInspector] Ошибка сохранения меты: " << e.what() << '\n';
-            return;
+    void SaveAndReimport(const std::filesystem::path& asset_path) {
+        // 1. Сохраняем ТОЛЬКО .meta файл с новыми настройками
+        if (!MetaSerializer::Write(current_meta_path_, current_header_, current_settings_)) {
+             std::cerr << "[TextureAssetInspector] Ошибка сохранения .meta\n";
+             return;
         }
 
-        // 2. Вызываем реимпорт через ImportSystem
-        auto* importer = import_system_.GetImporterByName(current_header_.importer_type);
-        if (importer) {
-            // Пути должны соответствовать структуре вашего проекта
-            std::filesystem::path root_path = std::filesystem::current_path() / "game";
-            std::string guid_str = std::to_string(current_header_.guid);
-
-            std::filesystem::path artefacts_dir = root_path / "artefacts" / guid_str;
-            std::filesystem::path cache_dir = root_path / ".cache" / guid_str;
-            std::filesystem::path assets_root = root_path / "assets";
-
-            std::filesystem::create_directories(artefacts_dir);
-
-            importer->GenerateArtifact(current_asset_path_, current_meta_path_, artefacts_dir, cache_dir, assets_root);
-            std::cout << "[TextureAssetInspector] Texture reimported: " << guid_str << "\n";
-        } else {
-            std::cerr << "[TextureAssetInspector] Importer not found: " << current_header_.importer_type << '\n';
-        }
+        import_system_.ReimportAsset(current_header_);
 
         is_asset_dirty_ = false;
     }
@@ -146,11 +110,10 @@ private:
     std::filesystem::path current_asset_path_;
     std::filesystem::path current_meta_path_;
 
-    // Теперь данные разделены
     AssetMetaHeader current_header_;
     TextureImportSettings current_settings_;
 
     bool is_asset_dirty_ = false;
 };
 
-}  // namespace tryeditor
+} // namespace tryeditor

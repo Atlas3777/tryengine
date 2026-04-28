@@ -1,0 +1,11 @@
+{
+    "header": {
+        "guid": 2189807400017309894,
+        "importer_type": "ShaderSourceImporter",
+        "asset_type": "glsl_shader",
+        "sub_assets": []
+    },
+    "settings": {
+        "test": false
+    }
+}

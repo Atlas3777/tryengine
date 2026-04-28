@@ -1,0 +1,16 @@
+{
+    "header": {
+        "guid": 18438020634109618487,
+        "importer_type": "GltfImporter",
+        "asset_type": "gltf",
+        "sub_assets": [
+            8343112749258709071,
+            14400760525077100785,
+            14400760525077100784,
+            14400760559034185969
+        ]
+    },
+    "settings": {
+        "extract_materials": true
+    }
+}

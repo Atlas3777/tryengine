@@ -44,12 +44,8 @@ public:
             }
         }
 
-        // Внутри SceneViewportPanel::OnImGuiRender
         if (ImGui::BeginDragDropTarget()) {
-            // Используем твой новый тег "ASSET_BROWSER_ITEM"
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_BROWSER_ITEM")) {
-                // Проверяем, что это подходящий тип (например, Prefab или Mesh)
-                // Если твой импортер помечает .glb как Prefab:
                 if (const auto* data = static_cast<const AssetPayload*>(payload->Data);
                     data->expected_asset_type == tryengine::AssetType::Gltf)
                 {

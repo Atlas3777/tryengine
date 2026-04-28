@@ -1,6 +1,5 @@
 #pragma once
 #include <filesystem>
-#include <imgui.h>
 
 #include "editor/EditorContext.hpp"
 #include "editor/gui/IPanel.hpp"
@@ -19,6 +18,12 @@ public:
 private:
     void DrawDirectoryTree(const std::filesystem::path& directoryPath);
     void DrawDirectoryContent();
+
+    enum class ContentMode { Game, Engine };
+    ContentMode current_mode_ = ContentMode::Game;
+
+    std::filesystem::path game_root_;
+    std::filesystem::path engine_root_;
 
     ImportSystem& import_system_;
     EditorContext& editor_context_;

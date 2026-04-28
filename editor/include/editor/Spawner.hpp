@@ -1,13 +1,8 @@
 #pragma once
-#include <cereal/archives/json.hpp>
-#include <fstream>
 
-#include "editor/meta/ModelAssetMap.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
-#include "engine/graphics/MaterialSystem.hpp"
 #include "engine/graphics/RenderSystem.hpp"
-#include "engine/graphics/Types.hpp"
 #include "import/ImportSystem.hpp"
 
 namespace tryeditor {

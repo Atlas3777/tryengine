@@ -6,6 +6,7 @@
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/resources/AssetTypes.hpp"
+#include "engine/graphics/MaterialSystem.hpp"
 
 namespace tryeditor {
 void RegisterRef() {
@@ -49,7 +50,7 @@ void RegisterRef() {
     entt::meta_factory<tryengine::MeshRenderer>()
         .type(entt::type_hash<tryengine::MeshRenderer>::value(), "MeshRenderer")
         .data<&tryengine::MeshRenderer::material>("material_instance")
-        .data<&tryengine::MeshRenderer::asset_id>("material_instance")
+        .data<&tryengine::MeshRenderer::asset_id>("material_asset_id")
         .custom<tryengine::AssetTypeID>(tryengine::AssetType::Material);
 };
 }  // namespace tryeditor

@@ -1,0 +1,34 @@
+{
+    "data": {
+        "shader_id": 4926633207955798811,
+        "params": [
+            {
+                "key": "albedo_color",
+                "value": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                ]
+            },
+            {
+                "key": "metallic",
+                "value": [
+                    0.0
+                ]
+            },
+            {
+                "key": "roughness",
+                "value": [
+                    0.708951473236084
+                ]
+            }
+        ],
+        "textures": [
+            {
+                "key": "albedo_map",
+                "value": 14400760525077100785
+            }
+        ]
+    }
+}

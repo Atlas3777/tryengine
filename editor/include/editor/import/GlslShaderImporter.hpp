@@ -5,19 +5,20 @@
 
 namespace tryeditor {
 
-class GlslShaderImporter : public IAssetImporter {
+struct GlslShaderImportSettings {
+    bool a;
+    template<class Archive>
+        void serialize(Archive& archive) {
+        archive(cereal::make_nvp("test", a));
+    }
+};
+
+class GlslShaderImporter : public BaseTypedImporter<GlslShaderImportSettings> {
 public:
     std::string GetName() const override { return "ShaderSourceImporter"; }
+    std::string GetAssetType() const override { return "glsl_shader"; }
 
-    uint64_t GenerateMeta(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath) override;
-
-    AssetMetaHeader ReadIdentification(const std::filesystem::path& metaPath) override;
-
-    bool GenerateArtifact(const std::filesystem::path& assetPath, const std::filesystem::path& metaPath,
-                          const std::filesystem::path& artifactDir, const std::filesystem::path& cacheDir,
-                          const std::filesystem::path& projectAssetsDir) override;
-
-    bool HasHierarchy() const override { return false; };
+    bool GenerateArtifact(const AssetContext& asset_context, const GlslShaderImportSettings& settings) override;
 
 private:
     // Вспомогательная функция для запуска внешнего процесса (glslangValidator)

@@ -45,20 +45,22 @@ Editor::~Editor() {
 }
 
 void Editor::RegisterAssetsFactories() const {
-    assets_factory_->RegisterFactory<ShaderAssetFactory>();
-    assets_factory_->RegisterFactory<MaterialAssetFactory>();
+    // Передаем ImportSystem в фабрики
+    assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
+    assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
 }
 
 void Editor::RegisterAssetsInspector() const {
-    asset_inspector_manager_->RegisterInspector<ShaderAssetInspector>("shader");
+    // Передаем ImportSystem в инспекторы
+    asset_inspector_manager_->RegisterInspector<ShaderAssetInspector>("shader", *import_system_);
     asset_inspector_manager_->RegisterInspector<TextureAssetInspector>("texture", *import_system_);
-    asset_inspector_manager_->RegisterInspector<MaterialAssetInspector>("material");
+    asset_inspector_manager_->RegisterInspector<MaterialAssetInspector>("material", *import_system_);
 }
 
 void Editor::RegisterAssetsImporters() const {
-    import_system_->RegisterImporter<GlslShaderImporter>({".vert", ".frag"});
-    import_system_->RegisterImporter<GltfImporter>({".glb", ".gltf"}, *assets_factory_);
-    import_system_->RegisterImporter<TextureImporter>({".png", ".jpg"});
+    import_system_->RegisterImporter<GlslShaderImporter, GlslShaderImportSettings>({".vert", ".frag"});
+    import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"}, *assets_factory_, *import_system_);
+    // import_system_->RegisterImporter<TextureImporter, TextureImportSettings>({".png", ".jpg"});
 }
 
 void Editor::RegisterResourceLoaders() const {
@@ -80,7 +82,6 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
     namespace fs = std::filesystem;
     const std::string tempPath = originalPath + "_temp.so";
 
-    // 2. Копируем файл (Hot Reload)
     try {
         if (fs::exists(originalPath)) {
             fs::copy_file(originalPath, tempPath, fs::copy_options::overwrite_existing);
@@ -93,17 +94,14 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
         return false;
     }
 
-    // 3. Загружаем временный файл
     gameSO.handle = dlopen(tempPath.c_str(), RTLD_NOW);
     if (!gameSO.handle) {
         std::cerr << "[Editor] Ошибка dlopen: " << dlerror() << '\n';
         return false;
     }
 
-    // 4. Ищем нужные функции
     gameSO.updateGameSystems = reinterpret_cast<UpdateGameSystemsFn>(dlsym(gameSO.handle, "UpdateGameSystems"));
 
-    // Проверка на ошибки dlsym
     const char* err = dlerror();
     if (err || !gameSO.IsValid()) {
         std::cerr << "[Editor] Ошибка dlsym: " << (err ? err : "Символы не найдены") << '\n';
@@ -128,19 +126,21 @@ void Editor::LoadDefaultScene() const {
     engine_.GetSceneManager().LoadScene("default_scene");
     auto& registry = engine_.GetSceneManager().GetActiveScene()->GetRegistry();
 
-    const auto editorCamera = registry.create();
-    registry.emplace<tryengine::Tag>(editorCamera, "EditorCamera");
+    const auto editor_camera = registry.create();
+    registry.emplace<tryengine::Tag>(editor_camera, "EditorCamera");
     registry.emplace<tryengine::Transform>(
-        editorCamera, tryengine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});  // Позиция Z = 10
-    registry.emplace<tryengine::Camera>(editorCamera);
-    registry.emplace<EditorCameraTag>(editorCamera);
+        editor_camera, tryengine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Camera>(editor_camera);
+    registry.emplace<EditorCameraTag>(editor_camera);
+    registry.emplace<tryengine::Relationship>(editor_camera);
 
-    const auto gameCamera = registry.create();
-    registry.emplace<tryengine::Tag>(gameCamera, "GameCamera");
+    const auto game_camera = registry.create();
+    registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
     registry.emplace<tryengine::Transform>(
-        gameCamera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    registry.emplace<tryengine::Camera>(gameCamera);
-    registry.emplace<tryengine::MainCameraTag>(gameCamera);
+        game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Camera>(game_camera);
+    registry.emplace<tryengine::MainCameraTag>(game_camera);
+    registry.emplace<tryengine::Relationship>(game_camera);
 }
 
 }  // namespace tryeditor

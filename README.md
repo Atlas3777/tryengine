@@ -14,16 +14,20 @@
 
 ## Структура проекта
 ```text
-├── editor/       # Редактор и инструменты импорта (tinygltf, stb)
-├── engine/       # Ядро (Core, Graphics, Resources)
-├── game/         # Ресурсы и игровая логика
-├── game_client/  # Клиентская часть
-└── game_server/  # Серверная часть (headless)
+├── editor/         # Редактор и инструменты импорта (tinygltf, stb)
+├── engine_source/  # Ядро (Core, Graphics, Resources)
+├── engine_content/  # Базовые ресурсы движка
+├── game/           # Ресурсы и игровая логика
+├── game_client/    # Клиентская часть
+└── game_server/    # Серверная часть (headless)
 ```
 
 ## Build & Run
-Движок использует CMake. Зависимости подтягиваются автоматически.
+### Системные требования
+> [!IMPORTANT]
+> Убедитесь, что в системе установлен **glslangValidator** (входит в Vulkan SDK). Без него компиляция шейдеров невозможна.
 
+### Сборка
 ```bash
 # Сборка и запуск из корня проетка (рекомендуется Ninja)
 cmake -B build -G Ninja
@@ -42,5 +46,3 @@ cmake --build build
 
 
 <img alt="Image" height="1011" src="https://github.com/user-attachments/assets/5471e19d-585d-407a-908f-0a3ff5a34fc9" width="1920"/>
-
-<img width="795" height="592" alt="Image" src="https://github.com/user-attachments/assets/366aea5f-1902-4121-9c7f-337d59a66c54" />  

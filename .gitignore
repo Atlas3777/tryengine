@@ -10,7 +10,7 @@ Makefile
 build/
 build-asan/
 cmake-build-debug/
-game/artefacts/
+game/artifacts/
 game/.cache/
 
 *.o

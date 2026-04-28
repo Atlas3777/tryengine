@@ -10,10 +10,13 @@
 #include <cereal/archives/binary.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
+#include <ranges>
 
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
-#include "editor/meta/TextureImportSettings.hpp"
+#include "editor/import/TextureImporter.hpp"
+#include "engine/core/RandomUtil.hpp"
+#include "engine/resources/Content.hpp"
 #include "engine/resources/MaterialAssetData.hpp"
 #include "engine/resources/Types.hpp"
 #include "stb_image.h"
@@ -22,9 +25,6 @@
 
 namespace tryeditor {
 
-// =============================================================================
-// Локальные вспомогательные функции (Скрыты в анонимном namespace)
-// =============================================================================
 namespace {
 
 constexpr uint64_t MESH_SALT = 0x10000000;
@@ -33,8 +33,6 @@ constexpr uint64_t TEXTURE_SALT = 0x30000000;
 using tryengine::resources::TextureAddressMode;
 using tryengine::resources::TextureFilter;
 using tryengine::resources::TextureHeader;
-
-// --- Вспомогательные функции маппинга GLTF -> Engine ---
 
 TextureFilter MapGltfFilter(int gltf_filter) {
     switch (gltf_filter) {
@@ -90,6 +88,8 @@ int FindAttribute(const tg3_primitive& prim, const char* name) {
 }
 
 void SaveMeshBinary(const std::filesystem::path& path, const tryengine::resources::MeshData& data) {
+
+
     std::ofstream os(path, std::ios::binary);
     const uint32_t v_count = static_cast<uint32_t>(data.vertexBuffer.size());
     const uint32_t i_count = static_cast<uint32_t>(data.indexBuffer.size());
@@ -102,85 +102,29 @@ void SaveMeshBinary(const std::filesystem::path& path, const tryengine::resource
 
 }  // namespace
 
-// =============================================================================
-// Публичные интерфейсные методы
-// =============================================================================
+bool GltfImporter::GenerateArtifact(const AssetContext& ctx, const GltfImportSettings& settings) {
+    AssetMetaHeader meta_header;
+    meta_header.guid = tryengine::core::RandomUtil::GenerateInt64();
+    meta_header.asset_type = "gltf";
+    meta_header.importer_type = "GltfImporter";
 
-uint64_t GltfImporter::GenerateMeta(const std::filesystem::path& asset_path, const std::filesystem::path& meta_path) {
-    AssetMetaHeader header{};
+    if (!std::filesystem::exists(ctx.cache_dir / std::to_string(meta_header.guid)))
+        std::filesystem::create_directories(ctx.cache_dir / std::to_string(meta_header.guid));
 
-    // 1. Инициализация генератора (лучше вынести из функции, если вызывается часто)
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
-    static std::uniform_int_distribution<uint64_t> dis;
+    std::filesystem::path artifact_dir = ctx.artifacts_dir / std::to_string(meta_header.guid);
 
-    // 2. Заполнение данных
-    header.guid = dis(gen);
-    header.asset_type = "gltf";
-    header.importer_type = "GltfImporter";
-
-    try {
-        std::ofstream os(meta_path);
-        if (os.is_open()) {
-            {
-                cereal::JSONOutputArchive archive(os);
-                archive(cereal::make_nvp("header", header));
-            }
-
-            os.close();
-        } else {
-            std::cerr << "[GltfImporter] Failed to create meta file: " << meta_path << std::endl;
-            return 0;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[GltfImporter] Error while saving meta: " << e.what() << std::endl;
-        return 0;
+    if (!std::filesystem::exists(artifact_dir)) {
+        std::filesystem::create_directories(artifact_dir);
     }
 
-    std::cout << "[GltfImporter] Generated new meta for " << asset_path.filename() << " with UUID: " << header.guid
-              << std::endl;
-    return header.guid;
-}
-
-AssetMetaHeader GltfImporter::ReadIdentification(const std::filesystem::path& meta_path) {
-    AssetMetaHeader header{};
-    if (!std::filesystem::exists(meta_path)) {
-        std::cerr << "[GltfImporter] meta file does not exist: " << meta_path << std::endl;
-        return header;
-    }
-
-    try {
-        std::ifstream is(meta_path);
-        if (is.is_open()) {
-            cereal::JSONInputArchive archive(is);
-            archive(cereal::make_nvp("header", header));
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[GltfImporter] Failed to read meta file " << meta_path << ". Error: " << e.what() << std::endl;
-    }
-    return header;
-}
-
-bool GltfImporter::GenerateArtifact(const std::filesystem::path& asset_path, const std::filesystem::path& metaPath,
-                                    const std::filesystem::path& artifact_dir, const std::filesystem::path& cacheDir,
-                                    const std::filesystem::path& project_assets_dir) {
-    if (!std::filesystem::exists(cacheDir))
-        std::filesystem::create_directories(cacheDir);
-
-    AssetMetaHeader header = ReadIdentification(metaPath);
-
-    ModelAssetMap asset_map;
-    asset_map.main_guid = header.guid;
-
-    // 1. Чтение файла
-    std::ifstream file(asset_path, std::ios::binary | std::ios::ate);
+    std::ifstream file(ctx.asset_path, std::ios::binary | std::ios::ate);
     if (!file.is_open())
         return false;
 
     std::streamsize size = file.tellg();
     file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> glbData(size);
-    if (!file.read(reinterpret_cast<char*>(glbData.data()), size))
+    std::vector<uint8_t> glb_data(size);
+    if (!file.read(reinterpret_cast<char*>(glb_data.data()), size))
         return false;
 
     tinygltf3::Model model;
@@ -188,57 +132,38 @@ bool GltfImporter::GenerateArtifact(const std::filesystem::path& asset_path, con
     tg3_parse_options opts;
     tg3_parse_options_init(&opts);
 
-    tg3_error_code err = tinygltf3::parse(model, errors, glbData.data(), glbData.size(),
-                                          asset_path.parent_path().string().c_str(), &opts);
+    tg3_error_code err = tinygltf3::parse(model, errors, glb_data.data(), glb_data.size(),
+                                          ctx.asset_path.parent_path().string().c_str(), &opts);
     if (err != TG3_OK) {
-        std::cerr << "Failed to parse GLB: " << asset_path << "\n";
+        std::cerr << "Failed to parse GLB: " << ctx.asset_path << "\n";
         return false;
     }
-
     const tg3_model* m = model.get();
 
-    std::vector<uint64_t> material_guids =
-        ProcessMaterials(m, header.guid, project_assets_dir, asset_path.stem(), asset_map);
+    ModelAssetMap asset_map;
+    asset_map.main_guid = meta_header.guid;
 
-    ProcessTextures(m, header.guid, artifact_dir, project_assets_dir, asset_path.stem(), asset_map);
+    auto material_guids = ProcessMaterials(m, meta_header.guid, ctx.project_assets_dir, ctx.asset_path.stem(), asset_map);
+    ProcessTextures(m, meta_header.guid, artifact_dir, ctx.project_assets_dir, ctx.asset_path.stem(), asset_map);
+    auto mesh_guids = ProcessMeshes(m, meta_header.guid, artifact_dir, asset_map);
 
-    std::vector<std::vector<uint64_t>> mesh_primitive_guids;
-    ProcessMeshes(m, header.guid, artifact_dir, asset_map, mesh_primitive_guids);
+    ProcessNodes(m, mesh_guids, material_guids, asset_map);
 
-    ProcessNodes(m, mesh_primitive_guids, material_guids, asset_map);
-
-    // 3. Сохранение иерархии в кэш
-    std::filesystem::path cacheFilePath = cacheDir / "hierarchy.json";
-    std::ofstream os(cacheFilePath);
-    if (os.is_open()) {
+    {
+        std::filesystem::path cache_file_path = ctx.cache_dir / std::to_string(meta_header.guid) / "hierarchy.json";
+        std::ofstream os(cache_file_path);
         cereal::JSONOutputArchive archive(os);
         archive(cereal::make_nvp("asset_map", asset_map));
-    } else {
-        std::cerr << "Failed to open cache file for writing: " << cacheFilePath << std::endl;
-        return false;
     }
 
-    // 4. Перезапись .meta файла с добавлением sub_assets
-    header.sub_assets.clear();
-    for (const auto& sub : asset_map.sub_assets) {
-        header.sub_assets.push_back(sub.first); // Сохраняем все GUID порожденных сущностей
+    for (const auto& key : asset_map.sub_assets | std::views::keys) {
+        meta_header.sub_assets.push_back(key);
     }
 
-    std::ofstream meta_os(metaPath);
-    if (meta_os.is_open()) {
-        cereal::JSONOutputArchive meta_archive(meta_os);
-        meta_archive(cereal::make_nvp("header", header));
-    } else {
-        std::cerr << "Failed to rewrite meta file: " << metaPath << std::endl;
-    }
-    // ===============================================
+    MetaSerializer::Write(ctx.meta_path, meta_header, settings);
 
     return true;
 }
-
-// =============================================================================
-// Приватные методы парсинга
-// =============================================================================
 
 void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const std::filesystem::path& artifactDir,
                                    const std::filesystem::path& projectAssetsDir,
@@ -357,8 +282,8 @@ void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const
 std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_t main_uuid,
                                                      const std::filesystem::path& projectAssetsDir,
                                                      const std::filesystem::path& assetStem, ModelAssetMap& asset_map) {
-    std::filesystem::path matDir = projectAssetsDir / "Materials" / assetStem;
-    std::filesystem::create_directories(matDir);
+    std::filesystem::path mat_dir = projectAssetsDir / "Materials" / assetStem;
+    std::filesystem::create_directories(mat_dir);
 
     std::vector<uint64_t> imported_materials_guids(m->materials_count, 0);
 
@@ -370,7 +295,7 @@ std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_
 
         tryengine::resources::MaterialAssetData mat_data;
         mat_data.name = mat_name;
-        mat_data.shader_asset_id = 443666587761196016;  // Твой ID PBR шейдера
+        mat_data.shader_asset_id = tryengine::resources::assets::DEFAULT_PBR_SHADER;
 
         const auto& pbr = gltf_mat.pbr_metallic_roughness;
 
@@ -387,7 +312,7 @@ std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_
         }
 
         // Создаем через фабрику и получаем финальный GUID
-        uint64_t mat_id = assets_factory_.Create<MaterialAssetFactory>(matDir, mat_name, mat_data);
+        uint64_t mat_id = assets_factory_.Create<MaterialAssetFactory>(mat_dir, mat_name, mat_data);
 
         imported_materials_guids[i] = mat_id;
 
@@ -398,9 +323,10 @@ std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_
     return imported_materials_guids;
 }
 
-void GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const std::filesystem::path& artifactDir,
-                                 ModelAssetMap& asset_map,
-                                 std::vector<std::vector<uint64_t>>& out_mesh_primitive_guids) {
+std::vector<std::vector<uint64_t>> GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid,
+                                                               const std::filesystem::path& artifact_dir,
+                                                               ModelAssetMap& asset_map) {
+    std::vector<std::vector<uint64_t>> out_mesh_primitive_guids;
     out_mesh_primitive_guids.resize(m->meshes_count);
     uint32_t global_primitive_counter = 0;
 
@@ -516,7 +442,8 @@ void GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const s
             out_mesh_primitive_guids[i].push_back(prim_sub_id);
 
             std::string bin_name = std::to_string(prim_sub_id) + ".bin";
-            std::filesystem::path bin_path = artifactDir / bin_name;
+            std::filesystem::path bin_path = artifact_dir / bin_name;
+
 
             SaveMeshBinary(bin_path, engine_mesh);
             asset_map.sub_assets.push_back({prim_sub_id, bin_name});
@@ -524,6 +451,7 @@ void GltfImporter::ProcessMeshes(const tg3_model* m, uint64_t main_uuid, const s
             global_primitive_counter++;
         }
     }
+    return out_mesh_primitive_guids;
 }
 
 void GltfImporter::ProcessNodes(const tg3_model* m, const std::vector<std::vector<uint64_t>>& mesh_primitive_guids,

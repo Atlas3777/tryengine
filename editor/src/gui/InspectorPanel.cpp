@@ -8,6 +8,7 @@
 
 #include "editor/Components.hpp"
 #include "editor/EditorGUIUtils.hpp"
+#include "editor/meta/MetaSerializer.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 
@@ -41,59 +42,14 @@ void InspectorPanel::DrawAssetInspector(const std::filesystem::path& path) const
     // 1. Читаем заголовок метафайла, чтобы понять, какой инспектор вызвать
     std::filesystem::path meta_path = path.string() + ".meta";
 
-    if (const auto header_opt = import_system_.PeekMetaHeader(meta_path)) {
-        // 2. Делегируем отрисовку менеджеру по ТИПУ АССЕТА
-        asset_inspector_manager_.Draw(path, header_opt->asset_type);
+    auto header = MetaSerializer::ReadHeader(meta_path);
+
+    if (header != std::nullopt) {
+        asset_inspector_manager_.Draw(path, header->asset_type);
     } else {
         ImGui::TextDisabled("No valid .meta file found for this asset.");
     }
 }
-
-// void InspectorPanel::DrawShaderSlots() {
-//     // Отрисовка слота для Vertex Shader
-//     ImGui::Text("Vertex Shader:");
-//     ImGui::SameLine();
-//
-//     // Создаем кнопку, которая выглядит как слот. Если ID = 0, пишем "None"
-//     std::string vert_label = current_shader_def_.vertex_shader_id == 0
-//                                  ? "[ Drop .vert here ]"
-//                                  : "ID: " + std::to_string(current_shader_def_.vertex_shader_id);
-//
-//     ImGui::Button(vert_label.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0));
-//
-//     // DRAG AND DROP ПРИЕМНИК (TARGET)
-//     if (ImGui::BeginDragDropTarget()) {
-//         // Принимаем payload с типом "CONTENT_BROWSER_ID" (тот самый, что ты задал в FileBrowserPanel)
-//         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ID")) {
-//             uint64_t dropped_id = *(const uint64_t*) payload->Data;
-//
-//             // Здесь в идеале нужно проверить через AssetDatabase/ImportSystem,
-//             // что dropped_id действительно принадлежит файлу с расширением .vert
-//
-//             current_shader_def_.vertex_shader_id = dropped_id;
-//             is_asset_dirty_ = true;  // Помечаем, что нужно перезаписать JSON
-//         }
-//         ImGui::EndDragDropTarget();
-//     }
-//
-//     // Отрисовка слота для Fragment Shader (Абсолютно аналогично)
-//     ImGui::Text("Fragment Shader:");
-//     ImGui::SameLine();
-//     std::string frag_label = current_shader_def_.fragment_shader_id == 0
-//                                  ? "[ Drop .frag here ]"
-//                                  : "ID: " + std::to_string(current_shader_def_.fragment_shader_id);
-//
-//     ImGui::Button(frag_label.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0));
-//
-//     if (ImGui::BeginDragDropTarget()) {
-//         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ID")) {
-//             uint64_t dropped_id = *(const uint64_t*) payload->Data;
-//             current_shader_def_.fragment_shader_id = dropped_id;
-//             is_asset_dirty_ = true;
-//         }
-//         ImGui::EndDragDropTarget();
-//     }
-// }
 
 void InspectorPanel::DrawEntityInspector(entt::registry& reg) {
     ImGui::Begin("Inspector");

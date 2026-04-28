@@ -1,26 +1,12 @@
 #include "editor/Spawner.hpp"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "editor/meta/ModelAssetMap.hpp"
 
 namespace tryeditor {
 
 void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) const {
-    auto path = import_system_.GetHierarchyPath(asset_id);
-    std::cout << "[Spawner] Opening hierarchy: " << path << std::endl;
+    const auto asset_map = import_system_.LoadFromCache<ModelAssetMap>(asset_id, "asset_map");
 
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "[Spawner] Could not open file!" << std::endl;
-        return;
-    }
-
-    cereal::JSONInputArchive archive(file);
-
-    ModelAssetMap map;
-    archive(cereal::make_nvp("asset_map", map));
-
-    const auto& asset_map = map;
     std::vector<entt::entity> entities(asset_map.nodes.size());
 
     for (size_t i = 0; i < asset_map.nodes.size(); ++i) {
