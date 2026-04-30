@@ -23,7 +23,7 @@
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
-#include "game/GameAPI.hpp"
+#include "engine/core/GameAPI.hpp"
 
 namespace tryeditor {
 
@@ -45,13 +45,11 @@ Editor::~Editor() {
 }
 
 void Editor::RegisterAssetsFactories() const {
-    // Передаем ImportSystem в фабрики
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
 }
 
 void Editor::RegisterAssetsInspector() const {
-    // Передаем ImportSystem в инспекторы
     asset_inspector_manager_->RegisterInspector<ShaderAssetInspector>("shader", *import_system_);
     asset_inspector_manager_->RegisterInspector<TextureAssetInspector>("texture", *import_system_);
     asset_inspector_manager_->RegisterInspector<MaterialAssetInspector>("material", *import_system_);
@@ -77,6 +75,7 @@ void Editor::RegisterResourceLoaders() const {
 }
 
 bool Editor::LoadGameLibrary(const std::string& originalPath) {
+    // 1. Сначала выгружаем старую библиотеку (с вызовом OnShutdown)
     UnloadGameLibrary();
 
     namespace fs = std::filesystem;
@@ -86,39 +85,49 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
         if (fs::exists(originalPath)) {
             fs::copy_file(originalPath, tempPath, fs::copy_options::overwrite_existing);
         } else {
-            std::cerr << "[Editor] Ошибка: Файл библиотеки не найден: " << originalPath << '\n';
+            std::cerr << "[Editor] Library not found: " << originalPath << std::endl;
             return false;
         }
     } catch (const fs::filesystem_error& e) {
-        std::cerr << "[Editor] Ошибка копирования библиотеки: " << e.what() << '\n';
+        std::cerr << "[Editor] Copy error: " << e.what() << std::endl;
         return false;
     }
 
-    gameSO.handle = dlopen(tempPath.c_str(), RTLD_NOW);
-    if (!gameSO.handle) {
-        std::cerr << "[Editor] Ошибка dlopen: " << dlerror() << '\n';
+    // 2. Загружаем библиотеку
+    game_lib.handle = dlopen(tempPath.c_str(), RTLD_NOW);
+    if (!game_lib.handle) {
+        std::cerr << "[Editor] dlopen error: " << dlerror() << std::endl;
         return false;
     }
 
-    gameSO.updateGameSystems = reinterpret_cast<UpdateGameSystemsFn>(dlsym(gameSO.handle, "UpdateGameSystems"));
+    // 3. Извлекаем символы через типизированные указатели из GameAPI.hpp
+    game_lib.onInit     = (tryengine::core::Game_OnInitFn)dlsym(game_lib.handle, "Game_OnInit");
+    game_lib.onUpdate   = (tryengine::core::Game_OnUpdateFn)dlsym(game_lib.handle, "Game_OnUpdate");
+    game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn)dlsym(game_lib.handle, "Game_OnShutdown");
 
-    const char* err = dlerror();
-    if (err || !gameSO.IsValid()) {
-        std::cerr << "[Editor] Ошибка dlsym: " << (err ? err : "Символы не найдены") << '\n';
+    if (!game_lib.IsValid()) {
+        std::cerr << "[Editor] Failed to find GameAPI functions in " << originalPath << std::endl;
         UnloadGameLibrary();
         return false;
     }
 
-    std::cout << "[Editor] Библиотека игры успешно загружена!\n";
+    // 4. Автоматическая инициализация игры после загрузки
+    std::cout << "[Editor] Game library loaded. Initializing..." << std::endl;
+    game_lib.onInit(engine_);
+
     return true;
 }
 
 void Editor::UnloadGameLibrary() {
-    if (gameSO.handle) {
-        dlclose(gameSO.handle);
-        gameSO.handle = nullptr;
-        gameSO.updateGameSystems = nullptr;
-        std::cout << "[Editor] Библиотека игры выгружена.\n";
+    if (game_lib.handle) {
+        // Вызываем завершение работы игры ПЕРЕД закрытием дескриптора
+        if (game_lib.onShutdown) {
+            game_lib.onShutdown(engine_);
+        }
+
+        dlclose(game_lib.handle);
+        game_lib.Clear();
+        std::cout << "[Editor] Game library unloaded." << std::endl;
     }
 }
 

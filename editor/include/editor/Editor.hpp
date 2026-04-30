@@ -2,15 +2,14 @@
 #include <memory>
 #include <string>
 
-#include "asset_factories/AssetsFactoryManager.hpp"
-#include "asset_inspector/AssetInspectorManager.hpp"
-#include "game/GameAPI.hpp"
-#include "gui/EditorGUI.hpp"
-#include "import/ImportSystem.hpp"
+#include "editor/asset_factories/AssetsFactoryManager.hpp"
+#include "editor/asset_inspector/AssetInspectorManager.hpp"
+#include "engine/core/GameAPI.hpp"
+#include "editor/gui/EditorGUI.hpp"
+#include "editor/import/ImportSystem.hpp"
 
 namespace tryeditor {
 class Spawner;
-
 class Editor {
 public:
     Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
@@ -39,7 +38,7 @@ public:
 
     bool running = false;
     bool play_mode = false;
-    GameLibrary gameSO;
+    tryengine::core::GameLibrary game_lib;
 
 private:
     std::unique_ptr<ImportSystem> import_system_;

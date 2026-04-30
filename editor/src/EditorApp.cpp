@@ -34,26 +34,27 @@ void EditorApp::Init() {
 
     engine_->GetResourceManager().GetAssetDatabase().Refresh();
 
-    editor_->LoadGameLibrary("build/game/libgame.so");
+    editor_->LoadGameLibrary("cmake-build-debug/game/libgame.so");
     editor_->LoadDefaultScene();
 
     RegisterRef();
 
     editor_->running = true;
+    editor_->play_mode = true;
 }
 
 void EditorApp::Run() {
     while (editor_->running) {
         UpdateInput();
-        engine_->GetClock().Update();
+        const auto time_state = engine_->GetClock().Update();
 
         editor_->GetEditorGUI().UpdatePanels(*engine_);
 
         tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
         tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
 
-        if (editor_->play_mode & editor_->gameSO.IsValid()) {
-            editor_->gameSO.updateGameSystems(engine_.get());
+        if (editor_->play_mode && editor_->game_lib.IsValid()) {
+            editor_->game_lib.onUpdate(*engine_, static_cast<float>(time_state.deltaTime));
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_);

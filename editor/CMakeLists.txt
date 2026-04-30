@@ -56,7 +56,7 @@ file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/editor/*.hpp")
 
 add_executable(editor ${SOURCES} ${HEADERS})
 
-target_include_directories(editor PRIVATE include src ../game/include)
+target_include_directories(editor PRIVATE include src)
 
 # Редактор линкует и ядро, и графику!
 target_link_libraries(editor PRIVATE
