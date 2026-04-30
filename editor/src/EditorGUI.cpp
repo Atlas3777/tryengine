@@ -32,6 +32,24 @@ EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem
 
     ImGui::StyleColorsDark();
 
+    ImGuizmo::Style& gizmoStyle = ImGuizmo::GetStyle();
+    gizmoStyle.TranslationLineThickness   = 4.0f;
+    gizmoStyle.TranslationLineArrowSize   = 6.0f;
+    gizmoStyle.RotationLineThickness      = 2.0f;
+    gizmoStyle.RotationOuterLineThickness = 3.0f;
+    gizmoStyle.ScaleLineThickness         = 4.0f;
+    gizmoStyle.ScaleLineCircleSize        = 6.0f;
+    gizmoStyle.HatchedAxisLineThickness   = 6.0f;
+    gizmoStyle.CenterCircleSize           = 4.0f;
+
+    ImGuizmo::SetGizmoSizeClipSpace(0.12f);
+
+
+    // Можно даже переопределить цвета, чтобы сделать их ярче (Опционально)
+    // style.Colors[ImGuizmo::DIRECTION_X] = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); // Ярко-красный
+    // style.Colors[ImGuizmo::DIRECTION_Y] = ImVec4(0.2f, 0.9f, 0.2f, 1.0f); // Ярко-зеленый
+    // style.Colors[ImGuizmo::DIRECTION_Z] = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); // Ярко-синий
+
     // Настройка бэкендов
     ImGui_ImplSDL3_InitForSDLGPU(context.GetWindow());
 

@@ -8,6 +8,21 @@ FetchContent_Declare(tinygltf GIT_REPOSITORY https://github.com/syoyo/tinygltf.g
 
 FetchContent_MakeAvailable(imgui imguizmo stb tinygltf)
 
+# --- ПАТЧИНГ IMGUIZMO ---
+set(IMGUIZMO_CPP "${imguizmo_SOURCE_DIR}/ImGuizmo.cpp")
+
+# Считываем содержимое файла
+file(READ "${IMGUIZMO_CPP}" IMGUIZMO_CONTENT)
+
+string(REPLACE "static const float quadMin = 0.5f;" "static const float quadMin = 0.3f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
+string(REPLACE "static const float quadMax = 0.8f;" "static const float quadMax = 1.f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
+
+string(REPLACE "float mAxisLimit=0.0025f;" "float mAxisLimit=0.0000001f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
+string(REPLACE "float mPlaneLimit=0.02f;" "float mPlaneLimit=0.05f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
+
+# Записываем изменения обратно
+file(WRITE "${IMGUIZMO_CPP}" "${IMGUIZMO_CONTENT}")
+
 
 add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp

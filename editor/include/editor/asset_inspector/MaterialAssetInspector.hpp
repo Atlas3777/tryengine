@@ -1,11 +1,6 @@
 #pragma once
-#include <cereal/archives/binary.hpp>
-#include <cereal/archives/json.hpp>
-#include <fstream>
-#include <iostream>
-#include <map>
 
-#include "IAssetInspector.hpp"
+#include "editor/asset_inspector/IAssetInspector.hpp"
 #include "editor/EditorGUIUtils.hpp"
 #include "editor/import/ImportSystem.hpp"
 
@@ -39,7 +34,8 @@ public:
         }
 
         if (save_triggered && dirty_) {
-            auto header = MetaSerializer::ReadHeader(current_asset_path_);
+            std::filesystem::path meta = current_asset_path_;
+            auto header = MetaSerializer::ReadHeader(meta += ".meta");
             import_system_.SaveNativeAsset<tryengine::resources::MaterialAssetData>(current_asset_path_, current_material_data_, *header);
             dirty_ = false;
         }

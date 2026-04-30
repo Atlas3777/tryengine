@@ -32,7 +32,6 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
         }
     }
 
-    // --- 2. Логика выбора сущности ---
     const auto view = reg.view<SelectedTag, tryengine::Transform, tryengine::Relationship>();
     const auto selected_entity = view.front();
     if (selected_entity == entt::null || !reg.valid(selected_entity))
@@ -47,30 +46,48 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     auto& transform = reg.get<tryengine::Transform>(selected_entity);
     const auto& relationship = reg.get<tryengine::Relationship>(selected_entity);
 
-    // --- 3. Настройка ImGuizmo ---
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
 
-    // Важно: Использовать размеры именно контента окна (без заголовков)
-    const float window_width = ImGui::GetWindowWidth();
-    const float window_height = ImGui::GetWindowHeight();
-    ImGuizmo::SetRect(ImGui::GetWindowPos().x, ImGui::GetWindowPos().y, window_width, window_height);
+    // --- ПРОКАЧКА 1: Правильный расчет области отрисовки ---
+    // Это предотвратит смещение гизмо, если у окна есть заголовок (title bar)
+    ImVec2 windowPos = ImGui::GetWindowPos();
+    ImVec2 minRegion = ImGui::GetWindowContentRegionMin();
+    ImVec2 maxRegion = ImGui::GetWindowContentRegionMax();
+    float viewportX = windowPos.x + minRegion.x;
+    float viewportY = windowPos.y + minRegion.y;
+    float viewportWidth = maxRegion.x - minRegion.x;
+    float viewportHeight = maxRegion.y - minRegion.y;
+    ImGuizmo::SetRect(viewportX, viewportY, viewportWidth, viewportHeight);
+
 
     glm::mat4 view_mat = camera.view_matrix;
     const float aspect = static_cast<float>(target_->GetWidth()) / static_cast<float>(target_->GetHeight());
     glm::mat4 proj_mat = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
-
-    // Работаем с мировой матрицей
     glm::mat4 modelMatrix = transform.world_matrix;
 
+    // --- ПРОКАЧКА 3: Привязка к сетке (Snapping) по зажатому Ctrl ---
+    bool snap = ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
+    float snapValue = 0.5f; // Шаг для перемещения и скейла
+    if (current_gizmo_operation_ == ImGuizmo::ROTATE) {
+        snapValue = 45.0f; // Шаг для вращения (45 градусов)
+    }
+    float snapValues[3] = { snapValue, snapValue, snapValue };
+
     // --- 4. Рендер и манипуляция ---
-    ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), current_gizmo_operation_,
-                         current_gizmo_mode_, glm::value_ptr(modelMatrix));
+    ImGuizmo::Manipulate(
+        glm::value_ptr(view_mat),
+        glm::value_ptr(proj_mat),
+        current_gizmo_operation_,
+        current_gizmo_mode_,
+        glm::value_ptr(modelMatrix),
+        nullptr, // deltaMatrix
+        snap ? snapValues : nullptr // Передаем массив привязки, если зажат Ctrl
+    );
 
     if (ImGuizmo::IsUsing()) {
         glm::mat4 localMatrix = modelMatrix;
 
-        // Если есть родитель, переводим измененную мировую матрицу обратно в локальные координаты
         if (relationship.parent != entt::null && reg.all_of<tryengine::Transform>(relationship.parent)) {
             const auto& parent_transform = reg.get<tryengine::Transform>(relationship.parent);
             localMatrix = glm::inverse(parent_transform.world_matrix) * modelMatrix;
@@ -82,7 +99,6 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
         tryengine::vec3 scale;
         glm::quat orientation;
 
-        // Разлагаем локальную матрицу на компоненты Transform
         glm::decompose(localMatrix, scale, orientation, translation, skew, perspective);
 
         transform.position = translation;
