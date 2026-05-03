@@ -31,6 +31,10 @@ private:
 
     std::filesystem::path root_directory_;
     std::filesystem::path selected_directory_;
+
+    std::filesystem::path renaming_path_;
+    char rename_buffer_[256] = "";
+    bool set_focus_to_rename_ = false;
 };
 
 } // namespace tryeditor
