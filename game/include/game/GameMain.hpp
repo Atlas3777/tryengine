@@ -1,7 +1,5 @@
 #include "RotateSystem.hpp"
-namespace tryengine::core {
-class Engine;
-}
+
 namespace game {
 
 class GameMain {

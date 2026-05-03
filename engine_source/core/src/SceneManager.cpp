@@ -1,59 +1,67 @@
 #include "engine/core/SceneManager.hpp"
 
 #include <cereal/archives/binary.hpp>
+#include <cereal/archives/json.hpp>
+#include <filesystem>
 #include <fstream>
-#include <glm/fwd.hpp>
 #include <iostream>
 
-#include "engine/core/Components.hpp"
+#include "engine/core/ComponentRegistry.hpp"
 
 namespace tryengine::core {
 
-Scene* SceneManager::CreateScene(const std::string& name) {
-    // std::make_unique безопасно создаст новую сцену и удалит старую (если была)
-    active_scene_ = std::make_unique<Scene>(name);
-    return active_scene_.get();
-}
-
-bool SceneManager::LoadScene(const std::string& filepath) {
-    // 1. Создаем чистую сцену, так как snapshot_loader требует пустого registry
-    auto newScene = std::make_unique<Scene>(filepath);
-
-    // 2. Здесь должна быть логика загрузки через entt::snapshot_loader
-    // Пример (псевдокод, зависит от выбранной библиотеки сериализации, например Cereal):
-
-    // std::ifstream is(filepath, std::ios::binary);
-    // if (!is.is_open()) return false;
-    //
-    // cereal::BinaryInputArchive input(is);
-    // entt::snapshot_loader{newScene->GetRegistry()}
-    //     .get<entt::entity>(input)
-    //     .get<Transform>(input)
-    //     .orphans();
-
-    std::cout << "Loading scene from: " << filepath << "\n";
-
-    // Перемещаем владение новой сценой в менеджер
-    active_scene_ = std::move(newScene);
-    return true;
-}
-
-bool SceneManager::SaveScene(const std::string& filepath) {
+bool SceneManager::SaveCurrentScene() {
     if (!active_scene_) return false;
 
-    // Пример сериализации через entt::snapshot
-    /*
-    std::ofstream os(filepath, std::ios::binary);
-    cereal::BinaryOutputArchive output(os);
+    std::ofstream os(current_scene_path_);
+    if (!os.is_open()) return false;
 
-    entt::snapshot{m_ActiveScene->GetRegistry()}
-        .get<entt::entity>(output)
-        .get<TransformComponent>(output)
-        .get<MeshComponent>(output);
-    */
+    try {
+        cereal::JSONOutputArchive archive(os);
+        engine_.GetComponentRegistry().Serialize(active_scene_->GetRegistry(), archive);
+        return true;
+    } catch (const std::exception& e) {
+        return false;
+    }
+}
 
-    std::cout << "Saving scene to: " << filepath << "\n";
-    return true;
+bool SceneManager::LoadScene(const std::string& scene_name) {
+    auto current_path = std::filesystem::current_path();
+    current_scene_path_ = current_path / "game" / "assets" / scene_name;
+
+    // 1. Проверяем, существует ли файл физически
+    if (!std::filesystem::exists(current_scene_path_)) {
+        std::cerr << "Error: File does not exist at path: " << current_scene_path_ << std::endl;
+        // Выведем текущую рабочую директорию для ясности
+        std::cerr << "Current working directory was: " << current_path << std::endl;
+        return false;
+    }
+
+    // 2. Проверяем, не является ли путь директорией
+    if (std::filesystem::is_directory(current_scene_path_)) {
+        std::cerr << "Error: Path is a directory, not a file: " << current_scene_path_ << std::endl;
+        return false;
+    }
+
+    std::ifstream is(current_scene_path_);
+    if (!is.is_open()) {
+        // 3. Если файл есть, но не открывается (например, занят другим процессом или нет прав)
+        std::cerr << "Error: Failed to open file stream: " << current_scene_path_ << std::endl;
+        return false;
+    }
+
+    auto newScene = std::make_unique<Scene>(scene_name);
+
+    try {
+        cereal::JSONInputArchive archive(is);
+        engine_.GetComponentRegistry().Deserialize(newScene->GetRegistry(), archive);
+
+        active_scene_ = std::move(newScene);
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Cereal deserialization error: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 }  // namespace tryengine::core

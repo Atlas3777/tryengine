@@ -2,11 +2,13 @@
 
 #include <entt/entity/entity.hpp>
 #include <entt/resource/resource.hpp>
+#include <utility>
 
 #include "engine/core/CoreTypes.hpp"
 #include "engine/core/GLMSerialization.hpp"
 
 namespace tryengine {
+
 namespace graphics {
 struct Material;
 struct Mesh;
@@ -56,13 +58,19 @@ struct AABB {
     vec3 world_max;
 };
 
-// Добавим простой компонент имени, если у тебя его еще нет
 struct Tag {
-    std::string tag;
     Tag() = default;
-    Tag(const Tag&) = default;
-    Tag(const std::string& t) : tag(t) {}
+
+    Tag(std::string t) : tag(std::move(t)) {}
+
+    std::string tag;
+
+    template <class Archive>
+    void serialize(Archive& archive) {
+        archive(cereal::make_nvp("tag", tag));
+    }
 };
+
 struct MainCameraTag {};
 struct Camera {
     glm::mat4 view_matrix{1.0f};
@@ -75,5 +83,14 @@ struct Camera {
     // Параметры управления (для системы ввода)
     float sensitivity = 0.06f;
     float speed = 5.0f;
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(cereal::make_nvp("fov", fov));
+        ar(cereal::make_nvp("near_plane", near_plane));
+        ar(cereal::make_nvp("far_plane", far_plane));
+        ar(cereal::make_nvp("sensitivity", sensitivity));
+        ar(cereal::make_nvp("speed", speed));
+    }
 };
 }  // namespace tryengine

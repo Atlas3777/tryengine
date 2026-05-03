@@ -106,14 +106,8 @@ void ImportSystem::ImportNewAsset(const AssetContext& ctx, IAssetImporter* impor
     }
 }
 
-// void ImportSystem::ReimportAsset(const AssetContext& ctx, IAssetImporter* importer) {
-//     if (!importer) return;
-//
-//     if (importer->Reimport(ctx)) {
-//         std::cout << "[ImportSystem] Пересобран артефакт для: " << ctx.asset_path.filename() << "\n";
-//     }
-// }
-void ImportSystem::ReimportAsset(const AssetMetaHeader& header) {
+
+void ImportSystem::ReimportAsset(const AssetMetaHeader& header) const {
     const auto importer = GetImporterByName(header.importer_type);
     const auto path = GetPath(header.guid);
 

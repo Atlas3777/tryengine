@@ -1,11 +1,13 @@
 #pragma once
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/SceneManager.hpp"
+#include "engine/core/Scene.hpp"
 
 namespace game {
 
 void Rotate(tryengine::core::Engine& engine) {
-    auto& reg = engine.GetSceneManager().GetActiveScene()->GetRegistry();
+    auto& reg = engine.GetSceneManager().GetActiveScene().GetRegistry();
     auto view = reg.view<tryengine::Transform, tryengine::MeshRenderer>();
 
     float angle = 0.01f;

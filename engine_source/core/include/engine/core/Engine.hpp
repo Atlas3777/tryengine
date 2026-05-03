@@ -1,27 +1,33 @@
 #pragma once
+
+#include <memory>
 #include <mutex>
 
-#include "engine/core/Clock.hpp"
-#include "engine/core/InputState.hpp"
-#include "engine/core/ResourceManager.hpp"
-#include "engine/core/SceneManager.hpp"
-
 namespace tryengine::core {
+class Clock;
+class SceneManager;
+class ComponentRegistry;
+class ResourceManager;
+struct InputState;
 class Engine {
 public:
     Engine();
+    ~Engine();
     void UpdateTime() const;
 
     void SetInputSource(InputState* source) { input = source; }
 
-    [[nodiscard]] SceneManager& GetSceneManager() const { return *scene_manager_; }
     [[nodiscard]] Clock& GetClock() const { return *clock; }
+    [[nodiscard]] SceneManager& GetSceneManager() const { return *scene_manager_; }
     [[nodiscard]] InputState& GetInput() const { return *input; }
     [[nodiscard]] ResourceManager& GetResourceManager() const { return *resource_manager_; }
+    [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return *component_registry_; }
+
 
 private:
     std::unique_ptr<ResourceManager> resource_manager_;
     std::unique_ptr<SceneManager> scene_manager_;
+    std::unique_ptr<ComponentRegistry> component_registry_;
     std::unique_ptr<Clock> clock;
 
     InputState* input = nullptr;

@@ -3,6 +3,7 @@
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/InputState.hpp"
 
 namespace tryeditor {
 

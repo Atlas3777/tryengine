@@ -6,6 +6,7 @@
 
 #include "editor/asset_factories/IAssetFactory.hpp"
 #include "editor/import/ImportSystem.hpp"
+#include "engine/core/RandomUtil.hpp"
 #include "engine/graphics/MaterialSystem.hpp"
 
 namespace tryeditor {
@@ -37,12 +38,9 @@ private:
     AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
         const std::filesystem::path meta_path = asset_path.string() + ".meta";
 
-        std::random_device rd;
-        std::mt19937_64 id(rd());
-        const uint64_t asset_id = id();
 
         AssetMetaHeader asset_header;
-        asset_header.guid = asset_id;
+        asset_header.guid = tryengine::core::RandomUtil::GenerateInt64();
         asset_header.importer_type = "native";
         asset_header.asset_type = "shader";
 

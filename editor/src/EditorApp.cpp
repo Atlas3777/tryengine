@@ -7,8 +7,10 @@
 #include "editor/Reflection.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/BaseSystem.hpp"
+#include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/ResourceManager.hpp"
+#include "engine/core/SceneManager.hpp"
 
 namespace tryeditor {
 void EditorApp::Init() {
@@ -25,6 +27,7 @@ void EditorApp::Init() {
 
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_, *render_system_);
 
+    editor_->RegisterComponents();
     editor_->RegisterAssetsImporters();
     editor_->RegisterResourceLoaders();
     editor_->RegisterAssetsFactories();
@@ -40,7 +43,7 @@ void EditorApp::Init() {
     RegisterRef();
 
     editor_->running = true;
-    editor_->play_mode = true;
+    // editor_->play_mode = true;
 }
 
 void EditorApp::Run() {
@@ -50,14 +53,14 @@ void EditorApp::Run() {
 
         editor_->GetEditorGUI().UpdatePanels(*engine_);
 
-        tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
-        tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene()->GetRegistry());
+        tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene().GetRegistry());
+        tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene().GetRegistry());
 
         if (editor_->play_mode && editor_->game_lib.IsValid()) {
             editor_->game_lib.onUpdate(*engine_, static_cast<float>(time_state.deltaTime));
         }
 
-        editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_);
+        editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
 
         const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 

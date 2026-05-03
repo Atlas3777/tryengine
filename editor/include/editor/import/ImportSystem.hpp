@@ -102,17 +102,10 @@ public:
         return data;
     }
 
-    // std::filesystem::path GetHierarchyPath(const uint64_t id) const {
-    //     auto p = game_cache_dir_;
-    //     p /= std::to_string(id);
-    //     p /= "hierarchy.json";
-    //     return p;
-    // }
 
     void Refresh();
     void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
-    // void ReimportAsset(const std::filesystem::path& path_to_asset);
-    void ReimportAsset(const AssetMetaHeader& header);
+    void ReimportAsset(const AssetMetaHeader& header) const;
 
     uint64_t GetId(const std::string& path) const { return path_to_id_.at(path); }
     std::string GetPath(const uint64_t id) const { return id_to_path_.at(id); }

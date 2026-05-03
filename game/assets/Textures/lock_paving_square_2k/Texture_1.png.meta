@@ -1,0 +1,14 @@
+{
+    "header": {
+        "guid": 1877591632553097005,
+        "importer_type": "TextureImporter",
+        "asset_type": "texture",
+        "sub_assets": []
+    },
+    "settings": {
+        "min_filter": 1,
+        "mag_filter": 1,
+        "address_u": 2,
+        "address_v": 2
+    }
+}

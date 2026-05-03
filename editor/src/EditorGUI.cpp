@@ -12,13 +12,19 @@
 #include "editor/gui/HierarchyPanel.hpp"
 #include "editor/gui/InspectorPanel.hpp"
 #include "editor/gui/SceneViewportPanel.hpp"
+#include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/SceneManager.hpp"
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(tryengine::graphics::GraphicsContext& context, ImportSystem& import_system, Spawner& spawner,
-                     EditorContext& editor_context, AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager)
-    : editor_context_(editor_context) {
+EditorGUI::EditorGUI(tryengine::core::Engine& engine,
+    tryengine::graphics::GraphicsContext& context,
+    ImportSystem& import_system, Spawner& spawner,
+    EditorContext& editor_context,
+    AssetsFactoryManager& factory_manager,
+    AssetInspectorManager& inspector_manager)
+    : engine_(engine), editor_context_(editor_context) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -76,22 +82,26 @@ EditorGUI::~EditorGUI() {
 void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
         panel->OnUpdate(engine.GetClock().GetDeltaTime(), engine.GetInput(),
-                        engine.GetSceneManager().GetActiveScene()->GetRegistry());
+                        engine.GetSceneManager().GetActiveScene().GetRegistry());
     }
 }
 
-void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine) {
+void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing) {
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
+    // 1. Сначала меню
+    DrawMainMenu();
+    // 2. Затем панель кнопок
+    DrawPlayToolbar(is_playing);
+    // 3. И только потом докспейс
     DrawDockSpace();
 
     for (const auto& panel : panels_) {
-        panel->OnImGuiRender(engine.GetSceneManager().GetActiveScene()->GetRegistry());
+        panel->OnImGuiRender(engine.GetSceneManager().GetActiveScene().GetRegistry());
     }
-    // ImGui::ShowDemoWindow();
 
     ImGui::Render();
 }
@@ -99,7 +109,7 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine) {
 void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
                               const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
-        panel->OnRender(cmd, render_system, engine.GetSceneManager().GetActiveScene()->GetRegistry());
+        panel->OnRender(cmd, render_system, engine.GetSceneManager().GetActiveScene().GetRegistry());
     }
 }
 
@@ -123,8 +133,15 @@ void EditorGUI::RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GP
 
 void EditorGUI::DrawDockSpace() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->Pos);
-    ImGui::SetNextWindowSize(viewport->Size);
+
+    float toolbar_height = 30.0f; // Должно совпадать с высотой из DrawPlayToolbar
+
+    // Сдвигаем начало DockSpace на высоту тулбара и уменьшаем его общий размер
+    ImVec2 dock_pos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + toolbar_height);
+    ImVec2 dock_size = ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - toolbar_height);
+
+    ImGui::SetNextWindowPos(dock_pos);
+    ImGui::SetNextWindowSize(dock_size);
     ImGui::SetNextWindowViewport(viewport->ID);
 
     ImGuiWindowFlags host_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
@@ -144,4 +161,62 @@ void EditorGUI::DrawDockSpace() {
     ImGui::End();
 }
 
+void EditorGUI::DrawMainMenu() {
+    // Делаем фон меню таким же темным, как и фон обычных окон
+    ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Save Scene")) {
+                engine_.GetSceneManager().SaveCurrentScene();
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) { ImGui::EndMenu(); }
+        if (ImGui::BeginMenu("View")) { ImGui::EndMenu(); }
+        if (ImGui::BeginMenu("Asset")){ ImGui::EndMenu(); }
+        ImGui::EndMainMenuBar();
+    }
+    ImGui::PopStyleColor();
+}
+
+void EditorGUI::DrawPlayToolbar(bool& is_playing) {
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    // Задаем жесткую высоту панели
+    float toolbar_height = 30.0f;
+
+    // Позиция WorkPos автоматически учитывает отступ от MainMenuBar,
+    // поэтому панель встанет ровно под вкладками File/Edit
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x, viewport->WorkPos.y));
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, toolbar_height));
+    ImGui::SetNextWindowViewport(viewport->ID);
+
+    // Флаги, запрещающие изменение размера, перемещение, докинг и скрывающие декорации
+    ImGuiWindowFlags toolbar_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
+                                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 8.0f)); // Отступы для центрирования кнопок по вертикали
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
+
+    ImGui::Begin("PlayToolbar", nullptr, toolbar_flags);
+
+    // Центрируем кнопки по горизонтали
+    float button_area_width = 120.0f; // Примерная ширина двух кнопок с отступом
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - button_area_width) * 0.5f);
+
+    if (ImGui::Button(is_playing ? "Stop" : "Play", ImVec2(50, 0))) {
+        is_playing = !is_playing;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Pause", ImVec2(50, 0))) {
+        // Логика паузы
+    }
+
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+}
 }  // namespace tryeditor

@@ -28,6 +28,8 @@ public:
     void SaveSceneForPlayMode();
     void LoadDefaultScene() const;
 
+
+    void RegisterComponents() const;
     void RegisterResourceLoaders() const;
     void RegisterAssetsImporters() const;
     void RegisterAssetsFactories() const;

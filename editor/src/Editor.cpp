@@ -7,6 +7,7 @@
 #include "editor/Components.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
+#include "editor/asset_factories/SceneAssetFactory.hpp"
 #include "editor/asset_factories/ShaderAssetFactory.hpp"
 #include "editor/asset_inspector/MaterialAssetInspector.hpp"
 #include "editor/asset_inspector/ShaderAssetInspector.hpp"
@@ -15,7 +16,9 @@
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/TextureImporter.hpp"
 #include "engine/core/Components.hpp"
+#include "engine/core/GameAPI.hpp"
 #include "engine/core/ResourceManager.hpp"
+#include "engine/core/SceneManager.hpp"
 #include "engine/graphics/MaterialLoader.hpp"
 #include "engine/graphics/MeshLoader.hpp"
 #include "engine/graphics/ShaderAssetLoader.hpp"
@@ -23,7 +26,7 @@
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
-#include "engine/core/GameAPI.hpp"
+#include "engine/core/ComponentSerializers.hpp"
 
 namespace tryeditor {
 
@@ -36,17 +39,26 @@ Editor::Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContex
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
     import_system_ = std::make_unique<ImportSystem>();
     spawner_ = std::make_unique<Spawner>(graphics_context, eng.GetResourceManager(), render_system, *import_system_);
-    editor_gui_ = std::make_unique<EditorGUI>(graphics_context, *import_system_, *spawner_, *editor_context_,
+    editor_gui_ = std::make_unique<EditorGUI>(eng, graphics_context, *import_system_, *spawner_, *editor_context_,
                                               *assets_factory_, *asset_inspector_manager_);
 }
 
 Editor::~Editor() {
     UnloadGameLibrary();
 }
+void Editor::RegisterComponents() const{
+    auto& reg = engine_.GetComponentRegistry();
+    reg.Register<tryengine::Transform>("Transform");
+    reg.Register<tryengine::Tag>("Tag");
+    reg.Register<tryengine::Camera>("Camera");
+    reg.Register<tryengine::MainCameraTag>("MainCameraTag");
+}
+
 
 void Editor::RegisterAssetsFactories() const {
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
+    assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_, engine_.GetComponentRegistry());
 }
 
 void Editor::RegisterAssetsInspector() const {
@@ -132,8 +144,8 @@ void Editor::UnloadGameLibrary() {
 }
 
 void Editor::LoadDefaultScene() const {
-    engine_.GetSceneManager().LoadScene("default_scene");
-    auto& registry = engine_.GetSceneManager().GetActiveScene()->GetRegistry();
+    engine_.GetSceneManager().LoadScene("NewScene.scene");
+    auto& registry = engine_.GetSceneManager().GetActiveScene().GetRegistry();
 
     const auto editor_camera = registry.create();
     registry.emplace<tryengine::Tag>(editor_camera, "EditorCamera");
@@ -142,14 +154,14 @@ void Editor::LoadDefaultScene() const {
     registry.emplace<tryengine::Camera>(editor_camera);
     registry.emplace<EditorCameraTag>(editor_camera);
     registry.emplace<tryengine::Relationship>(editor_camera);
-
-    const auto game_camera = registry.create();
-    registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
-    registry.emplace<tryengine::Transform>(
-        game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    registry.emplace<tryengine::Camera>(game_camera);
-    registry.emplace<tryengine::MainCameraTag>(game_camera);
-    registry.emplace<tryengine::Relationship>(game_camera);
+    //
+    // const auto game_camera = registry.create();
+    // registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
+    // registry.emplace<tryengine::Transform>(
+    //     game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    // registry.emplace<tryengine::Camera>(game_camera);
+    // registry.emplace<tryengine::MainCameraTag>(game_camera);
+    // registry.emplace<tryengine::Relationship>(game_camera);
 }
 
 }  // namespace tryeditor
