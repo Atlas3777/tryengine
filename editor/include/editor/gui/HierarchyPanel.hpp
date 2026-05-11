@@ -14,7 +14,7 @@ class HierarchyPanel : public IPanel {
 
     HierarchyPanel() = default;
 
-    void OnImGuiRender(entt::registry& reg);
+    void OnImGuiRender(entt::registry& reg) override;
 
    private:
     void DrawEntityNode(entt::entity entity, entt::registry& reg);

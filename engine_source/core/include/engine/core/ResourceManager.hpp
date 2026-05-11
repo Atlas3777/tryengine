@@ -2,13 +2,18 @@
 
 #include <entt/core/type_info.hpp>
 
+#include "Addressables.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/ICacheBase.hpp"
 
 namespace tryengine::core {
 class ResourceManager {
 public:
-    ResourceManager() { asset_database_ = std::make_unique<AssetDatabase>(); };
+    ResourceManager() {
+        asset_database_ = std::make_unique<AssetDatabase>();
+        addressables_ = std::make_unique<Addressables>();
+        addressables_->Refresh();
+    };
 
     template <typename T, typename Loader>
     void RegisterLoader(Loader&& loader) {
@@ -34,9 +39,11 @@ public:
     }
 
     AssetDatabase& GetAssetDatabase() const { return *asset_database_; };
+    Addressables& GetAddressables() const { return *addressables_; };
 
 private:
     std::unique_ptr<AssetDatabase> asset_database_;
+    std::unique_ptr<Addressables> addressables_;
     std::unordered_map<entt::id_type, std::unique_ptr<ICacheBase>> caches_;
 };
 }  // namespace tryengine::core

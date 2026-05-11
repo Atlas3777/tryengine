@@ -7,6 +7,8 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 
+#include "editor/AddressablesProvider.hpp"
+#include "editor/gui/AddressablesPanel.hpp"
 #include "editor/gui/FileBrowserPanel.hpp"
 #include "editor/gui/GameViewportPanel.hpp"
 #include "editor/gui/HierarchyPanel.hpp"
@@ -18,12 +20,9 @@
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(tryengine::core::Engine& engine,
-    tryengine::graphics::GraphicsContext& context,
-    ImportSystem& import_system, Spawner& spawner,
-    EditorContext& editor_context,
-    AssetsFactoryManager& factory_manager,
-    AssetInspectorManager& inspector_manager)
+EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context,
+                     ImportSystem& import_system, Spawner& spawner, EditorContext& editor_context,
+                     AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager, AddressablesProvider& addressables_provider)
     : engine_(engine), editor_context_(editor_context) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -39,17 +38,16 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine,
     ImGui::StyleColorsDark();
 
     ImGuizmo::Style& gizmoStyle = ImGuizmo::GetStyle();
-    gizmoStyle.TranslationLineThickness   = 4.0f;
-    gizmoStyle.TranslationLineArrowSize   = 6.0f;
-    gizmoStyle.RotationLineThickness      = 2.0f;
+    gizmoStyle.TranslationLineThickness = 4.0f;
+    gizmoStyle.TranslationLineArrowSize = 6.0f;
+    gizmoStyle.RotationLineThickness = 2.0f;
     gizmoStyle.RotationOuterLineThickness = 3.0f;
-    gizmoStyle.ScaleLineThickness         = 4.0f;
-    gizmoStyle.ScaleLineCircleSize        = 6.0f;
-    gizmoStyle.HatchedAxisLineThickness   = 6.0f;
-    gizmoStyle.CenterCircleSize           = 4.0f;
+    gizmoStyle.ScaleLineThickness = 4.0f;
+    gizmoStyle.ScaleLineCircleSize = 6.0f;
+    gizmoStyle.HatchedAxisLineThickness = 6.0f;
+    gizmoStyle.CenterCircleSize = 4.0f;
 
     ImGuizmo::SetGizmoSizeClipSpace(0.12f);
-
 
     // Можно даже переопределить цвета, чтобы сделать их ярче (Опционально)
     // style.Colors[ImGuizmo::DIRECTION_X] = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); // Ярко-красный
@@ -68,9 +66,10 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine,
 
     panels_.emplace_back(std::make_unique<SceneViewportPanel>(context, spawner));
     panels_.emplace_back(std::make_unique<GameViewportPanel>(context));
-    panels_.emplace_back(std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager));
+    panels_.emplace_back(std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
     panels_.emplace_back(std::make_unique<HierarchyPanel>());
     panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager));
+    panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
 }
 
 EditorGUI::~EditorGUI() {
@@ -94,7 +93,7 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
 
     // 1. Сначала меню
     DrawMainMenu();
-    // 2. Затем панель кнопок
+    // 2. Затем панель кнопокz
     DrawPlayToolbar(is_playing);
     // 3. И только потом докспейс
     DrawDockSpace();
@@ -134,7 +133,7 @@ void EditorGUI::RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GP
 void EditorGUI::DrawDockSpace() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    float toolbar_height = 30.0f; // Должно совпадать с высотой из DrawPlayToolbar
+    float toolbar_height = 30.0f;  // Должно совпадать с высотой из DrawPlayToolbar
 
     // Сдвигаем начало DockSpace на высоту тулбара и уменьшаем его общий размер
     ImVec2 dock_pos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + toolbar_height);
@@ -172,9 +171,15 @@ void EditorGUI::DrawMainMenu() {
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Edit")) { ImGui::EndMenu(); }
-        if (ImGui::BeginMenu("View")) { ImGui::EndMenu(); }
-        if (ImGui::BeginMenu("Asset")){ ImGui::EndMenu(); }
+        if (ImGui::BeginMenu("Edit")) {
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("View")) {
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Asset")) {
+            ImGui::EndMenu();
+        }
         ImGui::EndMainMenuBar();
     }
     ImGui::PopStyleColor();
@@ -197,13 +202,14 @@ void EditorGUI::DrawPlayToolbar(bool& is_playing) {
                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 8.0f)); // Отступы для центрирования кнопок по вертикали
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(0.0f, 8.0f));  // Отступы для центрирования кнопок по вертикали
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 
     ImGui::Begin("PlayToolbar", nullptr, toolbar_flags);
 
     // Центрируем кнопки по горизонтали
-    float button_area_width = 120.0f; // Примерная ширина двух кнопок с отступом
+    float button_area_width = 120.0f;  // Примерная ширина двух кнопок с отступом
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - button_area_width) * 0.5f);
 
     if (ImGui::Button(is_playing ? "Stop" : "Play", ImVec2(50, 0))) {

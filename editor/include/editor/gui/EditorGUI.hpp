@@ -8,6 +8,7 @@
 #include "engine/graphics/GraphicsContext.hpp"
 
 namespace tryeditor {
+class AddressablesProvider;
 class AssetInspectorManager;
 class AssetsFactoryManager;
 class EditorGUI {
@@ -17,7 +18,7 @@ public:
         ImportSystem& import_system, Spawner& spawner,
         EditorContext& editor_context,
         AssetsFactoryManager& factory_manager,
-        AssetInspectorManager& inspector_manager);
+        AssetInspectorManager& inspector_manager, AddressablesProvider& addressables_provider);
     ~EditorGUI();
     void UpdatePanels(const tryengine::core::Engine& engine) const;
     void RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing);

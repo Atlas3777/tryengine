@@ -10,19 +10,19 @@ const TimeState& Clock::Update() {
     const auto currentTime = std::chrono::steady_clock::now();
 
     const std::chrono::duration<double> elapsed = currentTime - lastTime;
-    state.deltaTime = elapsed.count();
+    state.delta_time = elapsed.count();
     lastTime = currentTime;
 
-    state.fpsTimer += state.deltaTime;
-    state.frameCount++;
+    state.fps_timer += state.delta_time;
+    state.frame_count++;
 
-    if (state.fpsTimer >= 1.0) {
-        state.currentFPS = state.frameCount;
-        state.fpsTimer = 0.0;
-        state.frameCount = 0;
+    if (state.fps_timer >= 1.0) {
+        state.current_fps = state.frame_count;
+        state.fps_timer = 0.0;
+        state.frame_count = 0;
     }
 
     return state;
 }
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

@@ -4,10 +4,10 @@
 namespace tryengine::core {
 
 struct TimeState {
-    double deltaTime = 0.0;
-    double fpsTimer = 0.0;
-    int frameCount = 0;
-    int currentFPS = 0;
+    double delta_time = 0.0;
+    double fps_timer = 0.0;
+    int frame_count = 0;
+    int current_fps = 0;
 };
 
 class Clock {
@@ -17,14 +17,14 @@ public:
     // Обновляет deltaTime и FPS. Возвращает текущий TimeState.
     const TimeState& Update();
 
-    double GetDeltaTime() const { return state.deltaTime; }
-    int GetFPS() const { return state.currentFPS; }
+    double GetDeltaTime() const { return state.delta_time; }
+    int GetFPS() const { return state.current_fps; }
 
 private:
     TimeState state;
-    
+
     // Используем steady_clock для защиты от скачков времени
     std::chrono::steady_clock::time_point lastTime;
 };
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

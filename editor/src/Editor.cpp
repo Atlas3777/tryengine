@@ -4,8 +4,11 @@
 #include <filesystem>
 #include <iostream>
 
+#include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/Spawner.hpp"
+#include "editor/asset_factories/AddressablesGroupFactory.hpp"
+#include "editor/asset_factories/AddressablesManifestFactory.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/asset_factories/SceneAssetFactory.hpp"
 #include "editor/asset_factories/ShaderAssetFactory.hpp"
@@ -15,6 +18,8 @@
 #include "editor/import/GlslShaderImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/TextureImporter.hpp"
+#include "engine/core/Addressables.hpp"
+#include "engine/core/ComponentSerializers.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/GameAPI.hpp"
 #include "engine/core/ResourceManager.hpp"
@@ -23,30 +28,32 @@
 #include "engine/graphics/MeshLoader.hpp"
 #include "engine/graphics/ShaderAssetLoader.hpp"
 #include "engine/graphics/Types.hpp"
+#include "engine/resources/Content.hpp"
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
-#include "engine/core/ComponentSerializers.hpp"
 
 namespace tryeditor {
 
-Editor::Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
-               tryengine::graphics::RenderSystem& render_system)
-    : graphics_context_(graphics_context), engine_(eng) {
+Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& graphics_context)
+    : graphics_context_(graphics_context), engine_(engine) {
     editor_context_ = std::make_unique<EditorContext>();
     asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
 
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
     import_system_ = std::make_unique<ImportSystem>();
-    spawner_ = std::make_unique<Spawner>(graphics_context, eng.GetResourceManager(), render_system, *import_system_);
-    editor_gui_ = std::make_unique<EditorGUI>(eng, graphics_context, *import_system_, *spawner_, *editor_context_,
-                                              *assets_factory_, *asset_inspector_manager_);
+    addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.GetResourceManager().GetAddressables());
+
+    spawner_ = std::make_unique<Spawner>(graphics_context_, engine.GetResourceManager(), *import_system_);
+    editor_gui_ = std::make_unique<EditorGUI>(engine, graphics_context_, *import_system_, *spawner_, *editor_context_,
+                                              *assets_factory_, *asset_inspector_manager_, *addressables_provider_);
 }
 
 Editor::~Editor() {
     UnloadGameLibrary();
 }
-void Editor::RegisterComponents() const{
+
+void Editor::RegisterComponents() const {
     auto& reg = engine_.GetComponentRegistry();
     reg.Register<tryengine::Transform>("Transform");
     reg.Register<tryengine::Tag>("Tag");
@@ -54,11 +61,22 @@ void Editor::RegisterComponents() const{
     reg.Register<tryengine::MainCameraTag>("MainCameraTag");
 }
 
+// void Editor::LoadAddressables() const {
+//     auto& res = engine_.GetResourceManager();
+//     auto addresables_manifest =
+//     res.Get<tryengine::core::AddressablesManifestAsset>(tryengine::resources::assets::ADDRESSABLES); for (const auto&
+//     asset_group_id : addresables_manifest->asset_group_guids) {
+//         auto asset_group = res.Get<tryengine::core::AddressablesGroupAsset>(asset_group_id);
+//         engine_.GetAddresables().AddAssetGroup(asset_group);
+//     }
+// }
 
 void Editor::RegisterAssetsFactories() const {
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_, engine_.GetComponentRegistry());
+    // assets_factory_->RegisterFactory<AddressablesGroupFactory>(*import_system_);
+    // assets_factory_->RegisterFactory<AddressablesManifestFactory>(*import_system_);
 }
 
 void Editor::RegisterAssetsInspector() const {
@@ -69,7 +87,8 @@ void Editor::RegisterAssetsInspector() const {
 
 void Editor::RegisterAssetsImporters() const {
     import_system_->RegisterImporter<GlslShaderImporter, GlslShaderImportSettings>({".vert", ".frag"});
-    import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"}, *assets_factory_, *import_system_);
+    import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"}, *assets_factory_,
+                                                                       *import_system_);
     // import_system_->RegisterImporter<TextureImporter, TextureImportSettings>({".png", ".jpg"});
 }
 
@@ -86,18 +105,18 @@ void Editor::RegisterResourceLoaders() const {
     res_manager_.RegisterLoader<tryengine::graphics::Material>(tryengine::graphics::MaterialLoader(res_manager_));
 }
 
-bool Editor::LoadGameLibrary(const std::string& originalPath) {
+bool Editor::LoadGameLibrary(const std::string& original_path) {
     // 1. Сначала выгружаем старую библиотеку (с вызовом OnShutdown)
     UnloadGameLibrary();
 
     namespace fs = std::filesystem;
-    const std::string tempPath = originalPath + "_temp.so";
+    const std::string tempPath = original_path + "_temp.so";
 
     try {
-        if (fs::exists(originalPath)) {
-            fs::copy_file(originalPath, tempPath, fs::copy_options::overwrite_existing);
+        if (fs::exists(original_path)) {
+            fs::copy_file(original_path, tempPath, fs::copy_options::overwrite_existing);
         } else {
-            std::cerr << "[Editor] Library not found: " << originalPath << std::endl;
+            std::cerr << "[Editor] Library not found: " << original_path << std::endl;
             return false;
         }
     } catch (const fs::filesystem_error& e) {
@@ -113,12 +132,12 @@ bool Editor::LoadGameLibrary(const std::string& originalPath) {
     }
 
     // 3. Извлекаем символы через типизированные указатели из GameAPI.hpp
-    game_lib.onInit     = (tryengine::core::Game_OnInitFn)dlsym(game_lib.handle, "Game_OnInit");
-    game_lib.onUpdate   = (tryengine::core::Game_OnUpdateFn)dlsym(game_lib.handle, "Game_OnUpdate");
-    game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn)dlsym(game_lib.handle, "Game_OnShutdown");
+    game_lib.onInit = (tryengine::core::Game_OnInitFn) dlsym(game_lib.handle, "Game_OnInit");
+    game_lib.onUpdate = (tryengine::core::Game_OnUpdateFn) dlsym(game_lib.handle, "Game_OnUpdate");
+    game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn) dlsym(game_lib.handle, "Game_OnShutdown");
 
     if (!game_lib.IsValid()) {
-        std::cerr << "[Editor] Failed to find GameAPI functions in " << originalPath << std::endl;
+        std::cerr << "[Editor] Failed to find GameAPI functions in " << original_path << std::endl;
         UnloadGameLibrary();
         return false;
     }

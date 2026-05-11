@@ -1,12 +1,11 @@
 #pragma once
 #include <filesystem>
-#include <fstream>
-#include <random>
 
 #include "editor/asset_factories/IAssetFactory.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/MetaSerializer.hpp"
 #include "engine/resources/MaterialAssetData.hpp"
+#include "engine/core/RandomUtil.hpp"
 
 namespace tryeditor {
 
@@ -38,12 +37,9 @@ public:
 private:
     AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
         std::filesystem::path meta_path = asset_path.string() + ".meta";
-        std::random_device rd;
-        std::mt19937_64 id(rd());
-        uint64_t asset_id = id();
 
         AssetMetaHeader header;
-        header.guid = asset_id;
+        header.guid = tryengine::core::RandomUtil::GenerateInt64();
         header.importer_type = "native";
         header.asset_type = "material";
 

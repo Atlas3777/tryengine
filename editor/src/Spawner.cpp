@@ -1,10 +1,12 @@
 #include "editor/Spawner.hpp"
 
+#include <entt/entity/registry.hpp>
+
 #include "editor/meta/ModelAssetMap.hpp"
 
 namespace tryeditor {
 
-void Spawner::Spawn(entt::registry& reg, uint64_t asset_id) const {
+void Spawner::Spawn(entt::registry& reg, const uint64_t asset_id) const {
     const auto asset_map = import_system_.LoadFromCache<ModelAssetMap>(asset_id, "asset_map");
 
     std::vector<entt::entity> entities(asset_map.nodes.size());

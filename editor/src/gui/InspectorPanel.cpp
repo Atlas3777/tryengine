@@ -6,27 +6,149 @@
 #include <fstream>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/EditorGUIUtils.hpp"
 #include "editor/meta/MetaSerializer.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
+#include "misc/cpp/imgui_stdlib.h"
 
 namespace tryeditor {
 
 void InspectorPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Inspector");
 
-    auto selected_entity = reg.view<SelectedTag>().front();
+    float footerHeight = 30.0f;
+    // Определяем, нужно ли нам показывать подвал (только для ассетов)
+    bool is_asset_selected =
+        (reg.view<SelectedTag>().front() == entt::null && !editor_context_.selected_asset_path.empty());
 
+    // Если подвал не нужен, убираем отступ (0.0f)
+    float currentFooterHeight = is_asset_selected ? footerHeight : 0.0f;
+
+    ImGui::BeginChild("InspectorContent", ImVec2(0, -currentFooterHeight));
+
+    auto selected_entity = reg.view<SelectedTag>().front();
     if (selected_entity != entt::null) {
-        DrawEntityInspector(reg);
+        DrawEntityInspector(reg);  // Убедитесь, что внутри НЕТ ImGui::Begin/End
     } else if (!editor_context_.selected_asset_path.empty()) {
         DrawAssetInspector(editor_context_.selected_asset_path);
     } else {
         ImGui::TextDisabled("Select an entity or asset to inspect.");
     }
+
+    ImGui::EndChild();
+
+    // Отрисовка подвала только для ассетов
+    if (is_asset_selected) {
+        DrawAssetFooter();
+    }
+
     ImGui::End();
+}
+
+void InspectorPanel::DrawAssetFooter() {
+    if (editor_context_.selected_asset_path.empty())
+        return;
+
+    // 1. Получаем GUID ассета
+    std::filesystem::path meta_path = editor_context_.selected_asset_path.string() + ".meta";
+    auto header = MetaSerializer::ReadHeader(meta_path);
+    if (!header)
+        return;
+
+    uint64_t asset_guid = header->guid;
+
+    // 2. Ищем ассет в группах
+    auto& groups = addressables_provider_.GetAddressables().GetGroups();
+    tryengine::core::AddressablesGroupAsset* found_group = nullptr;
+    std::string current_address = "";
+
+    for (auto& group : groups) {
+        for (auto& [addr, guid] : group.map) {
+            if (guid == asset_guid) {
+                found_group = &group;
+                current_address = addr;
+                break;
+            }
+        }
+        if (found_group)
+            break;
+    }
+
+    ImGui::Separator();
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("Addressables:");
+    ImGui::SameLine();
+
+    // Автоматический статус
+    if (found_group) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Registered]");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Edit")) {
+            show_settings_window_ = !show_settings_window_;
+        }
+    } else {
+        ImGui::TextDisabled("[Not Registered]");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Add...")) {
+            show_settings_window_ = true;
+        }
+    }
+
+    // Если панель развернута (по нажатию Edit или Add)
+    if (show_settings_window_) {
+        ImGui::BeginChild("AddressablesSettings", ImVec2(0, 150), true);
+
+        if (found_group) {
+            ImGui::Text("Group: %s", found_group->name.c_str());
+            ImGui::Text("Address: %s", current_address.c_str());
+            if (ImGui::Button("Remove", ImVec2(-1, 0))) {
+                found_group->map.erase(current_address);
+                addressables_provider_.SaveGroup(*found_group);
+                addressables_provider_.GetAddressables().Refresh();
+            }
+        } else {
+            // Логика выбора группы для нового ассета
+            static char addr_buffer[128] = "";
+            // Инициализируем буфер именем файла, если он пуст
+            if (addr_buffer[0] == '\0') {
+                strncpy(addr_buffer, editor_context_.selected_asset_path.stem().string().c_str(), 127);
+            }
+
+            ImGui::InputText("Address", addr_buffer, sizeof(addr_buffer));
+
+            if (groups.empty()) {
+                ImGui::TextDisabled("Create a group in Addressables Panel first.");
+            } else {
+                static int sel_idx = 0;
+                if (sel_idx >= groups.size())
+                    sel_idx = 0;
+
+                if (ImGui::BeginCombo("Target Group", groups[sel_idx].name.c_str())) {
+                    for (int i = 0; i < groups.size(); ++i) {
+                        if (ImGui::Selectable(groups[i].name.c_str(), sel_idx == i))
+                            sel_idx = i;
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (ImGui::Button("Confirm Registration", ImVec2(-1, 0))) {
+                    groups[sel_idx].map[addr_buffer] = asset_guid;
+                    addressables_provider_.SaveGroup(groups[sel_idx]);
+                    addressables_provider_.GetAddressables().Refresh();
+                    addr_buffer[0] = '\0';          // сброс
+                    show_settings_window_ = false;  // закрываем после успеха
+                }
+            }
+        }
+
+        if (ImGui::Button("Close", ImVec2(-1, 0))) {
+            show_settings_window_ = false;
+        }
+        ImGui::EndChild();
+    }
 }
 
 void InspectorPanel::DrawAssetInspector(const std::filesystem::path& path) const {
@@ -205,7 +327,6 @@ void InspectorPanel::DrawMetaComponent(entt::registry& reg, entt::entity entity,
         // Получаем указатель на компонент в памяти реестра
         void* dataPtr = reg.storage(id)->value(entity);
 
-        // type.from_void создает meta_any, который выступает алиасом (ссылкой) на dataPtr
         entt::meta_any instance = type.from_void(dataPtr);
 
         if (instance) {

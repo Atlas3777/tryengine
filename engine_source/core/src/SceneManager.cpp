@@ -29,23 +29,14 @@ bool SceneManager::LoadScene(const std::string& scene_name) {
     auto current_path = std::filesystem::current_path();
     current_scene_path_ = current_path / "game" / "assets" / scene_name;
 
-    // 1. Проверяем, существует ли файл физически
     if (!std::filesystem::exists(current_scene_path_)) {
         std::cerr << "Error: File does not exist at path: " << current_scene_path_ << std::endl;
-        // Выведем текущую рабочую директорию для ясности
         std::cerr << "Current working directory was: " << current_path << std::endl;
-        return false;
-    }
-
-    // 2. Проверяем, не является ли путь директорией
-    if (std::filesystem::is_directory(current_scene_path_)) {
-        std::cerr << "Error: Path is a directory, not a file: " << current_scene_path_ << std::endl;
         return false;
     }
 
     std::ifstream is(current_scene_path_);
     if (!is.is_open()) {
-        // 3. Если файл есть, но не открывается (например, занят другим процессом или нет прав)
         std::cerr << "Error: Failed to open file stream: " << current_scene_path_ << std::endl;
         return false;
     }

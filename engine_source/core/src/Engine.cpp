@@ -4,17 +4,17 @@
 #include "engine/core/ComponentRegistry.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
+#include "engine/core/Addressables.hpp"
 
 namespace tryengine::core {
 Engine::Engine() {
-    scene_manager_ = std::make_unique<SceneManager>(*this);
     clock = std::make_unique<Clock>();
+    scene_manager_ = std::make_unique<SceneManager>(*this);
     resource_manager_ = std::make_unique<ResourceManager>();
     component_registry_ = std::make_unique<ComponentRegistry>();
 }
+
 Engine::~Engine() = default;
-
-
 
 void Engine::UpdateTime() const {
     clock->Update();

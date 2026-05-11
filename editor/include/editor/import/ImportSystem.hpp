@@ -44,6 +44,7 @@ public:
         {
             std::ofstream os(context.asset_path);
             cereal::JSONOutputArchive archive(os);
+            std::cout << entt::type_name<AssetDataType>::value() << std::endl;
             archive(cereal::make_nvp("data", asset));
         }
 
@@ -102,6 +103,31 @@ public:
         return data;
     }
 
+    template <typename AssetData>
+    AssetData LoadProjectData(std::string_view filename) {
+        auto path = project_data_dir;
+        path /= filename;
+
+        AssetData data;
+        {
+            std::ifstream is(path);
+            cereal::JSONInputArchive archive(is);
+            archive( data);
+        }
+        return data;
+    }
+
+    template <typename AssetData>
+    void SaveProjectData(AssetData data, std::string_view filename) {
+        auto path = project_data_dir;
+        path /= filename;
+
+        {
+            std::ofstream os(path);
+            cereal::JSONOutputArchive archive(os);
+            archive(data);
+        }
+    }
 
     void Refresh();
     void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
@@ -126,6 +152,7 @@ private:
     bool ValidateArtifacts(uint64_t guid, const std::filesystem::path& artifacts_dir) const;
 
     const std::filesystem::path root_path_ = std::filesystem::current_path();
+    const std::filesystem::path project_data_dir = root_path_ / "game" / "project_data";
 
     // Структура папок игры
     const std::filesystem::path game_assets_dir_ = root_path_ / "game" / "assets";

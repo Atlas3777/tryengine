@@ -23,7 +23,6 @@ public:
     [[nodiscard]] ResourceManager& GetResourceManager() const { return *resource_manager_; }
     [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return *component_registry_; }
 
-
 private:
     std::unique_ptr<ResourceManager> resource_manager_;
     std::unique_ptr<SceneManager> scene_manager_;

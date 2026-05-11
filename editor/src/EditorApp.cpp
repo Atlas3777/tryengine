@@ -2,6 +2,7 @@
 
 #include <imgui_impl_sdl3.h>
 
+#include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
 #include "editor/Reflection.hpp"
@@ -13,9 +14,14 @@
 #include "engine/core/SceneManager.hpp"
 
 namespace tryeditor {
+
 void EditorApp::Init() {
+    AppBootstrap::CheckBaseProjectData();
+
     engine_ = std::make_unique<tryengine::core::Engine>();
     engine_->SetInputSource(&(this->input_state_));
+
+
 
     graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
@@ -25,7 +31,7 @@ void EditorApp::Init() {
 
     render_system_ = std::make_unique<tryengine::graphics::RenderSystem>(graphics_context_->GetDevice());
 
-    editor_ = std::make_unique<Editor>(*engine_, *graphics_context_, *render_system_);
+    editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
 
     editor_->RegisterComponents();
     editor_->RegisterAssetsImporters();
@@ -36,6 +42,7 @@ void EditorApp::Init() {
     editor_->GetImportSystem().Refresh();
 
     engine_->GetResourceManager().GetAssetDatabase().Refresh();
+    // editor_->LoadAddressables();
 
     editor_->LoadGameLibrary("cmake-build-debug/game/libgame.so");
     editor_->LoadDefaultScene();
@@ -57,7 +64,7 @@ void EditorApp::Run() {
         tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene().GetRegistry());
 
         if (editor_->play_mode && editor_->game_lib.IsValid()) {
-            editor_->game_lib.onUpdate(*engine_, static_cast<float>(time_state.deltaTime));
+            editor_->game_lib.onUpdate(*engine_, static_cast<float>(time_state.delta_time));
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);

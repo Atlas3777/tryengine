@@ -4,16 +4,15 @@
 
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
-#include "engine/core/GameAPI.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "editor/import/ImportSystem.hpp"
+#include "engine/core/GameAPI.hpp"
 
 namespace tryeditor {
 class Spawner;
 class Editor {
 public:
-    Editor(tryengine::core::Engine& eng, tryengine::graphics::GraphicsContext& graphics_context,
-           tryengine::graphics::RenderSystem& render_system);
+    Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& graphics_context);
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
     Editor(Editor&&) noexcept = delete;
@@ -21,13 +20,12 @@ public:
 
     ~Editor();
 
-    bool LoadGameLibrary(const std::string& originalPath);
+    bool LoadGameLibrary(const std::string& original_path);
     void UnloadGameLibrary();
 
     void SaveScene();
     void SaveSceneForPlayMode();
     void LoadDefaultScene() const;
-
 
     void RegisterComponents() const;
     void RegisterResourceLoaders() const;
@@ -49,6 +47,7 @@ private:
     std::unique_ptr<EditorContext> editor_context_;
     std::unique_ptr<EditorGUI> editor_gui_;
     std::unique_ptr<Spawner> spawner_;
+    std::unique_ptr<AddressablesProvider> addressables_provider_;
 
     tryengine::graphics::GraphicsContext& graphics_context_;
     tryengine::core::Engine& engine_;
