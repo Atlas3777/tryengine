@@ -1,22 +1,22 @@
 #pragma once
 
-#include <imgui.h>
-
 #include <entt/entity/entity.hpp>
 #include <vector>
 
 #include "IPanel.hpp"
 
 namespace tryeditor {
+class SelectionManager;
 class HierarchyPanel : public IPanel {
    public:
     const char* GetName() const override { return "Hierarchy"; }
 
-    HierarchyPanel() = default;
+    HierarchyPanel(SelectionManager& selection_manager): selection_manager_(selection_manager){};
 
     void OnImGuiRender(entt::registry& reg) override;
 
    private:
+    SelectionManager& selection_manager_;
     void DrawEntityNode(entt::entity entity, entt::registry& reg);
     void HandleShortcuts(entt::registry& reg);
 

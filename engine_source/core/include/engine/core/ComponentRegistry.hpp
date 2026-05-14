@@ -56,10 +56,6 @@ public:
         reg.clear();
         entt::snapshot_loader loader{reg};
 
-        // // Входим в корневой узел "data"
-        // ar.setNextName("data");
-        // ar.startNode();
-
         ar.setNextName("entities");
         ar.startNode();
         loader.get<entt::entity>(ar);

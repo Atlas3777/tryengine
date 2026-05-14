@@ -1,6 +1,6 @@
 #pragma once
 
-#include "editor/EditorContext.hpp"
+#include "editor/SelectionManager.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
@@ -8,6 +8,8 @@
 #include "engine/graphics/GraphicsContext.hpp"
 
 namespace tryeditor {
+class ControllerManager;
+class SceneManagerController;
 class AddressablesProvider;
 class AssetInspectorManager;
 class AssetsFactoryManager;
@@ -16,9 +18,11 @@ public:
     EditorGUI(tryengine::core::Engine& engine,
         tryengine::graphics::GraphicsContext& context,
         ImportSystem& import_system, Spawner& spawner,
-        EditorContext& editor_context,
+        SelectionManager& editor_context,
         AssetsFactoryManager& factory_manager,
-        AssetInspectorManager& inspector_manager, AddressablesProvider& addressables_provider);
+        AssetInspectorManager& inspector_manager,
+        AddressablesProvider& addressables_provider,
+        ControllerManager& controller_manager);
     ~EditorGUI();
     void UpdatePanels(const tryengine::core::Engine& engine) const;
     void RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing);
@@ -32,7 +36,8 @@ private:
     void DrawMainMenu();
 
     tryengine::core::Engine& engine_;
-    EditorContext& editor_context_;
+    SelectionManager& selection_manager_;
+    ControllerManager& controller_manager_;
 
     std::vector<std::unique_ptr<IPanel>> panels_;
 };

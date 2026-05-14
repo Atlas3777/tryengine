@@ -67,8 +67,9 @@ public:
     }
 
     void OnRender(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& rs, entt::registry& reg) override {
-        const auto mainCamera = reg.view<tryengine::Camera, EditorCameraTag>().front();
-        rs.RenderScene(reg, mainCamera, target_.get(), cmd);
+        const auto editor_camera = reg.view<tryengine::Camera, EditorCameraTag>().front();
+        if (editor_camera == entt::null) return;
+        rs.RenderScene(reg, editor_camera, target_.get(), cmd);
     }
 
 private:

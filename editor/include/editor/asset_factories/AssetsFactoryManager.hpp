@@ -48,6 +48,16 @@ public:
         return 0;  // Или бросить исключение
     }
 
+    template <typename TFactory>
+    [[nodiscard]] TFactory& Get() const {
+        static_assert(std::is_base_of_v<IAssetFactory, TFactory>, "T must derive from IAssetFactory");
+
+        auto it = type_map_.find(std::type_index(typeid(TFactory)));
+        assert(it != type_map_.end() && "Attempted to get a non-registered factory!");
+
+        return *static_cast<TFactory*>(it->second.get());
+    }
+
 private:
     std::unordered_map<std::type_index, std::unique_ptr<IAssetFactory>> type_map_;
     std::vector<IAssetFactory*> gui_factories_;

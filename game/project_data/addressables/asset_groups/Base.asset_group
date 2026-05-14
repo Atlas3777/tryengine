@@ -1,15 +1,6 @@
 {
     "value0": {
         "group_name": "Base",
-        "asset_map": [
-            {
-                "key": "scene1",
-                "value": 8264093875203751969
-            },
-            {
-                "key": "lance",
-                "value": 18438020634109618487
-            }
-        ]
+        "asset_map": []
     }
 }

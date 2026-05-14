@@ -12,7 +12,13 @@ struct InputState;
 class Engine {
 public:
     Engine();
+    Engine(const Engine&) = delete;
+    Engine(Engine&&) = delete;
+    Engine& operator=(const Engine&) = delete;
+    Engine& operator=(Engine&&) = delete;
+
     ~Engine();
+
     void UpdateTime() const;
 
     void SetInputSource(InputState* source) { input = source; }

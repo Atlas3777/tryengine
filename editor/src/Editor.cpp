@@ -1,23 +1,28 @@
-#include "editor/Editor.hpp"
-
 #include <dlfcn.h>
+#include <editor/Editor.hpp>
 #include <filesystem>
 #include <iostream>
 
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
+#include "editor/ControllerManager.hpp"
+#include "editor/ReflectionSystem.hpp"
+#include "editor/SceneManagerController.hpp"
+#include "editor/SelectionManager.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/asset_factories/AddressablesGroupFactory.hpp"
 #include "editor/asset_factories/AddressablesManifestFactory.hpp"
+#include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/asset_factories/SceneAssetFactory.hpp"
 #include "editor/asset_factories/ShaderAssetFactory.hpp"
+#include "editor/asset_inspector/AssetInspectorManager.hpp"
 #include "editor/asset_inspector/MaterialAssetInspector.hpp"
 #include "editor/asset_inspector/ShaderAssetInspector.hpp"
 #include "editor/asset_inspector/TextureAssetInspector.hpp"
+#include "editor/gui/EditorGUI.hpp"
 #include "editor/import/GlslShaderImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
-#include "editor/import/TextureImporter.hpp"
 #include "engine/core/Addressables.hpp"
 #include "engine/core/ComponentSerializers.hpp"
 #include "engine/core/Components.hpp"
@@ -28,7 +33,6 @@
 #include "engine/graphics/MeshLoader.hpp"
 #include "engine/graphics/ShaderAssetLoader.hpp"
 #include "engine/graphics/Types.hpp"
-#include "engine/resources/Content.hpp"
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
@@ -37,7 +41,7 @@ namespace tryeditor {
 
 Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& graphics_context)
     : graphics_context_(graphics_context), engine_(engine) {
-    editor_context_ = std::make_unique<EditorContext>();
+    selection_manager_ = std::make_unique<SelectionManager>();
     asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
 
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
@@ -45,8 +49,32 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsCon
     addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.GetResourceManager().GetAddressables());
 
     spawner_ = std::make_unique<Spawner>(graphics_context_, engine.GetResourceManager(), *import_system_);
-    editor_gui_ = std::make_unique<EditorGUI>(engine, graphics_context_, *import_system_, *spawner_, *editor_context_,
-                                              *assets_factory_, *asset_inspector_manager_, *addressables_provider_);
+    reflection_system_ = std::make_unique<ReflectionSystem>();
+    gui_controller_manager_ = std::make_unique<ControllerManager>();
+
+    editor_gui_ = std::make_unique<EditorGUI>(engine_, graphics_context_, *import_system_, *spawner_,
+                                              *selection_manager_, *assets_factory_, *asset_inspector_manager_,
+                                              *addressables_provider_, *gui_controller_manager_);
+}
+
+void Editor::Init() {
+    RegisterComponents();
+    RegisterAssetsImporters();
+    RegisterResourceLoaders();
+    RegisterAssetsFactories();
+    RegisterAssetsInspector();
+
+    gui_controller_manager_->RegisterController<SceneManagerController>(engine_.GetSceneManager(), *import_system_,
+                                                                       assets_factory_->Get<SceneAssetFactory>(), *addressables_provider_);
+
+    GetImportSystem().Refresh();
+
+    engine_.GetResourceManager().GetAssetDatabase().Refresh();
+
+    LoadGameLibrary("build/game/libgame.so");
+    LoadDefaultScene();
+
+    reflection_system_->RegisterBase();
 }
 
 Editor::~Editor() {
@@ -59,17 +87,9 @@ void Editor::RegisterComponents() const {
     reg.Register<tryengine::Tag>("Tag");
     reg.Register<tryengine::Camera>("Camera");
     reg.Register<tryengine::MainCameraTag>("MainCameraTag");
+    reg.Register<tryengine::Relationship>("Relationship");
+    reg.Register<EditorCameraTag>("EditorCameraTag");
 }
-
-// void Editor::LoadAddressables() const {
-//     auto& res = engine_.GetResourceManager();
-//     auto addresables_manifest =
-//     res.Get<tryengine::core::AddressablesManifestAsset>(tryengine::resources::assets::ADDRESSABLES); for (const auto&
-//     asset_group_id : addresables_manifest->asset_group_guids) {
-//         auto asset_group = res.Get<tryengine::core::AddressablesGroupAsset>(asset_group_id);
-//         engine_.GetAddresables().AddAssetGroup(asset_group);
-//     }
-// }
 
 void Editor::RegisterAssetsFactories() const {
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
@@ -106,7 +126,6 @@ void Editor::RegisterResourceLoaders() const {
 }
 
 bool Editor::LoadGameLibrary(const std::string& original_path) {
-    // 1. Сначала выгружаем старую библиотеку (с вызовом OnShutdown)
     UnloadGameLibrary();
 
     namespace fs = std::filesystem;
@@ -124,14 +143,12 @@ bool Editor::LoadGameLibrary(const std::string& original_path) {
         return false;
     }
 
-    // 2. Загружаем библиотеку
     game_lib.handle = dlopen(tempPath.c_str(), RTLD_NOW);
     if (!game_lib.handle) {
         std::cerr << "[Editor] dlopen error: " << dlerror() << std::endl;
         return false;
     }
 
-    // 3. Извлекаем символы через типизированные указатели из GameAPI.hpp
     game_lib.onInit = (tryengine::core::Game_OnInitFn) dlsym(game_lib.handle, "Game_OnInit");
     game_lib.onUpdate = (tryengine::core::Game_OnUpdateFn) dlsym(game_lib.handle, "Game_OnUpdate");
     game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn) dlsym(game_lib.handle, "Game_OnShutdown");
@@ -142,7 +159,6 @@ bool Editor::LoadGameLibrary(const std::string& original_path) {
         return false;
     }
 
-    // 4. Автоматическая инициализация игры после загрузки
     std::cout << "[Editor] Game library loaded. Initializing..." << std::endl;
     game_lib.onInit(engine_);
 
@@ -151,7 +167,6 @@ bool Editor::LoadGameLibrary(const std::string& original_path) {
 
 void Editor::UnloadGameLibrary() {
     if (game_lib.handle) {
-        // Вызываем завершение работы игры ПЕРЕД закрытием дескриптора
         if (game_lib.onShutdown) {
             game_lib.onShutdown(engine_);
         }
@@ -163,8 +178,18 @@ void Editor::UnloadGameLibrary() {
 }
 
 void Editor::LoadDefaultScene() const {
-    engine_.GetSceneManager().LoadScene("NewScene.scene");
-    auto& registry = engine_.GetSceneManager().GetActiveScene().GetRegistry();
+    // engine_.GetSceneManager().LoadScene("scene1");
+    auto scene = std::make_unique<tryengine::core::Scene>();
+
+    auto& registry = scene->GetRegistry();
+
+    const auto game_camera = registry.create();
+    registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
+    registry.emplace<tryengine::Transform>(
+        game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Camera>(game_camera);
+    registry.emplace<tryengine::MainCameraTag>(game_camera);
+    registry.emplace<tryengine::Relationship>(game_camera);
 
     const auto editor_camera = registry.create();
     registry.emplace<tryengine::Tag>(editor_camera, "EditorCamera");
@@ -173,14 +198,8 @@ void Editor::LoadDefaultScene() const {
     registry.emplace<tryengine::Camera>(editor_camera);
     registry.emplace<EditorCameraTag>(editor_camera);
     registry.emplace<tryengine::Relationship>(editor_camera);
-    //
-    // const auto game_camera = registry.create();
-    // registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
-    // registry.emplace<tryengine::Transform>(
-    //     game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    // registry.emplace<tryengine::Camera>(game_camera);
-    // registry.emplace<tryengine::MainCameraTag>(game_camera);
-    // registry.emplace<tryengine::Relationship>(game_camera);
+
+    engine_.GetSceneManager().SetActiveScene(std::move(scene));
 }
 
 }  // namespace tryeditor

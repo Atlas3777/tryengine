@@ -1,4 +1,6 @@
 #pragma once
+#include <cstring>
+
 #include "engine/graphics/Types.hpp"
 
 namespace tryengine::graphics {
@@ -53,8 +55,6 @@ struct ShaderAsset {
     }
 };
 
-// --- Runtime структуры ---
-
 struct ShaderParamInfo {
     std::string name;
     ShaderParamType type;
@@ -96,8 +96,6 @@ struct Shader {
     ShaderLayout layout;
     std::vector<uint8_t> default_uniform_data;
 };
-
-// --- Material ---
 
 struct Material {
     Material() = default;

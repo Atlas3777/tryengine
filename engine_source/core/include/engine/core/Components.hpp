@@ -18,6 +18,7 @@ struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
     uint64_t asset_id = 0;
 };
+
 struct MeshRenderer {
     entt::resource<graphics::Material> material;
     uint64_t asset_id = 0;
@@ -29,6 +30,15 @@ struct Relationship {
     entt::entity prev{entt::null};
     entt::entity next{entt::null};
     entt::entity parent{entt::null};
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(cereal::make_nvp("children", children));
+        ar(cereal::make_nvp("first", first));
+        ar(cereal::make_nvp("prev", prev));
+        ar(cereal::make_nvp("next", next));
+        ar(cereal::make_nvp("parent", parent));
+    }
 };
 
 struct Transform {

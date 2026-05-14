@@ -19,28 +19,28 @@ namespace tryeditor {
 void InspectorPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Inspector");
 
-    float footerHeight = 30.0f;
-    // Определяем, нужно ли нам показывать подвал (только для ассетов)
-    bool is_asset_selected =
-        (reg.view<SelectedTag>().front() == entt::null && !editor_context_.selected_asset_path.empty());
+    SelectionType current_type = selection_manager_.GetSelectionType();
+    bool is_asset_selected = (current_type == SelectionType::Asset);
 
-    // Если подвал не нужен, убираем отступ (0.0f)
-    float currentFooterHeight = is_asset_selected ? footerHeight : 0.0f;
+    float footerHeight = 120.0f;
+    float current_footer_height = is_asset_selected ? footerHeight : 0.0f;
 
-    ImGui::BeginChild("InspectorContent", ImVec2(0, -currentFooterHeight));
+    ImGui::BeginChild("InspectorContent", ImVec2(0, -current_footer_height));
 
-    auto selected_entity = reg.view<SelectedTag>().front();
-    if (selected_entity != entt::null) {
-        DrawEntityInspector(reg);  // Убедитесь, что внутри НЕТ ImGui::Begin/End
-    } else if (!editor_context_.selected_asset_path.empty()) {
-        DrawAssetInspector(editor_context_.selected_asset_path);
-    } else {
-        ImGui::TextDisabled("Select an entity or asset to inspect.");
-    }
+    switch (current_type) {
+        case SelectionType::Entity:
+            DrawEntityInspector(reg);
+            break;
+        case SelectionType::Asset:
+            DrawAssetInspector(selection_manager_.GetSelectedAsset());
+            break;
+        case SelectionType::None:
+            ImGui::TextDisabled("Select an entity or asset to inspect.");
+            break;
+    };
 
     ImGui::EndChild();
 
-    // Отрисовка подвала только для ассетов
     if (is_asset_selected) {
         DrawAssetFooter();
     }
@@ -49,11 +49,11 @@ void InspectorPanel::OnImGuiRender(entt::registry& reg) {
 }
 
 void InspectorPanel::DrawAssetFooter() {
-    if (editor_context_.selected_asset_path.empty())
+    if (selection_manager_.GetSelectedAsset().empty())
         return;
 
     // 1. Получаем GUID ассета
-    std::filesystem::path meta_path = editor_context_.selected_asset_path.string() + ".meta";
+    std::filesystem::path meta_path = selection_manager_.GetSelectedAsset().string() + ".meta";
     auto header = MetaSerializer::ReadHeader(meta_path);
     if (!header)
         return;
@@ -114,7 +114,7 @@ void InspectorPanel::DrawAssetFooter() {
             static char addr_buffer[128] = "";
             // Инициализируем буфер именем файла, если он пуст
             if (addr_buffer[0] == '\0') {
-                strncpy(addr_buffer, editor_context_.selected_asset_path.stem().string().c_str(), 127);
+                strncpy(addr_buffer, selection_manager_.GetSelectedAsset().stem().string().c_str(), 127);
             }
 
             ImGui::InputText("Address", addr_buffer, sizeof(addr_buffer));
@@ -174,7 +174,6 @@ void InspectorPanel::DrawAssetInspector(const std::filesystem::path& path) const
 }
 
 void InspectorPanel::DrawEntityInspector(entt::registry& reg) {
-    ImGui::Begin("Inspector");
 
     auto view = reg.view<SelectedTag>();
     if (view.empty()) {
@@ -215,7 +214,6 @@ void InspectorPanel::DrawEntityInspector(entt::registry& reg) {
         DrawAddComponentButton(reg, entity);
     }
 
-    ImGui::End();
 }
 
 void InspectorPanel::DrawMetaField(entt::meta_any& instance, entt::meta_data data) {

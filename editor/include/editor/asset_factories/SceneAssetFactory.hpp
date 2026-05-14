@@ -14,25 +14,12 @@
 
 namespace tryeditor {
 
-struct SceneAssetProxy {
-    tryengine::core::Scene& scene;
-    tryengine::core::ComponentRegistry& registry;
-
-    template <class Archive>
-    void save(Archive& ar) const {
-        registry.Serialize(scene.GetRegistry(), ar);
-    }
-
-    template <class Archive>
-    void load(Archive& ar) {
-        registry.Deserialize(scene.GetRegistry(), ar);
-    }
-};
-
 class SceneAssetFactory : public IAssetFactory {
 public:
     explicit SceneAssetFactory(ImportSystem& import_system, tryengine::core::ComponentRegistry& registry)
         : import_system_(import_system), component_registry_(registry) {}
+
+    [[nodiscard]] std::string GetActionName() const override { return "Scene Asset"; }
 
     uint64_t CreateDefault(const std::filesystem::path& directory) override {
         tryengine::core::Scene scene("Some Scene Name");
@@ -47,21 +34,53 @@ public:
         registry.emplace<tryengine::MainCameraTag>(game_camera);
         registry.emplace<tryengine::Relationship>(game_camera);
 
+        const auto editor_camera = registry.create();
+        registry.emplace<tryengine::Tag>(editor_camera, "EditorCamera");
+        registry.emplace<tryengine::Transform>(
+            editor_camera, tryengine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});
+        registry.emplace<tryengine::Camera>(editor_camera);
+        registry.emplace<EditorCameraTag>(editor_camera);
+        registry.emplace<tryengine::Relationship>(editor_camera);
+
         return Create(directory, "NewScene.scene", scene);
     }
 
     uint64_t Create(const std::filesystem::path& directory, const std::string& name, tryengine::core::Scene& scene) {
-        const std::filesystem::path asset_path = directory / name;
+        std::filesystem::path asset_path = directory / name;
+
+        if (asset_path.extension() != ".scene") {
+            asset_path += ".scene";
+        }
+
         AssetMetaHeader header = CreateMeta(asset_path);
-
-        SceneAssetProxy proxy{scene, component_registry_};
-
-        import_system_.SaveNativeAsset<SceneAssetProxy>(asset_path, proxy, header);
+        Save(scene, asset_path, header);
 
         return header.guid;
     }
 
-    [[nodiscard]] std::string GetActionName() const override { return "Scene Asset"; }
+    void Save(tryengine::core::Scene& scene, const std::filesystem::path& asset_path, AssetMetaHeader header) {
+        std::ofstream os(asset_path);
+        if (!os.is_open()) {
+            std::cerr << "Error: Failed to open file stream: " << asset_path << std::endl;
+        }
+
+        cereal::JSONOutputArchive archive(os);
+        component_registry_.Serialize(scene.GetRegistry(), archive);
+
+        {
+            auto context = import_system_.ResolveContext(asset_path);
+            std::string asset_guid = std::to_string(header.guid);
+            std::filesystem::path artifact_dir = context.artifacts_dir / asset_guid;
+            std::filesystem::create_directories(artifact_dir);
+
+            std::ofstream os(artifact_dir / asset_guid, std::ios::binary);
+            if (os.is_open()) {
+                cereal::BinaryOutputArchive archive(os);
+                component_registry_.Serialize(scene.GetRegistry(), archive);
+            } else
+                std::cerr << "[SceneManager]: Serialization error: " << asset_guid << std::endl;
+        }
+    }
 
 private:
     AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {

@@ -7,9 +7,9 @@
 
 namespace tryeditor {
 
-FileBrowserPanel::FileBrowserPanel(ImportSystem& import_system, EditorContext& editor_context,
+FileBrowserPanel::FileBrowserPanel(ImportSystem& import_system, SelectionManager& selection_maanger,
                                    AssetsFactoryManager& factory_manager)
-    : import_system_(import_system), editor_context_(editor_context), factory_manager_(factory_manager) {
+    : import_system_(import_system), selection_manager_(selection_maanger), factory_manager_(factory_manager) {
     // Инициализируем корни для игры и движка
     game_root_ = std::filesystem::current_path() / "game/assets/";
     engine_root_ = std::filesystem::current_path() / "engine_content/assets/";
@@ -35,14 +35,14 @@ void FileBrowserPanel::OnImGuiRender(entt::registry& reg) {
         current_mode_ = ContentMode::Game;
         root_directory_ = game_root_;
         selected_directory_ = root_directory_;
-        editor_context_.selected_asset_path.clear();
+        // editor_context_.selected_asset_path.clear();
     }
     ImGui::SameLine();
     if (ImGui::RadioButton("Engine Content", &mode, 1)) {
         current_mode_ = ContentMode::Engine;
         root_directory_ = engine_root_;
         selected_directory_ = root_directory_;
-        editor_context_.selected_asset_path.clear();
+        // editor_context_.selected_asset_path.clear();
     }
     ImGui::Separator();
     // ------------------------------
@@ -115,7 +115,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
     if (selected_directory_ != root_directory_) {
         if (ImGui::Button("<- Back")) {
             selected_directory_ = selected_directory_.parent_path();
-            renaming_path_.clear(); // Сбрасываем переименование при выходе из папки
+            renaming_path_.clear();  // Сбрасываем переименование при выходе из папки
         }
         ImGui::Separator();
     }
@@ -139,7 +139,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
             ImGui::PushID(path.string().c_str());
 
             std::string filename_string = path.filename().string();
-            bool is_selected = (editor_context_.selected_asset_path == path);
+            bool is_selected = (selection_manager_.GetSelectedAsset() == path);
 
             ImGui::BeginGroup();
 
@@ -151,7 +151,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
             if (entry.is_directory()) {
                 ImGui::Button("[DIR]", ImVec2(thumbnail_size, thumbnail_size));
                 if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                    editor_context_.SetActive(path);
+                    selection_manager_.Select(path);
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     selected_directory_ = path;
@@ -160,10 +160,10 @@ void FileBrowserPanel::DrawDirectoryContent() {
             } else {
                 ImGui::Button("[FILE]", ImVec2(thumbnail_size, thumbnail_size));
                 if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                    editor_context_.SetActive(path);
+                    selection_manager_.Select(path);
                 }
 
-                // Drag & Drop логика...
+                // Drag & Drop логика
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
                     try {
                         if (!std::filesystem::exists(path)) {
@@ -171,7 +171,8 @@ void FileBrowserPanel::DrawDirectoryContent() {
                             throw std::runtime_error("File not found");
                         }
 
-                        std::filesystem::path relative_path = std::filesystem::relative(path, std::filesystem::current_path());
+                        std::filesystem::path relative_path =
+                            std::filesystem::relative(path, std::filesystem::current_path());
                         std::string itemPath = relative_path.generic_string();
 
                         std::filesystem::path meta_path = path.string() + ".meta";
@@ -203,7 +204,6 @@ void FileBrowserPanel::DrawDirectoryContent() {
                 ImGui::PopStyleColor();
 
             // --- Логика переименования ---
-
             // Горячая клавиша F2 для переименования выбранного элемента
             if (is_selected && ImGui::IsKeyPressed(ImGuiKey_F2) && renaming_path_ != path) {
                 renaming_path_ = path;
@@ -242,8 +242,8 @@ void FileBrowserPanel::DrawDirectoryContent() {
                             }
 
                             // 3. Обновляем контекст редактора, если файл был выделен
-                            if (editor_context_.selected_asset_path == path) {
-                                editor_context_.selected_asset_path = new_path;
+                            if (selection_manager_.GetSelectedAsset() == path) {
+                                selection_manager_.Select(new_path);
                             }
 
                             import_system_.Refresh();
@@ -251,7 +251,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
                             // TODO: Здесь можно добавить вывод ошибки в консоль движка
                         }
                     }
-                    renaming_path_.clear(); // Завершаем режим переименования
+                    renaming_path_.clear();  // Завершаем режим переименования
                 }
                 ImGui::PopItemWidth();
 
@@ -286,8 +286,8 @@ void FileBrowserPanel::DrawDirectoryContent() {
                     }
                     import_system_.Refresh();
 
-                    if (editor_context_.selected_asset_path == path) {
-                        editor_context_.selected_asset_path.clear();
+                    if (selection_manager_.GetSelectedAsset() == path) {
+                        selection_manager_.ClearSelection();
                     }
                 }
                 ImGui::EndPopup();
@@ -300,7 +300,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
 
     if (ImGui::IsMouseReleased(0) && ImGui::IsWindowHovered()) {
         if (!ImGui::IsAnyItemHovered()) {
-            editor_context_.selected_asset_path.clear();
+            selection_manager_.ClearSelection();
             // Клик в пустое место отменяет переименование
             if (!renaming_path_.empty()) {
                 renaming_path_.clear();

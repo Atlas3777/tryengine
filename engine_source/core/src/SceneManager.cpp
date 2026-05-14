@@ -7,52 +7,35 @@
 #include <iostream>
 
 #include "engine/core/ComponentRegistry.hpp"
+#include "engine/core/ResourceManager.hpp"
 
 namespace tryengine::core {
 
-bool SceneManager::SaveCurrentScene() {
-    if (!active_scene_) return false;
-
-    std::ofstream os(current_scene_path_);
-    if (!os.is_open()) return false;
-
-    try {
-        cereal::JSONOutputArchive archive(os);
-        engine_.GetComponentRegistry().Serialize(active_scene_->GetRegistry(), archive);
-        return true;
-    } catch (const std::exception& e) {
-        return false;
-    }
-}
-
 bool SceneManager::LoadScene(const std::string& scene_name) {
-    auto current_path = std::filesystem::current_path();
-    current_scene_path_ = current_path / "game" / "assets" / scene_name;
+    auto id = resource_manager_.GetAddressables().Get(scene_name);
+    auto path = resource_manager_.GetAssetDatabase().GetPath(id);
+    // auto path = std::filesystem::current_path() / "game" / "artifacts" / "8931749524998491898" / "8931749524998491898";
+    // auto path = std::filesystem::current_path() / "game" / "assets" / "folder" / "NewScene.scene";
 
-    if (!std::filesystem::exists(current_scene_path_)) {
-        std::cerr << "Error: File does not exist at path: " << current_scene_path_ << std::endl;
-        std::cerr << "Current working directory was: " << current_path << std::endl;
+    if (!std::filesystem::exists(path)) {
+        std::cerr << "Error: File does not exist at path: " << path << std::endl;
+        std::cerr << "Current working directory was: " << path << std::endl;
         return false;
     }
 
-    std::ifstream is(current_scene_path_);
+    std::ifstream is(path);
     if (!is.is_open()) {
-        std::cerr << "Error: Failed to open file stream: " << current_scene_path_ << std::endl;
+        std::cerr << "Error: Failed to open file stream: " << path << std::endl;
         return false;
     }
 
-    auto newScene = std::make_unique<Scene>(scene_name);
+    auto new_scene = std::make_unique<Scene>(scene_name);
 
-    try {
-        cereal::JSONInputArchive archive(is);
-        engine_.GetComponentRegistry().Deserialize(newScene->GetRegistry(), archive);
+    cereal::BinaryInputArchive archive(is);
+    component_registry_.Deserialize(new_scene->GetRegistry(), archive);
 
-        active_scene_ = std::move(newScene);
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Cereal deserialization error: " << e.what() << std::endl;
-        return false;
-    }
+    active_scene_ = std::move(new_scene);
+    return true;
 }
 
 }  // namespace tryengine::core

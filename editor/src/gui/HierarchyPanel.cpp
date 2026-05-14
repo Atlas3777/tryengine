@@ -1,15 +1,13 @@
-#include "../../include/editor/gui/HierarchyPanel.hpp"
+#include "editor/gui/HierarchyPanel.hpp"
 
 #include "editor/Components.hpp"
+#include "editor/SelectionManager.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/Engine.hpp"
 #include "entt/entt.hpp"
 #include "imgui_internal.h"
 
 namespace tryeditor {
-using namespace tryengine::types;
-using namespace tryengine::core;
-using namespace tryengine;
 
 void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::Begin("Hierarchy");
@@ -21,9 +19,9 @@ void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
                                        ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
         if (ImGui::MenuItem("Create Empty Entity")) {
             auto newEntity = reg.create();
-            reg.emplace<Transform>(newEntity);
-            reg.emplace<Relationship>(newEntity); // Используем Relationship вместо Hierarchy
-            reg.emplace<Tag>(newEntity, "New Entity");
+            reg.emplace<tryengine::Transform>(newEntity);
+            reg.emplace<tryengine::Relationship>(newEntity);
+            reg.emplace<tryengine::Tag>(newEntity, "New Entity");
 
             reg.clear<SelectedTag>();
             reg.emplace<SelectedTag>(newEntity);
@@ -42,7 +40,7 @@ void HierarchyPanel::OnImGuiRender(entt::registry& reg) {
     // Отрисовка корневых сущностей
     for (auto [entity] : reg.storage<entt::entity>().each()) {
         bool isRoot = true;
-        if (auto* rel = reg.try_get<Relationship>(entity)) {
+        if (auto* rel = reg.try_get<tryengine::Relationship>(entity)) {
             if (rel->parent != entt::null) {
                 isRoot = false;
             }
@@ -73,13 +71,13 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
     ImGuiTreeNodeFlags flags = (isSelected ? ImGuiTreeNodeFlags_Selected : 0);
     flags |= ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-    auto* rel = reg.try_get<Relationship>(entity);
+    auto* rel = reg.try_get<tryengine::Relationship>(entity);
     bool hasChildren = rel && (rel->children > 0);
 
     if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
 
     std::string label = "Entity [" + std::to_string(static_cast<uint32_t>(entity)) + "]";
-    if (auto* tag = reg.try_get<Tag>(entity)) {
+    if (auto* tag = reg.try_get<tryengine::Tag>(entity)) {
         label = tag->tag;
     }
 
@@ -88,8 +86,8 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
         ImGui::SetKeyboardFocusHere();
         if (ImGui::InputText("##rename", rename_buffer_, sizeof(rename_buffer_),
                              ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-            if (!reg.all_of<Tag>(entity)) reg.emplace<Tag>(entity);
-            reg.get<Tag>(entity).tag = rename_buffer_;
+            if (!reg.all_of<tryengine::Tag>(entity)) reg.emplace<tryengine::Tag>(entity);
+            reg.get<tryengine::Tag>(entity).tag = rename_buffer_;
             entity_to_rename_ = entt::null;
         }
         if (ImGui::IsItemDeactivated() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
@@ -101,11 +99,13 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
         if (ImGui::IsItemClicked()) {
             bool additive = ImGui::GetIO().KeyShift || ImGui::GetIO().KeyCtrl;
             if (additive) {
+                //TODO: Реализовать множественную обработку
                 if (isSelected) reg.remove<SelectedTag>(entity);
                 else reg.emplace<SelectedTag>(entity);
             } else {
-                reg.clear<SelectedTag>();
-                reg.emplace<SelectedTag>(entity);
+                selection_manager_.Select(entity, reg);
+                // reg.clear<SelectedTag>();
+                // reg.emplace<SelectedTag>(entity);
             }
         }
 
@@ -136,7 +136,7 @@ void HierarchyPanel::DrawEntityNode(entt::entity entity, entt::registry& reg) {
                 entt::entity curr = rel->first;
                 while (curr != entt::null) {
                     DrawEntityNode(curr, reg);
-                    curr = reg.get<Relationship>(curr).next;
+                    curr = reg.get<tryengine::Relationship>(curr).next;
                 }
             }
             ImGui::TreePop();
@@ -211,31 +211,31 @@ void HierarchyPanel::HandleShortcuts(entt::registry& reg) {
 void HierarchyPanel::ReparentEntity(entt::entity entity, entt::entity newParent, entt::registry& reg) {
     if (entity == newParent) return;
 
-    auto& rel = reg.get_or_emplace<Relationship>(entity);
+    auto& rel = reg.get_or_emplace<tryengine::Relationship>(entity);
 
     // --- защита от циклов ---
     entt::entity check = newParent;
     while (check != entt::null) {
         if (check == entity) return;
-        auto* parentRel = reg.try_get<Relationship>(check);
+        auto* parentRel = reg.try_get<tryengine::Relationship>(check);
         if (!parentRel) break;
         check = parentRel->parent;
     }
 
     // 1. Отвязываем от старого родителя
     if (rel.parent != entt::null) {
-        auto& oldParentRel = reg.get<Relationship>(rel.parent);
+        auto& oldParentRel = reg.get<tryengine::Relationship>(rel.parent);
         oldParentRel.children--;
 
         if (rel.prev != entt::null) {
-            reg.get<Relationship>(rel.prev).next = rel.next;
+            reg.get<tryengine::Relationship>(rel.prev).next = rel.next;
         } else {
             // Если предыдущего нет, значит это был первый ребенок
             oldParentRel.first = rel.next;
         }
 
         if (rel.next != entt::null) {
-            reg.get<Relationship>(rel.next).prev = rel.prev;
+            reg.get<tryengine::Relationship>(rel.next).prev = rel.prev;
         }
     }
 
@@ -246,11 +246,11 @@ void HierarchyPanel::ReparentEntity(entt::entity entity, entt::entity newParent,
 
     // 3. Привязываем к новому родителю (вставляем в начало списка для скорости)
     if (newParent != entt::null) {
-        auto& newParentRel = reg.get_or_emplace<Relationship>(newParent);
+        auto& newParentRel = reg.get_or_emplace<tryengine::Relationship>(newParent);
         newParentRel.children++;
 
         if (newParentRel.first != entt::null) {
-            reg.get<Relationship>(newParentRel.first).prev = entity;
+            reg.get<tryengine::Relationship>(newParentRel.first).prev = entity;
             rel.next = newParentRel.first;
         }
         newParentRel.first = entity;
@@ -274,10 +274,10 @@ void HierarchyPanel::DestroyEntityRecursive(entt::entity entity, entt::registry&
 
     // Внутренняя рекурсивная лямбда для полного уничтожения ветви
     auto destroy_recursive = [&](auto& self, entt::entity e) -> void {
-        if (auto* rel = reg.try_get<Relationship>(e)) {
+        if (auto* rel = reg.try_get<tryengine::Relationship>(e)) {
             entt::entity curr = rel->first;
             while (curr != entt::null) {
-                entt::entity next = reg.get<Relationship>(curr).next; // Сохраняем next до удаления
+                entt::entity next = reg.get<tryengine::Relationship>(curr).next; // Сохраняем next до удаления
                 self(self, curr);
                 curr = next;
             }

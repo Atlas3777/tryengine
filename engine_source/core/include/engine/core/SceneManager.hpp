@@ -11,23 +11,28 @@ namespace tryengine::core {
 
 class SceneManager {
 public:
-    SceneManager(Engine& engine) : engine_(engine) {};
+    SceneManager(ComponentRegistry& component_registry, ResourceManager& resource_manager)
+        : component_registry_(component_registry), resource_manager_(resource_manager) {};
     SceneManager(const SceneManager&) = delete;
     SceneManager& operator=(const SceneManager&) = delete;
-    SceneManager(SceneManager&&) = default;
-    SceneManager& operator=(SceneManager&&) = default;
+    SceneManager(SceneManager&&) = delete;
+    SceneManager& operator=(SceneManager&&) = delete;
 
     ~SceneManager() = default;
 
     bool LoadScene(const std::string& scene_name);
-    bool SaveCurrentScene();
+    void SetActiveScene(std::unique_ptr<Scene> scene) {
+        if (!scene) return;
+        active_scene_ = std::move(scene);
+    }
 
     [[nodiscard]] Scene& GetActiveScene() const { return *active_scene_; }
+    [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return component_registry_; }
 
 private:
-    std::filesystem::path current_scene_path_;
     std::unique_ptr<Scene> active_scene_ = nullptr;
-    Engine& engine_;
+    ComponentRegistry& component_registry_;
+    ResourceManager& resource_manager_;
 };
 
 }  // namespace tryengine::core

@@ -5,7 +5,8 @@
 #include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
-#include "editor/Reflection.hpp"
+#include "editor/ReflectionSystem.hpp"
+#include "editor/gui/EditorGUI.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/BaseSystem.hpp"
 #include "engine/core/Clock.hpp"
@@ -21,8 +22,6 @@ void EditorApp::Init() {
     engine_ = std::make_unique<tryengine::core::Engine>();
     engine_->SetInputSource(&(this->input_state_));
 
-
-
     graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
@@ -30,24 +29,10 @@ void EditorApp::Init() {
     }
 
     render_system_ = std::make_unique<tryengine::graphics::RenderSystem>(graphics_context_->GetDevice());
-
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
 
-    editor_->RegisterComponents();
-    editor_->RegisterAssetsImporters();
-    editor_->RegisterResourceLoaders();
-    editor_->RegisterAssetsFactories();
-    editor_->RegisterAssetsInspector();
+    editor_->Init();
 
-    editor_->GetImportSystem().Refresh();
-
-    engine_->GetResourceManager().GetAssetDatabase().Refresh();
-    // editor_->LoadAddressables();
-
-    editor_->LoadGameLibrary("cmake-build-debug/game/libgame.so");
-    editor_->LoadDefaultScene();
-
-    RegisterRef();
 
     editor_->running = true;
     // editor_->play_mode = true;

@@ -2,13 +2,19 @@
 #include <memory>
 #include <string>
 
-#include "editor/asset_factories/AssetsFactoryManager.hpp"
-#include "editor/asset_inspector/AssetInspectorManager.hpp"
-#include "editor/gui/EditorGUI.hpp"
-#include "editor/import/ImportSystem.hpp"
 #include "engine/core/GameAPI.hpp"
+#include "engine/graphics/GraphicsContext.hpp"
 
 namespace tryeditor {
+class ReflectionSystem;
+class AddressablesProvider;
+class SelectionManager;
+class AssetInspectorManager;
+class AssetsFactoryManager;
+class ImportSystem;
+class EditorGUI;
+class ControllerManager;
+class SceneManagerController;
 class Spawner;
 class Editor {
 public:
@@ -19,6 +25,8 @@ public:
     Editor& operator=(Editor&&) noexcept = delete;
 
     ~Editor();
+
+    void Init();
 
     bool LoadGameLibrary(const std::string& original_path);
     void UnloadGameLibrary();
@@ -44,10 +52,12 @@ private:
     std::unique_ptr<ImportSystem> import_system_;
     std::unique_ptr<AssetsFactoryManager> assets_factory_;
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
-    std::unique_ptr<EditorContext> editor_context_;
+    std::unique_ptr<SelectionManager> selection_manager_;
     std::unique_ptr<EditorGUI> editor_gui_;
     std::unique_ptr<Spawner> spawner_;
     std::unique_ptr<AddressablesProvider> addressables_provider_;
+    std::unique_ptr<ReflectionSystem> reflection_system_;
+    std::unique_ptr<ControllerManager> gui_controller_manager_;
 
     tryengine::graphics::GraphicsContext& graphics_context_;
     tryengine::core::Engine& engine_;

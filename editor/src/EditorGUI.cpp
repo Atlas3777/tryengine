@@ -8,6 +8,8 @@
 #include <imgui_impl_sdlgpu3.h>
 
 #include "editor/AddressablesProvider.hpp"
+#include "editor/ControllerManager.hpp"
+#include "editor/SceneManagerController.hpp"
 #include "editor/gui/AddressablesPanel.hpp"
 #include "editor/gui/FileBrowserPanel.hpp"
 #include "editor/gui/GameViewportPanel.hpp"
@@ -21,9 +23,10 @@
 namespace tryeditor {
 
 EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context,
-                     ImportSystem& import_system, Spawner& spawner, EditorContext& editor_context,
-                     AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager, AddressablesProvider& addressables_provider)
-    : engine_(engine), editor_context_(editor_context) {
+                     ImportSystem& import_system, Spawner& spawner, SelectionManager& editor_context,
+                     AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager,
+                     AddressablesProvider& addressables_provider, ControllerManager& controller_manager)
+    : engine_(engine), selection_manager_(editor_context), controller_manager_(controller_manager) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -66,8 +69,9 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
 
     panels_.emplace_back(std::make_unique<SceneViewportPanel>(context, spawner));
     panels_.emplace_back(std::make_unique<GameViewportPanel>(context));
-    panels_.emplace_back(std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
-    panels_.emplace_back(std::make_unique<HierarchyPanel>());
+    panels_.emplace_back(
+        std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
+    panels_.emplace_back(std::make_unique<HierarchyPanel>(selection_manager_));
     panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager));
     panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
 }
@@ -93,7 +97,7 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
 
     // 1. Сначала меню
     DrawMainMenu();
-    // 2. Затем панель кнопокz
+    // 2. Затем панель кнопок
     DrawPlayToolbar(is_playing);
     // 3. И только потом докспейс
     DrawDockSpace();
@@ -167,7 +171,10 @@ void EditorGUI::DrawMainMenu() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Save Scene")) {
-                engine_.GetSceneManager().SaveCurrentScene();
+                controller_manager_.Get<SceneManagerController>().SaveScene();
+            }
+            if (ImGui::MenuItem("Save Scene As")) {
+                controller_manager_.Get<SceneManagerController>().SaveScene();
             }
             ImGui::EndMenu();
         }

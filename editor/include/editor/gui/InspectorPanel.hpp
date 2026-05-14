@@ -2,7 +2,7 @@
 
 #include <entt/entt.hpp>
 
-#include "editor/EditorContext.hpp"
+#include "editor/SelectionManager.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
@@ -10,11 +10,11 @@ namespace tryeditor {
 class AddressablesProvider;
 class InspectorPanel : public IPanel {
 public:
-    InspectorPanel(EditorContext& editor_context, ImportSystem& import_system_,
+    InspectorPanel(SelectionManager& editor_context, ImportSystem& import_system_,
                    AssetInspectorManager& asset_inspector_manager_, AddressablesProvider& addressables_provider)
         : import_system_(import_system_),
           asset_inspector_manager_(asset_inspector_manager_),
-          editor_context_(editor_context),
+          selection_manager_(editor_context),
     addressables_provider_(addressables_provider){};
     const char* GetName() const override { return "Game"; }
 
@@ -33,7 +33,7 @@ private:
 
     ImportSystem& import_system_;
     AssetInspectorManager& asset_inspector_manager_;
-    EditorContext& editor_context_;
+    SelectionManager& selection_manager_;
     AddressablesProvider& addressables_provider_;
     bool show_settings_window_ = false;
 };

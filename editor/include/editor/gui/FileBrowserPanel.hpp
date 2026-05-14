@@ -1,7 +1,7 @@
 #pragma once
 #include <filesystem>
 
-#include "editor/EditorContext.hpp"
+#include "editor/SelectionManager.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/import/ImportSystem.hpp"
 
@@ -10,7 +10,8 @@ class AssetsFactoryManager;
 
 class FileBrowserPanel : public IPanel {
 public:
-    FileBrowserPanel(ImportSystem& import_system, EditorContext& editor_context, AssetsFactoryManager& factory_manager);
+    FileBrowserPanel(ImportSystem& import_system, SelectionManager& selection_manager,
+                     AssetsFactoryManager& factory_manager);
     const char* GetName() const override { return "FileBrowserPanel"; }
 
     void OnImGuiRender(entt::registry& reg) override;
@@ -26,7 +27,7 @@ private:
     std::filesystem::path engine_root_;
 
     ImportSystem& import_system_;
-    EditorContext& editor_context_;
+    SelectionManager& selection_manager_;
     AssetsFactoryManager& factory_manager_;
 
     std::filesystem::path root_directory_;
@@ -37,4 +38,4 @@ private:
     bool set_focus_to_rename_ = false;
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor
