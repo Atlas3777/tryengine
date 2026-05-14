@@ -81,12 +81,14 @@ Editor::~Editor() {
 
 void Editor::RegisterComponents() const {
     auto& reg = engine_.GetComponentRegistry();
-    reg.Register<tryengine::Transform>("Transform");
     reg.Register<tryengine::Tag>("Tag");
+    reg.Register<tryengine::Transform>("Transform");
+    reg.Register<tryengine::Relationship>("Relationship");
     reg.Register<tryengine::Camera>("Camera");
     reg.Register<tryengine::MainCameraTag>("MainCameraTag");
-    reg.Register<tryengine::Relationship>("Relationship");
     reg.Register<EditorCameraTag>("EditorCameraTag");
+    reg.Register<tryengine::MeshFilter>("MeshFilter");
+    reg.Register<tryengine::MeshRenderer>("MeshRenderer");
 }
 
 void Editor::RegisterAssetsFactories() const {

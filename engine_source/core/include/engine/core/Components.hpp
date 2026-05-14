@@ -6,6 +6,7 @@
 
 #include "engine/core/CoreTypes.hpp"
 #include "engine/core/GLMSerialization.hpp"
+#include "engine/core/ResourceManager.hpp"
 
 namespace tryengine {
 
@@ -17,11 +18,33 @@ struct Mesh;
 struct MeshFilter {
     entt::resource<graphics::Mesh> mesh;
     uint64_t asset_id = 0;
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(cereal::make_nvp("asset_id", asset_id));
+    }
+
+    void Resolve(core::ResourceManager& rm) {
+        if (!mesh && asset_id != 0) {
+            mesh = rm.Get<graphics::Mesh>(asset_id);
+        }
+    }
 };
 
 struct MeshRenderer {
     entt::resource<graphics::Material> material;
     uint64_t asset_id = 0;
+
+    template <class Archive>
+    void serialize(Archive& ar) {
+        ar(cereal::make_nvp("asset_id", asset_id));
+    }
+
+    void Resolve(core::ResourceManager& rm) {
+        if (!material && asset_id != 0) {
+            material = rm.Get<graphics::Material>(asset_id);
+        }
+    }
 };
 
 struct Relationship {

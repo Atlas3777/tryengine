@@ -16,9 +16,9 @@ public:
         // JSON сохранение
         json_serializers_.push_back([name](const entt::snapshot& snapshot, cereal::JSONOutputArchive& ar) {
             ar.setNextName(name.c_str());
-            ar.startNode();  // Открываем узел с именем name
+            ar.startNode();
             snapshot.get<T>(ar);
-            ar.finishNode();  // Закрываем его
+            ar.finishNode();
         });
 
         // JSON загрузка
@@ -36,9 +36,31 @@ public:
         // Сохраняем логику чтения для Binary
         binary_deserializers_.push_back(
             [](entt::snapshot_loader& loader, cereal::BinaryInputArchive& ar) { loader.get<T>(ar); });
+
+        if constexpr (requires(T& t, ResourceManager& rm) { t.Resolve(rm); }) {
+            resolvers_.push_back([](entt::registry& reg, core::ResourceManager& rm, entt::entity target_entity) {
+                if (target_entity == entt::null) {
+                    // Резолвим всю сцену через each()
+                    for (auto [entity, comp] : reg.view<T>().each()) {
+                        comp.Resolve(rm);
+                    }
+                } else {
+                    // Резолвим конкретную сущность (здесь reg не зависимый тип, поэтому try_get работает без template)
+                    if (auto* comp = reg.try_get<T>(target_entity)) {
+                        comp->Resolve(rm);
+                    }
+                }
+            });
+        }
     }
 
-    // В методах Serialize / Deserialize для сущностей делаем так же:
+    void ResolveAll(entt::registry& reg, ResourceManager& rm, entt::entity target_entity = entt::null) const {
+        for (const auto& resolve_fn : resolvers_) {
+            resolve_fn(reg, rm, target_entity);
+        }
+    }
+
+    // JSON:
     void Serialize(const entt::registry& reg, cereal::JSONOutputArchive& ar) const {
         entt::snapshot snapshot{reg};
 
@@ -66,12 +88,9 @@ public:
         }
 
         loader.orphans();
-
-        // ar.finishNode();
     }
 
-    // --- Binary Serialization ---
-
+    // Binary Serialization
     void Serialize(const entt::registry& reg, cereal::BinaryOutputArchive& ar) const {
         entt::snapshot snapshot{reg};
         snapshot.get<entt::entity>(ar);
@@ -96,10 +115,14 @@ private:
     using BinSaveFn = std::function<void(entt::snapshot&, cereal::BinaryOutputArchive&)>;
     using BinLoadFn = std::function<void(entt::snapshot_loader&, cereal::BinaryInputArchive&)>;
 
+    using ResolveFn = std::function<void(entt::registry&, core::ResourceManager&, entt::entity)>;
+
     std::vector<JsonSaveFn> json_serializers_;
     std::vector<JsonLoadFn> json_deserializers_;
     std::vector<BinSaveFn> binary_serializers_;
     std::vector<BinLoadFn> binary_deserializers_;
+
+    std::vector<ResolveFn> resolvers_;  // Храним резолверы
 };
 
 }  // namespace tryengine::core

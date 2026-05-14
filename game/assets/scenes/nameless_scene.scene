@@ -1,0 +1,312 @@
+{
+    "entities": {
+        "value0": 8,
+        "value1": 8,
+        "value2": 0,
+        "value3": 1,
+        "value4": 2,
+        "value5": 3,
+        "value6": 4,
+        "value7": 5,
+        "value8": 6,
+        "value9": 7
+    },
+    "Tag": {
+        "value0": 8,
+        "value1": 0,
+        "value2": {
+            "tag": "GameCamera"
+        },
+        "value3": 1,
+        "value4": {
+            "tag": "EditorCamera"
+        },
+        "value5": 2,
+        "value6": {
+            "tag": "Sketchfab_model"
+        },
+        "value7": 3,
+        "value8": {
+            "tag": "zamkova_dlazba_10k.FBX"
+        },
+        "value9": 4,
+        "value10": {
+            "tag": "RootNode"
+        },
+        "value11": 5,
+        "value12": {
+            "tag": "zamkova_dlazba"
+        },
+        "value13": 6,
+        "value14": {
+            "tag": "Object_4"
+        },
+        "value15": 7,
+        "value16": {
+            "tag": "zamkova_dlazba_zamkova_dlazba_DiffuseMap_0"
+        }
+    },
+    "Transform": {
+        "value0": 8,
+        "value1": 0,
+        "value2": {
+            "position": {
+                "x": 0.0,
+                "y": 2.0,
+                "z": 10.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 0.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value3": 1,
+        "value4": {
+            "position": {
+                "x": -1.0282660722732545,
+                "y": 3.3993425369262697,
+                "z": 7.2786865234375
+            },
+            "rotation": {
+                "x": -0.20620347559452058,
+                "y": -0.03995102643966675,
+                "z": -0.008426375687122345,
+                "w": 0.9776570200920105
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value5": 2,
+        "value6": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": -0.7071067690849304,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 0.7071067690849304
+            },
+            "scale": {
+                "x": 0.06409427523612976,
+                "y": 0.06409427523612976,
+                "z": 0.06409427523612976
+            }
+        },
+        "value7": 3,
+        "value8": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": 0.7071067690849304,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 0.7071067690849304
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value9": 4,
+        "value10": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value11": 5,
+        "value12": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": -0.7071067690849304,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 0.7071067690849304
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value13": 6,
+        "value14": {
+            "position": {
+                "x": 1.416944980621338,
+                "y": 0.20029449462890626,
+                "z": -0.2875375747680664
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        },
+        "value15": 7,
+        "value16": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
+        }
+    },
+    "Relationship": {
+        "value0": 8,
+        "value1": 0,
+        "value2": {
+            "children": 0,
+            "first": 18446744073709551615,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 18446744073709551615
+        },
+        "value3": 1,
+        "value4": {
+            "children": 0,
+            "first": 18446744073709551615,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 18446744073709551615
+        },
+        "value5": 2,
+        "value6": {
+            "children": 1,
+            "first": 3,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 18446744073709551615
+        },
+        "value7": 3,
+        "value8": {
+            "children": 1,
+            "first": 4,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 2
+        },
+        "value9": 4,
+        "value10": {
+            "children": 1,
+            "first": 5,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 3
+        },
+        "value11": 5,
+        "value12": {
+            "children": 1,
+            "first": 6,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 4
+        },
+        "value13": 6,
+        "value14": {
+            "children": 1,
+            "first": 7,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 5
+        },
+        "value15": 7,
+        "value16": {
+            "children": 0,
+            "first": 18446744073709551615,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 6
+        }
+    },
+    "Camera": {
+        "value0": 2,
+        "value1": 0,
+        "value2": {
+            "fov": 45.0,
+            "near_plane": 0.10000000149011612,
+            "far_plane": 100.0,
+            "sensitivity": 0.05999999865889549,
+            "speed": 5.0
+        },
+        "value3": 1,
+        "value4": {
+            "fov": 45.0,
+            "near_plane": 0.10000000149011612,
+            "far_plane": 100.0,
+            "sensitivity": 0.05999999865889549,
+            "speed": 5.0
+        }
+    },
+    "MainCameraTag": {
+        "value0": 1,
+        "value1": 0
+    },
+    "EditorCameraTag": {
+        "value0": 1,
+        "value1": 1
+    },
+    "MeshFilter": {
+        "value0": 1,
+        "value1": 7,
+        "value2": {
+            "asset_id": 6121024739326901653
+        }
+    },
+    "MeshRenderer": {
+        "value0": 1,
+        "value1": 7,
+        "value2": {
+            "asset_id": 10172081940805964959
+        }
+    }
+}
