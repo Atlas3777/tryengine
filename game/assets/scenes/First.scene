@@ -1,12 +1,13 @@
 {
     "entities": {
-        "value0": 2,
-        "value1": 2,
+        "value0": 3,
+        "value1": 3,
         "value2": 0,
-        "value3": 1
+        "value3": 1,
+        "value4": 2
     },
     "Transform": {
-        "value0": 2,
+        "value0": 3,
         "value1": 0,
         "value2": {
             "position": {
@@ -44,10 +45,29 @@
                 "y": 1.0,
                 "z": 1.0
             }
+        },
+        "value5": 2,
+        "value6": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            }
         }
     },
     "Tag": {
-        "value0": 2,
+        "value0": 3,
         "value1": 0,
         "value2": {
             "tag": "GameCamera"
@@ -55,13 +75,17 @@
         "value3": 1,
         "value4": {
             "tag": "EditorCamera"
+        },
+        "value5": 2,
+        "value6": {
+            "tag": "First"
         }
     },
     "Camera": {
         "value0": 2,
         "value1": 0,
         "value2": {
-            "fov": 45.0,
+            "fov": 40.599998474121097,
             "near_plane": 0.10000000149011612,
             "far_plane": 100.0,
             "sensitivity": 0.05999999865889549,
@@ -81,7 +105,7 @@
         "value1": 0
     },
     "Relationship": {
-        "value0": 2,
+        "value0": 3,
         "value1": 0,
         "value2": {
             "children": 0,
@@ -92,6 +116,14 @@
         },
         "value3": 1,
         "value4": {
+            "children": 0,
+            "first": 18446744073709551615,
+            "prev": 18446744073709551615,
+            "next": 18446744073709551615,
+            "parent": 18446744073709551615
+        },
+        "value5": 2,
+        "value6": {
             "children": 0,
             "first": 18446744073709551615,
             "prev": 18446744073709551615,

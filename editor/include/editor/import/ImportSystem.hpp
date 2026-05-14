@@ -5,20 +5,24 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "IAssetImporter.hpp"
+#include "editor/import/IAssetImporter.hpp"
 #include "editor/AssetContext.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/resources/AssetTypes.hpp"
 
+namespace tryengine::core {
+class ResourceManager;
+}
 namespace tryeditor {
 
 class ImportSystem {
 public:
+    ImportSystem(tryengine::core::ResourceManager& resource_manager) : resource_manager_(resource_manager) {};
+
     template <typename TImporter, typename TSettings, typename... Args>
         requires AssetImporter<TImporter, TSettings>
     void RegisterImporter(const std::vector<std::string>& extensions, Args&&... args) {
@@ -112,7 +116,7 @@ public:
         {
             std::ifstream is(path);
             cereal::JSONInputArchive archive(is);
-            archive( data);
+            archive(data);
         }
         return data;
     }
@@ -146,10 +150,15 @@ public:
     void DeleteAsset(const std::filesystem::path& asset_path);
     void DeleteDirectory(const std::filesystem::path& dir_path);
 
+    tryengine::core::ResourceManager& GetResourceManager() const { return resource_manager_;};
+
+
 private:
     void DeleteArtifactsAndCache(uint64_t id);
     void ProcessDirectory(const std::filesystem::path& assets_dir);
     bool ValidateArtifacts(uint64_t guid, const std::filesystem::path& artifacts_dir) const;
+
+    tryengine::core::ResourceManager& resource_manager_;
 
     const std::filesystem::path root_path_ = std::filesystem::current_path();
     const std::filesystem::path project_data_dir = root_path_ / "game" / "project_data";

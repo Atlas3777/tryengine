@@ -19,12 +19,17 @@ public:
     Scene& operator=(Scene&&) = default;
 
     void Rename(const std::string& name) { name_ = name; };
+    void SetAssetID(const uint64_t id) { asset_id_ = id; }
 
-    [[nodiscard]] entt::registry& GetRegistry() const { return *registry_; }
+
+    [[nodiscard]] uint64_t GetAssetID() const { return asset_id_; }
     [[nodiscard]] const std::string& GetName() const { return name_; }
+    [[nodiscard]] bool IsPersistent() const { return asset_id_ != 0; }
+    [[nodiscard]] entt::registry& GetRegistry() const { return *registry_; }
 
 private:
     std::string name_;
+    uint64_t asset_id_ = 0;
     std::unique_ptr<entt::registry> registry_;
 };
 

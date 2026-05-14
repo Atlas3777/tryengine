@@ -21,6 +21,7 @@ public:
     ~SceneManager() = default;
 
     bool LoadScene(const std::string& scene_name);
+    bool LoadScene(uint64_t id);
     void SetActiveScene(std::unique_ptr<Scene> scene) {
         if (!scene) return;
         active_scene_ = std::move(scene);

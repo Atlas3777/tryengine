@@ -11,6 +11,7 @@
 #include "engine/core/Components.hpp"
 #include "engine/core/RandomUtil.hpp"
 #include "engine/core/Scene.hpp"
+#include "engine/core/ResourceManager.hpp"
 
 namespace tryeditor {
 
@@ -53,12 +54,12 @@ public:
         }
 
         AssetMetaHeader header = CreateMeta(asset_path);
-        Save(scene, asset_path, header);
+        Save(scene, asset_path, header.guid);
 
         return header.guid;
     }
 
-    void Save(tryengine::core::Scene& scene, const std::filesystem::path& asset_path, AssetMetaHeader header) {
+    void Save(tryengine::core::Scene& scene, const std::filesystem::path& asset_path, uint64_t guid, bool update = false) {
         std::ofstream os(asset_path);
         if (!os.is_open()) {
             std::cerr << "Error: Failed to open file stream: " << asset_path << std::endl;
@@ -69,7 +70,7 @@ public:
 
         {
             auto context = import_system_.ResolveContext(asset_path);
-            std::string asset_guid = std::to_string(header.guid);
+            std::string asset_guid = std::to_string(guid);
             std::filesystem::path artifact_dir = context.artifacts_dir / asset_guid;
             std::filesystem::create_directories(artifact_dir);
 
@@ -80,6 +81,8 @@ public:
             } else
                 std::cerr << "[SceneManager]: Serialization error: " << asset_guid << std::endl;
         }
+        if (update) return;
+        import_system_.GetResourceManager().GetAssetDatabase().Refresh();
     }
 
 private:

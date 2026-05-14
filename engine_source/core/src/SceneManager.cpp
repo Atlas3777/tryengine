@@ -11,15 +11,12 @@
 
 namespace tryengine::core {
 
-bool SceneManager::LoadScene(const std::string& scene_name) {
-    auto id = resource_manager_.GetAddressables().Get(scene_name);
-    auto path = resource_manager_.GetAssetDatabase().GetPath(id);
-    // auto path = std::filesystem::current_path() / "game" / "artifacts" / "8931749524998491898" / "8931749524998491898";
-    // auto path = std::filesystem::current_path() / "game" / "assets" / "folder" / "NewScene.scene";
+bool SceneManager::LoadScene(const uint64_t scene_id) {
+    // Получаем путь напрямую из AssetDatabase по GUID
+    auto path = resource_manager_.GetAssetDatabase().GetPath(scene_id);
 
     if (!std::filesystem::exists(path)) {
         std::cerr << "Error: File does not exist at path: " << path << std::endl;
-        std::cerr << "Current working directory was: " << path << std::endl;
         return false;
     }
 
@@ -29,13 +26,25 @@ bool SceneManager::LoadScene(const std::string& scene_name) {
         return false;
     }
 
-    auto new_scene = std::make_unique<Scene>(scene_name);
+    // Имя сцены теперь берем из названия файла по найденному пути
+    // std::string scene_name = path.stem().string();
+    auto new_scene = std::make_unique<Scene>();
+    new_scene->SetAssetID(scene_id);
 
     cereal::BinaryInputArchive archive(is);
     component_registry_.Deserialize(new_scene->GetRegistry(), archive);
 
     active_scene_ = std::move(new_scene);
     return true;
+}
+
+// Существующая загрузка по имени (Addressables) теперь просто использует метод выше
+bool SceneManager::LoadScene(const std::string& scene_name) {
+    // Находим GUID по имени в Addressables
+    auto id = resource_manager_.GetAddressables().Get(scene_name);
+
+    // Передаем загрузку методу, работающему с GUID
+    return LoadScene(id);
 }
 
 }  // namespace tryengine::core

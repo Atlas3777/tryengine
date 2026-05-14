@@ -1,6 +1,7 @@
 #include "editor/gui/FileBrowserPanel.hpp"
 
 #include "editor/EditorGUIUtils.hpp"
+#include "editor/SceneManagerController.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/MetaSerializer.hpp"
@@ -8,8 +9,8 @@
 namespace tryeditor {
 
 FileBrowserPanel::FileBrowserPanel(ImportSystem& import_system, SelectionManager& selection_maanger,
-                                   AssetsFactoryManager& factory_manager)
-    : import_system_(import_system), selection_manager_(selection_maanger), factory_manager_(factory_manager) {
+                                   AssetsFactoryManager& factory_manager, tryengine::core::SceneManager& scene_manager)
+    : import_system_(import_system), selection_manager_(selection_maanger), factory_manager_(factory_manager), scene_manager_(scene_manager) {
     // Инициализируем корни для игры и движка
     game_root_ = std::filesystem::current_path() / "game/assets/";
     engine_root_ = std::filesystem::current_path() / "engine_content/assets/";
@@ -161,6 +162,23 @@ void FileBrowserPanel::DrawDirectoryContent() {
                 ImGui::Button("[FILE]", ImVec2(thumbnail_size, thumbnail_size));
                 if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                     selection_manager_.Select(path);
+                }
+
+                // Двойной клик — открытие сцены по GUID из meta-файла
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (path.extension() == ".scene") {
+                        std::filesystem::path meta_path = path.string() + ".meta";
+                        if (std::filesystem::exists(meta_path)) {
+                            try {
+                                auto header = MetaSerializer::ReadHeader(meta_path);
+                                // Предполагается, что GUID имеет тип uint64_t
+                                scene_manager_.LoadScene(header->guid);
+                            } catch (const std::exception& e) {
+                                // Здесь можно залогировать ошибку чтения меты
+                                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Meta Error: %s", e.what());
+                            }
+                        }
+                    }
                 }
 
                 // Drag & Drop логика

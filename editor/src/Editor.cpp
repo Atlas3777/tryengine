@@ -10,8 +10,6 @@
 #include "editor/SceneManagerController.hpp"
 #include "editor/SelectionManager.hpp"
 #include "editor/Spawner.hpp"
-#include "editor/asset_factories/AddressablesGroupFactory.hpp"
-#include "editor/asset_factories/AddressablesManifestFactory.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/asset_factories/SceneAssetFactory.hpp"
@@ -45,7 +43,7 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsCon
     asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
 
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
-    import_system_ = std::make_unique<ImportSystem>();
+    import_system_ = std::make_unique<ImportSystem>(engine_.GetResourceManager());
     addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.GetResourceManager().GetAddressables());
 
     spawner_ = std::make_unique<Spawner>(graphics_context_, engine.GetResourceManager(), *import_system_);
@@ -178,8 +176,7 @@ void Editor::UnloadGameLibrary() {
 }
 
 void Editor::LoadDefaultScene() const {
-    // engine_.GetSceneManager().LoadScene("scene1");
-    auto scene = std::make_unique<tryengine::core::Scene>();
+    auto scene = std::make_unique<tryengine::core::Scene>("nameless_scene");
 
     auto& registry = scene->GetRegistry();
 

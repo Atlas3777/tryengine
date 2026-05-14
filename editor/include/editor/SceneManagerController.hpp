@@ -1,4 +1,5 @@
 #pragma once
+
 #include "asset_factories/SceneAssetFactory.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Paths.hpp"
@@ -17,25 +18,41 @@ public:
 
     bool SaveScene() {
         auto& scene = scene_manager_.GetActiveScene();
-        const auto path = Paths::assets / "scenes";
 
+        if (scene.IsPersistent()) {
+            return OverwriteExistingScene(scene);
+        } else {
+            return SaveSceneAs(scene);
+        }
+    }
+
+    bool SaveSceneAs(tryengine::core::Scene& scene) {
+        const auto path = Paths::assets / "scenes";
         std::filesystem::create_directory(path);
 
-        std::string base_name = "nameless_scene";
         std::string extension = ".scene";
+        std::filesystem::path scene_path = path / (scene.GetName() + extension);
 
-        std::filesystem::path scene_path = path / (base_name + extension);
+        // Логика с инкрементом (scene(1), scene(2)...)
         int counter = 1;
-
         while (std::filesystem::exists(scene_path)) {
-            scene_path = path / (base_name + "(" + std::to_string(counter) + ")" + extension);
+            scene_path = path / (scene.GetName() + "(" + std::to_string(counter) + ")" + extension);
             counter++;
         }
 
         std::string final_name = scene_path.stem().string();
-
         auto id = scene_asset_factory_.Create(path, final_name, scene);
+        scene.SetAssetID(id);
+
         addressables_provider_.AddAssetInGroup("scenes", final_name, id);
+        return true;
+    }
+
+    bool OverwriteExistingScene(tryengine::core::Scene& scene) {
+        auto id = scene.GetAssetID();
+        auto path = import_system_.GetPath(id);
+
+        scene_asset_factory_.Save(scene, path, id, true);
         return true;
     }
 

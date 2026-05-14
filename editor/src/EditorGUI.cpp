@@ -72,9 +72,10 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
     panels_.emplace_back(
         std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
     panels_.emplace_back(std::make_unique<HierarchyPanel>(selection_manager_));
-    panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager));
+    panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.GetSceneManager()));
     panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
 }
+
 
 EditorGUI::~EditorGUI() {
     ImGui_ImplSDLGPU3_Shutdown();
@@ -95,11 +96,8 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
-    // 1. Сначала меню
     DrawMainMenu();
-    // 2. Затем панель кнопок
     DrawPlayToolbar(is_playing);
-    // 3. И только потом докспейс
     DrawDockSpace();
 
     for (const auto& panel : panels_) {

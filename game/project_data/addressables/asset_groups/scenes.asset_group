@@ -3,8 +3,12 @@
         "group_name": "scenes",
         "asset_map": [
             {
-                "key": "nameless_scene(1)",
-                "value": 16385705950124080201
+                "key": "Second",
+                "value": 2611991176309815557
+            },
+            {
+                "key": "first.scene",
+                "value": 4479607837659199141
             }
         ]
     }
