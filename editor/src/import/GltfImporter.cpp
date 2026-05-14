@@ -15,7 +15,6 @@
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/import/TextureImporter.hpp"
-#include "engine/core/RandomUtil.hpp"
 #include "engine/resources/Content.hpp"
 #include "engine/resources/MaterialAssetData.hpp"
 #include "engine/resources/Types.hpp"
@@ -88,8 +87,6 @@ int FindAttribute(const tg3_primitive& prim, const char* name) {
 }
 
 void SaveMeshBinary(const std::filesystem::path& path, const tryengine::resources::MeshData& data) {
-
-
     std::ofstream os(path, std::ios::binary);
     const uint32_t v_count = static_cast<uint32_t>(data.vertexBuffer.size());
     const uint32_t i_count = static_cast<uint32_t>(data.indexBuffer.size());
@@ -102,22 +99,18 @@ void SaveMeshBinary(const std::filesystem::path& path, const tryengine::resource
 
 }  // namespace
 
-bool GltfImporter::GenerateArtifact(const AssetContext& ctx, const GltfImportSettings& settings) {
-    AssetMetaHeader meta_header;
-    meta_header.guid = tryengine::core::RandomUtil::GenerateInt64();
-    meta_header.asset_type = "gltf";
-    meta_header.importer_type = "GltfImporter";
+bool GltfImporter::GenerateArtifact(const AssetContext& asset_context, AssetMetaHeader& header,
+                                    const GltfImportSettings& settings) {
+    if (!std::filesystem::exists(asset_context.cache_dir / std::to_string(header.guid)))
+        std::filesystem::create_directories(asset_context.cache_dir / std::to_string(header.guid));
 
-    if (!std::filesystem::exists(ctx.cache_dir / std::to_string(meta_header.guid)))
-        std::filesystem::create_directories(ctx.cache_dir / std::to_string(meta_header.guid));
-
-    std::filesystem::path artifact_dir = ctx.artifacts_dir / std::to_string(meta_header.guid);
+    std::filesystem::path artifact_dir = asset_context.artifacts_dir / std::to_string(header.guid);
 
     if (!std::filesystem::exists(artifact_dir)) {
         std::filesystem::create_directories(artifact_dir);
     }
 
-    std::ifstream file(ctx.asset_path, std::ios::binary | std::ios::ate);
+    std::ifstream file(asset_context.asset_path, std::ios::binary | std::ios::ate);
     if (!file.is_open())
         return false;
 
@@ -133,34 +126,37 @@ bool GltfImporter::GenerateArtifact(const AssetContext& ctx, const GltfImportSet
     tg3_parse_options_init(&opts);
 
     tg3_error_code err = tinygltf3::parse(model, errors, glb_data.data(), glb_data.size(),
-                                          ctx.asset_path.parent_path().string().c_str(), &opts);
+                                          asset_context.asset_path.parent_path().string().c_str(), &opts);
     if (err != TG3_OK) {
-        std::cerr << "Failed to parse GLB: " << ctx.asset_path << "\n";
+        std::cerr << "Failed to parse GLB: " << asset_context.asset_path << "\n";
         return false;
     }
     const tg3_model* m = model.get();
 
     ModelAssetMap asset_map;
-    asset_map.main_guid = meta_header.guid;
+    asset_map.main_guid = header.guid;
 
-    auto material_guids = ProcessMaterials(m, meta_header.guid, ctx.project_assets_dir, ctx.asset_path.stem(), asset_map);
-    ProcessTextures(m, meta_header.guid, artifact_dir, ctx.project_assets_dir, ctx.asset_path.stem(), asset_map);
-    auto mesh_guids = ProcessMeshes(m, meta_header.guid, artifact_dir, asset_map);
+    auto material_guids =
+        ProcessMaterials(m, header.guid, asset_context.project_assets_dir, asset_context.asset_path.stem(), asset_map);
+    ProcessTextures(m, header.guid, artifact_dir, asset_context.project_assets_dir, asset_context.asset_path.stem(),
+                    asset_map);
+    auto mesh_guids = ProcessMeshes(m, header.guid, artifact_dir, asset_map);
 
     ProcessNodes(m, mesh_guids, material_guids, asset_map);
 
     {
-        std::filesystem::path cache_file_path = ctx.cache_dir / std::to_string(meta_header.guid) / "hierarchy.json";
+        std::filesystem::path cache_file_path =
+            asset_context.cache_dir / std::to_string(header.guid) / "hierarchy.json";
         std::ofstream os(cache_file_path);
         cereal::JSONOutputArchive archive(os);
         archive(cereal::make_nvp("asset_map", asset_map));
     }
 
     for (const auto& key : asset_map.sub_assets | std::views::keys) {
-        meta_header.sub_assets.push_back(key);
+        header.sub_assets.push_back(key);
     }
 
-    MetaSerializer::Write(ctx.meta_path, meta_header, settings);
+    MetaSerializer::Write(asset_context.meta_path, header, settings);
 
     return true;
 }
@@ -443,7 +439,6 @@ std::vector<std::vector<uint64_t>> GltfImporter::ProcessMeshes(const tg3_model* 
 
             std::string bin_name = std::to_string(prim_sub_id) + ".bin";
             std::filesystem::path bin_path = artifact_dir / bin_name;
-
 
             SaveMeshBinary(bin_path, engine_mesh);
             asset_map.sub_assets.push_back({prim_sub_id, bin_name});

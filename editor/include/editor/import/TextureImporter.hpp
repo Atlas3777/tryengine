@@ -22,12 +22,10 @@ struct TextureImportSettings {
 
 class TextureImporter : public BaseTypedImporter<TextureImportSettings> {
 public:
-    std::string GetName() const override { return "TextureImporter"; };
-    std::string GetAssetType() const override { return "texture"; };
+    [[nodiscard]] std::string GetName() const override { return "TextureImporter"; };
+    [[nodiscard]] std::string GetAssetType() const override { return "texture"; };
 
-    bool GenerateArtifact(const AssetContext& context, const TextureImportSettings& settings) override;
+    bool GenerateArtifact(const AssetContext& context, AssetMetaHeader& header, const TextureImportSettings& settings) override;
 
-private:
-    // uint64_t GenerateMeta(const std::filesystem::path& asset_path, const std::filesystem::path& meta_path);
 };
 }  // namespace tryeditor

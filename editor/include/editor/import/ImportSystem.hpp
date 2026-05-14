@@ -79,7 +79,7 @@ public:
 
         if (it != importers_by_settings_type_.end()) {
             auto* typed = static_cast<ITypedImporter<TSettings>*>(it->second);
-            typed->GenerateArtifact(context, settings);
+            typed->GenerateArtifact(context, header, settings);
         }
     }
 

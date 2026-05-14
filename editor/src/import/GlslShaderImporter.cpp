@@ -9,10 +9,9 @@
 
 namespace tryeditor {
 
-bool GlslShaderImporter::GenerateArtifact(const AssetContext& asset_context, const GlslShaderImportSettings& settings) {
-    auto header = MetaSerializer::ReadHeader(asset_context.meta_path);
+bool GlslShaderImporter::GenerateArtifact(const AssetContext& asset_context, AssetMetaHeader& header, const GlslShaderImportSettings& settings) {
 
-    std::string guid_str = std::to_string(header->guid);
+    std::string guid_str = std::to_string(header.guid);
     std::filesystem::path asset_artifact_dir = asset_context.artifacts_dir / guid_str;
 
     if (!std::filesystem::exists(asset_artifact_dir)) {

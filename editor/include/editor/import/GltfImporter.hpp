@@ -32,7 +32,7 @@ public:
 
     AssetMetaHeader GenerateMeta(const std::filesystem::path& asset_path, const std::filesystem::path& meta_path);
 
-    bool GenerateArtifact(const AssetContext& asset_context, const GltfImportSettings& settings) override;
+    bool GenerateArtifact(const AssetContext& asset_context, AssetMetaHeader& header, const GltfImportSettings& settings) override;
 
 private:
     // --- Внутренние этапы импорта ---

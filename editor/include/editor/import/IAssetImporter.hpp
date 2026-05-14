@@ -14,8 +14,8 @@ class IAssetImporter {
 public:
     virtual ~IAssetImporter() = default;
 
-    virtual std::string GetName() const = 0;       // Это пойдет в importer_type
-    virtual std::string GetAssetType() const = 0;  // Это пойдет в asset_type
+    [[nodiscard]] virtual std::string GetName() const = 0;
+    [[nodiscard]] virtual std::string GetAssetType() const = 0;
 
     virtual bool Reimport(const AssetContext& context) = 0;
     virtual bool ImportNew(const AssetContext& context, uint64_t new_guid) = 0;
@@ -25,7 +25,8 @@ template <typename TSettings>
 class ITypedImporter {
 public:
     virtual ~ITypedImporter() = default;
-    virtual bool GenerateArtifact(const AssetContext& context, const TSettings& settings) = 0;
+
+    virtual bool GenerateArtifact(const AssetContext& context, AssetMetaHeader& header, const TSettings& settings) = 0;
 };
 
 template <typename TSettings>
@@ -34,29 +35,33 @@ public:
     bool Reimport(const AssetContext& context) override {
         TSettings settings{};
         AssetMetaHeader header;
-        MetaSerializer::Read(context.meta_path, header, settings);
 
-        return this->GenerateArtifact(context, settings);
+        // Читаем старую мету. Если файла нет или он бит, реимпорт не делаем.
+        if (!MetaSerializer::Read(context.meta_path, header, settings)) {
+            return false;
+        }
+
+        // Передаем header со старым guid дальше
+        return this->GenerateArtifact(context, header, settings);
     }
 
     bool ImportNew(const AssetContext& context, uint64_t new_guid) override {
         TSettings settings{};
         AssetMetaHeader header;
 
-        // АВТОМАТИЧЕСКИ ЗАПОЛНЯЕМ МЕТУ ДАННЫМИ ИМПОРТЕРА
         header.guid = new_guid;
         header.importer_type = this->GetName();
         header.asset_type = this->GetAssetType();
 
-        // Пишем на диск
         MetaSerializer::Write(context.meta_path, header, settings);
-        return this->GenerateArtifact(context, settings);
+
+        // Передаем header с новым guid дальше
+        return this->GenerateArtifact(context, header, settings);
     }
 };
 
 template <typename T, typename TSettings>
-concept AssetImporter = std::default_initializable<TSettings> &&
-                        std::derived_from<T, IAssetImporter> &&
+concept AssetImporter = std::default_initializable<TSettings> && std::derived_from<T, IAssetImporter> &&
                         std::derived_from<T, ITypedImporter<TSettings>>;
 
 }  // namespace tryeditor

@@ -18,8 +18,7 @@ public:
     std::string GetName() const override { return "ShaderSourceImporter"; }
     std::string GetAssetType() const override { return "glsl_shader"; }
 
-    bool GenerateArtifact(const AssetContext& asset_context, const GlslShaderImportSettings& settings) override;
-
+    bool GenerateArtifact(const AssetContext& asset_context, AssetMetaHeader& header, const GlslShaderImportSettings& settings) override;
 private:
     // Вспомогательная функция для запуска внешнего процесса (glslangValidator)
     bool CompileGLSLToSPIRV(const std::filesystem::path& input, const std::filesystem::path& output);
