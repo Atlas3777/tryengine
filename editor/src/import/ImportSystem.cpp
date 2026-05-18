@@ -1,9 +1,10 @@
 #include "editor/import/ImportSystem.hpp"
 
 #include <iostream>
-#include <random>
 
+#include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/meta/MetaSerializer.hpp"
+#include "engine/core/RandomUtil.hpp"
 
 namespace tryeditor {
 
@@ -26,13 +27,29 @@ AssetContext ImportSystem::ResolveContext(const std::filesystem::path& asset_pat
     return ctx;
 }
 
-bool ImportSystem::ValidateArtifacts(uint64_t guid, const std::filesystem::path& artifacts_dir) const {
-    std::filesystem::path folder = artifacts_dir / std::to_string(guid);
-    if (!std::filesystem::exists(folder) || !std::filesystem::is_directory(folder)) {
+bool ImportSystem::ValidateArtifacts(uint64_t guid, const AssetContext& context) const {
+    std::filesystem::path folder = context.GetArtifactDir(guid);
+
+    // Если папки нет или она пустая — реимпортируем
+    if (!std::filesystem::exists(folder) || !std::filesystem::is_directory(folder) || std::filesystem::is_empty(folder)) {
         return false;
     }
-    // Проверяем, что папка не пуста
-    return !std::filesystem::is_empty(folder);
+
+    auto asset_time = std::filesystem::last_write_time(context.asset_path);
+
+    // Проверяем файлы внутри папки артефакта
+    bool has_files = false;
+    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+        if (entry.is_regular_file()) {
+            has_files = true;
+            // Если исходник изменился ПОЗЖЕ (новее), чем этот конкретный файл артефакта — реимпорт
+            if (asset_time > entry.last_write_time()) {
+                return false;
+            }
+        }
+    }
+
+    return has_files;
 }
 
 void ImportSystem::Refresh() {
@@ -64,7 +81,7 @@ void ImportSystem::ProcessDirectory(const std::filesystem::path& assets_dir) {
 
         if (std::filesystem::exists(ctx.meta_path)) {
             auto header_opt = MetaSerializer::ReadHeader(ctx.meta_path);
-            if (header_opt) {
+            if (header_opt.has_value()) {
                 uint64_t guid = header_opt->guid;
                 std::string importer_type = header_opt->importer_type;
 
@@ -75,8 +92,8 @@ void ImportSystem::ProcessDirectory(const std::filesystem::path& assets_dir) {
 
                 auto it = importers_by_name_.find(importer_type);
                 if (it != importers_by_name_.end()) {
-                    if (!ValidateArtifacts(guid, ctx.artifacts_dir)) {
-                        ReimportAsset(*header_opt);
+                    if (!ValidateArtifacts(guid, ctx)) {
+                        ReimportAsset(ctx, *header_opt);
                     }
                 }
             }
@@ -93,10 +110,7 @@ void ImportSystem::ProcessDirectory(const std::filesystem::path& assets_dir) {
 void ImportSystem::ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer) {
     if (!importer) return;
 
-    // Генерация GUID
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
-    uint64_t new_guid = gen();
+    uint64_t new_guid = tryengine::core::RandomUtil::GenerateInt64();
 
     if (importer->ImportNew(ctx, new_guid)) {
         std::string relative_path = std::filesystem::relative(ctx.asset_path, root_path_).string();
@@ -107,11 +121,9 @@ void ImportSystem::ImportNewAsset(const AssetContext& ctx, IAssetImporter* impor
 }
 
 
-void ImportSystem::ReimportAsset(const AssetMetaHeader& header) const {
+void ImportSystem::ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const {
     const auto importer = GetImporterByName(header.importer_type);
-    const auto path = GetPath(header.guid);
-
-    auto ctx = ResolveContext(path);
+    if (!importer) return;
 
     if (importer->Reimport(ctx)) {
         std::cout << "[ImportSystem] Пересобран артефакт для: " << ctx.asset_path.filename() << "\n";

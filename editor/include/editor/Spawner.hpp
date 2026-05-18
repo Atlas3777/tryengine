@@ -1,11 +1,13 @@
 #pragma once
 
-#include "engine/core/ResourceManager.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 #include "entt/entity/fwd.hpp"
-#include "import/ImportSystem.hpp"
 
+namespace tryengine::core {
+class ResourceManager;
+}
 namespace tryeditor {
+class ImportSystem;
 class Spawner {
 public:
     Spawner(tryengine::graphics::GraphicsContext& graphics_context, tryengine::core::ResourceManager& resource_manager,

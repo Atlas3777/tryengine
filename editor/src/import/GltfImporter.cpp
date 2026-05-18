@@ -28,6 +28,7 @@ namespace {
 
 constexpr uint64_t MESH_SALT = 0x10000000;
 constexpr uint64_t TEXTURE_SALT = 0x30000000;
+constexpr uint64_t MATERIAL_SALT = 0x40000000;
 
 using tryengine::resources::TextureAddressMode;
 using tryengine::resources::TextureFilter;
@@ -55,9 +56,13 @@ TextureAddressMode MapGltfWrap(int gltf_wrap) {
     }
 }
 
-uint64_t CombineID(uint64_t main_uuid, uint32_t sub_index, uint64_t salt) {
+// Новый CombineID, который принимает строку
+uint64_t CombineID(uint64_t main_uuid, std::string_view sub_name, uint64_t salt) {
+    uint64_t name_hash = std::hash<std::string_view>{}(sub_name);
     uint64_t id = main_uuid ^ salt;
-    return id ^ (static_cast<uint64_t>(sub_index) + 0x9e3779b9 + (id << 6) + (id >> 2));
+    // Магическая константа из boost::hash_combine для качественного смешивания 64-битных чисел
+    id ^= name_hash + 0x9e3779b97f4a7c15ULL + (id << 6) + (id >> 2);
+    return id;
 }
 
 const uint8_t* GetAccessorData(const tg3_model* m, int accessor_index, uint32_t& out_stride, uint32_t& out_count) {
@@ -169,7 +174,10 @@ void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const
 
     for (uint32_t i = 0; i < m->images_count; ++i) {
         const tg3_image& gltf_img = m->images[i];
-        uint64_t tex_id = CombineID(main_uuid, i, TEXTURE_SALT);
+
+        std::string base_name = gltf_img.name.len > 0 ? std::string(gltf_img.name.data, gltf_img.name.len)
+                                                      : ("Texture_" + std::to_string(i));
+        uint64_t tex_id = CombineID(main_uuid, base_name, TEXTURE_SALT);
 
         // Поиск настроек сэмплера в GLTF для этой картинки
         TextureFilter minF = TextureFilter::Linear;
@@ -211,15 +219,12 @@ void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const
                 ext = ".jpg";
         }
 
-        std::string base_name = gltf_img.name.len > 0 ? std::string(gltf_img.name.data, gltf_img.name.len)
-                                                      : ("Texture_" + std::to_string(i));
-
-        std::filesystem::path assetPath = texSourceDir / (base_name + ext);
-        std::filesystem::path metaPath = texSourceDir / (base_name + ext + ".meta");
+        std::filesystem::path asset_path = texSourceDir / (base_name + ext);
+        std::filesystem::path meta_path = texSourceDir / (base_name + ext + ".meta");
 
         // --- 2. Сохранение оригинала в Assets ---
         {
-            std::ofstream os(assetPath, std::ios::binary);
+            std::ofstream os(asset_path, std::ios::binary);
             os.write(reinterpret_cast<const char*>(compressed_data), compressed_size);
         }
 
@@ -237,7 +242,7 @@ void GltfImporter::ProcessTextures(const tg3_model* m, uint64_t main_uuid, const
             texture_import_settings.address_u = wrapU;
             texture_import_settings.address_v = wrapV;
 
-            std::ofstream os(metaPath);
+            std::ofstream os(meta_path);
             cereal::JSONOutputArchive archive(os);
             archive(cereal::make_nvp("header", header));
             archive(cereal::make_nvp("settings", texture_import_settings));
@@ -286,8 +291,10 @@ std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_
     for (uint32_t i = 0; i < m->materials_count; ++i) {
         const tg3_material& gltf_mat = m->materials[i];
 
+        // 1. Формируем стабильное имя и GUID материала
         std::string mat_name = gltf_mat.name.len > 0 ? std::string(gltf_mat.name.data, gltf_mat.name.len)
                                                      : "Material_" + std::to_string(i);
+        uint64_t expected_mat_id = CombineID(main_uuid, mat_name, MATERIAL_SALT);
 
         tryengine::resources::MaterialAssetData mat_data;
         mat_data.name = mat_name;
@@ -295,25 +302,34 @@ std::vector<uint64_t> GltfImporter::ProcessMaterials(const tg3_model* m, uint64_
 
         const auto& pbr = gltf_mat.pbr_metallic_roughness;
 
-        // --- Новая структура: scalar_params ---
+        // Параметры цвета и свойств
         mat_data.scalar_params["albedo_color"] = {(float) pbr.base_color_factor[0], (float) pbr.base_color_factor[1],
                                                   (float) pbr.base_color_factor[2], (float) pbr.base_color_factor[3]};
         mat_data.scalar_params["roughness"] = {(float) pbr.roughness_factor};
         mat_data.scalar_params["metallic"] = {(float) pbr.metallic_factor};
 
-        // --- Новая структура: texture_params ---
+        // --- 2. Привязка ТЕКСТУР (Важный момент!) ---
         if (pbr.base_color_texture.index >= 0) {
+            // Получаем индекс картинки через текстуру
             int img_idx = m->textures[pbr.base_color_texture.index].source;
-            mat_data.texture_params["albedo_map"] = CombineID(main_uuid, img_idx, TEXTURE_SALT);
+            const tg3_image& gltf_img = m->images[img_idx];
+
+            // Генерируем точно такой же ID, какой сгенерирует ProcessTextures
+            std::string tex_name = gltf_img.name.len > 0 ? std::string(gltf_img.name.data, gltf_img.name.len)
+                                                         : ("Texture_" + std::to_string(img_idx));
+            uint64_t tex_id = CombineID(main_uuid, tex_name, TEXTURE_SALT);
+
+            mat_data.texture_params["albedo_map"] = tex_id;
         }
 
-        // Создаем через фабрику и получаем финальный GUID
-        uint64_t mat_id = assets_factory_.Create<MaterialAssetFactory>(mat_dir, mat_name, mat_data);
+        // 3. Создаем ассет через фабрику, передавая заранее вычисленный GUID
+        // Важно: ваша фабрика должна поддерживать передачу конкретного GUID
+        assets_factory_.GetFactory<MaterialAssetFactory>()->Create(mat_data, mat_dir, mat_name, expected_mat_id);
 
-        imported_materials_guids[i] = mat_id;
+        imported_materials_guids[i] = expected_mat_id;
 
-        // Регистрируем в карте модели
-        asset_map.sub_assets.push_back({mat_id, std::to_string(mat_id) + ".matbin"});
+        // Регистрируем в списке суб-ассетов модели
+        asset_map.sub_assets.push_back({expected_mat_id, std::to_string(expected_mat_id) + ".matbin"});
     }
 
     return imported_materials_guids;
@@ -328,7 +344,16 @@ std::vector<std::vector<uint64_t>> GltfImporter::ProcessMeshes(const tg3_model* 
 
     for (uint32_t i = 0; i < m->meshes_count; ++i) {
         const tg3_mesh& gltf_mesh = m->meshes[i];
+        std::string mesh_name = gltf_mesh.name.len > 0 ? std::string(gltf_mesh.name.data, gltf_mesh.name.len)
+                                                       : ("Mesh_" + std::to_string(i));
+
         for (uint32_t p = 0; p < gltf_mesh.primitives_count; ++p) {
+            // Имя примитива зависит от имени меша и индекса примитива
+            std::string prim_name = mesh_name + "_prim_" + std::to_string(p);
+
+            // Получаем стабильный ID
+            uint64_t prim_sub_id = CombineID(main_uuid, prim_name, MESH_SALT);
+
             const tg3_primitive& prim = gltf_mesh.primitives[p];
             tryengine::resources::MeshData engine_mesh;
 
@@ -434,7 +459,6 @@ std::vector<std::vector<uint64_t>> GltfImporter::ProcessMeshes(const tg3_model* 
                     engine_mesh.indexBuffer[id] = id;
             }
 
-            uint64_t prim_sub_id = CombineID(main_uuid, global_primitive_counter, MESH_SALT);
             out_mesh_primitive_guids[i].push_back(prim_sub_id);
 
             std::string bin_name = std::to_string(prim_sub_id) + ".bin";

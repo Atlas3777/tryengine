@@ -1,7 +1,6 @@
 #pragma once
-#include <cereal/archives/binary.hpp>
+
 #include <filesystem>
-#include <fstream>
 #include <string>
 
 #include "editor/AssetContext.hpp"
@@ -40,6 +39,8 @@ public:
         if (!MetaSerializer::Read(context.meta_path, header, settings)) {
             return false;
         }
+
+        header.sub_assets.clear();
 
         // Передаем header со старым guid дальше
         return this->GenerateArtifact(context, header, settings);

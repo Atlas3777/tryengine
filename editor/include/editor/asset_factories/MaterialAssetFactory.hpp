@@ -1,54 +1,44 @@
 #pragma once
-#include <filesystem>
 
 #include "editor/asset_factories/IAssetFactory.hpp"
-#include "editor/import/ImportSystem.hpp"
-#include "editor/meta/MetaSerializer.hpp"
 #include "engine/resources/MaterialAssetData.hpp"
-#include "engine/core/RandomUtil.hpp"
+#include "editor/import/ImportSystem.hpp"
 
 namespace tryeditor {
 
-class MaterialAssetFactory : public IAssetFactory {
+class MaterialAssetFactory : public BaseAssetFactory<tryengine::resources::MaterialAssetData> {
 public:
     explicit MaterialAssetFactory(ImportSystem& import_system) : import_system_(import_system) {}
 
-    uint64_t CreateDefault(const std::filesystem::path& directory) override {
-        tryengine::resources::MaterialAssetData def;
-        def.name = "New Material";
-        def.shader_asset_id = 0;
-        return Create(directory, "NewMaterial.mat", def);
+    [[nodiscard]] std::string GetAssetType() const override { return "material"; }
+    [[nodiscard]] std::string GetActionName() const override { return "Material Asset"; }
+    [[nodiscard]] std::string GetExtension() const override { return ".mat"; }
+    [[nodiscard]] std::string GetDefaultName() const override {return "new_material"; };
+    [[nodiscard]] tryengine::resources::MaterialAssetData CreateDefaultAsset() const override {
+        tryengine::resources::MaterialAssetData a{};
+        return a;
     }
 
-    uint64_t Create(const std::filesystem::path& directory, const std::string& name,
-                    const tryengine::resources::MaterialAssetData& data) {
-        std::string filename = name;
-        if (filename.find(".mat") == std::string::npos) filename += ".mat";
+    uint64_t Create(const tryengine::resources::MaterialAssetData& data, const std::filesystem::path& directory, const std::string& name, uint64_t forced_guid = 0) {
+        std::filesystem::path asset_path = directory / (name + GetExtension());
 
-        const std::filesystem::path asset_path = directory / filename ;
-        AssetMetaHeader header = CreateMeta(asset_path);
-        import_system_.SaveNativeAsset(asset_path, data, header);
+        // 1. Сохраняем сам файл ассета (JSON)
+        SaveSource(asset_path, data);
+
+        // 2. Создаем мета-данные
+        AssetMetaHeader header;
+        header.guid = (forced_guid != 0) ? forced_guid : tryengine::core::RandomUtil::GenerateInt64();
+        header.importer_type = "NativeImporter";
+        header.asset_type = GetAssetType();
+
+        MetaSerializer::Write(asset_path.string() + ".meta", header, EmptySettings{});
+
+        import_system_.RegisterAndCompileExternalAsset(asset_path, header);
 
         return header.guid;
-    }
-
-    [[nodiscard]] std::string GetActionName() const override { return "Material Asset"; }
-
-private:
-    AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
-        std::filesystem::path meta_path = asset_path.string() + ".meta";
-
-        AssetMetaHeader header;
-        header.guid = tryengine::core::RandomUtil::GenerateInt64();
-        header.importer_type = "native";
-        header.asset_type = "material";
-
-        MetaSerializer::WriteHeaderOnly(meta_path, header);
-
-        return header;
     }
 
     ImportSystem& import_system_;
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

@@ -2,6 +2,7 @@
 
 #include <entt/entity/registry.hpp>
 
+#include "editor/import/ImportSystem.hpp"
 #include "editor/meta/ModelAssetMap.hpp"
 
 namespace tryeditor {

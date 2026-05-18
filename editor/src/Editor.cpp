@@ -21,6 +21,7 @@
 #include "editor/gui/EditorGUI.hpp"
 #include "editor/import/GlslShaderImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
+#include "editor/import/NativeImporter.hpp"
 #include "engine/core/Addressables.hpp"
 #include "engine/core/ComponentSerializers.hpp"
 #include "engine/core/Components.hpp"
@@ -63,7 +64,7 @@ void Editor::Init() {
     RegisterAssetsInspector();
 
     gui_controller_manager_->RegisterController<SceneManagerController>(engine_.GetSceneManager(), *import_system_,
-                                                                       assets_factory_->Get<SceneAssetFactory>(), *addressables_provider_);
+                                                                       *assets_factory_->GetFactory<SceneAssetFactory>(), *addressables_provider_);
 
     GetImportSystem().Refresh();
 
@@ -106,6 +107,7 @@ void Editor::RegisterAssetsInspector() const {
 }
 
 void Editor::RegisterAssetsImporters() const {
+    import_system_->RegisterImporter<NativeImporter, EmptySettings>( {".scene", ".mat", ".prefab"}, *assets_factory_);
     import_system_->RegisterImporter<GlslShaderImporter, GlslShaderImportSettings>({".vert", ".frag"});
     import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"}, *assets_factory_,
                                                                        *import_system_);

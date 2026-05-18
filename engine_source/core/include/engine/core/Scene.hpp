@@ -27,6 +27,12 @@ public:
     [[nodiscard]] bool IsPersistent() const { return asset_id_ != 0; }
     [[nodiscard]] entt::registry& GetRegistry() const { return *registry_; }
 
+    template <class Archive>
+    void serialize(Archive& ar) {
+        // Пустышка. Ничего не делаем.
+        // Нужна только чтобы обмануть static_assert в дефолтных методах BaseAssetFactory
+    }
+
 private:
     std::string name_;
     uint64_t asset_id_ = 0;

@@ -100,8 +100,8 @@ private:
              std::cerr << "[TextureAssetInspector] Ошибка сохранения .meta\n";
              return;
         }
-
-        import_system_.ReimportAsset(current_header_);
+        auto ctx = import_system_.ResolveContext(asset_path);
+        import_system_.ReimportAsset(ctx, current_header_);
 
         is_asset_dirty_ = false;
     }

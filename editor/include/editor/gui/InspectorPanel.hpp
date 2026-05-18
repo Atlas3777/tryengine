@@ -1,13 +1,17 @@
 #pragma once
 
-#include <entt/entt.hpp>
+#include <entt/meta/meta.hpp>
+#include <filesystem>
 
-#include "editor/SelectionManager.hpp"
-#include "editor/asset_inspector/AssetInspectorManager.hpp"
 #include "editor/gui/IPanel.hpp"
-#include "editor/import/ImportSystem.hpp"
+
 namespace tryeditor {
+
+class SelectionManager;
+class AssetInspectorManager;
+class ImportSystem;
 class AddressablesProvider;
+
 class InspectorPanel : public IPanel {
 public:
     InspectorPanel(SelectionManager& editor_context, ImportSystem& import_system_,

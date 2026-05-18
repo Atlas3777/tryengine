@@ -18,6 +18,7 @@ namespace tryengine::core {
 class ResourceManager;
 }
 namespace tryeditor {
+class IAssetFactory;
 
 class ImportSystem {
 public:
@@ -133,9 +134,25 @@ public:
         }
     }
 
+
+
     void Refresh();
     void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
-    void ReimportAsset(const AssetMetaHeader& header) const;
+
+
+    void ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const;
+
+    void RegisterAndCompileExternalAsset(const std::filesystem::path& asset_path, const AssetMetaHeader& header) {
+        AssetContext ctx = ResolveContext(asset_path);
+
+        // Добавляем в локальные карты путей
+        std::string relative_path = std::filesystem::relative(asset_path, root_path_).string();
+        id_to_path_[header.guid] = relative_path;
+        path_to_id_[relative_path] = header.guid;
+
+        // Сразу запускаем компиляцию (Cook/Import)
+        ReimportAsset(ctx, header);
+    }
 
     uint64_t GetId(const std::string& path) const { return path_to_id_.at(path); }
     std::string GetPath(const uint64_t id) const { return id_to_path_.at(id); }
@@ -156,7 +173,7 @@ public:
 private:
     void DeleteArtifactsAndCache(uint64_t id);
     void ProcessDirectory(const std::filesystem::path& assets_dir);
-    bool ValidateArtifacts(uint64_t guid, const std::filesystem::path& artifacts_dir) const;
+    bool ValidateArtifacts(uint64_t guid, const AssetContext& ctx) const;
 
     tryengine::core::ResourceManager& resource_manager_;
 

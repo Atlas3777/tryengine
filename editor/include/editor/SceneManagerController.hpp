@@ -27,24 +27,13 @@ public:
     }
 
     bool SaveSceneAs(tryengine::core::Scene& scene) {
-        const auto path = Paths::assets / "scenes";
-        std::filesystem::create_directory(path);
+        const auto dir = Paths::assets / "scenes";
+        std::filesystem::create_directory(dir);
 
-        std::string extension = ".scene";
-        std::filesystem::path scene_path = path / (scene.GetName() + extension);
-
-        // Логика с инкрементом (scene(1), scene(2)...)
-        int counter = 1;
-        while (std::filesystem::exists(scene_path)) {
-            scene_path = path / (scene.GetName() + "(" + std::to_string(counter) + ")" + extension);
-            counter++;
-        }
-
-        std::string final_name = scene_path.stem().string();
-        auto id = scene_asset_factory_.Create(path, final_name, scene);
+        auto id = scene_asset_factory_.Create(scene, scene.GetName(), dir);
         scene.SetAssetID(id);
 
-        addressables_provider_.AddAssetInGroup("scenes", final_name, id);
+        addressables_provider_.AddAssetInGroup("scenes", scene.GetName() + std::to_string(id), id);
         return true;
     }
 
@@ -52,7 +41,7 @@ public:
         auto id = scene.GetAssetID();
         auto path = import_system_.GetPath(id);
 
-        scene_asset_factory_.Save(scene, path, id, true);
+        scene_asset_factory_.SaveSource(path, scene);
         return true;
     }
 

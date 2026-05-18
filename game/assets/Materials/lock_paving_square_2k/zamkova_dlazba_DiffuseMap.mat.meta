@@ -1,8 +1,9 @@
 {
     "header": {
-        "guid": 16162890901483499590,
-        "importer_type": "native",
+        "guid": 17758556398241700208,
+        "importer_type": "NativeImporter",
         "asset_type": "material",
         "sub_assets": []
-    }
+    },
+    "settings": {}
 }

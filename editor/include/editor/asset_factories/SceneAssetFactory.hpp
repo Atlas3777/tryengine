@@ -1,28 +1,27 @@
 #pragma once
-#include <cereal/types/string.hpp>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 #include "editor/asset_factories/IAssetFactory.hpp"
 #include "editor/import/ImportSystem.hpp"
-#include "editor/meta/MetaSerializer.hpp"
 #include "engine/core/ComponentRegistry.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/core/RandomUtil.hpp"
 #include "engine/core/Scene.hpp"
-#include "engine/core/ResourceManager.hpp"
 
 namespace tryeditor {
 
-class SceneAssetFactory : public IAssetFactory {
+class SceneAssetFactory : public BaseAssetFactory<tryengine::core::Scene> {
 public:
     explicit SceneAssetFactory(ImportSystem& import_system, tryengine::core::ComponentRegistry& registry)
         : import_system_(import_system), component_registry_(registry) {}
 
+    [[nodiscard]] std::string GetAssetType() const override { return "scene"; }
     [[nodiscard]] std::string GetActionName() const override { return "Scene Asset"; }
-
-    uint64_t CreateDefault(const std::filesystem::path& directory) override {
+    [[nodiscard]] std::string GetExtension() const override { return ".scene"; }
+    [[nodiscard]] std::string GetDefaultName() const override { return "new_scene"; };
+    [[nodiscard]] tryengine::core::Scene CreateDefaultAsset() const override {
         tryengine::core::Scene scene("Some Scene Name");
 
         auto& registry = scene.GetRegistry();
@@ -42,61 +41,37 @@ public:
         registry.emplace<tryengine::Camera>(editor_camera);
         registry.emplace<EditorCameraTag>(editor_camera);
         registry.emplace<tryengine::Relationship>(editor_camera);
-
-        return Create(directory, "NewScene.scene", scene);
+        return scene;
     }
 
-    uint64_t Create(const std::filesystem::path& directory, const std::string& name, tryengine::core::Scene& scene) {
-        std::filesystem::path asset_path = directory / name;
-
-        if (asset_path.extension() != ".scene") {
-            asset_path += ".scene";
-        }
-
-        AssetMetaHeader header = CreateMeta(asset_path);
-        Save(scene, asset_path, header.guid);
-
-        return header.guid;
-    }
-
-    void Save(tryengine::core::Scene& scene, const std::filesystem::path& asset_path, uint64_t guid, bool update = false) {
-        std::ofstream os(asset_path);
+    void SaveSource(const std::filesystem::path& path, const tryengine::core::Scene& scene) override {
+        std::ofstream os(path);
         if (!os.is_open()) {
-            std::cerr << "Error: Failed to open file stream: " << asset_path << std::endl;
+            std::cerr << "Error: Failed to open file stream: " << path << std::endl;
         }
 
         cereal::JSONOutputArchive archive(os);
         component_registry_.Serialize(scene.GetRegistry(), archive);
-
-        {
-            auto context = import_system_.ResolveContext(asset_path);
-            std::string asset_guid = std::to_string(guid);
-            std::filesystem::path artifact_dir = context.artifacts_dir / asset_guid;
-            std::filesystem::create_directories(artifact_dir);
-
-            std::ofstream os(artifact_dir / asset_guid, std::ios::binary);
-            if (os.is_open()) {
-                cereal::BinaryOutputArchive archive(os);
-                component_registry_.Serialize(scene.GetRegistry(), archive);
-            } else
-                std::cerr << "[SceneManager]: Serialization error: " << asset_guid << std::endl;
-        }
-        if (update) return;
-        import_system_.GetResourceManager().GetAssetDatabase().Refresh();
     }
 
-private:
-    AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
-        std::filesystem::path meta_path = asset_path.string() + ".meta";
+    bool LoadSource(const std::filesystem::path& path, tryengine::core::Scene& out_asset) override {
+        std::ifstream is(path);
+        if (!is.is_open())
+            return false;
+        cereal::JSONInputArchive ar(is);
+        component_registry_.Deserialize(out_asset.GetRegistry(), ar);
+        return true;
+    }
 
-        AssetMetaHeader header;
-        header.guid = tryengine::core::RandomUtil::GenerateInt64();
-        header.importer_type = "native";
-        header.asset_type = "scene";
-
-        MetaSerializer::WriteHeaderOnly(meta_path, header);
-
-        return header;
+    bool SaveArtifact(const std::filesystem::path& path, const tryengine::core::Scene& scene) override {
+        std::ofstream os(path, std::ios::binary);
+        if (os.is_open()) {
+            cereal::BinaryOutputArchive archive(os);
+            component_registry_.Serialize(scene.GetRegistry(), archive);
+            return true;
+        } else
+            std::cerr << "[SceneManager]: Serialization error: BinaryOutputArchive" << std::endl;
+        return false;
     }
 
     ImportSystem& import_system_;

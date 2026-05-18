@@ -1,54 +1,24 @@
 #pragma once
-#include <cereal/archives/binary.hpp>
-#include <cereal/archives/json.hpp>
-#include <fstream>
-#include <random>
 
 #include "editor/asset_factories/IAssetFactory.hpp"
-#include "editor/import/ImportSystem.hpp"
-#include "engine/core/RandomUtil.hpp"
 #include "engine/graphics/MaterialSystem.hpp"
 
 namespace tryeditor {
 
-class ShaderAssetFactory : public IAssetFactory {
+class ShaderAssetFactory : public BaseAssetFactory<tryengine::graphics::ShaderAsset> {
 public:
     explicit ShaderAssetFactory(ImportSystem& import_system) : import_system_(import_system) {}
 
-    uint64_t CreateDefault(const std::filesystem::path& directory) override {
-        tryengine::graphics::ShaderAsset default_shader;
-        return Create(directory, "NewShader.shader", default_shader);
-    }
-
-    uint64_t Create(const std::filesystem::path& directory, const std::string& name,
-                    const tryengine::graphics::ShaderAsset& def) {
-        const std::filesystem::path asset_path = directory / name;
-
-        AssetMetaHeader header = CreateMeta(asset_path);
-        import_system_.SaveNativeAsset<tryengine::graphics::ShaderAsset>(asset_path, def, header);
-
-        import_system_.Refresh();
-
-        return header.guid;
-    }
-
+    [[nodiscard]] std::string GetAssetType() const override { return "shader"; }
     [[nodiscard]] std::string GetActionName() const override { return "Shader Asset"; }
+    [[nodiscard]] std::string GetExtension() const override { return ".shader"; }
+    [[nodiscard]] std::string GetDefaultName() const override {return "new_shader";};
+    [[nodiscard]] tryengine::graphics::ShaderAsset CreateDefaultAsset() const override {
+        tryengine::graphics::ShaderAsset a{};
+        return a;
+    }
 
 private:
-    AssetMetaHeader CreateMeta(const std::filesystem::path& asset_path) {
-        const std::filesystem::path meta_path = asset_path.string() + ".meta";
-
-
-        AssetMetaHeader asset_header;
-        asset_header.guid = tryengine::core::RandomUtil::GenerateInt64();
-        asset_header.importer_type = "native";
-        asset_header.asset_type = "shader";
-
-        MetaSerializer::WriteHeaderOnly(meta_path, asset_header);
-        return asset_header;
-    }
-
-
     ImportSystem& import_system_;
 };
 
