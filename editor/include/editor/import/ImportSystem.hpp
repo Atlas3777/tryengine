@@ -134,14 +134,6 @@ public:
         }
     }
 
-
-
-    void Refresh();
-    void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
-
-
-    void ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const;
-
     void RegisterAndCompileExternalAsset(const std::filesystem::path& asset_path, const AssetMetaHeader& header) {
         AssetContext ctx = ResolveContext(asset_path);
 
@@ -154,21 +146,25 @@ public:
         ReimportAsset(ctx, header);
     }
 
-    uint64_t GetId(const std::string& path) const { return path_to_id_.at(path); }
-    std::string GetPath(const uint64_t id) const { return id_to_path_.at(id); }
 
     IAssetImporter* GetImporterByName(const std::string& name) const {
         auto it = importers_by_name_.find(name);
         return it != importers_by_name_.end() ? it->second : nullptr;
     }
 
-    AssetContext ResolveContext(const std::filesystem::path& asset_path) const;
+    void Refresh();
 
     void DeleteAsset(const std::filesystem::path& asset_path);
+    void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
+
+    void ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const;
     void DeleteDirectory(const std::filesystem::path& dir_path);
+    AssetContext ResolveContext(const std::filesystem::path& asset_path) const;
+
+    uint64_t GetId(const std::string& path) const { return path_to_id_.at(path); }
+    std::string GetPath(const uint64_t id) const { return id_to_path_.at(id); }
 
     tryengine::core::ResourceManager& GetResourceManager() const { return resource_manager_;};
-
 
 private:
     void DeleteArtifactsAndCache(uint64_t id);
