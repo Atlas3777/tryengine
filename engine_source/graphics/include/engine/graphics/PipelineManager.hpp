@@ -1,15 +1,16 @@
 #pragma once
 
-#include <unordered_map>
-#include "PipelineDescriptor.hpp"
 #include <SDL3/SDL_gpu.h>
-#include "engine/resources/Types.hpp" // Для sizeof(resources::Vertex)
+#include <unordered_map>
+
+#include "PipelineDescriptor.hpp"
+#include "engine/resources/Types.hpp"
 
 namespace tryengine::graphics {
 
 class PipelineManager {
 public:
-    PipelineManager(SDL_GPUDevice* device)  : device(device) {};
+    PipelineManager(SDL_GPUDevice* device) : device(device) {};
 
     SDL_GPUGraphicsPipeline* GetOrCreatePipeline(const PipelineDescriptor& desc) {
         uint32_t hash = desc.GetHashCode();
@@ -20,7 +21,7 @@ public:
             return it->second;
         }
 
-        // --- ХАРДКОД ВЕРШИН (из твоего старого кода) ---
+        // --- ХАРДКОД ВЕРШИН ---
         SDL_GPUVertexBufferDescription vertex_buffer_description{};
         vertex_buffer_description.slot = 0;
         vertex_buffer_description.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
@@ -60,7 +61,7 @@ public:
         pipelineInfo.primitive_type = desc.primitive_type;
         pipelineInfo.rasterizer_state.fill_mode = desc.fill_mode;
         pipelineInfo.rasterizer_state.cull_mode = desc.cull_mode;
-        pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE; // Оставляем стандарт
+        pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;  // Оставляем стандарт
 
         // 3. Вершины
         pipelineInfo.vertex_input_state.num_vertex_buffers = 1;
@@ -106,4 +107,4 @@ private:
     std::unordered_map<uint32_t, SDL_GPUGraphicsPipeline*> pipeline_cache_;
 };
 
-} // namespace tryengine::graphics
+}  // namespace tryengine::graphics

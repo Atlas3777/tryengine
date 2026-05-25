@@ -14,11 +14,8 @@ namespace tryengine::resources {
 struct MaterialAssetData {
     std::string name;
     uint64_t shader_asset_id;
-    // Храним значения параметров как наборы float-ов
-    // Например: "u_Color" -> {1.0, 0.0, 0.0, 1.0}
     std::map<std::string, std::vector<float>> scalar_params;
 
-    // Имя текстуры в шейдере -> ID ассета текстуры
     std::map<std::string, uint64_t> texture_params;
 
     template <class Archive>

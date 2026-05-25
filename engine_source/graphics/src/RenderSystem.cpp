@@ -90,9 +90,9 @@ void RenderSystem::RenderScene(entt::registry& reg, entt::entity camera_entity, 
         }
 
         // --- ТЕКСТУРЫ И СЭМПЛЕРЫ ---
-        for (const auto& tex : material->textures) {
-            SDL_GPUTextureSamplerBinding tsb = {tex.second.handle, tex.second.sampler};
-            SDL_BindGPUFragmentSamplers(scene_pass, tex.first, &tsb, 1);
+        for (const auto& binding : material->textures) {
+            SDL_GPUTextureSamplerBinding tsb = {binding.texture.handle, binding.texture.sampler};
+            SDL_BindGPUFragmentSamplers(scene_pass, binding.slot, &tsb, 1);
         }
 
         // --- ОТРИСОВКА ---

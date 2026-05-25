@@ -97,6 +97,11 @@ struct Shader {
     std::vector<uint8_t> default_uniform_data;
 };
 
+struct TextureBinding {
+    uint32_t slot;
+    Texture texture;
+};
+
 struct Material {
     Material() = default;
     explicit Material(Shader* shdr) { Attach(shdr); }
@@ -104,7 +109,7 @@ struct Material {
     Shader* shader = nullptr;
     std::vector<uint8_t> uniform_buffer;
 
-    std::unordered_map<uint32_t, Texture> textures;
+    std::vector<TextureBinding> textures;
 
     void Attach(Shader* shdr) {
         if (!shdr)
@@ -119,13 +124,18 @@ struct Material {
         }
     }
 
-    // Установка текстуры по слоту
-    void SetTexture(uint32_t slot, const Texture& tex) { textures[slot] = tex; }
+    void SetTexture(uint32_t slot, const Texture& tex) {
+        for (auto& binding : textures) {
+            if (binding.slot == slot) {
+                binding.texture = tex;
+                return;
+            }
+        }
+        textures.push_back({slot, tex});
+    }
 
-    // Установка текстуры по имени
     void SetTexture(const std::string& name, const Texture& tex) {
-        if (!shader)
-            return;
+        if (!shader) return;
         int32_t slot = shader->layout.FindTextureSlot(name);
         if (slot >= 0) {
             SetTexture(static_cast<uint32_t>(slot), tex);

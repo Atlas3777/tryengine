@@ -5,7 +5,6 @@
 #include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
-#include "editor/ReflectionSystem.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/BaseSystem.hpp"
