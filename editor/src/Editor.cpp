@@ -1,7 +1,6 @@
-#include <dlfcn.h>
-#include <editor/Editor.hpp>
+#include "editor/Editor.hpp"
+
 #include <filesystem>
-#include <iostream>
 
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
@@ -63,8 +62,9 @@ void Editor::Init() {
     RegisterAssetsFactories();
     RegisterAssetsInspector();
 
-    gui_controller_manager_->RegisterController<SceneManagerController>(engine_.GetSceneManager(), *import_system_,
-                                                                       *assets_factory_->GetFactory<SceneAssetFactory>(), *addressables_provider_);
+    gui_controller_manager_->RegisterController<SceneManagerController>(
+        engine_.GetSceneManager(), *import_system_, *assets_factory_->GetFactory<SceneAssetFactory>(),
+        *addressables_provider_);
 
     GetImportSystem().Refresh();
 
@@ -107,7 +107,7 @@ void Editor::RegisterAssetsInspector() const {
 }
 
 void Editor::RegisterAssetsImporters() const {
-    import_system_->RegisterImporter<NativeImporter, EmptySettings>( {".scene", ".mat", ".prefab"}, *assets_factory_);
+    import_system_->RegisterImporter<NativeImporter, EmptySettings>({".scene", ".mat", ".prefab"}, *assets_factory_);
     import_system_->RegisterImporter<GlslShaderImporter, GlslShaderImportSettings>({".vert", ".frag"});
     import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"}, *assets_factory_,
                                                                        *import_system_);
@@ -128,55 +128,56 @@ void Editor::RegisterResourceLoaders() const {
 }
 
 bool Editor::LoadGameLibrary(const std::string& original_path) {
-    UnloadGameLibrary();
-
-    namespace fs = std::filesystem;
-    const std::string tempPath = original_path + "_temp.so";
-
-    try {
-        if (fs::exists(original_path)) {
-            fs::copy_file(original_path, tempPath, fs::copy_options::overwrite_existing);
-        } else {
-            std::cerr << "[Editor] Library not found: " << original_path << std::endl;
-            return false;
-        }
-    } catch (const fs::filesystem_error& e) {
-        std::cerr << "[Editor] Copy error: " << e.what() << std::endl;
-        return false;
-    }
-
-    game_lib.handle = dlopen(tempPath.c_str(), RTLD_NOW);
-    if (!game_lib.handle) {
-        std::cerr << "[Editor] dlopen error: " << dlerror() << std::endl;
-        return false;
-    }
-
-    game_lib.onInit = (tryengine::core::Game_OnInitFn) dlsym(game_lib.handle, "Game_OnInit");
-    game_lib.onUpdate = (tryengine::core::Game_OnUpdateFn) dlsym(game_lib.handle, "Game_OnUpdate");
-    game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn) dlsym(game_lib.handle, "Game_OnShutdown");
-
-    if (!game_lib.IsValid()) {
-        std::cerr << "[Editor] Failed to find GameAPI functions in " << original_path << std::endl;
-        UnloadGameLibrary();
-        return false;
-    }
-
-    std::cout << "[Editor] Game library loaded. Initializing..." << std::endl;
-    game_lib.onInit(engine_);
-
     return true;
+    // UnloadGameLibrary();
+    //
+    // namespace fs = std::filesystem;
+    // const std::string tempPath = original_path + "_temp.so";
+    //
+    // try {
+    //     if (fs::exists(original_path)) {
+    //         fs::copy_file(original_path, tempPath, fs::copy_options::overwrite_existing);
+    //     } else {
+    //         std::cerr << "[Editor] Library not found: " << original_path << std::endl;
+    //         return false;
+    //     }
+    // } catch (const fs::filesystem_error& e) {
+    //     std::cerr << "[Editor] Copy error: " << e.what() << std::endl;
+    //     return false;
+    // }
+    //
+    // game_lib.handle = dlopen(tempPath.c_str(), RTLD_NOW);
+    // if (!game_lib.handle) {
+    //     std::cerr << "[Editor] dlopen error: " << dlerror() << std::endl;
+    //     return false;
+    // }
+    //
+    // game_lib.onInit = (tryengine::core::Game_OnInitFn) dlsym(game_lib.handle, "Game_OnInit");
+    // game_lib.onUpdate = (tryengine::core::Game_OnUpdateFn) dlsym(game_lib.handle, "Game_OnUpdate");
+    // game_lib.onShutdown = (tryengine::core::Game_OnShutdownFn) dlsym(game_lib.handle, "Game_OnShutdown");
+    //
+    // if (!game_lib.IsValid()) {
+    //     std::cerr << "[Editor] Failed to find GameAPI functions in " << original_path << std::endl;
+    //     UnloadGameLibrary();
+    //     return false;
+    // }
+    //
+    // std::cout << "[Editor] Game library loaded. Initializing..." << std::endl;
+    // game_lib.onInit(engine_);
+    //
+    // return true;
 }
 
 void Editor::UnloadGameLibrary() {
-    if (game_lib.handle) {
-        if (game_lib.onShutdown) {
-            game_lib.onShutdown(engine_);
-        }
-
-        dlclose(game_lib.handle);
-        game_lib.Clear();
-        std::cout << "[Editor] Game library unloaded." << std::endl;
-    }
+    // if (game_lib.handle) {
+    //     if (game_lib.onShutdown) {
+    //         game_lib.onShutdown(engine_);
+    //     }
+    //
+    //     dlclose(game_lib.handle);
+    //     game_lib.Clear();
+    //     std::cout << "[Editor] Game library unloaded." << std::endl;
+    // }
 }
 
 void Editor::LoadDefaultScene() const {

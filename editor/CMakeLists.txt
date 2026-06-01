@@ -1,3 +1,5 @@
+#editor/CMakeLists.txt
+
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
@@ -9,7 +11,7 @@ FetchContent_Declare(tinygltf GIT_REPOSITORY https://github.com/syoyo/tinygltf.g
 FetchContent_MakeAvailable(imgui imguizmo stb tinygltf)
 
 # --- ПАТЧИНГ IMGUIZMO ---
-set(IMGUIZMO_CPP "${imguizmo_SOURCE_DIR}/ImGuizmo.cpp")
+set(IMGUIZMO_CPP "${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp")
 
 # Считываем содержимое файла
 file(READ "${IMGUIZMO_CPP}" IMGUIZMO_CONTENT)
@@ -33,21 +35,14 @@ add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
-        ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
+        ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp
 )
 
 target_include_directories(imgui_lib PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
-        ${imguizmo_SOURCE_DIR}
+        ${imguizmo_SOURCE_DIR}/src
 )
-
-if (NOT TARGET imgui_filebrowser)
-    add_library(imgui_filebrowser INTERFACE)
-    target_include_directories(imgui_filebrowser INTERFACE ${imgui_filebrowser_SOURCE_DIR})
-    # Привязываем к основной либе ImGui, чтобы заголовки виделись корректно
-    target_link_libraries(imgui_filebrowser INTERFACE imgui_lib)
-endif ()
 
 target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
 
@@ -65,19 +60,8 @@ target_link_libraries(editor PRIVATE
         engine_resources
         engine_graphics
         imgui_lib
-        imgui_filebrowser
         ${CMAKE_DL_LIBS}
 
         tinygltf
         stb_image
 )
-
-if (TARGET game_shared)
-    add_dependencies(editor game_shared)
-    add_custom_command(TARGET editor POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:game_shared>
-            $<TARGET_FILE_DIR:editor>
-            COMMENT "Copying game shared library → editor output dir"
-    )
-endif ()

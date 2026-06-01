@@ -1,9 +1,8 @@
 #pragma once
+
 #include <entt/resource/cache.hpp>
 #include <entt/resource/resource.hpp>
-#include <memory>
 #include <string>
-#include <unordered_map>
 
 namespace tryengine::core {
 class ICacheBase {

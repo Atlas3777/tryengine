@@ -2,9 +2,12 @@
 #include <memory>
 #include <string>
 
-#include "engine/core/GameAPI.hpp"
+// #include "engine/core/GameAPI.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 
+namespace tryengine::core {
+class Engine;
+}
 namespace tryeditor {
 class ReflectionSystem;
 class AddressablesProvider;
@@ -46,7 +49,7 @@ public:
 
     bool running = false;
     bool play_mode = false;
-    tryengine::core::GameLibrary game_lib;
+    // tryengine::core::GameLibrary game_lib;
 
 private:
     std::unique_ptr<ImportSystem> import_system_;

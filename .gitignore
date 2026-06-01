@@ -1,17 +1,17 @@
-# CMake артефакты
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
 cmake_install.cmake
 Makefile
-# Если собираешь не в /build, а в корне (что не очень хорошо, но бывает)
-*.spv
-# Сборочные файлы
+
 build/
 build-asan/
 cmake-build-debug/
 game/artifacts/
 game/.cache/
+engine_source/daslib/
+
+*.spv
 
 *.o
 *.a
@@ -19,13 +19,11 @@ game/.cache/
 *.exe
 *.out
 
-# Временные файлы
 *.tmp
 *.log
 
 compile_commands.json
 
-# IDE и редакторы
 .vscode/
 .idea/
 .clangd/
@@ -33,9 +31,6 @@ compile_commands.json
 .cache/
 *.swp
 *.swo
-
-# Вендорные зависимости
-vendored/
 
 # Операционная система
 .DS_Store

@@ -1,6 +1,8 @@
 #pragma once
+
 #include <memory>
 
+#include "daScript/simulate/simulate.h"
 #include "editor/Editor.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/InputState.hpp"
@@ -24,5 +26,8 @@ private:
     std::unique_ptr<tryengine::core::Engine> engine_;
     std::unique_ptr<Editor> editor_;
     tryengine::core::InputState input_state_;
+
+    das::Context* das_ctx = nullptr;
+    das::SimFunction* fn_game_update = nullptr;
 };
 }  // namespace tryeditor

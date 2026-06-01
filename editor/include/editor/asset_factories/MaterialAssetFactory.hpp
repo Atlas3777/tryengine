@@ -1,8 +1,8 @@
 #pragma once
 
 #include "editor/asset_factories/IAssetFactory.hpp"
-#include "engine/resources/MaterialAssetData.hpp"
 #include "editor/import/ImportSystem.hpp"
+#include "engine/resources/MaterialAssetData.hpp"
 
 namespace tryeditor {
 
@@ -13,13 +13,14 @@ public:
     [[nodiscard]] std::string GetAssetType() const override { return "material"; }
     [[nodiscard]] std::string GetActionName() const override { return "Material Asset"; }
     [[nodiscard]] std::string GetExtension() const override { return ".mat"; }
-    [[nodiscard]] std::string GetDefaultName() const override {return "new_material"; };
+    [[nodiscard]] std::string GetDefaultName() const override { return "new_material"; };
     [[nodiscard]] tryengine::resources::MaterialAssetData CreateDefaultAsset() const override {
         tryengine::resources::MaterialAssetData a{};
         return a;
     }
 
-    uint64_t Create(const tryengine::resources::MaterialAssetData& data, const std::filesystem::path& directory, const std::string& name, uint64_t forced_guid = 0) {
+    uint64_t Create(const tryengine::resources::MaterialAssetData& data, const std::filesystem::path& directory,
+                    const std::string& name, uint64_t forced_guid = 0) {
         std::filesystem::path asset_path = directory / (name + GetExtension());
 
         // 1. Сохраняем сам файл ассета (JSON)

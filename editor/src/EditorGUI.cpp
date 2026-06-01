@@ -1,11 +1,12 @@
 #include "editor/gui/EditorGUI.hpp"
 
-#include <ImGuizmo.h>
+#include <imgui.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
+#include <ImGuizmo.h>
 
 #include "editor/AddressablesProvider.hpp"
 #include "editor/ControllerManager.hpp"
@@ -72,10 +73,10 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
     panels_.emplace_back(
         std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
     panels_.emplace_back(std::make_unique<HierarchyPanel>(selection_manager_));
-    panels_.emplace_back(std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.GetSceneManager()));
+    panels_.emplace_back(
+        std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.GetSceneManager()));
     panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
 }
-
 
 EditorGUI::~EditorGUI() {
     ImGui_ImplSDLGPU3_Shutdown();

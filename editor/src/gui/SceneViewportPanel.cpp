@@ -1,5 +1,7 @@
 #include "editor/gui/SceneViewportPanel.hpp"
 
+#include <ImGuizmo.h>
+
 #include <glm/gtc/type_ptr.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
@@ -14,7 +16,8 @@ namespace tryeditor {
 void SceneViewportPanel::OnUpdate(double dt, const tryengine::core::InputState& input, entt::registry& reg) {
     if (!is_focused_ && !is_hovered_)
         return;
-    if (!is_input_captured_) return;
+    if (!is_input_captured_)
+        return;
     UpdateEditorCameraSystem(reg, dt, input);
 }
 
@@ -60,7 +63,6 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     float viewportHeight = maxRegion.y - minRegion.y;
     ImGuizmo::SetRect(viewportX, viewportY, viewportWidth, viewportHeight);
 
-
     glm::mat4 view_mat = camera.view_matrix;
     const float aspect = static_cast<float>(target_->GetWidth()) / static_cast<float>(target_->GetHeight());
     glm::mat4 proj_mat = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
@@ -68,21 +70,17 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
 
     // --- ПРОКАЧКА 3: Привязка к сетке (Snapping) по зажатому Ctrl ---
     bool snap = ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
-    float snapValue = 0.5f; // Шаг для перемещения и скейла
+    float snapValue = 0.5f;  // Шаг для перемещения и скейла
     if (current_gizmo_operation_ == ImGuizmo::ROTATE) {
-        snapValue = 45.0f; // Шаг для вращения (45 градусов)
+        snapValue = 45.0f;  // Шаг для вращения (45 градусов)
     }
-    float snapValues[3] = { snapValue, snapValue, snapValue };
+    float snapValues[3] = {snapValue, snapValue, snapValue};
 
     // --- 4. Рендер и манипуляция ---
-    ImGuizmo::Manipulate(
-        glm::value_ptr(view_mat),
-        glm::value_ptr(proj_mat),
-        current_gizmo_operation_,
-        current_gizmo_mode_,
-        glm::value_ptr(modelMatrix),
-        nullptr, // deltaMatrix
-        snap ? snapValues : nullptr // Передаем массив привязки, если зажат Ctrl
+    ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), current_gizmo_operation_,
+                         current_gizmo_mode_, glm::value_ptr(modelMatrix),
+                         nullptr,                     // deltaMatrix
+                         snap ? snapValues : nullptr  // Передаем массив привязки, если зажат Ctrl
     );
 
     if (ImGuizmo::IsUsing()) {

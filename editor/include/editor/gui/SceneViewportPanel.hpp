@@ -1,9 +1,8 @@
 #pragma once
 #include <imgui.h>
 
-#include <ImGuizmo.h>
-
 #include <iostream>
+#include <ImGuizmo.h>
 
 #include "editor/Components.hpp"
 #include "editor/EditorGUIUtils.hpp"

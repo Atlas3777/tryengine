@@ -5,6 +5,10 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build" FORCE)
 endif()
 
+if(NOT WIN32)
+    add_link_options("-fuse-ld=mold")
+endif()
+
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
@@ -15,6 +19,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -34,7 +40,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND USE_ASAN)
 endif()
 
 # ==================== МОДУЛИ ====================
+
 add_subdirectory(engine_source)
-add_subdirectory(game)
 add_subdirectory(editor)
 add_subdirectory(game_client)
