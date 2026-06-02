@@ -3,6 +3,7 @@
 #include <memory>
 
 namespace tryengine::core {
+class ScriptSystem;
 class Clock;
 class SceneManager;
 class ComponentRegistry;
@@ -27,11 +28,13 @@ public:
     [[nodiscard]] InputState& GetInput() const { return *input; }
     [[nodiscard]] ResourceManager& GetResourceManager() const { return *resource_manager_; }
     [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return *component_registry_; }
+    [[nodiscard]] ScriptSystem& GetScriptSystem() const { return *script_system_; }
 
 private:
     std::unique_ptr<ResourceManager> resource_manager_;
     std::unique_ptr<SceneManager> scene_manager_;
     std::unique_ptr<ComponentRegistry> component_registry_;
+    std::unique_ptr<ScriptSystem> script_system_;
     std::unique_ptr<Clock> clock;
 
     InputState* input = nullptr;

@@ -1,27 +1,17 @@
 #include "editor/EditorApp.hpp"
 
-#include <daScript/ast/ast.h>
-#include <daScript/daScriptModule.h>
-#include <daScript/misc/string_writer.h>
-#include <daScript/simulate/fs_file_info.h>
 #include <imgui_impl_sdl3.h>
 
-#include "daScript/misc/sysos.h"
 #include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
 #include "editor/gui/EditorGUI.hpp"
-#include "engine/core/AssetDatabase.hpp"
 #include "engine/core/BaseSystem.hpp"
 #include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
-
-void InitializeDaScriptModules() {
-    NEED_ALL_DEFAULT_MODULES;
-    //NEED_MODULE(Module_Engine);  // Теперь макрос корректно сошлется на глобальную функцию
-}
+#include "engine/core/ScriptSystem.hpp"
 
 namespace tryeditor {
 
@@ -42,37 +32,14 @@ void EditorApp::Init() {
 
     editor_->Init();
 
+
     editor_->running = true;
     editor_->play_mode = false;
 
-
-    das::setDasRoot("engine_content");
-
-    InitializeDaScriptModules();
-    das::Module::Initialize();
-
-    das::TextPrinter tout;
-    das::ModuleGroup dummyLibGroup;
-
-    auto fAccess = das::make_smart<das::FsFileAccess>();
-
-    // Компилируем точку входа
-    auto program = das::compileDaScript("game/assets/scripts/game.das", fAccess, tout, dummyLibGroup);
-    if (!program->failed()) {
-        das_ctx = new das::Context(program->getContextStackSize());
-        if (program->simulate(*das_ctx, tout)) {
-            // Находим функции
-            auto fn_init = das_ctx->findFunction("start");
-            fn_game_update = das_ctx->findFunction("update");
-
-            // Вызываем Init
-            if (fn_init) {
-                das_ctx->evalWithCatch(fn_init, nullptr);
-            }
-        }
-    }
-    else {
-        std::cout << "Failed to initialize" << std::endl;
+    if (engine_->GetScriptSystem().LoadMainScript("game/assets/scripts/main.das")) {
+        engine_->GetScriptSystem().InvokeStart();
+    } else {
+        SDL_Log("Failed to compile main.das");
     }
 }
 
@@ -86,10 +53,9 @@ void EditorApp::Run() {
         tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene().GetRegistry());
         tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene().GetRegistry());
 
-        if (editor_->play_mode && das_ctx && fn_game_update) {
+        if (editor_->play_mode) {
             float dt = static_cast<float>(time_state.delta_time);
-
-            das::das_invoke_function<void>::invoke(das_ctx, nullptr, fn_game_update, dt);
+            engine_->GetScriptSystem().InvokeUpdate(dt);
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
@@ -126,15 +92,6 @@ void EditorApp::UpdateInput() {
 
 void EditorApp::Shutdown() {
     std::cout << "EditorApp shutting down..." << std::endl;
-
-    // Освобождаем контекст, если он был выделен
-    if (das_ctx) {
-        delete das_ctx;
-        das_ctx = nullptr;
-    }
-
-    // Выгружаем модули daScript
-    das::Module::Shutdown();
 }
 
 }  // namespace tryeditor
