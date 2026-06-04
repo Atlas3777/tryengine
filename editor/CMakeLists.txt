@@ -3,7 +3,7 @@
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
-FetchContent_Declare(imgui     GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG docking)
+FetchContent_Declare(imgui     GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.8-docking)
 FetchContent_Declare(imguizmo  GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master)
 FetchContent_Declare(stb       GIT_REPOSITORY https://github.com/nothings/stb.git    GIT_TAG master)
 FetchContent_Declare(tinygltf  GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.0)
@@ -31,19 +31,12 @@ add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
         ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp
-#
-#        # Интегрируем биндинги прямо в нашу imgui библиотеку
-#        ${DASIMGUI_SRCS}
 )
 
 target_include_directories(imgui_lib PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
         ${imguizmo_SOURCE_DIR}/src
-
-#        # Пути к заголовкам биндингов и самого daScript
-#        ${DASIMGUI_ROOT_DIR}/src
-#        ${DASLANG_DIR}/include
 )
 
 target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
@@ -66,3 +59,9 @@ target_link_libraries(editor PRIVATE
         tinygltf
         stb_image
 )
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Отключаем RTTI персонально для файла с биндингами daScript
+    set_source_files_properties(src/EditorScriptBindings.cpp
+            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+    )
+endif()

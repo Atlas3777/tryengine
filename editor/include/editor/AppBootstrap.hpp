@@ -4,9 +4,9 @@
 #include <fstream>
 #include <iostream>
 
-#include "Paths.hpp"
 #include "cereal/archives/json.hpp"
 #include "engine/core/Addressables.hpp"
+#include "utils/Paths.hpp"
 
 namespace tryeditor {
 class AppBootstrap {
@@ -38,7 +38,7 @@ private:
         {
             std::ifstream is(path);
             cereal::JSONInputArchive archive(is);
-            archive( data);
+            archive(data);
         }
         return data;
     }

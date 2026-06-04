@@ -11,7 +11,7 @@ target_link_libraries(engine_core PUBLIC
         glm::glm
         EnTT::EnTT
         cereal::cereal
-        DAS::libDaScript
+        DAS::libDaScriptDyn
         Threads::Threads  # Потоки (обязательно для daScript)
 )
 

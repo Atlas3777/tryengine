@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_log.h>
+#include <algorithm>
 #include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
 #include <fstream>
@@ -9,9 +10,7 @@
 #include <string>
 
 #include "engine/core/ResourceManager.hpp"
-#include "engine/graphics/MaterialSystem.hpp"
 #include "engine/graphics/Types.hpp"
-#include "engine/resources/MaterialAssetData.hpp"
 
 namespace tryengine::graphics {
 

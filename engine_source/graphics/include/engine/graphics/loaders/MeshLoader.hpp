@@ -8,7 +8,7 @@
 
 namespace tryengine::graphics {
 class MeshLoader {
-   public:
+public:
     using result_type = std::shared_ptr<Mesh>;
 
     explicit MeshLoader(core::ResourceManager& res, SDL_GPUDevice* device) : res_manager(&res), device(device) {}
@@ -62,7 +62,7 @@ class MeshLoader {
 
         const SDL_GPUTransferBufferLocation transferBuffer2{tBuf, vSize};
         const SDL_GPUBufferRegion bufferReg2{gpu_mesh->index_buffer, 0, iSize};
-        SDL_UploadToGPUBuffer(copy, &transferBuffer2,&bufferReg2, false);
+        SDL_UploadToGPUBuffer(copy, &transferBuffer2, &bufferReg2, false);
 
         SDL_EndGPUCopyPass(copy);
 
@@ -72,7 +72,7 @@ class MeshLoader {
         return gpu_mesh;
     }
 
-   private:
+private:
     core::ResourceManager* res_manager;
     SDL_GPUDevice* device;
 };

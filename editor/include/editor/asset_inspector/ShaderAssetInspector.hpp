@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../utils/EditorGUIUtils.hpp"
 #include "IAssetInspector.hpp"
-#include "editor/EditorGUIUtils.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/MetaSerializer.hpp"
 

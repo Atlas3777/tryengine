@@ -1,28 +1,30 @@
 #pragma once
+
 #include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
 #include <entt/core/type_info.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "editor/import/IAssetImporter.hpp"
 #include "editor/AssetContext.hpp"
+#include "editor/import/IAssetImporter.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/resources/AssetTypes.hpp"
 
 namespace tryengine::core {
 class ResourceManager;
 }
+
 namespace tryeditor {
-class IAssetFactory;
 
 class ImportSystem {
 public:
-    ImportSystem(tryengine::core::ResourceManager& resource_manager) : resource_manager_(resource_manager) {};
+    ImportSystem(tryengine::core::ResourceManager& resource_manager);
 
     template <typename TImporter, typename TSettings, typename... Args>
         requires AssetImporter<TImporter, TSettings>
@@ -86,11 +88,9 @@ public:
 
     template <typename AssetData>
     void LoadNativeAsset(const std::filesystem::path& path, AssetData& out_data) {
-        {
-            std::ifstream is(path);
-            cereal::JSONInputArchive archive(is);
-            archive(cereal::make_nvp("data", out_data));
-        }
+        std::ifstream is(path);
+        cereal::JSONInputArchive archive(is);
+        archive(cereal::make_nvp("data", out_data));
     }
 
     template <typename AssetData>
@@ -134,37 +134,20 @@ public:
         }
     }
 
-    void RegisterAndCompileExternalAsset(const std::filesystem::path& asset_path, const AssetMetaHeader& header) {
-        AssetContext ctx = ResolveContext(asset_path);
-
-        // Добавляем в локальные карты путей
-        std::string relative_path = std::filesystem::relative(asset_path, root_path_).string();
-        id_to_path_[header.guid] = relative_path;
-        path_to_id_[relative_path] = header.guid;
-
-        // Сразу запускаем компиляцию (Cook/Import)
-        ReimportAsset(ctx, header);
-    }
-
-
-    IAssetImporter* GetImporterByName(const std::string& name) const {
-        auto it = importers_by_name_.find(name);
-        return it != importers_by_name_.end() ? it->second : nullptr;
-    }
+    void RegisterAndCompileExternalAsset(const std::filesystem::path& asset_path, const AssetMetaHeader& header);
+    IAssetImporter* GetImporterByName(const std::string& name) const;
 
     void Refresh();
-
     void DeleteAsset(const std::filesystem::path& asset_path);
     void ImportNewAsset(const AssetContext& ctx, IAssetImporter* importer);
-
     void ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const;
     void DeleteDirectory(const std::filesystem::path& dir_path);
     AssetContext ResolveContext(const std::filesystem::path& asset_path) const;
 
-    uint64_t GetId(const std::string& path) const { return path_to_id_.at(path); }
-    std::string GetPath(const uint64_t id) const { return id_to_path_.at(id); }
+    uint64_t GetId(const std::string& path) const;
+    std::string GetPath(const uint64_t id) const;
 
-    tryengine::core::ResourceManager& GetResourceManager() const { return resource_manager_;};
+    tryengine::core::ResourceManager& GetResourceManager() const;
 
 private:
     void DeleteArtifactsAndCache(uint64_t id);
@@ -189,7 +172,6 @@ private:
     std::vector<std::unique_ptr<IAssetImporter>> importers_;
     std::unordered_map<std::string, IAssetImporter*> importers_by_ext_;
     std::unordered_map<std::string, IAssetImporter*> importers_by_name_;
-
     std::unordered_map<entt::id_type, IAssetImporter*> importers_by_settings_type_;
 
     std::unordered_map<uint64_t, std::string> id_to_path_;

@@ -1,6 +1,6 @@
 #include "editor/gui/FileBrowserPanel.hpp"
 
-#include "editor/EditorGUIUtils.hpp"
+#include "../../include/editor/utils/EditorGUIUtils.hpp"
 #include "editor/SceneManagerController.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/import/ImportSystem.hpp"

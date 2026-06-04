@@ -1,7 +1,10 @@
 #pragma once
-#include <SDL3/SDL_log.h>
 
-#include "engine/graphics/MaterialSystem.hpp"
+#include <cereal/archives/binary.hpp>
+#include <fstream>
+
+#include "engine/core/ResourceManager.hpp"
+#include "engine/graphics/Types.hpp"
 #include "engine/resources/MaterialAssetData.hpp"
 
 namespace tryengine::graphics {

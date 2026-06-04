@@ -1,3 +1,5 @@
+#pragma once
+
 #include <any>
 #include <entt/core/type_info.hpp>
 #include <unordered_map>

@@ -47,6 +47,12 @@ struct MeshRenderer {
     }
 };
 
+struct LightComponent {
+    glm::vec3 color{1.0f, 1.0f, 1.0f}; // Цвет света (RGB)
+    float intensity{1.0f};              // Интенсивность (яркость)
+    float radius{10.0f};                // Радиус освещения (Attenuation)
+};
+
 struct Relationship {
     std::size_t children{};
     entt::entity first{entt::null};

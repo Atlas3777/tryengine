@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "../../engine_source/graphics/include/engine/graphics/loaders/MeshLoader.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/ControllerManager.hpp"
@@ -27,10 +28,9 @@
 #include "engine/core/GameAPI.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
-#include "engine/graphics/MaterialLoader.hpp"
-#include "engine/graphics/MeshLoader.hpp"
-#include "engine/graphics/ShaderAssetLoader.hpp"
 #include "engine/graphics/Types.hpp"
+#include "engine/graphics/loaders/MaterialLoader.hpp"
+#include "engine/graphics/loaders/ShaderAssetLoader.hpp"
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
 #include "engine/resources/Types.hpp"
@@ -154,6 +154,24 @@ void Editor::LoadDefaultScene() const {
     registry.emplace<tryengine::Camera>(editor_camera);
     registry.emplace<EditorCameraTag>(editor_camera);
     registry.emplace<tryengine::Relationship>(editor_camera);
+
+    // Основной белый источник света (Сверху-справа)
+    const auto main_light = registry.create();
+    registry.emplace<tryengine::Tag>(main_light, "Main_PointLight");
+    registry.emplace<tryengine::Transform>(
+        main_light, tryengine::Transform{glm::vec3(4.f, 6.f, 3.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::LightComponent>(
+        main_light, tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f}); // Теплый белый, радиус 20
+    registry.emplace<tryengine::Relationship>(main_light);
+
+    // Дополнительный заполняющий синий источник (Слева)
+    const auto fill_light = registry.create();
+    registry.emplace<tryengine::Tag>(fill_light, "Fill_BlueLight");
+    registry.emplace<tryengine::Transform>(
+        fill_light, tryengine::Transform{glm::vec3(-5.f, 3.f, 2.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::LightComponent>(
+        fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.5f, 15.0f}); // Яркий синий, радиус 15
+    registry.emplace<tryengine::Relationship>(fill_light);
 
     engine_.GetSceneManager().SetActiveScene(std::move(scene));
 }

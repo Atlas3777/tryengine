@@ -1,8 +1,5 @@
 #pragma once
 
-#include "editor/asset_factories/IAssetFactory.hpp"
-#include "engine/graphics/MaterialSystem.hpp"
-
 namespace tryeditor {
 
 class ShaderAssetFactory : public BaseAssetFactory<tryengine::graphics::ShaderAsset> {

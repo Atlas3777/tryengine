@@ -1,14 +1,18 @@
 #pragma once
+
 #include <imgui.h>
-
-#include <iostream>
 #include <ImGuizmo.h>
+#include <entt/entity/registry.hpp>
+#include <iostream>
+#include <vector>
 
+#include "editor/utils/EditorGUIUtils.hpp"
 #include "editor/Components.hpp"
-#include "editor/EditorGUIUtils.hpp"
 #include "editor/Spawner.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "engine/core/Components.hpp"
+#include "engine/graphics/RenderSystem.hpp"
+#include "engine/graphics/May.hpp"
 
 namespace tryeditor {
 class SceneViewportPanel : public BaseViewport {
@@ -52,7 +56,6 @@ public:
                     std::cout << "Spawning asset ID: " << data->asset_id << std::endl;
                     spawner_.Spawn(reg, data->asset_id);
                 } else {
-                    // Можно вывести лог или визуальное предупреждение, что тип не тот
                     std::cout << "Wrong asset type for spawning!" << std::endl;
                 }
             }
@@ -68,7 +71,42 @@ public:
     void OnRender(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& rs, entt::registry& reg) override {
         const auto editor_camera = reg.view<tryengine::Camera, EditorCameraTag>().front();
         if (editor_camera == entt::null) return;
-        rs.RenderScene(reg, editor_camera, target_.get(), cmd);
+
+        // Step 1: Наполняем независимую от ECS очередь команд рендера через EnTT-заглушку
+        tryengine::graphics::SubmitSceneFromEnTT(reg, editor_camera, rs);
+
+        // Step 2: Вычисляем параметры камеры на основе текущего размера текстуры вьюпорта
+        auto& cam_transform = reg.get<tryengine::Transform>(editor_camera);
+        auto& camera = reg.get<tryengine::Camera>(editor_camera);
+
+        float aspect = static_cast<float>(target_->GetWidth()) / static_cast<float>(target_->GetHeight());
+
+        tryengine::graphics::CameraData camera_data;
+        camera_data.view = camera.view_matrix;
+        camera_data.proj = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
+        camera_data.position = cam_transform.position;
+
+        // Step 3: Задаем настройки минимального уровня освещения и источников света
+        tryengine::graphics::AmbientSettings ambient; // Использует дефолтные параметры (ночной эмбиент)
+        std::vector<tryengine::graphics::Light> scene_lights;
+
+        auto light_view = reg.view<tryengine::Transform, tryengine::LightComponent>();
+        for (auto entity : light_view) {
+            const auto& t = light_view.get<tryengine::Transform>(entity);
+            const auto& l = light_view.get<tryengine::LightComponent>(entity);
+
+            tryengine::graphics::Light render_light;
+            render_light.position = t.position;
+            render_light.intensity = l.intensity;
+            render_light.color = l.color;
+            render_light.radius = l.radius;
+            render_light.type = tryengine::graphics::LightType::Point;
+
+            scene_lights.push_back(render_light);
+        }
+
+        // Step 4: Выполняем отрисовку отсортированной очереди команд с оптимизацией стейтов GPU
+        rs.ExecuteCommands(cmd, target_.get(), camera_data, ambient, scene_lights);
     }
 
 private:

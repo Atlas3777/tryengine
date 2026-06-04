@@ -1,8 +1,8 @@
 #pragma once
+
 #include <entt/entity/entity.hpp>
 #include <entt/entity/registry.hpp>
 #include <filesystem>
-#include <variant>
 
 #include "editor/Components.hpp"
 

@@ -13,10 +13,13 @@
 #include "engine/core/SceneManager.hpp"
 #include "engine/core/ScriptSystem.hpp"
 
+void RegisterEditorScriptBindings();
+
 namespace tryeditor {
 
 void EditorApp::Init() {
     AppBootstrap::CheckBaseProjectData();
+    RegisterEditorScriptBindings();
 
     engine_ = std::make_unique<tryengine::core::Engine>();
     engine_->SetInputSource(&(this->input_state_));
@@ -39,8 +42,14 @@ void EditorApp::Init() {
     if (engine_->GetScriptSystem().LoadMainScript("game/assets/scripts/main.das")) {
         engine_->GetScriptSystem().InvokeStart();
     } else {
-        SDL_Log("Failed to compile main.das");
+        std::cerr << "Failed to compile main.das \n";
     }
+
+    // if (engine_->GetScriptSystem().LoadCustomScript("editor", "editor/daslang/editor.das")) {
+    //     std::cout << "nice" << std::endl;
+    // } else {
+    //     std::cout <<"Failed to compile editor.das" << std::endl;
+    // }
 }
 
 void EditorApp::Run() {
@@ -59,6 +68,10 @@ void EditorApp::Run() {
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
+
+        //engine_->GetScriptSystem().InvokeCustomFunction("editor", "ren");
+
+
 
         const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 

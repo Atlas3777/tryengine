@@ -1,9 +1,10 @@
 #pragma once
 
 #include <SDL3/SDL_gpu.h>
+
 namespace tryengine::graphics {
 class RenderTarget {
-   public:
+public:
     RenderTarget(SDL_GPUDevice* device, uint32_t w, uint32_t h, SDL_GPUTextureFormat format, bool useDepth = true)
         : device(device), width(w), height(h), colorFormat(format), useDepth(useDepth) {
         Create();
@@ -15,21 +16,21 @@ class RenderTarget {
     RenderTarget& operator=(const RenderTarget&) = delete;
 
     void Resize(uint32_t w, uint32_t h) {
-        if (w == width && h == height) return;
+        if (w == width && h == height)
+            return;
         width = w;
         height = h;
         ReleaseResources();
         Create();
     }
 
-    // Геттеры для использования в рендере
-    SDL_GPUTexture* GetColor() const { return colorTexture; }
-    SDL_GPUTexture* GetDepth() const { return depthTexture; }
-    uint32_t GetWidth() const { return width; }
-    uint32_t GetHeight() const { return height; }
-    bool UseDepth() const { return useDepth; }
+    [[nodiscard]] SDL_GPUTexture* GetColor() const { return colorTexture; }
+    [[nodiscard]] SDL_GPUTexture* GetDepth() const { return depthTexture; }
+    [[nodiscard]] uint32_t GetWidth() const { return width; }
+    [[nodiscard]] uint32_t GetHeight() const { return height; }
+    [[nodiscard]] bool UseDepth() const { return useDepth; }
 
-   private:
+private:
     SDL_GPUDevice* device;
     SDL_GPUTexture* colorTexture = nullptr;
     SDL_GPUTexture* depthTexture = nullptr;
@@ -49,7 +50,8 @@ class RenderTarget {
         colorInfo.layer_count_or_depth = 1;
         colorInfo.num_levels = 1;
         colorTexture = SDL_CreateGPUTexture(device, &colorInfo);
-        if (!useDepth) return;
+        if (!useDepth)
+            return;
 
         SDL_GPUTextureCreateInfo depthInfo{};
         depthInfo.type = SDL_GPU_TEXTURETYPE_2D;
@@ -63,10 +65,12 @@ class RenderTarget {
     }
 
     void ReleaseResources() {
-        if (colorTexture) SDL_ReleaseGPUTexture(device, colorTexture);
-        if (depthTexture) SDL_ReleaseGPUTexture(device, depthTexture);
+        if (colorTexture)
+            SDL_ReleaseGPUTexture(device, colorTexture);
+        if (depthTexture)
+            SDL_ReleaseGPUTexture(device, depthTexture);
         colorTexture = nullptr;
         depthTexture = nullptr;
     }
 };
-} // namespace tryengine
+}  // namespace tryengine::graphics

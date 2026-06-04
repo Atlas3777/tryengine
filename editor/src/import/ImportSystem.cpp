@@ -8,12 +8,14 @@
 
 namespace tryeditor {
 
+ImportSystem::ImportSystem(tryengine::core::ResourceManager& resource_manager)
+    : resource_manager_(resource_manager) {}
+
 AssetContext ImportSystem::ResolveContext(const std::filesystem::path& asset_path) const {
     AssetContext ctx;
     ctx.asset_path = asset_path;
     ctx.meta_path = asset_path.string() + ".meta";
 
-    // Определяем, где мы находимся
     std::string path_str = asset_path.string();
     if (path_str.find("engine_content") != std::string::npos) {
         ctx.project_assets_dir = engine_assets_dir_;
@@ -30,19 +32,16 @@ AssetContext ImportSystem::ResolveContext(const std::filesystem::path& asset_pat
 bool ImportSystem::ValidateArtifacts(uint64_t guid, const AssetContext& context) const {
     std::filesystem::path folder = context.GetArtifactDir(guid);
 
-    // Если папки нет или она пустая — реимпортируем
     if (!std::filesystem::exists(folder) || !std::filesystem::is_directory(folder) || std::filesystem::is_empty(folder)) {
         return false;
     }
 
     auto asset_time = std::filesystem::last_write_time(context.asset_path);
 
-    // Проверяем файлы внутри папки артефакта
     bool has_files = false;
     for (const auto& entry : std::filesystem::directory_iterator(folder)) {
         if (entry.is_regular_file()) {
             has_files = true;
-            // Если исходник изменился ПОЗЖЕ (новее), чем этот конкретный файл артефакта — реимпорт
             if (asset_time > entry.last_write_time()) {
                 return false;
             }
@@ -85,7 +84,6 @@ void ImportSystem::ProcessDirectory(const std::filesystem::path& assets_dir) {
                 uint64_t guid = header_opt->guid;
                 std::string importer_type = header_opt->importer_type;
 
-                // Регистрируем путь в мапах
                 std::string relative_path = std::filesystem::relative(asset_path, root_path_).string();
                 id_to_path_[guid] = relative_path;
                 path_to_id_[relative_path] = guid;
@@ -119,7 +117,6 @@ void ImportSystem::ImportNewAsset(const AssetContext& ctx, IAssetImporter* impor
         std::cout << "[ImportSystem] Импортирован новый ассет: " << relative_path << " (GUID: " << new_guid << ")\n";
     }
 }
-
 
 void ImportSystem::ReimportAsset(const AssetContext& ctx, const AssetMetaHeader& header) const {
     const auto importer = GetImporterByName(header.importer_type);
@@ -184,6 +181,33 @@ void ImportSystem::DeleteDirectory(const std::filesystem::path& dir_path) {
     }
     std::error_code ec;
     std::filesystem::remove_all(dir_path, ec);
+}
+
+void ImportSystem::RegisterAndCompileExternalAsset(const std::filesystem::path& asset_path, const AssetMetaHeader& header) {
+    AssetContext ctx = ResolveContext(asset_path);
+
+    std::string relative_path = std::filesystem::relative(asset_path, root_path_).string();
+    id_to_path_[header.guid] = relative_path;
+    path_to_id_[relative_path] = header.guid;
+
+    ReimportAsset(ctx, header);
+}
+
+IAssetImporter* ImportSystem::GetImporterByName(const std::string& name) const {
+    auto it = importers_by_name_.find(name);
+    return it != importers_by_name_.end() ? it->second : nullptr;
+}
+
+uint64_t ImportSystem::GetId(const std::string& path) const {
+    return path_to_id_.at(path);
+}
+
+std::string ImportSystem::GetPath(const uint64_t id) const {
+    return id_to_path_.at(id);
+}
+
+tryengine::core::ResourceManager& ImportSystem::GetResourceManager() const {
+    return resource_manager_;
 }
 
 }  // namespace tryeditor

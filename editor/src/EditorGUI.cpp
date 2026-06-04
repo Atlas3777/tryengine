@@ -1,12 +1,12 @@
 #include "editor/gui/EditorGUI.hpp"
-
 #include <imgui.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
+#include <ImGuizmo.h>
+
 #include <glm/gtx/matrix_decompose.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
-#include <ImGuizmo.h>
 
 #include "editor/AddressablesProvider.hpp"
 #include "editor/ControllerManager.hpp"

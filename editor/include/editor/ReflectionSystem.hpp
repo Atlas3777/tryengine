@@ -5,7 +5,6 @@
 
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
-#include "engine/graphics/MaterialSystem.hpp"
 #include "engine/resources/AssetTypes.hpp"
 
 namespace tryeditor {

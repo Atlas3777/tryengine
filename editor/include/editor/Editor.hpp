@@ -2,7 +2,6 @@
 #include <memory>
 #include <string>
 
-// #include "engine/core/GameAPI.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 
 namespace tryengine::core {
@@ -49,7 +48,6 @@ public:
 
     bool running = false;
     bool play_mode = false;
-    // tryengine::core::GameLibrary game_lib;
 
 private:
     std::unique_ptr<ImportSystem> import_system_;

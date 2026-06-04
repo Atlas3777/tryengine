@@ -2,9 +2,9 @@
 
 #include "asset_factories/SceneAssetFactory.hpp"
 #include "editor/AddressablesProvider.hpp"
-#include "editor/Paths.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "engine/core/SceneManager.hpp"
+#include "utils/Paths.hpp"
 
 namespace tryeditor {
 class SceneManagerController {

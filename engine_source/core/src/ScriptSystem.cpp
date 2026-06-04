@@ -1,8 +1,8 @@
-
 #include "engine/core/ScriptSystem.hpp"
 
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
+#include <daScript/ast/dyn_modules.h>
 #include <iostream>
 
 inline void InitializeDaScriptModules() {
@@ -14,6 +14,13 @@ namespace tryengine::core {
 ScriptSystem::ScriptSystem() {
     das::setDasRoot(DAS_ROOT_DIR);
     InitializeDaScriptModules();
+
+    das::TextPrinter tout;
+    das::vector<das::string> load_modules;
+    auto fAccess = das::make_smart<das::FsFileAccess>();
+
+    das::require_dynamic_modules(fAccess, das::getDasRoot(), "./", load_modules, tout);
+
     das::Module::Initialize();
 }
 
@@ -26,6 +33,9 @@ ScriptSystem::~ScriptSystem() {
         das_ctx = nullptr;
     }
 
+    // Очищаем кастомные скрипты эдитора/систем
+    custom_scripts_.clear();
+
     das::ModuleGroup dummyLibGroup;
     das::Module::Shutdown();
 }
@@ -33,7 +43,9 @@ ScriptSystem::~ScriptSystem() {
 bool ScriptSystem::LoadMainScript(const std::string& path) {
     das::TextPrinter tout;
     das::ModuleGroup dummyLibGroup;
-    auto fAccess = das::make_smart<das::FsFileAccess>();
+
+    // Инициализируем FsFileAccess с указанием нашего .das_project файла
+    auto fAccess = das::make_smart<das::FsFileAccess>("project.das_project", das::make_smart<das::FsFileAccess>());
 
     auto program = das::compileDaScript(path, fAccess, tout, dummyLibGroup);
     if (!program->failed()) {
@@ -47,6 +59,50 @@ bool ScriptSystem::LoadMainScript(const std::string& path) {
 
     std::cerr << "daScript compilation failed:\n" << tout.str() << std::endl;
     return false;
+}
+
+bool ScriptSystem::LoadCustomScript(const std::string& id, const std::string& path) {
+    das::TextPrinter tout;
+    das::ModuleGroup dummyLibGroup;
+
+    // Делаем то же самое для кастомных скриптов (например, editor.das)
+    auto fAccess = das::make_smart<das::FsFileAccess>("project.das_project", das::make_smart<das::FsFileAccess>());
+
+    auto program = das::compileDaScript(path, fAccess, tout, dummyLibGroup);
+    if (!program->failed()) {
+        auto ctx = new das::Context(program->getContextStackSize());
+        if (program->simulate(*ctx, tout)) {
+
+            auto instance = std::make_unique<ScriptInstance>();
+            instance->context = ctx;
+
+            custom_scripts_[id] = std::move(instance);
+            return true;
+        }
+    }
+    if (!program || program->failed()) {
+        std::cout << tout.str() << "\n";
+
+        // ИСПРАВЛЕННЫЙ БЛОК:
+        if (program) {
+            for (const auto& error : program->errors) {
+                std::cerr << reportError(error.at, error.what, error.extra, error.fixme, error.cerr) << "\n";
+            }
+        }
+    }
+    return false;
+}
+
+// Реализация простого вызова функции
+void ScriptSystem::InvokeCustomFunction(const std::string& id, const std::string& function_name) {
+    auto it = custom_scripts_.find(id);
+    if (it != custom_scripts_.end() && it->second->context) {
+        auto* ctx = it->second->context;
+        if (auto* fn = ctx->findFunction(function_name.c_str())) {
+            das::Func func(fn);
+            das::das_invoke_function<void>::invoke(ctx, nullptr, func);
+        }
+    }
 }
 
 void ScriptSystem::InvokeStart() {

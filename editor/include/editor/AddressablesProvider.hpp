@@ -4,9 +4,9 @@
 #include <cereal/archives/json.hpp>
 #include <fstream>
 
-#include "editor/Paths.hpp"
 #include "engine/core/Addressables.hpp"
 #include "engine/core/AddressablesGroupAsset.hpp"
+#include "utils/Paths.hpp"
 
 namespace tryeditor {
 

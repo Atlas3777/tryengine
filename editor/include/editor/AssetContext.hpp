@@ -17,7 +17,7 @@ struct AssetContext {
     }
 
     // 2. Гарантирует создание папки и возвращает путь к ней
-    std::filesystem::path EnsureArtifactDir(uint64_t main_guid) const {
+    [[nodiscard]] std::filesystem::path EnsureArtifactDir(uint64_t main_guid) const {
         auto dir = GetArtifactDir(main_guid);
         if (!std::filesystem::exists(dir)) {
             std::filesystem::create_directories(dir);
@@ -26,13 +26,13 @@ struct AssetContext {
     }
 
     // 3. Возвращает путь к ФАЙЛУ главного артефакта (и создает под него папку)
-    std::filesystem::path EnsureMainArtifactPath(uint64_t main_guid) const {
+    [[nodiscard]] std::filesystem::path EnsureMainArtifactPath(uint64_t main_guid) const {
         return EnsureArtifactDir(main_guid) / std::to_string(main_guid);
     }
 
     // 4. Возвращает путь к ФАЙЛУ субассета внутри папки главного ассета
-    std::filesystem::path EnsureSubArtifactPath(uint64_t main_guid, uint64_t sub_guid) const {
+    [[nodiscard]] std::filesystem::path EnsureSubArtifactPath(uint64_t main_guid, uint64_t sub_guid) const {
         return EnsureArtifactDir(main_guid) / std::to_string(sub_guid);
     }
 };
-}  // namespace editor
+}  // namespace tryeditor

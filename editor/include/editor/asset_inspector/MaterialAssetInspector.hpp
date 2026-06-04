@@ -1,7 +1,7 @@
 #pragma once
 
+#include "../utils/EditorGUIUtils.hpp"
 #include "editor/asset_inspector/IAssetInspector.hpp"
-#include "editor/EditorGUIUtils.hpp"
 #include "editor/import/ImportSystem.hpp"
 
 namespace tryeditor {

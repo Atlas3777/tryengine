@@ -1,29 +1,41 @@
 #pragma once
-#include <entt/entity/registry.hpp>
+
+#include <SDL3/SDL_gpu.h>
 #include <memory>
+#include <vector>
 
 #include "engine/graphics/PipelineManager.hpp"
-#include "engine/graphics/RenderPipeline.hpp"
-#include "engine/graphics/RenderPreprocessor.hpp"
 #include "engine/graphics/RenderTarget.hpp"
-#include "engine/graphics/Renderer.hpp"
+#include "engine/graphics/RenderCommon.hpp" // Тут лежат наши новые структуры
 
 namespace tryengine::graphics {
+
 class RenderSystem {
 public:
-    RenderSystem(SDL_GPUDevice* device) : device_(device) {
-        pipeline_manager_ = std::make_unique<PipelineManager>(device);
-    };
+    RenderSystem(SDL_GPUDevice* device);
+    ~RenderSystem() = default;
 
-    void RenderScene(entt::registry& reg, entt::entity camera_entity, RenderTarget* target, SDL_GPUCommandBuffer* cmd) const;
+    // 1. Очистка очереди перед кадром
+    void ClearQueue();
 
-    // Renderer& GetRenderer() const { return *renderer_; }
+    // 2. Интерфейс для внешних систем (C++, daslang через C-binding и т.д.)
+    void Submit(const DrawCommand& cmd);
+
+    // 3. Выполнение рендеринга накопленной очереди
+    void ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
+                         RenderTarget* target,
+                         const CameraData& camera,
+                         const AmbientSettings& ambient,
+                         const std::vector<Light>& lights);
+
+    PipelineManager* GetPipelineManager() { return pipeline_manager_.get(); }
 
 private:
     SDL_GPUDevice* device_ = nullptr;
-
     std::unique_ptr<PipelineManager> pipeline_manager_;
-    std::unique_ptr<RenderPreprocessor> render_preprocessor_;
-    std::unique_ptr<RenderPipeline> render_pipeline_;
+
+    // Внутренний буфер команд на кадр
+    std::vector<DrawCommand> draw_queue_;
 };
+
 }  // namespace tryengine::graphics

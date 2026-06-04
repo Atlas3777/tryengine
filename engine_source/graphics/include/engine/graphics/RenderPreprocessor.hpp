@@ -1,10 +1,9 @@
 #pragma once
-#include <entt/entity/registry.hpp>
 
 namespace tryengine::graphics {
 class RenderPreprocessor {
    public:
-    void BuildView(entt::registry& reg) {
+    void BuildView() {
         Collect();
         FrustumCull();
         OcclusionCull();

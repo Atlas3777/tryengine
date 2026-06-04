@@ -6,9 +6,9 @@
 #include <fstream>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "../../include/editor/utils/EditorGUIUtils.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
-#include "editor/EditorGUIUtils.hpp"
 #include "editor/SelectionManager.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
 #include "editor/meta/MetaSerializer.hpp"
