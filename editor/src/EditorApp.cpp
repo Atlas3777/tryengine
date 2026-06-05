@@ -8,7 +8,9 @@
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/core/BaseSystem.hpp"
 #include "engine/core/Clock.hpp"
+#include "engine/core/ComponentRegistry.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/InputService.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -22,7 +24,14 @@ void EditorApp::Init() {
     RegisterEditorScriptBindings();
 
     engine_ = std::make_unique<tryengine::core::Engine>();
-    engine_->SetInputSource(&(this->input_state_));
+
+    auto& resource_manager_ = engine_->RegisterSystem<tryengine::core::ResourceManager>();
+    auto& component_registry_ = engine_->RegisterSystem<tryengine::core::ComponentRegistry>();
+    engine_->RegisterSystem<tryengine::core::Clock>();
+    engine_->RegisterSystem<tryengine::core::SceneManager>(component_registry_, resource_manager_);
+    engine_->RegisterSystem<tryengine::core::ScriptSystem>();
+    engine_->RegisterSystem<tryengine::core::InputService>(this->input_state_);
+
 
     graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
@@ -35,12 +44,11 @@ void EditorApp::Init() {
 
     editor_->Init();
 
-
     editor_->running = true;
     editor_->play_mode = false;
 
-    if (engine_->GetScriptSystem().LoadMainScript("game/assets/scripts/main.das")) {
-        engine_->GetScriptSystem().InvokeStart();
+    if (engine_->Get<tryengine::core::ScriptSystem>().LoadMainScript("game/assets/scripts/main.das")) {
+        engine_->Get<tryengine::core::ScriptSystem>().InvokeStart();
     } else {
         std::cerr << "Failed to compile main.das \n";
     }
@@ -55,23 +63,21 @@ void EditorApp::Init() {
 void EditorApp::Run() {
     while (editor_->running) {
         UpdateInput();
-        const auto time_state = engine_->GetClock().Update();
+        const auto time_state = engine_->Get<tryengine::core::Clock>().Update();
 
         editor_->GetEditorGUI().UpdatePanels(*engine_);
 
-        tryengine::core::UpdateTransformSystem(engine_->GetSceneManager().GetActiveScene().GetRegistry());
-        tryengine::core::UpdateCameraMatrices(engine_->GetSceneManager().GetActiveScene().GetRegistry());
+        tryengine::core::UpdateTransformSystem(engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+        tryengine::core::UpdateCameraMatrices(engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
 
         if (editor_->play_mode) {
             float dt = static_cast<float>(time_state.delta_time);
-            engine_->GetScriptSystem().InvokeUpdate(dt);
+            engine_->Get<tryengine::core::ScriptSystem>().InvokeUpdate(dt);
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
 
-        //engine_->GetScriptSystem().InvokeCustomFunction("editor", "ren");
-
-
+        // engine_->GetScriptSystem().InvokeCustomFunction("editor", "ren");
 
         const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 

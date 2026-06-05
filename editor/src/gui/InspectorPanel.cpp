@@ -6,15 +6,13 @@
 #include <fstream>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "../../include/editor/utils/EditorGUIUtils.hpp"
+#include "editor/utils/EditorGUIUtils.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/SelectionManager.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
 #include "editor/meta/MetaSerializer.hpp"
 #include "engine/core/Components.hpp"
-#include "engine/core/Engine.hpp"
-#include "misc/cpp/imgui_stdlib.h"
 
 namespace tryeditor {
 

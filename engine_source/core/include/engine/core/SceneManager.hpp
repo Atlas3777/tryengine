@@ -4,10 +4,11 @@
 #include <memory>
 #include <string>
 
-#include "engine/core/Engine.hpp"
 #include "engine/core/Scene.hpp"
 
 namespace tryengine::core {
+class ResourceManager;
+class ComponentRegistry;
 
 class SceneManager {
 public:

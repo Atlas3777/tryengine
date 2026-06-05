@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include "IPanel.hpp"
+#include "BaseViewport.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/graphics/May.hpp"
 #include "engine/graphics/RenderSystem.hpp"

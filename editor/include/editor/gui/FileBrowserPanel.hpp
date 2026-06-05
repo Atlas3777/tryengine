@@ -1,14 +1,15 @@
 #pragma once
+
 #include <filesystem>
 
-#include "editor/SelectionManager.hpp"
 #include "editor/gui/IPanel.hpp"
-#include "editor/import/ImportSystem.hpp"
 
 namespace tryengine::core {
 class SceneManager;
 }
 namespace tryeditor {
+class SelectionManager;
+class ImportSystem;
 class SceneManagerController;
 class AssetsFactoryManager;
 

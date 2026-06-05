@@ -1,7 +1,9 @@
 #include "editor/gui/EditorGUI.hpp"
-#include <imgui.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
+
+#include <imgui.h>
+
 #include <ImGuizmo.h>
 
 #include <glm/gtx/matrix_decompose.hpp>
@@ -19,7 +21,7 @@
 #include "editor/gui/SceneViewportPanel.hpp"
 #include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
-#include "engine/core/SceneManager.hpp"
+#include "engine/core/InputService.hpp"
 
 namespace tryeditor {
 
@@ -74,7 +76,7 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
         std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
     panels_.emplace_back(std::make_unique<HierarchyPanel>(selection_manager_));
     panels_.emplace_back(
-        std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.GetSceneManager()));
+        std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.Get<tryengine::core::SceneManager>()));
     panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
 }
 
@@ -86,8 +88,8 @@ EditorGUI::~EditorGUI() {
 
 void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
-        panel->OnUpdate(engine.GetClock().GetDeltaTime(), engine.GetInput(),
-                        engine.GetSceneManager().GetActiveScene().GetRegistry());
+        panel->OnUpdate(engine.Get<tryengine::core::Clock>().GetDeltaTime(), engine.Get<tryengine::core::InputService>().GetInputState(),
+                        engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
     }
 }
 
@@ -102,7 +104,7 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
     DrawDockSpace();
 
     for (const auto& panel : panels_) {
-        panel->OnImGuiRender(engine.GetSceneManager().GetActiveScene().GetRegistry());
+        panel->OnImGuiRender(engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
     }
 
     ImGui::Render();
@@ -111,7 +113,7 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
 void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
                               const tryengine::core::Engine& engine) const {
     for (const auto& panel : panels_) {
-        panel->OnRender(cmd, render_system, engine.GetSceneManager().GetActiveScene().GetRegistry());
+        panel->OnRender(cmd, render_system, engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
     }
 }
 

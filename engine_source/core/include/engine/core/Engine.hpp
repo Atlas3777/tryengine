@@ -1,42 +1,83 @@
 #pragma once
 
+#include <cassert>
 #include <memory>
+#include <unordered_map>
+#include <utility>
 
 namespace tryengine::core {
-class ScriptSystem;
-class Clock;
-class SceneManager;
-class ComponentRegistry;
-class ResourceManager;
-struct InputState;
+
+using TypeId = uint32_t;
+
+class TypeRegistry {
+    static TypeId NextId() noexcept {
+        static TypeId counter = 0;
+        return counter++;
+    }
+
+public:
+    template <typename T>
+    static TypeId GetId() noexcept {
+        static const TypeId id = NextId();
+        return id;
+    }
+};
+
+}  // namespace tryengine::core
+
+namespace tryengine::core {
+
 class Engine {
 public:
-    Engine();
-    Engine(const Engine&) = delete;
-    Engine(Engine&&) = delete;
-    Engine& operator=(const Engine&) = delete;
-    Engine& operator=(Engine&&) = delete;
+    Engine() = default;
+    ~Engine() = default;
 
-    ~Engine();
+    template <typename T, typename... Args>
+    T& RegisterSystem(Args&&... args) {
+        auto typeId = TypeRegistry::GetId<T>();
 
-    void UpdateTime() const;
+        auto system = std::make_shared<T>(std::forward<Args>(args)...);
+        systems_[typeId] = system;
 
-    void SetInputSource(InputState* source) { input = source; }
+        // Возвращаем ссылку. Безопасно, так как объект уже жив в куче
+        return *system;
+    }
 
-    [[nodiscard]] Clock& GetClock() const { return *clock; }
-    [[nodiscard]] SceneManager& GetSceneManager() const { return *scene_manager_; }
-    [[nodiscard]] InputState& GetInput() const { return *input; }
-    [[nodiscard]] ResourceManager& GetResourceManager() const { return *resource_manager_; }
-    [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return *component_registry_; }
-    [[nodiscard]] ScriptSystem& GetScriptSystem() const { return *script_system_; }
+    template <typename T>
+    T& RegisterSystem(std::shared_ptr<T> system) {
+        auto typeId = TypeRegistry::GetId<T>();
+
+        // Кастуем к shared_ptr<void> для хранения в мапе
+        systems_[typeId] = std::static_pointer_cast<void>(system);
+
+        return *system;
+    }
+
+    template <typename T>
+    [[nodiscard]] T& Get() const {
+        auto* system = FindInternal<T>();
+        assert(system != nullptr && "System not found!");
+        return *system;
+    }
+
+    // 2. Для опциональных систем (может не быть)
+    template <typename T>
+    [[nodiscard]] T* TryGet() const {
+        return FindInternal<T>();
+    }
 
 private:
-    std::unique_ptr<ResourceManager> resource_manager_;
-    std::unique_ptr<SceneManager> scene_manager_;
-    std::unique_ptr<ComponentRegistry> component_registry_;
-    std::unique_ptr<ScriptSystem> script_system_;
-    std::unique_ptr<Clock> clock;
+    template <typename T>
+    T* FindInternal() const {
+        auto typeId = TypeRegistry::GetId<T>();
+        auto it = systems_.find(typeId);
+        if (it != systems_.end()) {
+            return static_cast<T*>(it->second.get());
+        }
+        return nullptr;
+    }
 
-    InputState* input = nullptr;
+    std::unordered_map<TypeId, std::shared_ptr<void>> systems_;
 };
+
 }  // namespace tryengine::core

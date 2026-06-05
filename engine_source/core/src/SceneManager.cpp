@@ -36,12 +36,9 @@ bool SceneManager::LoadScene(const uint64_t scene_id) {
     return true;
 }
 
-// Существующая загрузка по имени (Addressables) теперь просто использует метод выше
 bool SceneManager::LoadScene(const std::string& scene_name) {
-    // Находим GUID по имени в Addressables
     auto id = resource_manager_.GetAddressables().Get(scene_name);
 
-    // Передаем загрузку методу, работающему с GUID
     return LoadScene(id);
 }
 

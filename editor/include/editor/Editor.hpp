@@ -43,25 +43,34 @@ public:
     void RegisterAssetsFactories() const;
     void RegisterAssetsInspector() const;
 
-    EditorGUI& GetEditorGUI() { return *editor_gui_; }
-    ImportSystem& GetImportSystem() { return *import_system_; }
-
     bool running = false;
     bool play_mode = false;
 
+    tryengine::core::Engine& GetEngine() { return engine_; }
+    tryengine::graphics::GraphicsContext& GetGraphicsContext() { return graphics_context_; }
+
+    // Геттеры для редакторских подсистем
+    ImportSystem& GetImportSystem() { return *import_system_; }
+    AssetsFactoryManager& GetAssetsFactory() { return *assets_factory_; }
+    AssetInspectorManager& GetAssetInspector() { return *asset_inspector_manager_; }
+    SelectionManager& GetSelectionManager() { return *selection_manager_; }
+    Spawner& GetSpawner() { return *spawner_; }
+    AddressablesProvider& GetAddressablesProvider() { return *addressables_provider_; }
+    ControllerManager& GetControllerManager() { return *gui_controller_manager_; }
+    EditorGUI& GetEditorGUI() { return *editor_gui_; }
+
 private:
+    tryengine::core::Engine& engine_;
+    tryengine::graphics::GraphicsContext& graphics_context_;
+
     std::unique_ptr<ImportSystem> import_system_;
     std::unique_ptr<AssetsFactoryManager> assets_factory_;
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
     std::unique_ptr<SelectionManager> selection_manager_;
-    std::unique_ptr<EditorGUI> editor_gui_;
     std::unique_ptr<Spawner> spawner_;
     std::unique_ptr<AddressablesProvider> addressables_provider_;
     std::unique_ptr<ReflectionSystem> reflection_system_;
     std::unique_ptr<ControllerManager> gui_controller_manager_;
-
-    tryengine::graphics::GraphicsContext& graphics_context_;
-    tryengine::core::Engine& engine_;
+    std::unique_ptr<EditorGUI> editor_gui_; // UI создается последним
 };
-
-}  // namespace tryeditor
+}

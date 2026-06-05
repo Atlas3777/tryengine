@@ -1,10 +1,10 @@
 #include "editor/gui/HierarchyPanel.hpp"
 
+#include <SDL3/SDL_mouse.h>
+
 #include "editor/Components.hpp"
 #include "editor/SelectionManager.hpp"
 #include "engine/core/Components.hpp"
-#include "engine/core/Engine.hpp"
-#include "entt/entt.hpp"
 #include "imgui_internal.h"
 
 namespace tryeditor {

@@ -9,6 +9,7 @@
 #include "engine/core/Components.hpp"
 #include "engine/core/RandomUtil.hpp"
 #include "engine/core/Scene.hpp"
+#include "editor/Components.hpp"
 
 namespace tryeditor {
 

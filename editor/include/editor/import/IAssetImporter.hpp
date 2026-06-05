@@ -1,6 +1,5 @@
 #pragma once
 
-#include <filesystem>
 #include <string>
 
 #include "editor/AssetContext.hpp"

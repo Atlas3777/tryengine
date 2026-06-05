@@ -43,10 +43,10 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsCon
     asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
 
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
-    import_system_ = std::make_unique<ImportSystem>(engine_.GetResourceManager());
-    addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.GetResourceManager().GetAddressables());
+    import_system_ = std::make_unique<ImportSystem>(engine_.Get<tryengine::core::ResourceManager>());
+    addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.Get<tryengine::core::ResourceManager>().GetAddressables());
 
-    spawner_ = std::make_unique<Spawner>(graphics_context_, engine.GetResourceManager(), *import_system_);
+    spawner_ = std::make_unique<Spawner>(graphics_context_, engine_.Get<tryengine::core::ResourceManager>(), *import_system_);
     reflection_system_ = std::make_unique<ReflectionSystem>();
     gui_controller_manager_ = std::make_unique<ControllerManager>();
 
@@ -63,12 +63,12 @@ void Editor::Init() {
     RegisterAssetsInspector();
 
     gui_controller_manager_->RegisterController<SceneManagerController>(
-        engine_.GetSceneManager(), *import_system_, *assets_factory_->GetFactory<SceneAssetFactory>(),
+        engine_.Get<tryengine::core::SceneManager>(), *import_system_, *assets_factory_->GetFactory<SceneAssetFactory>(),
         *addressables_provider_);
 
     GetImportSystem().Refresh();
 
-    engine_.GetResourceManager().GetAssetDatabase().Refresh();
+    engine_.Get<tryengine::core::ResourceManager>().GetAssetDatabase().Refresh();
 
     LoadGameLibrary("build/game/libgame.so");
     LoadDefaultScene();
@@ -81,7 +81,7 @@ Editor::~Editor() {
 }
 
 void Editor::RegisterComponents() const {
-    auto& reg = engine_.GetComponentRegistry();
+    auto reg = engine_.Get<tryengine::core::ComponentRegistry>();
     reg.Register<tryengine::Tag>("Tag");
     reg.Register<tryengine::Transform>("Transform");
     reg.Register<tryengine::Relationship>("Relationship");
@@ -95,7 +95,7 @@ void Editor::RegisterComponents() const {
 void Editor::RegisterAssetsFactories() const {
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
-    assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_, engine_.GetComponentRegistry());
+    assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_, engine_.Get<tryengine::core::ComponentRegistry>());
     // assets_factory_->RegisterFactory<AddressablesGroupFactory>(*import_system_);
     // assets_factory_->RegisterFactory<AddressablesManifestFactory>(*import_system_);
 }
@@ -115,7 +115,7 @@ void Editor::RegisterAssetsImporters() const {
 }
 
 void Editor::RegisterResourceLoaders() const {
-    auto& res_manager_ = engine_.GetResourceManager();
+    auto& res_manager_ = engine_.Get<tryengine::core::ResourceManager>();
     res_manager_.RegisterLoader<tryengine::resources::MeshData>(tryengine::resources::MeshDataLoader(res_manager_));
     res_manager_.RegisterLoader<tryengine::graphics::Mesh>(
         tryengine::graphics::MeshLoader(res_manager_, graphics_context_.GetDevice()));
@@ -173,7 +173,7 @@ void Editor::LoadDefaultScene() const {
         fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.5f, 15.0f}); // Яркий синий, радиус 15
     registry.emplace<tryengine::Relationship>(fill_light);
 
-    engine_.GetSceneManager().SetActiveScene(std::move(scene));
+    engine_.Get<tryengine::core::SceneManager>().SetActiveScene(std::move(scene));
 }
 
 }  // namespace tryeditor

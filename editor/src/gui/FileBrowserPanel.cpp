@@ -1,10 +1,11 @@
 #include "editor/gui/FileBrowserPanel.hpp"
 
-#include "../../include/editor/utils/EditorGUIUtils.hpp"
 #include "editor/SceneManagerController.hpp"
+#include "editor/SelectionManager.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/MetaSerializer.hpp"
+#include "editor/utils/EditorGUIUtils.hpp"
 
 namespace tryeditor {
 
