@@ -1,7 +1,14 @@
-# ./editor/CMakeLists.txt
+#editor/CMakeLists.txt
 
 include(FetchContent)
-set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
+
+
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+
+set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
 
 FetchContent_Declare(imgui     GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.8-docking)
 FetchContent_Declare(imguizmo  GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master)

@@ -1,4 +1,14 @@
-#engine/graphics/CMakeLists.txt
+#engine_source/graphics/CMakeLists.txt
+
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+
+set(SDL3_TESTS OFF CACHE INTERNAL "")
+set(SDL3_EXAMPLES OFF CACHE INTERNAL "")
+
+FetchContent_Declare(SDL3     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git  GIT_TAG main)
+FetchContent_MakeAvailable(SDL3)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/graphics/*.hpp")

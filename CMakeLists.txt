@@ -12,6 +12,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -25,9 +26,6 @@ if(UNIX)
         add_link_options("-fuse-ld=mold")
     endif()
 endif()
-
-find_package(DAS REQUIRED)
-find_package(Threads REQUIRED)
 
 set(SRC_LINK "${CMAKE_SOURCE_DIR}/compile_commands.json")
 set(BIN_FILE "${CMAKE_BINARY_DIR}/compile_commands.json")

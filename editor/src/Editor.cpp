@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include "../../engine_source/graphics/include/engine/graphics/loaders/MeshLoader.hpp"
+#include "engine/graphics/loaders/MeshLoader.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/ControllerManager.hpp"

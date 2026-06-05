@@ -1,4 +1,15 @@
-# engine/core/CMakeLists.txt
+# engine_source/core/CMakeLists.txt
+
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(entt     GIT_REPOSITORY https://github.com/skypjack/entt.git   GIT_TAG v3.16.0)
+FetchContent_Declare(glm      GIT_REPOSITORY https://github.com/g-truc/glm.git      GIT_TAG master)
+FetchContent_MakeAvailable(entt glm)
+
+find_package(DAS REQUIRED)
+find_package(Threads REQUIRED)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/core/*.hpp")
@@ -12,7 +23,7 @@ target_link_libraries(engine_core PUBLIC
         EnTT::EnTT
         cereal::cereal
         DAS::libDaScriptDyn
-        Threads::Threads  # Потоки (обязательно для daScript)
+        Threads::Threads
 )
 
 get_target_property(DAS_INC_DIRS DAS::libDaScript INTERFACE_INCLUDE_DIRECTORIES)
