@@ -1,7 +1,7 @@
 options gen2
 
 def test2() {
-    print("test222222222222222222222222!\n")
+    print("te2w\n")
 }
 
 [init]

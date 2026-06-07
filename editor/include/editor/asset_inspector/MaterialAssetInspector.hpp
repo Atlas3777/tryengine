@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../utils/EditorGUIUtils.hpp"
+#include "editor/utils/EditorGUIUtils.hpp"
 #include "editor/asset_inspector/IAssetInspector.hpp"
 #include "editor/import/ImportSystem.hpp"
 

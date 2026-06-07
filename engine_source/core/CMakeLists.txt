@@ -26,7 +26,7 @@ target_link_libraries(engine_core PUBLIC
         Threads::Threads
 )
 
-get_target_property(DAS_INC_DIRS DAS::libDaScript INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(DAS_INC_DIRS DAS::libDaScriptDyn INTERFACE_INCLUDE_DIRECTORIES)
 
 list(GET DAS_INC_DIRS 0 DAS_MAIN_INCLUDE_DIR)
 
@@ -36,3 +36,10 @@ target_compile_definitions(engine_core PUBLIC
         DAS_MOD_EXPORTS
         "DAS_ROOT_DIR=\"${DAS_SDK_ROOT}\""
 )
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Отключаем RTTI персонально для файла с биндингами daScript
+    set_source_files_properties(src/ScriptSystem.cpp
+            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+    )
+endif()

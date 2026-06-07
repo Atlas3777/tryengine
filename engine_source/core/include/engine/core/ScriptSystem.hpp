@@ -1,58 +1,53 @@
 #pragma once
+
+#include <daScript/daScript.h>
+#include <filesystem>
 #include <string>
 #include <unordered_map>
-#include <memory>
-#include <daScript/daScript.h>
 
 namespace tryengine::core {
+
+// Режимы реакции на ошибку компиляции при Live Coding
+enum class ReloadErrorPolicy {
+    ContinueWithOldContext, // Продолжить игру на последней рабочей версии кода (старый контекст тикает)
+    FreezeExecution         // Поставить обновление на паузу (update не вызывается) до исправления ошибок
+};
 
 class ScriptSystem {
 public:
     ScriptSystem();
     ~ScriptSystem();
 
-    // Прежний интерфейс для main-скрипта (для обратной совместимости)
+    // Загрузка и жизненный цикл главного скрипта
     bool LoadMainScript(const std::string& path);
     void InvokeStart();
     void InvokeUpdate(float dt);
+
+    // Проверка изменений файлов на диске (Live Coding)
+    void CheckForReload(float dt);
+
+    // Геттеры и настройки
     das::Context* GetContext();
-
-    // --- НОВЫЙ ИНТЕРФЕЙС ДЛЯ КАСТОМНЫХ СКРИПТОВ ---
-    bool LoadCustomScript(const std::string& id, const std::string& path);
-
-    // Универсальный вызов функции без параметров
-    void InvokeCustomFunction(const std::string& id, const std::string& function_name);
-
-    // Шаблонный вызов функции для передачи аргументов (например, если нужно передать dt или указатели)
-    template<typename... Args>
-    void InvokeCustomFunctionArgs(const std::string& id, const std::string& function_name, Args&&... args) {
-        auto it = custom_scripts_.find(id);
-        if (it != custom_scripts_.end() && it->second->context) {
-            auto* ctx = it->second->context;
-            if (auto* fn = ctx->findFunction(function_name.c_str())) {
-                das::Func func(fn);
-                das::das_invoke_function<void>::invoke(ctx, nullptr, func, std::forward<Args>(args)...);
-            }
-        }
-    }
+    void SetReloadErrorPolicy(ReloadErrorPolicy policy) { error_policy_ = policy; }
+    bool IsFrozen() const { return is_frozen_; }
 
 private:
-    struct ScriptInstance {
-        das::Context* context = nullptr;
-        ~ScriptInstance() {
-            if (context) {
-                delete context;
-            }
-        }
-    };
+    bool CompileAndLoad(const std::string& path);
+    void InvokeHook(const std::string& hook_substring);
 
-    // Данные основного скрипта
+    std::string main_script_path_;
+
+    // Хранит пути ко всем зависимостям (включая require) и время их изменения
+    std::unordered_map<std::string, std::filesystem::file_time_type> file_watch_map_;
+
+    float reload_timer_ = 0.0f;
+    ReloadErrorPolicy error_policy_ = ReloadErrorPolicy::FreezeExecution; // По умолчанию замораживаем
+    bool is_frozen_ = false;                                              // Флаг состояния паузы
+
+    // Контекст и функции daScript
     das::Context* das_ctx = nullptr;
     das::SimFunction* fn_start = nullptr;
     das::SimFunction* fn_update = nullptr;
-
-    // Хранилище кастомных скриптов (например, для эдитора)
-    std::unordered_map<std::string, std::unique_ptr<ScriptInstance>> custom_scripts_;
 };
 
 } // namespace tryengine::core

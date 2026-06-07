@@ -4,7 +4,6 @@
 #include <entt/resource/resource.hpp>
 #include <utility>
 
-#include "engine/core/CoreTypes.hpp"
 #include "engine/core/GLMSerialization.hpp"
 #include "engine/core/ResourceManager.hpp"
 
@@ -71,14 +70,14 @@ struct Relationship {
 };
 
 struct Transform {
-    vec3 position{0.0f};
-    quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
-    vec3 scale{1.0f};
+    glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 scale{1.0f};
 
-    mat4 world_matrix{1.0f};
+    glm::mat4 world_matrix{1.0f};
 
-    mat4 GetLocalMatrix() const {
-        mat4 model = mat4(1.0f);
+    glm::mat4 GetLocalMatrix() const {
+        glm::mat4 model = glm::mat4(1.0f);
         model = translate(model, position);
         model *= mat4_cast(rotation);
         model = glm::scale(model, scale);
@@ -93,8 +92,8 @@ struct Transform {
 };
 
 struct AABB {
-    vec3 world_min;
-    vec3 world_max;
+    glm::vec3 world_min;
+    glm::vec3 world_max;
 };
 
 struct Tag {

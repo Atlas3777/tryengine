@@ -2,7 +2,6 @@
 
 #include <filesystem>
 
-#include "engine/graphics/loaders/MeshLoader.hpp"
 #include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/ControllerManager.hpp"
@@ -23,13 +22,12 @@
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/NativeImporter.hpp"
 #include "engine/core/Addressables.hpp"
-#include "engine/core/ComponentSerializers.hpp"
 #include "engine/core/Components.hpp"
-#include "engine/core/GameAPI.hpp"
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 #include "engine/graphics/Types.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
+#include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderAssetLoader.hpp"
 #include "engine/resources/MeshDataLoader.hpp"
 #include "engine/resources/TextureLoader.hpp"
@@ -44,9 +42,11 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsCon
 
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
     import_system_ = std::make_unique<ImportSystem>(engine_.Get<tryengine::core::ResourceManager>());
-    addressables_provider_ = std::make_unique<AddressablesProvider>(engine_.Get<tryengine::core::ResourceManager>().GetAddressables());
+    addressables_provider_ =
+        std::make_unique<AddressablesProvider>(engine_.Get<tryengine::core::ResourceManager>().GetAddressables());
 
-    spawner_ = std::make_unique<Spawner>(graphics_context_, engine_.Get<tryengine::core::ResourceManager>(), *import_system_);
+    spawner_ =
+        std::make_unique<Spawner>(graphics_context_, engine_.Get<tryengine::core::ResourceManager>(), *import_system_);
     reflection_system_ = std::make_unique<ReflectionSystem>();
     gui_controller_manager_ = std::make_unique<ControllerManager>();
 
@@ -63,8 +63,8 @@ void Editor::Init() {
     RegisterAssetsInspector();
 
     gui_controller_manager_->RegisterController<SceneManagerController>(
-        engine_.Get<tryengine::core::SceneManager>(), *import_system_, *assets_factory_->GetFactory<SceneAssetFactory>(),
-        *addressables_provider_);
+        engine_.Get<tryengine::core::SceneManager>(), *import_system_,
+        *assets_factory_->GetFactory<SceneAssetFactory>(), *addressables_provider_);
 
     GetImportSystem().Refresh();
 
@@ -95,7 +95,8 @@ void Editor::RegisterComponents() const {
 void Editor::RegisterAssetsFactories() const {
     assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
     assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
-    assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_, engine_.Get<tryengine::core::ComponentRegistry>());
+    assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_,
+                                                        engine_.Get<tryengine::core::ComponentRegistry>());
     // assets_factory_->RegisterFactory<AddressablesGroupFactory>(*import_system_);
     // assets_factory_->RegisterFactory<AddressablesManifestFactory>(*import_system_);
 }
@@ -131,8 +132,7 @@ bool Editor::LoadGameLibrary(const std::string& original_path) {
     return true;
 }
 
-void Editor::UnloadGameLibrary() {
-}
+void Editor::UnloadGameLibrary() {}
 
 void Editor::LoadDefaultScene() const {
     auto scene = std::make_unique<tryengine::core::Scene>("nameless_scene");
@@ -158,10 +158,10 @@ void Editor::LoadDefaultScene() const {
     // Основной белый источник света (Сверху-справа)
     const auto main_light = registry.create();
     registry.emplace<tryengine::Tag>(main_light, "Main_PointLight");
-    registry.emplace<tryengine::Transform>(
-        main_light, tryengine::Transform{glm::vec3(4.f, 6.f, 3.f), glm::quat(), glm::vec3(1.f)});
+    registry.emplace<tryengine::Transform>(main_light,
+                                           tryengine::Transform{glm::vec3(4.f, 6.f, 3.f), glm::quat(), glm::vec3(1.f)});
     registry.emplace<tryengine::LightComponent>(
-        main_light, tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f}); // Теплый белый, радиус 20
+        main_light, tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f});  // Теплый белый, радиус 20
     registry.emplace<tryengine::Relationship>(main_light);
 
     // Дополнительный заполняющий синий источник (Слева)
@@ -170,7 +170,7 @@ void Editor::LoadDefaultScene() const {
     registry.emplace<tryengine::Transform>(
         fill_light, tryengine::Transform{glm::vec3(-5.f, 3.f, 2.f), glm::quat(), glm::vec3(1.f)});
     registry.emplace<tryengine::LightComponent>(
-        fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.5f, 15.0f}); // Яркий синий, радиус 15
+        fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.5f, 15.0f});  // Яркий синий, радиус 15
     registry.emplace<tryengine::Relationship>(fill_light);
 
     engine_.Get<tryengine::core::SceneManager>().SetActiveScene(std::move(scene));

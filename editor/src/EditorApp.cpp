@@ -32,7 +32,6 @@ void EditorApp::Init() {
     engine_->RegisterSystem<tryengine::core::ScriptSystem>();
     engine_->RegisterSystem<tryengine::core::InputService>(this->input_state_);
 
-
     graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
     if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
         SDL_Log("Failed to initialize WindowManager");
@@ -52,32 +51,28 @@ void EditorApp::Init() {
     } else {
         std::cerr << "Failed to compile main.das \n";
     }
-
-    // if (engine_->GetScriptSystem().LoadCustomScript("editor", "editor/daslang/editor.das")) {
-    //     std::cout << "nice" << std::endl;
-    // } else {
-    //     std::cout <<"Failed to compile editor.das" << std::endl;
-    // }
 }
 
 void EditorApp::Run() {
     while (editor_->running) {
         UpdateInput();
         const auto time_state = engine_->Get<tryengine::core::Clock>().Update();
+        float dt = static_cast<float>(time_state.delta_time);
 
         editor_->GetEditorGUI().UpdatePanels(*engine_);
 
-        tryengine::core::UpdateTransformSystem(engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
-        tryengine::core::UpdateCameraMatrices(engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+        tryengine::core::UpdateTransformSystem(
+            engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+        tryengine::core::UpdateCameraMatrices(
+            engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+
+        engine_->Get<tryengine::core::ScriptSystem>().CheckForReload(dt);
 
         if (editor_->play_mode) {
-            float dt = static_cast<float>(time_state.delta_time);
             engine_->Get<tryengine::core::ScriptSystem>().InvokeUpdate(dt);
         }
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
-
-        // engine_->GetScriptSystem().InvokeCustomFunction("editor", "ren");
 
         const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 

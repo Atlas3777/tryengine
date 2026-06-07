@@ -1,5 +1,7 @@
 #pragma once
 
+#include "engine/graphics/Types.hpp"
+
 namespace tryeditor {
 
 class ShaderAssetFactory : public BaseAssetFactory<tryengine::graphics::ShaderAsset> {

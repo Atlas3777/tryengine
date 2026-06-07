@@ -1,12 +1,10 @@
 #pragma once
-#include <cstdint>
-#include <cstring>
+
 #include <imgui.h>
+#include <cstdint>
 #include <string>
 
-#include "engine/core/CoreTypes.hpp"
 #include "engine/resources/AssetTypes.hpp"
-#include "engine/resources/MaterialAssetData.hpp"
 
 namespace tryeditor {
 

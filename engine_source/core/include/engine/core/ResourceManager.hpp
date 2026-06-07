@@ -2,7 +2,7 @@
 
 #include <entt/core/type_info.hpp>
 
-#include "Addressables.hpp"
+#include "engine/core/Addressables.hpp"
 #include "engine/core/AssetDatabase.hpp"
 #include "engine/core/ICacheBase.hpp"
 

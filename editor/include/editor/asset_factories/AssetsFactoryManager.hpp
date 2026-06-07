@@ -1,4 +1,5 @@
 #pragma once
+
 #include <entt/core/type_info.hpp>
 #include <memory>
 #include <string>

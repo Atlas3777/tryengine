@@ -19,7 +19,6 @@
 #include "engine/resources/MaterialAssetData.hpp"
 #include "engine/resources/Types.hpp"
 #include "stb_image.h"
-#include "stb_image_write.h"
 #include "tiny_gltf_v3.h"
 
 namespace tryeditor {

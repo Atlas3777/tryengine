@@ -1,14 +1,11 @@
 #include "editor/gui/SceneViewportPanel.hpp"
 
-#include <ImGuizmo.h>
-
 #include <glm/gtc/type_ptr.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include "editor/BaseSystem.hpp"
 #include "editor/Components.hpp"
-#include "editor/gui/EditorGUI.hpp"
 #include "engine/core/Components.hpp"
 
 namespace tryeditor {
@@ -93,8 +90,8 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
 
         glm::vec3 skew;
         glm::vec4 perspective;
-        tryengine::vec3 translation;
-        tryengine::vec3 scale;
+        glm::vec3 translation;
+        glm::vec3 scale;
         glm::quat orientation;
 
         glm::decompose(localMatrix, scale, orientation, translation, skew, perspective);

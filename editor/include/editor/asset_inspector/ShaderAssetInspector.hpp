@@ -1,9 +1,10 @@
 #pragma once
 
-#include "../utils/EditorGUIUtils.hpp"
-#include "IAssetInspector.hpp"
+#include "editor/asset_inspector/IAssetInspector.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/MetaSerializer.hpp"
+#include "editor/utils/EditorGUIUtils.hpp"
+#include "engine/graphics/Types.hpp"
 
 namespace tryeditor {
 
