@@ -8,11 +8,6 @@ require daslib/decs
 require daslib/decs_boost
 
 
-[export]
-def GetHierarchy(){
-
-}
-
 def public DebugPrint(){
     for (arch in decsState.allArchetypes){
         for (i in range(int(arch.size))) {

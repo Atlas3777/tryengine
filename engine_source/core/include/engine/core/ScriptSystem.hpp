@@ -2,6 +2,7 @@
 
 #include <daScript/daScript.h>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 
@@ -33,6 +34,9 @@ public:
         if (das_ctx && function) {
             das::Func custom_func(function);
             das::das_invoke_function<void>::invoke(das_ctx, nullptr, custom_func, std::forward<Args>(args)...);
+        }
+        else {
+            std::cout << "[ScriptSystem] Function not found: " << f_name << std::endl;
         }
         return function;
     }

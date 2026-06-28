@@ -9,6 +9,16 @@ var DAS_PAK_ROOT = "/home/artem/tryengine/"
 
 [export]
 def module_get(req, from : string) : module_info {
+    if (req == "tryRenderer") {
+            print("[Project Resolver] Нативный C++ модуль: tryRenderer (перенаправляем в C++ регистр)\n")
+            return ("tryRenderer", "", "")
+    }
+
+     if (req == "tryeditor") {
+            print("[Project Resolver] Нативный C++ модуль: tryeditor (перенаправляем в C++ регистр)\n")
+            return ("tryeditor", "", "")
+    }
+
     if (starts_with(req, "tryengine/")) {
         let sub = slice(req, 10, length(req))
         let path = "{DAS_PAK_ROOT}/engine_source/daslang/{sub}.das"

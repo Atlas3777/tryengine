@@ -35,6 +35,7 @@ add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
 )
 
+set_target_properties(imgui_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(imgui_lib PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
 
 target_include_directories(imgui_lib PUBLIC
@@ -64,7 +65,26 @@ target_link_libraries(editor PRIVATE
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/EditorScriptBindings.cpp
+    set_source_files_properties(src/Module_TryEditor.cpp
+            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+    )
+endif()
+
+add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp)
+target_link_libraries(tryeditor_shared PRIVATE engine_core imgui_lib)
+
+set_target_properties(tryeditor_shared PROPERTIES
+        # Клади собранный файл прямо в созданную нами папку модулей
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryeditor"
+        # Подменяем расширение .so на .shared_module
+        SUFFIX ".shared_module"
+        PREFIX ""
+        OUTPUT_NAME "tryeditor"
+)
+
+# Не забываем отключить RTTI и для этой цели
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/Module_TryEditor.cpp
             PROPERTIES COMPILE_OPTIONS "-fno-rtti"
     )
 endif()

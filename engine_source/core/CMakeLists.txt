@@ -16,8 +16,9 @@ file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/core/*.hpp")
 
 add_library(engine_core STATIC ${SOURCES} ${HEADERS})
 
-target_include_directories(engine_core PUBLIC include PRIVATE src)
+set_target_properties(engine_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+target_include_directories(engine_core PUBLIC include PRIVATE src)
 target_link_libraries(engine_core PUBLIC
         glm::glm
         EnTT::EnTT
@@ -42,24 +43,21 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
-# ============================================================================
-# ДОБАВЛЕНИЕ КАСТОМНОГО СТАТИЧЕСКОГО КОМПИЛЯТОРА ДЛЯ IDE
-# ============================================================================
-#
-#add_executable(daslang_tryengine compiler_main.cpp)
-#
-#target_include_directories(daslang_tryengine PRIVATE src include)
-#
-## Линкуем наше ядро (оно по цепочке потянет за собой DAS::libDaScriptDyn)
-#target_link_libraries(daslang_tryengine PRIVATE engine_core)
-#
-## Копируем дефайны, чтобы пути к SDK внутри daScript определились корректно
-#target_compile_definitions(daslang_tryengine PRIVATE
-#        "DAS_ROOT_DIR=\"${DAS_SDK_ROOT}\""
-#)
+add_library(tryengine_shared SHARED src/Module_Renderer.cpp)
+target_link_libraries(tryengine_shared PRIVATE engine_core DAS::libDaScriptDyn)
 
-#
-## Перенаправляем бинарник компилятора в общую папку вывода проекта
-#set_target_properties(daslang_tryengine PROPERTIES
-#        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-#)
+set_target_properties(tryengine_shared PROPERTIES
+        # Клади собранный файл прямо в созданную нами папку модулей
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryengine"
+        # Подменяем расширение .so на .shared_module
+        SUFFIX ".shared_module"
+        PREFIX ""
+        OUTPUT_NAME "tryengine"
+)
+
+# Не забываем отключить RTTI и для этой цели
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/Module_Renderer.cpp
+            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
+    )
+endif()

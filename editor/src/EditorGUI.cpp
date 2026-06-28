@@ -22,6 +22,7 @@
 #include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/InputService.hpp"
+#include "engine/core/ScriptSystem.hpp"
 
 namespace tryeditor {
 
@@ -94,7 +95,12 @@ void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
 }
 
 void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing) {
+    ImGui_ImplSDLGPU3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
 
+    engine_.Get<tryengine::core::ScriptSystem>().InvokeFunction("ren");
 
     DrawMainMenu();
     DrawPlayToolbar(is_playing);

@@ -7,9 +7,9 @@ Makefile
 build/
 build-asan/
 cmake-build-debug/
+cmake-build-release/
 game/artifacts/
 game/.cache/
-engine_source/daslib/
 
 *.spv
 

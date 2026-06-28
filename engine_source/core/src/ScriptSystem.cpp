@@ -54,7 +54,7 @@ ScriptSystem::ScriptSystem() {
         fAccess = das::make_smart<das::FsFileAccess>();
     }
 
-    das::require_dynamic_modules(fAccess, das::getDasRoot(), "./", load_modules, tout);
+    das::require_dynamic_modules(fAccess, das::getDasRoot(), "", load_modules, tout);
 
     das::Module::Initialize();
 }

@@ -1,10 +1,6 @@
 #include "editor/EditorApp.hpp"
 
-#include <imgui.h>
-#include <ImGuizmo.h>
-
 #include <imgui_impl_sdl3.h>
-#include <imgui_impl_sdlgpu3.h>
 
 #include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
@@ -20,13 +16,11 @@
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/SpawnPoint.hpp"
 
-// void RegisterEditorScriptBindings();
 
 namespace tryeditor {
 
 void EditorApp::Init() {
     AppBootstrap::CheckBaseProjectData();
-    // RegisterEditorScriptBindings();
 
     engine_ = std::make_unique<tryengine::core::Engine>();
 
@@ -85,15 +79,6 @@ void EditorApp::Run() {
         if (editor_->play_mode) {
             engine_->Get<tryengine::core::ScriptSystem>().InvokeUpdate(dt);
         }
-
-        ImGui_ImplSDLGPU3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-        ImGuizmo::BeginFrame();
-
-        engine_->Get<tryengine::core::ScriptSystem>().InvokeFunction("ren");
-
-
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
 
