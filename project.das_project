@@ -3,68 +3,82 @@ options gen2
 require strings
 require daslib/strings_boost
 
-// Определение типа для резолвера модулей daScript
-typedef module_info = tuple<string; string; string>
+typedef module_info = tuple<string; string; string> const
 
-// Корень проекта. Компилятор автоматически подставит сюда путь к директории,
-// в которой лежит этот .das_project файл.
-var DAS_PAK_ROOT = "./"
+var DAS_PAK_ROOT = "/home/artem/tryengine/"
 
 [export]
 def module_get(req, from : string) : module_info {
-
-    // 1. Нативные (C++) модули. Обязательно в круглых скобках для gen2!
-    if (req == "imgui" || req == "math" || req == "strings" || req == "fio" || req == "rtti" || req == "ast") {
-        return (req, "", "")
+    if (starts_with(req, "tryengine/")) {
+        let sub = slice(req, 10, length(req))
+        let path = "{DAS_PAK_ROOT}/engine_source/daslang/{sub}.das"
+        return (sub, path, "")
     }
 
-if (starts_with(req, "imgui/")) {
-    let sub = slice(req, 6, length(req))
-    var file_name = sub
-
-    if (sub == "imgui_boost_v2") {
-        file_name = "imgui_boost"
+    if (starts_with(req, "tryeditor/")){
+        let sub = slice(req, 10, length(req))
+        let path = "{DAS_PAK_ROOT}/editor/daslang/{sub}.das"
+        return (sub, path, "")
     }
 
-    let path = "modules/dasImgui/widgets/{file_name}.das"
 
-    print("[Project Resolver] Mapping '{req}' to file: {path}\n")
+    if (starts_with(req, "trygame")){
+        let path = "{DAS_PAK_ROOT}/game/assets/scripts/main.das"
+        return ("trygame", path, "")
+    }
 
-    // Возвращаем sub (короткое имя), чтобы оно строго соответствовало "module ..." внутри файлов
-    return (sub, path, "")
-}
+    if (starts_with(req, "imgui/")) {
+        let sub = slice(req, 6, length(req))
+        var file_name = sub
 
-    // 3. Стандартная библиотека daScript (вызовы вида `require daslib/json`)
+        if (sub == "imgui_boost_v2") {
+            file_name = "imgui_boost"
+        }
+
+        var gdr = get_das_root();
+
+        let path = "{gdr}/modules/dasImgui/widgets/{file_name}.das"
+
+        print("[Project Resolver] Mapping '{req}' to file: {path}\n")
+
+        return (sub, path, "")
+    }
+
     if (starts_with(req, "daslib/")) {
         let sub = slice(req, 7, length(req))
         let path = "{get_das_root()}/daslib/{sub}.das"
         return (sub, path, "")
     }
+
     if (starts_with(req, "live/")) {
-        // Отрезаем "live/" (5 символов), чтобы получить имя файла (например, "live_vars")
         let sub = slice(req, 5, length(req))
-
-        // Получаем абсолютный путь к глобальной установке /opt/daslang
         let das_root = get_das_root()
-
-        // Собираем полный путь к файлу в системе
         let path = "{das_root}/modules/dasLiveHost/live/{sub}.das"
-
         print("[Project Resolver] Глобальный модуль live/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 
     if (starts_with(req, "glfw/")) {
-        // Отрезаем "glfw/" (5 символов)
         let sub = slice(req, 5, length(req))
-
-        // Берем глобальный путь к daScript SDK
         let das_root = get_das_root()
-
-        // Собираем путь на основе твоего find: ./modules/dasGlfw/dasglfw/glfw_boost.das
         let path = "{das_root}/modules/dasGlfw/dasglfw/{sub}.das"
-
         print("[Project Resolver] Глобальный модуль glfw/. Маппинг '{req}' в: {path}\n")
+        return (sub, path, "")
+    }
+
+    // Обработка модулей OpenGL из dasOpenGL
+    if (starts_with(req, "opengl/")) {
+        let sub = slice(req, 7, length(req))
+
+        // Если это драйвер имгуя — это нативный C++ модуль, у него нет .das файла
+        if (sub == "opengl_imgui_driver") {
+            print("[Project Resolver] Нативный C++ модуль: {req} (перенаправляем в C++ регистр)\n")
+            return (sub, "", "")
+        }
+
+        let das_root = get_das_root()
+        let path = "{das_root}/modules/dasOpenGL/opengl/{sub}.das"
+        print("[Project Resolver] Глобальный модуль opengl/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 
@@ -75,7 +89,6 @@ if (starts_with(req, "imgui/")) {
     let fr <- split(from, "/")
     var path_parts : array<string>
 
-    // Копируем путь до папки, где лежит текущий компилируемый файл
     if (length(fr) > 0) {
         for (i in range(0, length(fr) - 1)) {
             push(path_parts, fr[i])

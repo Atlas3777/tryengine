@@ -58,9 +58,6 @@ public:
         camera_data.proj = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
         camera_data.position = cam_transform.position;
 
-        // Step 3: Настройки освещения
-        tryengine::graphics::AmbientSettings ambient;
-        // Шаг 3: Динамически собираем все источники света из текущей сцены EnTT
         std::vector<tryengine::graphics::Light> scene_lights;
 
         auto light_view = reg.view<tryengine::Transform, tryengine::LightComponent>();
@@ -78,7 +75,7 @@ public:
         }
 
         // Шаг 4: Отрисовка
-        rs.ExecuteCommands(cmd, target_.get(), camera_data, ambient, scene_lights);
+        rs.ExecuteCommands(cmd, *target_, camera_data, scene_lights);
     }
 };
 }  // namespace tryeditor

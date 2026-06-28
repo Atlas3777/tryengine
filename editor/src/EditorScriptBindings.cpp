@@ -23,8 +23,3 @@ public:
 // REGISTER_DYN_MODULE нужен для корректной работы DLL/Dyn рантайма
 REGISTER_DYN_MODULE(Module_TryEditor, Module_TryEditor);
 REGISTER_MODULE(Module_TryEditor);
-
-// Хелпер для быстрой регистрации из EditorApp
-void RegisterEditorScriptBindings() {
-    NEED_MODULE(Module_TryEditor);
-}

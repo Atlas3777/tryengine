@@ -94,10 +94,7 @@ void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
 }
 
 void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing) {
-    ImGui_ImplSDLGPU3_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-    ImGuizmo::BeginFrame();
+
 
     DrawMainMenu();
     DrawPlayToolbar(is_playing);

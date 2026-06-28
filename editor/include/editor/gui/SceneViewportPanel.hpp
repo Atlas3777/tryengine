@@ -89,8 +89,7 @@ public:
         camera_data.proj = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
         camera_data.position = cam_transform.position;
 
-        // Step 3: Задаем настройки минимального уровня освещения и источников света
-        tryengine::graphics::AmbientSettings ambient; // Использует дефолтные параметры (ночной эмбиент)
+
         std::vector<tryengine::graphics::Light> scene_lights;
 
         auto light_view = reg.view<tryengine::Transform, tryengine::LightComponent>();
@@ -109,7 +108,7 @@ public:
         }
 
         // Step 4: Выполняем отрисовку отсортированной очереди команд с оптимизацией стейтов GPU
-        rs.ExecuteCommands(cmd, target_.get(), camera_data, ambient, scene_lights);
+        rs.ExecuteCommands(cmd, *target_, camera_data, scene_lights);
     }
 
 private:

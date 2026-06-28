@@ -1,6 +1,10 @@
 #include "editor/EditorApp.hpp"
 
+#include <imgui.h>
+#include <ImGuizmo.h>
+
 #include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlgpu3.h>
 
 #include "editor/AppBootstrap.hpp"
 #include "editor/Editor.hpp"
@@ -14,14 +18,15 @@
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 #include "engine/core/ScriptSystem.hpp"
+#include "engine/core/SpawnPoint.hpp"
 
-void RegisterEditorScriptBindings();
+// void RegisterEditorScriptBindings();
 
 namespace tryeditor {
 
 void EditorApp::Init() {
     AppBootstrap::CheckBaseProjectData();
-    RegisterEditorScriptBindings();
+    // RegisterEditorScriptBindings();
 
     engine_ = std::make_unique<tryengine::core::Engine>();
 
@@ -46,10 +51,19 @@ void EditorApp::Init() {
     editor_->running = true;
     editor_->play_mode = false;
 
-    if (engine_->Get<tryengine::core::ScriptSystem>().LoadMainScript("game/assets/scripts/main.das")) {
-        engine_->Get<tryengine::core::ScriptSystem>().InvokeStart();
+    auto& script_system = engine_->Get<tryengine::core::ScriptSystem>();
+    if (script_system.LoadMainScript("./editor/daslang/EntryPoint.das")) {
+        script_system.InvokeStart();
     } else {
-        std::cerr << "Failed to compile main.das \n";
+        std::cerr << "Failed to compile entry_point.das \n";
+    }
+    std::vector<tryengine::core::SpawnPoint> vector;
+    script_system.InvokeFunction("GetLight", &vector);
+
+    std::cout << vector.size() << "\n";
+
+    for (auto& spawnPoint : vector) {
+        std::cout << spawnPoint.x << " " << spawnPoint.y << "\n";
     }
 }
 
@@ -71,6 +85,15 @@ void EditorApp::Run() {
         if (editor_->play_mode) {
             engine_->Get<tryengine::core::ScriptSystem>().InvokeUpdate(dt);
         }
+
+        ImGui_ImplSDLGPU3_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+        ImGuizmo::BeginFrame();
+
+        engine_->Get<tryengine::core::ScriptSystem>().InvokeFunction("ren");
+
+
 
         editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
 

@@ -16,7 +16,8 @@ struct CameraData {
 
 // Структура минимального уровня освещения (когда ламп нет)
 struct AmbientSettings {
-    glm::vec4 ambient_color{0.05f, 0.05f, 0.08f, 1.0f}; // Слегка синеватый ночной эмбиент по умолчанию
+    glm::vec4 ambient_color{0.05f, 0.05f, 0.08f, 1.0f};
+    glm::vec4 clear_color {0.1f, 0.1f, 0.12f, 1.0f};
 };
 
 // Типы источников света

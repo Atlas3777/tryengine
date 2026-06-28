@@ -15,6 +15,8 @@ public:
     RenderSystem(SDL_GPUDevice* device);
     ~RenderSystem() = default;
 
+    AmbientSettings ambient;
+
     // 1. Очистка очереди перед кадром
     void ClearQueue();
 
@@ -23,9 +25,8 @@ public:
 
     // 3. Выполнение рендеринга накопленной очереди
     void ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
-                         RenderTarget* target,
+                         RenderTarget& target,
                          const CameraData& camera,
-                         const AmbientSettings& ambient,
                          const std::vector<Light>& lights);
 
     PipelineManager* GetPipelineManager() { return pipeline_manager_.get(); }

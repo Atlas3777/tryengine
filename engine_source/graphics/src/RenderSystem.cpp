@@ -17,19 +17,19 @@ void RenderSystem::Submit(const DrawCommand& cmd) {
 }
 
 void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
-                                   RenderTarget* target,
+                                   RenderTarget& target,
                                    const CameraData& camera,
-                                   const AmbientSettings& ambient,
                                    const std::vector<Light>& lights) {
     // --- НАСТРОЙКА ТАРГЕТОВ ---
+    auto& clear_color = ambient.clear_color;
     SDL_GPUColorTargetInfo color_info{};
-    color_info.texture = target->GetColor();
-    color_info.clear_color = {0.1f, 0.1f, 0.12f, 1.0f}; // Серый фон вьюпорта
-    color_info.load_op = SDL_GPU_LOADOP_CLEAR;          // Будет чистить экран ВСЕГДА!
+    color_info.texture = target.GetColor();
+    color_info.clear_color = {clear_color.r, clear_color.g, clear_color.b, clear_color.a};
+    color_info.load_op = SDL_GPU_LOADOP_CLEAR;
     color_info.store_op = SDL_GPU_STOREOP_STORE;
 
     SDL_GPUDepthStencilTargetInfo depth_info{};
-    depth_info.texture = target->GetDepth();
+    depth_info.texture = target.GetDepth();
     depth_info.clear_depth = 1.0f;
     depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
     depth_info.store_op = SDL_GPU_STOREOP_STORE;

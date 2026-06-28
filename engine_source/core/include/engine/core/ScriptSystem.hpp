@@ -9,8 +9,8 @@ namespace tryengine::core {
 
 // Режимы реакции на ошибку компиляции при Live Coding
 enum class ReloadErrorPolicy {
-    ContinueWithOldContext, // Продолжить игру на последней рабочей версии кода (старый контекст тикает)
-    FreezeExecution         // Поставить обновление на паузу (update не вызывается) до исправления ошибок
+    ContinueWithOldContext,  // Продолжить игру на последней рабочей версии кода (старый контекст тикает)
+    FreezeExecution          // Поставить обновление на паузу (update не вызывается) до исправления ошибок
 };
 
 class ScriptSystem {
@@ -26,6 +26,17 @@ public:
     // Проверка изменений файлов на диске (Live Coding)
     void CheckForReload(float dt);
 
+    template<typename... Args>
+    bool InvokeFunction(const std::string& f_name, Args&&... args) {
+        auto function = das_ctx->findFunction(f_name.c_str());
+
+        if (das_ctx && function) {
+            das::Func custom_func(function);
+            das::das_invoke_function<void>::invoke(das_ctx, nullptr, custom_func, std::forward<Args>(args)...);
+        }
+        return function;
+    }
+
     // Геттеры и настройки
     das::Context* GetContext();
     void SetReloadErrorPolicy(ReloadErrorPolicy policy) { error_policy_ = policy; }
@@ -39,10 +50,11 @@ private:
 
     // Хранит пути ко всем зависимостям (включая require) и время их изменения
     std::unordered_map<std::string, std::filesystem::file_time_type> file_watch_map_;
+    std::unordered_map<std::string, das::SimFunction*> finded_function;
 
     float reload_timer_ = 0.0f;
-    ReloadErrorPolicy error_policy_ = ReloadErrorPolicy::FreezeExecution; // По умолчанию замораживаем
-    bool is_frozen_ = false;                                              // Флаг состояния паузы
+    ReloadErrorPolicy error_policy_ = ReloadErrorPolicy::FreezeExecution;  // По умолчанию замораживаем
+    bool is_frozen_ = false;                                               // Флаг состояния паузы
 
     // Контекст и функции daScript
     das::Context* das_ctx = nullptr;
@@ -50,4 +62,4 @@ private:
     das::SimFunction* fn_update = nullptr;
 };
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

@@ -27,9 +27,7 @@ target_link_libraries(engine_core PUBLIC
 )
 
 get_target_property(DAS_INC_DIRS DAS::libDaScriptDyn INTERFACE_INCLUDE_DIRECTORIES)
-
 list(GET DAS_INC_DIRS 0 DAS_MAIN_INCLUDE_DIR)
-
 cmake_path(GET DAS_MAIN_INCLUDE_DIR PARENT_PATH DAS_SDK_ROOT)
 
 target_compile_definitions(engine_core PUBLIC
@@ -38,8 +36,30 @@ target_compile_definitions(engine_core PUBLIC
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    # Отключаем RTTI персонально для файла с биндингами daScript
     set_source_files_properties(src/ScriptSystem.cpp
+            src/Module_Renderer.cpp
             PROPERTIES COMPILE_OPTIONS "-fno-rtti"
     )
 endif()
+
+# ============================================================================
+# ДОБАВЛЕНИЕ КАСТОМНОГО СТАТИЧЕСКОГО КОМПИЛЯТОРА ДЛЯ IDE
+# ============================================================================
+#
+#add_executable(daslang_tryengine compiler_main.cpp)
+#
+#target_include_directories(daslang_tryengine PRIVATE src include)
+#
+## Линкуем наше ядро (оно по цепочке потянет за собой DAS::libDaScriptDyn)
+#target_link_libraries(daslang_tryengine PRIVATE engine_core)
+#
+## Копируем дефайны, чтобы пути к SDK внутри daScript определились корректно
+#target_compile_definitions(daslang_tryengine PRIVATE
+#        "DAS_ROOT_DIR=\"${DAS_SDK_ROOT}\""
+#)
+
+#
+## Перенаправляем бинарник компилятора в общую папку вывода проекта
+#set_target_properties(daslang_tryengine PROPERTIES
+#        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+#)

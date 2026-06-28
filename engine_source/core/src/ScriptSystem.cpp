@@ -6,22 +6,27 @@
 #include <iostream>
 #include <set>
 
+DECLARE_MODULE(Module_Renderer);
+DECLARE_MODULE(Module_TryEditor);
+
 inline void InitializeDaScriptModules() {
     NEED_ALL_DEFAULT_MODULES;
+    NEED_MODULE(Module_Renderer);
+    NEED_MODULE(Module_TryEditor);
 }
 
 namespace tryengine::core {
 
-// Кастомный FileAccess для автоматического перехвата всех зависимостей (require) скрипта
 class TrackingFileAccess : public das::FsFileAccess {
 public:
-    TrackingFileAccess(const das::string& pak, const das::smart_ptr<das::FsFileAccess>& pac)
-        : das::FsFileAccess(pak, pac) {}
+    // Передаем скомпилированную программу проекта в базовый конструктор
+    TrackingFileAccess(const das::string& pak, const das::smart_ptr<das::Program>& project_program)
+        : FsFileAccess(pak, project_program) {}
 
-    das::FileInfo* getNewFileInfo(const das::string& fileName) override {
-        das::FileInfo* info = das::FsFileAccess::getNewFileInfo(fileName);
+    das::FileInfo* getNewFileInfo(const das::string& file_name) override {
+        das::FileInfo* info = FsFileAccess::getNewFileInfo(file_name);
         if (info) {
-            tracked_files.insert(fileName.c_str());
+            tracked_files.insert(file_name.c_str());
         }
         return info;
     }
@@ -35,7 +40,20 @@ ScriptSystem::ScriptSystem() {
 
     das::TextPrinter tout;
     das::vector<das::string> load_modules;
-    auto fAccess = das::make_smart<das::FsFileAccess>();
+    das::ModuleGroup dummyLibGroup;
+
+    // Компилируем проект для инициализации динамических модулей
+    auto baseAccess = das::make_smart<das::FsFileAccess>();
+    auto projectProgram = das::compileDaScript("project.das_project", baseAccess, tout, dummyLibGroup);
+
+    das::smart_ptr<das::FsFileAccess> fAccess;
+    if (projectProgram && !projectProgram->failed()) {
+        fAccess = das::make_smart<das::FsFileAccess>("project.das_project", projectProgram);
+    } else {
+        std::cerr << "[ScriptSystem] Предупреждение: не удалось загрузить project.das_project при старте. Используется дефолтный доступ.\n";
+        fAccess = das::make_smart<das::FsFileAccess>();
+    }
+
     das::require_dynamic_modules(fAccess, das::getDasRoot(), "./", load_modules, tout);
 
     das::Module::Initialize();
@@ -54,18 +72,29 @@ ScriptSystem::~ScriptSystem() {
 
 bool ScriptSystem::LoadMainScript(const std::string& path) {
     main_script_path_ = path;
-    return CompileAndLoad(path);
+    auto a = CompileAndLoad(path);
+    return a;
 }
 
 bool ScriptSystem::CompileAndLoad(const std::string& path) {
     das::TextPrinter tout;
     das::ModuleGroup dummyLibGroup;
 
-    auto fAccess = das::make_smart<TrackingFileAccess>("project.das_project", das::make_smart<das::FsFileAccess>());
+    // Шаг 1: Компилируем сам файл конфигурации проекта .das_project
+    auto baseAccess = das::make_smart<das::FsFileAccess>();
+    auto projectProgram = das::compileDaScript("project.das_project", baseAccess, tout, dummyLibGroup);
+
+    if (!projectProgram || projectProgram->failed()) {
+        std::cerr << "[LiveCoding] Ошибка компиляции файла проекта project.das_project!\n" << tout.str() << "\n";
+        return false;
+    }
+
+    // Шаг 2: Передаем программу проекта в твой кастомный TrackingFileAccess
+    auto fAccess = das::make_smart<TrackingFileAccess>("project.das_project", projectProgram);
     auto program = das::compileDaScript(path, fAccess, tout, dummyLibGroup);
 
     if (program->failed()) {
-        std::cerr << "[LiveCoding] Ошибка компиляции!\n" << tout.str() << "\n";
+        std::cerr << "[LiveCoding] Ошибка компиляции скрипта!\n" << tout.str() << "\n";
         for (const auto& error : program->errors) {
             std::cerr << reportError(error.at, error.what, error.extra, error.fixme, error.cerr) << "\n";
         }
@@ -82,13 +111,11 @@ bool ScriptSystem::CompileAndLoad(const std::string& path) {
     if (das_ctx) {
         delete das_ctx;
     }
-
     das_ctx = new_ctx;
+
     fn_start = das_ctx->findFunction("start");
     fn_update = das_ctx->findFunction("update");
 
-    // Обновляем список отслеживаемых файлов новыми данными из fAccess
-    file_watch_map_.clear();
     for (const auto& file_path : fAccess->tracked_files) {
         std::error_code ec;
         auto last_write = std::filesystem::last_write_time(file_path, ec);
@@ -103,7 +130,8 @@ bool ScriptSystem::CompileAndLoad(const std::string& path) {
 
 void ScriptSystem::CheckForReload(float dt) {
     reload_timer_ += dt;
-    if (reload_timer_ < 0.5f) return;
+    if (reload_timer_ < 0.5f)
+        return;
     reload_timer_ = 0.0f;
 
     bool need_reload = false;
@@ -124,13 +152,14 @@ void ScriptSystem::CheckForReload(float dt) {
             std::error_code ec;
             auto current_time = std::filesystem::last_write_time(path, ec);
             if (!ec && last_time != current_time) {
-                last_time = current_time; // Фиксируем изменение сразу, предотвращая бесконечные циклы
+                last_time = current_time;  // Фиксируем изменение сразу, предотвращая бесконечные циклы
                 need_reload = true;
             }
         }
     }
 
-    if (!need_reload) return;
+    if (!need_reload)
+        return;
 
     std::cout << "[LiveCoding] Изменение обнаружено. Перезагрузка скриптов...\n";
 
@@ -159,13 +188,15 @@ void ScriptSystem::CheckForReload(float dt) {
 }
 
 void ScriptSystem::InvokeHook(const std::string& hook_substring) {
-    if (!das_ctx) return;
+    if (!das_ctx)
+        return;
 
     for (int i = 0; i < das_ctx->getTotalFunctions(); ++i) {
         auto* fn = das_ctx->getFunction(i);
         if (fn && fn->name) {
             std::string name = fn->name;
-            // Ищем подстроку, чтобы успешно находить хуки внутри пространств имен (например, `live_vars::__before_reload_live_vars`)
+            // Ищем подстроку, чтобы успешно находить хуки внутри пространств имен (например,
+            // `live_vars::__before_reload_live_vars`)
             if (name.find(hook_substring) != std::string::npos) {
                 std::cout << "[LiveCoding] Вызов хука: " << name << "\n";
                 das::Func f(fn);
@@ -182,9 +213,11 @@ void ScriptSystem::InvokeStart() {
     }
 }
 
+
 void ScriptSystem::InvokeUpdate(float dt) {
     // КРИТИЧЕСКИЙ МОМЕНТ: если система заморожена из-за ошибки компиляции, игнорируем тик обновления
-    if (is_frozen_) return;
+    if (is_frozen_)
+        return;
 
     if (das_ctx && fn_update) {
         das::Func update_func(fn_update);

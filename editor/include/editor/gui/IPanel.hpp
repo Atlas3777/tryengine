@@ -1,7 +1,7 @@
 #pragma once
 
-#include <entt/entity/fwd.hpp>
 #include <SDL3/SDL_gpu.h>
+#include <entt/entity/fwd.hpp>
 
 namespace tryengine::graphics {
 class RenderSystem;

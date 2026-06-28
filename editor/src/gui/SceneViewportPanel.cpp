@@ -49,15 +49,14 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
 
-    // --- ПРОКАЧКА 1: Правильный расчет области отрисовки ---
-    // Это предотвратит смещение гизмо, если у окна есть заголовок (title bar)
-    ImVec2 windowPos = ImGui::GetWindowPos();
-    ImVec2 minRegion = ImGui::GetWindowContentRegionMin();
-    ImVec2 maxRegion = ImGui::GetWindowContentRegionMax();
-    float viewportX = windowPos.x + minRegion.x;
-    float viewportY = windowPos.y + minRegion.y;
-    float viewportWidth = maxRegion.x - minRegion.x;
-    float viewportHeight = maxRegion.y - minRegion.y;
+    ImVec2 viewportMin = ImGui::GetCursorScreenPos();
+    ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+
+    float viewportX = viewportMin.x;
+    float viewportY = viewportMin.y;
+    float viewportWidth = viewportSize.x;
+    float viewportHeight = viewportSize.y;
+
     ImGuizmo::SetRect(viewportX, viewportY, viewportWidth, viewportHeight);
 
     glm::mat4 view_mat = camera.view_matrix;
