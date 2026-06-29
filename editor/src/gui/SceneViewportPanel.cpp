@@ -49,42 +49,41 @@ void SceneViewportPanel::HandleGizmos(entt::registry& reg) {
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
 
-    ImVec2 viewportMin = ImGui::GetCursorScreenPos();
-    ImVec2 viewportSize = ImGui::GetContentRegionAvail();
+    ImVec2 viewport_min = ImGui::GetItemRectMin();
+    ImVec2 viewport_size = ImGui::GetItemRectSize();
 
-    float viewportX = viewportMin.x;
-    float viewportY = viewportMin.y;
-    float viewportWidth = viewportSize.x;
-    float viewportHeight = viewportSize.y;
+    float viewport_x = viewport_min.x;
+    float viewport_y = viewport_min.y;
+    float viewport_width = viewport_size.x;
+    float viewport_height = viewport_size.y;
 
-    ImGuizmo::SetRect(viewportX, viewportY, viewportWidth, viewportHeight);
+    ImGuizmo::SetRect(viewport_x, viewport_y, viewport_width, viewport_height);
 
     glm::mat4 view_mat = camera.view_matrix;
     const float aspect = static_cast<float>(target_->GetWidth()) / static_cast<float>(target_->GetHeight());
     glm::mat4 proj_mat = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
-    glm::mat4 modelMatrix = transform.world_matrix;
+    glm::mat4 model_matrix = transform.world_matrix;
 
-    // --- ПРОКАЧКА 3: Привязка к сетке (Snapping) по зажатому Ctrl ---
+    // Привязка к сетке (Snapping) по зажатому Ctrl
     bool snap = ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
-    float snapValue = 0.5f;  // Шаг для перемещения и скейла
+    float snap_value = 0.5f;  // Шаг для перемещения и скейла
     if (current_gizmo_operation_ == ImGuizmo::ROTATE) {
-        snapValue = 45.0f;  // Шаг для вращения (45 градусов)
+        snap_value = 45.0f;  // Шаг для вращения (45 градусов)
     }
-    float snapValues[3] = {snapValue, snapValue, snapValue};
+    float snapValues[3] = {snap_value, snap_value, snap_value};
 
-    // --- 4. Рендер и манипуляция ---
     ImGuizmo::Manipulate(glm::value_ptr(view_mat), glm::value_ptr(proj_mat), current_gizmo_operation_,
-                         current_gizmo_mode_, glm::value_ptr(modelMatrix),
+                         current_gizmo_mode_, glm::value_ptr(model_matrix),
                          nullptr,                     // deltaMatrix
                          snap ? snapValues : nullptr  // Передаем массив привязки, если зажат Ctrl
     );
 
     if (ImGuizmo::IsUsing()) {
-        glm::mat4 localMatrix = modelMatrix;
+        glm::mat4 localMatrix = model_matrix;
 
         if (relationship.parent != entt::null && reg.all_of<tryengine::Transform>(relationship.parent)) {
             const auto& parent_transform = reg.get<tryengine::Transform>(relationship.parent);
-            localMatrix = glm::inverse(parent_transform.world_matrix) * modelMatrix;
+            localMatrix = glm::inverse(parent_transform.world_matrix) * model_matrix;
         }
 
         glm::vec3 skew;

@@ -13,7 +13,7 @@ namespace tryengine::graphics {
 class RenderSystem {
 public:
     RenderSystem(SDL_GPUDevice* device);
-    ~RenderSystem() = default;
+    ~RenderSystem();
 
     AmbientSettings ambient;
 
@@ -27,7 +27,7 @@ public:
     void ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
                          RenderTarget& target,
                          const CameraData& camera,
-                         const std::vector<Light>& lights);
+                         const std::vector<PointLightGPU>& lights);
 
     PipelineManager* GetPipelineManager() { return pipeline_manager_.get(); }
 
@@ -37,6 +37,10 @@ private:
 
     // Внутренний буфер команд на кадр
     std::vector<DrawCommand> draw_queue_;
+
+    // В приватную секцию класса RenderSystem:
+    SDL_GPUBuffer* light_storage_buffer_ = nullptr;
+    size_t current_buffer_capacity_ = 0; // Трекаем текущий размер буфера ламп
 };
 
 }  // namespace tryengine::graphics

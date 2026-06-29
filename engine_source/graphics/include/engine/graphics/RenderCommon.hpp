@@ -20,34 +20,14 @@ struct AmbientSettings {
     glm::vec4 clear_color {0.1f, 0.1f, 0.12f, 1.0f};
 };
 
-// Типы источников света
-enum class LightType : uint32_t {
-    Directional = 0,
-    Point = 1
-};
-
-struct Light {
-    LightType type = LightType::Directional;
-    glm::vec3 position{0.0f};
-    glm::vec3 color{1.0f};
-    float intensity = 1.0f;
-    float radius = 10.0f; // Для Point Light
-};
-
-// То, что летит в GPU Fragment Shader (Слот 0)
-constexpr size_t MAX_LIGHTS = 8;
-
-struct GPULightData {
-    glm::vec4 position_type; // xyz = position/direction, w = type (0.0f = Dir, 1.0f = Point)
-    glm::vec4 color_radius;  // rgb = color * intensity, w = radius
-};
+struct alignas(16) PointLightGPU {
+    glm::vec4 position_radius; // xyz = position, w = radius
+    glm::vec4 color_intensity; // rgb = color,    w = intensity
+}; // Ровно 32 байта и в C++, и на GPU
 
 struct GlobalLightUniforms {
     glm::vec4 ambient_color;          // 16 байт
     glm::vec4 view_pos;               // 16 байт
-    uint32_t light_count;             // 4 байта
-    float padding[3];                 // 12 байт (выравнивание структуры до 16 байт перед массивом)
-    GPULightData lights[MAX_LIGHTS];  // 8 * 32 байта
 };
 
 // Главная структура команды отрисовки

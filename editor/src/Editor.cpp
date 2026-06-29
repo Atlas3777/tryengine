@@ -159,18 +159,18 @@ void Editor::LoadDefaultScene() const {
     const auto main_light = registry.create();
     registry.emplace<tryengine::Tag>(main_light, "Main_PointLight");
     registry.emplace<tryengine::Transform>(main_light,
-                                           tryengine::Transform{glm::vec3(4.f, 6.f, 3.f), glm::quat(), glm::vec3(1.f)});
+                                           tryengine::Transform{glm::vec3(10.f, 5.f, 0.f), glm::quat(), glm::vec3(1.f)});
     registry.emplace<tryengine::LightComponent>(
-        main_light, tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f});  // Теплый белый, радиус 20
+        main_light, tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f});
     registry.emplace<tryengine::Relationship>(main_light);
 
     // Дополнительный заполняющий синий источник (Слева)
     const auto fill_light = registry.create();
     registry.emplace<tryengine::Tag>(fill_light, "Fill_BlueLight");
     registry.emplace<tryengine::Transform>(
-        fill_light, tryengine::Transform{glm::vec3(-5.f, 3.f, 2.f), glm::quat(), glm::vec3(1.f)});
+        fill_light, tryengine::Transform{glm::vec3(-5.f, 3.f, 0.f), glm::quat(), glm::vec3(1.f)});
     registry.emplace<tryengine::LightComponent>(
-        fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.5f, 15.0f});  // Яркий синий, радиус 15
+        fill_light, tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.0f, 15.0f});
     registry.emplace<tryengine::Relationship>(fill_light);
 
     engine_.Get<tryengine::core::SceneManager>().SetActiveScene(std::move(scene));

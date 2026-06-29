@@ -52,7 +52,7 @@ public:
         fragmentInfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
         fragmentInfo.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
         fragmentInfo.num_samplers = 1;
-        fragmentInfo.num_storage_buffers = 0;
+        fragmentInfo.num_storage_buffers = 1;
         fragmentInfo.num_storage_textures = 0;
         fragmentInfo.num_uniform_buffers = 1;
 

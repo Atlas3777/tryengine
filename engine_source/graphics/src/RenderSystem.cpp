@@ -1,11 +1,18 @@
 #include "engine/graphics/RenderSystem.hpp"
 #include <glm/gtc/matrix_inverse.hpp>
 #include <algorithm>
+#include <cstring> // Для std::memcpy
 
 namespace tryengine::graphics {
 
 RenderSystem::RenderSystem(SDL_GPUDevice* device) : device_(device) {
     pipeline_manager_ = std::make_unique<PipelineManager>(device);
+}
+
+RenderSystem::~RenderSystem() {
+    if (light_storage_buffer_) {
+        SDL_ReleaseGPUBuffer(device_, light_storage_buffer_);
+    }
 }
 
 void RenderSystem::ClearQueue() {
@@ -19,8 +26,40 @@ void RenderSystem::Submit(const DrawCommand& cmd) {
 void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
                                    RenderTarget& target,
                                    const CameraData& camera,
-                                   const std::vector<Light>& lights) {
-    // --- НАСТРОЙКА ТАРГЕТОВ ---
+                                   const std::vector<PointLightGPU>& lights) {
+
+    if (!lights.empty()) {
+        if (!light_storage_buffer_ || current_buffer_capacity_ < lights.size()) {
+            if (light_storage_buffer_) {
+                SDL_ReleaseGPUBuffer(device_, light_storage_buffer_);
+            }
+            current_buffer_capacity_ = std::max(static_cast<size_t>(64), lights.size());
+
+            SDL_GPUBufferCreateInfo buffer_info{};
+            buffer_info.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+            buffer_info.size = sizeof(PointLightGPU) * current_buffer_capacity_;
+            light_storage_buffer_ = SDL_CreateGPUBuffer(device_, &buffer_info);
+        }
+
+        SDL_GPUTransferBufferCreateInfo xfer_info{};
+        xfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        xfer_info.size = sizeof(PointLightGPU) * lights.size();
+        SDL_GPUTransferBuffer* xfer_buffer = SDL_CreateGPUTransferBuffer(device_, &xfer_info);
+
+        void* mapped_data = SDL_MapGPUTransferBuffer(device_, xfer_buffer, false);
+        std::memcpy(mapped_data, lights.data(), xfer_info.size);
+        SDL_UnmapGPUTransferBuffer(device_, xfer_buffer);
+
+        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buffer);
+        SDL_GPUTransferBufferLocation src{ xfer_buffer, 0 };
+        SDL_GPUBufferRegion dst{ light_storage_buffer_, 0, static_cast<Uint32>(xfer_info.size) };
+
+        SDL_UploadToGPUBuffer(copy_pass, &src, &dst, true);
+        SDL_EndGPUCopyPass(copy_pass);
+
+        SDL_ReleaseGPUTransferBuffer(device_, xfer_buffer);
+    }
+
     auto& clear_color = ambient.clear_color;
     SDL_GPUColorTargetInfo color_info{};
     color_info.texture = target.GetColor();
@@ -34,45 +73,27 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
     depth_info.load_op = SDL_GPU_LOADOP_CLEAR;
     depth_info.store_op = SDL_GPU_STOREOP_STORE;
 
-    // Начинаем проход рендера. Теперь экран очистится в любом случае!
     SDL_GPURenderPass* scene_pass = SDL_BeginGPURenderPass(cmd_buffer, &color_info, 1, &depth_info);
 
-    // Если рисовать нечего — просто закрываем проход рендера и выходим (экран останется чистым и серым)
     if (draw_queue_.empty()) {
         SDL_EndGPURenderPass(scene_pass);
         return;
     }
 
-    // --- СОРТИРОВКА ОЧЕРЕДИ ---
     std::sort(draw_queue_.begin(), draw_queue_.end(), [](const DrawCommand& a, const DrawCommand& b) {
         return a.sorting_key < b.sorting_key;
     });
 
-    // --- ПОДГОТОВКА ГЛОБАЛЬНОГО ОСВЕЩЕНИЯ (Фрагментный слот 3) ---
     GlobalLightUniforms global_light_data{};
     global_light_data.ambient_color = ambient.ambient_color;
     global_light_data.view_pos = glm::vec4(camera.position, 1.0f);
 
-    uint32_t active_lights = std::min(lights.size(), MAX_LIGHTS);
-    global_light_data.light_count = active_lights;
+    SDL_PushGPUFragmentUniformData(cmd_buffer, 0, &global_light_data, sizeof(GlobalLightUniforms));
 
-    for (uint32_t i = 0; i < active_lights; ++i) {
-        const auto& src_light = lights[i];
-        if (src_light.type == LightType::Directional) {
-            global_light_data.lights[i].position_type = glm::vec4(src_light.position, 0.0f); // 0.0 = Dir
-        } else {
-            global_light_data.lights[i].position_type = glm::vec4(src_light.position, 1.0f); // 1.0 = Point
-        }
-
-        // Умножаем цвет на интенсивность прямо тут перед отправкой на GPU
-        glm::vec3 final_color = src_light.color * src_light.intensity;
-        global_light_data.lights[i].color_radius = glm::vec4(final_color, src_light.radius);
+    if (light_storage_buffer_) {
+        SDL_BindGPUFragmentStorageBuffers(scene_pass, 0, &light_storage_buffer_, 1);
     }
 
-    // ВАЖНО: Передаем в слот 3 (соответствует set = 3 в шейдере)
-    SDL_PushGPUFragmentUniformData(cmd_buffer, 3, &global_light_data, sizeof(GlobalLightUniforms));
-
-    // --- ОТРИСОВКА ОЧЕРЕДИ С КЭШИРОВАНИЕМ СОСТОЯНИЙ ---
     SDL_GPUGraphicsPipeline* current_pipeline = nullptr;
     Material* current_material = nullptr;
     SDL_GPUBuffer* current_vertex_buffer = nullptr;
@@ -102,10 +123,11 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
         ubo.normalMatrix = glm::inverseTranspose(ubo.model);
         SDL_PushGPUVertexUniformData(cmd_buffer, 0, &ubo, sizeof(CombinedUBO));
 
-        // Смена Материала (Слот 1 фрагментного шейдера)
+        // Смена Материала
         if (command.material != current_material) {
             auto shader = command.material->shader;
 
+            // ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ: uniform_binding_slot материала НЕ должен быть равен 0!
             if (shader->layout.uniform_buffer_size > 0) {
                 SDL_PushGPUFragmentUniformData(cmd_buffer, shader->layout.uniform_binding_slot,
                                                command.material->uniform_buffer.data(),
@@ -136,5 +158,4 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
 
     SDL_EndGPURenderPass(scene_pass);
 }
-
 }  // namespace tryengine::graphics

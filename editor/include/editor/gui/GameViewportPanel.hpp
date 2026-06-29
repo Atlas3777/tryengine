@@ -58,18 +58,18 @@ public:
         camera_data.proj = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
         camera_data.position = cam_transform.position;
 
-        std::vector<tryengine::graphics::Light> scene_lights;
+        std::vector<tryengine::graphics::PointLightGPU> scene_lights;
 
         auto light_view = reg.view<tryengine::Transform, tryengine::LightComponent>();
         for (auto entity : light_view) {
             const auto& t = light_view.get<tryengine::Transform>(entity);
             const auto& l = light_view.get<tryengine::LightComponent>(entity);
 
-            tryengine::graphics::Light render_light;
-            render_light.position = t.position;
-            render_light.intensity = l.intensity;
-            render_light.color = l.color;
-            render_light.radius = l.radius;
+            tryengine::graphics::PointLightGPU render_light;
+            // Упаковываем радиус в позицию
+            render_light.position_radius = glm::vec4(t.position, l.radius);
+            // Упаковываем интенсивность в цвет
+            render_light.color_intensity = glm::vec4(l.color, l.intensity);
 
             scene_lights.push_back(render_light);
         }

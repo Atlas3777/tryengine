@@ -15,26 +15,6 @@ namespace tryengine::graphics {
 void SubmitSceneFromEnTT(entt::registry& reg, entt::entity camera_entity, RenderSystem& render_system) {
     render_system.ClearQueue();
 
-    // Извлекаем данные камеры
-    auto cam_view = reg.view<Camera, Transform>();
-    if (!cam_view.contains(camera_entity)) return;
-
-    auto& cam_transform = cam_view.get<Transform>(camera_entity);
-    auto& camera = cam_view.get<Camera>(camera_entity);
-
-    // Допустим, аспект получаем из фиксированного/текущего разрешения
-    float aspect = 16.0f / 9.0f; 
-    
-    CameraData camera_data;
-    camera_data.view = camera.view_matrix;
-    camera_data.proj = glm::perspective(glm::radians(camera.fov), aspect, camera.near_plane, camera.far_plane);
-    camera_data.position = cam_transform.position;
-
-    // Извлекаем источники света из ECS (если они там есть)
-    // На данный момент можно сделать пустой вектор или собрать сущности с LightComponent
-    std::vector<Light> scene_lights;
-    AmbientSettings ambient; 
-
     // Проходим по рендер-сущностям и формируем команды отрисовки
     auto renderable_view = reg.view<Transform, MeshFilter, MeshRenderer>();
     for (auto entity : renderable_view) {
