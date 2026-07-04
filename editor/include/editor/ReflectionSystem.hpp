@@ -38,6 +38,12 @@ public:
             .data<&tryengine::Camera::sensitivity>("Sensitivity")
             .data<&tryengine::Camera::speed>("Speed");
 
+        entt::meta_factory<tryengine::LightComponent>()
+            .type(entt::type_hash<tryengine::LightComponent>::value(), "LightComponent")
+            .data<&tryengine::LightComponent::color>("Color")
+            .data<&tryengine::LightComponent::radius>("Radius")
+            .data<&tryengine::LightComponent::intensity>("Intensity");
+
         entt::meta_factory<EditorCameraTag>().type(entt::type_hash<EditorCameraTag>::value(), "EditorCameraTag");
 
         entt::meta_factory<tryengine::MainCameraTag>().type(entt::type_hash<tryengine::MainCameraTag>::value(),

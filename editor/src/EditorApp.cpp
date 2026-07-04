@@ -14,7 +14,6 @@
 #include "engine/core/ResourceManager.hpp"
 #include "engine/core/SceneManager.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/core/SpawnPoint.hpp"
 
 
 namespace tryeditor {
@@ -51,14 +50,10 @@ void EditorApp::Init() {
     } else {
         std::cerr << "Failed to compile entry_point.das \n";
     }
-    std::vector<tryengine::core::SpawnPoint> vector;
-    script_system.InvokeFunction("GetLight", &vector);
+    std::vector<tryengine::graphics::PointLightGPU> vector;
+    script_system.InvokeFunction("GatherLights", &vector);
 
     std::cout << vector.size() << "\n";
-
-    for (auto& spawnPoint : vector) {
-        std::cout << spawnPoint.x << " " << spawnPoint.y << "\n";
-    }
 }
 
 void EditorApp::Run() {

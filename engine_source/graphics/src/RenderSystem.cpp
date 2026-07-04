@@ -1,7 +1,7 @@
 #include "engine/graphics/RenderSystem.hpp"
 #include <glm/gtc/matrix_inverse.hpp>
 #include <algorithm>
-#include <cstring> // Для std::memcpy
+#include <cstring>
 
 namespace tryengine::graphics {
 

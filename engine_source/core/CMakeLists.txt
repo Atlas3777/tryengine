@@ -42,22 +42,3 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             PROPERTIES COMPILE_OPTIONS "-fno-rtti"
     )
 endif()
-
-add_library(tryengine_shared SHARED src/Module_Renderer.cpp)
-target_link_libraries(tryengine_shared PRIVATE engine_core DAS::libDaScriptDyn)
-
-set_target_properties(tryengine_shared PROPERTIES
-        # Клади собранный файл прямо в созданную нами папку модулей
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryengine"
-        # Подменяем расширение .so на .shared_module
-        SUFFIX ".shared_module"
-        PREFIX ""
-        OUTPUT_NAME "tryengine"
-)
-
-# Не забываем отключить RTTI и для этой цели
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/Module_Renderer.cpp
-            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
-    )
-endif()
