@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "engine/core/ResourceManager.hpp"
+#include "engine/resources/ResourceManager.hpp"
 #include "engine/graphics/Types.hpp"
 #include "engine/resources/Types.hpp"
 
@@ -11,7 +11,7 @@ class MeshLoader {
 public:
     using result_type = std::shared_ptr<Mesh>;
 
-    explicit MeshLoader(core::ResourceManager& res, SDL_GPUDevice* device) : res_manager(&res), device(device) {}
+    explicit MeshLoader(resources::ResourceManager& res, SDL_GPUDevice* device) : res_manager(&res), device(device) {}
 
     result_type operator()(uint64_t id, const std::string& path) const {
         const auto mesh = res_manager->Get<resources::MeshData>(id);
@@ -73,7 +73,7 @@ public:
     }
 
 private:
-    core::ResourceManager* res_manager;
+    resources::ResourceManager* res_manager;
     SDL_GPUDevice* device;
 };
 }  // namespace tryengine::graphics

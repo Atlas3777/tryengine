@@ -2,7 +2,6 @@
 
 #include "editor/asset_inspector/IAssetInspector.hpp"
 #include "editor/import/ImportSystem.hpp"
-#include "editor/meta/MetaSerializer.hpp"
 #include "editor/utils/EditorGUIUtils.hpp"
 #include "engine/graphics/Types.hpp"
 
@@ -15,7 +14,7 @@ public:
     void DrawInspector(const std::filesystem::path& asset_path) override {
         if (current_asset_path_ != asset_path) {
             current_asset_path_ = asset_path;
-            import_system_.LoadNativeAsset(asset_path, current_shader_data_);
+            // import_system_.LoadNativeAsset(asset_path, current_shader_data_);
             dirty_ = false;
         }
 
@@ -37,10 +36,10 @@ public:
         }
 
         if (save_triggered && dirty_) {
-            std::filesystem::path meta = current_asset_path_;
-            auto header = MetaSerializer::ReadHeader(meta += ".meta");
-            import_system_.SaveNativeAsset<tryengine::graphics::ShaderAsset>(
-                current_asset_path_, current_shader_data_, *header);
+            // std::filesystem::path meta = current_asset_path_;
+            // auto header = MetaSerializer::ReadHeader(meta += ".meta");
+            // import_system_.SaveNativeAsset<tryengine::graphics::ShaderAsset>(
+            //     current_asset_path_, current_shader_data_, *header);
 
             dirty_ = false;
         }

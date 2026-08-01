@@ -1,8 +1,13 @@
 #pragma once
 
+#include <EASTL/string.h>
+#include <EASTL/vector.h>
+#include <EASTL/unordered_map.h>
 #include <SDL3/SDL_gpu.h>
-#include <cereal/cereal.hpp>
+#include <cstring>
 #include <memory>
+
+#include "ResourceHandle.hpp"
 
 namespace tryengine::graphics {
 
@@ -43,55 +48,37 @@ constexpr uint32_t GetTypeSize(ShaderParamType type) {
 }
 
 struct ShaderAssetParam {
-    std::string name;
+    eastl::string name;
     ShaderParamType type;
-    std::vector<float> default_values;
-
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(cereal::make_nvp("name", name),
-            cereal::make_nvp("type", type),
-           cereal::make_nvp("defaults", default_values));
-    }
+    eastl::vector<float> default_values;
 };
 
 struct ShaderAssetTexture {
-    std::string name;
+    eastl::string name;
     uint32_t slot;
-
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(cereal::make_nvp("name", name), cereal::make_nvp("slot", slot));
-    }
 };
 
 struct ShaderAsset {
     uint64_t vertex_shader_id = 0;
     uint64_t fragment_shader_id = 0;
-    std::vector<ShaderAssetParam> params;
-    std::vector<ShaderAssetTexture> textures;
-
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(cereal::make_nvp("vertex_id", vertex_shader_id), cereal::make_nvp("fragment_id", fragment_shader_id),
-           cereal::make_nvp("params", params), cereal::make_nvp("textures", textures));
-    }
+    eastl::vector<ShaderAssetParam> params;
+    eastl::vector<ShaderAssetTexture> textures;
 };
 
 struct ShaderParamInfo {
-    std::string name;
+    eastl::string name;
     ShaderParamType type;
     uint32_t offset;
     uint32_t size;
 };
 
 struct ShaderLayout {
-    std::vector<ShaderParamInfo> params;
-    std::unordered_map<std::string, uint32_t> texture_slots;
+    eastl::vector<ShaderParamInfo> params;
+    eastl::unordered_map<eastl::string, uint32_t> texture_slots;
     uint32_t uniform_buffer_size = 0;
     uint32_t uniform_binding_slot = 1;
 
-    const ShaderParamInfo* FindParam(const std::string& name) const {
+    const ShaderParamInfo* FindParam(const eastl::string& name) const {
         for (const auto& p : params) {
             if (p.name == name)
                 return &p;
@@ -99,12 +86,12 @@ struct ShaderLayout {
         return nullptr;
     }
 
-    int32_t FindTextureSlot(const std::string& name) const {
+    int32_t FindTextureSlot(const eastl::string& name) const {
         auto it = texture_slots.find(name);
         return (it != texture_slots.end()) ? static_cast<int32_t>(it->second) : -1;
     }
 
-    void AddParam(const std::string& name, ShaderParamType type) {
+    void AddParam(const eastl::string& name, ShaderParamType type) {
         uint32_t size = GetTypeSize(type);
         uint32_t alignment = (size > 4) ? 16 : 4;
         uniform_buffer_size = (uniform_buffer_size + alignment - 1) & ~(alignment - 1);
@@ -117,7 +104,7 @@ struct Shader {
     SDL_GPUShader* vertex_shader = nullptr;
     SDL_GPUShader* fragment_shader = nullptr;
     ShaderLayout layout;
-    std::vector<uint8_t> default_uniform_data;
+    eastl::vector<uint8_t> default_uniform_data;
 };
 
 struct TextureBinding {
@@ -130,9 +117,9 @@ struct Material {
     explicit Material(Shader* shdr) { Attach(shdr); }
 
     Shader* shader = nullptr;
-    std::vector<uint8_t> uniform_buffer;
+    eastl::vector<uint8_t> uniform_buffer;
 
-    std::vector<TextureBinding> textures;
+    eastl::vector<TextureBinding> textures;
 
     void Attach(Shader* shdr) {
         if (!shdr)
@@ -157,7 +144,7 @@ struct Material {
         textures.push_back({slot, tex});
     }
 
-    void SetTexture(const std::string& name, const Texture& tex) {
+    void SetTexture(const eastl::string& name, const Texture& tex) {
         if (!shader)
             return;
         int32_t slot = shader->layout.FindTextureSlot(name);
@@ -167,7 +154,7 @@ struct Material {
     }
 
     template <typename T>
-    void SetParam(const std::string& name, const T& value) {
+    void SetParam(const eastl::string& name, const T& value) {
         if (!shader)
             return;
         const auto* param = shader->layout.FindParam(name);
@@ -179,7 +166,7 @@ struct Material {
         }
     }
 
-    void SetParamRaw(const std::string& name, const void* data_ptr, uint32_t data_size) {
+    void SetParamRaw(const eastl::string& name, const void* data_ptr, uint32_t data_size) {
         if (!shader)
             return;
         const auto* param = shader->layout.FindParam(name);
@@ -196,3 +183,18 @@ struct Material {
 };
 
 }  // namespace tryengine::graphics
+
+namespace tryengine {
+
+struct MeshFilter {
+    resources::ResourceHandle<graphics::Mesh> mesh;
+    uint64_t asset_id = 0;
+
+};
+
+struct MeshRenderer {
+    resources::ResourceHandle<graphics::Material> material;
+    uint64_t asset_id = 0;
+};
+
+}

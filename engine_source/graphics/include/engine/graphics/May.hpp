@@ -4,6 +4,6 @@
 namespace tryengine::graphics {
 class RenderSystem;
 
-void SubmitSceneFromEnTT(entt::registry& reg, entt::entity camera_entity,
+void SubmitSceneFromEnTT(entt::registry& reg,
                          tryengine::graphics::RenderSystem& render_system);
 }

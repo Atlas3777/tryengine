@@ -2,12 +2,11 @@
 
 #include "editor/Components.hpp"
 #include "engine/core/Components.hpp"
-#include "engine/core/Engine.hpp"
 #include "engine/core/InputState.hpp"
 
 namespace tryeditor {
 
-void UpdateEditorCameraSystem(entt::registry& reg, const double delta_time, const tryengine::core::InputState& input) {
+void UpdateEditorCameraSystem(entt::registry& reg, const float delta_time, const tryengine::core::InputState& input) {
     auto view = reg.view<tryengine::Transform, tryengine::Camera, EditorCameraTag>();
 
     for (auto entity : view) {

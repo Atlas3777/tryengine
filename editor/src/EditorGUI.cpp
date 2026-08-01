@@ -6,38 +6,32 @@
 
 #include <ImGuizmo.h>
 
-#include <glm/gtx/matrix_decompose.hpp>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 
-#include "editor/AddressablesProvider.hpp"
 #include "editor/ControllerManager.hpp"
 #include "editor/SceneManagerController.hpp"
-#include "editor/gui/AddressablesPanel.hpp"
-#include "editor/gui/FileBrowserPanel.hpp"
+// #include "editor/gui/FileBrowserPanel.hpp"
 #include "editor/gui/GameViewportPanel.hpp"
-#include "editor/gui/HierarchyPanel.hpp"
-#include "editor/gui/InspectorPanel.hpp"
+// #include "editor/gui/HierarchyPanel.hpp"
 #include "editor/gui/SceneViewportPanel.hpp"
-#include "engine/core/Clock.hpp"
 #include "engine/core/Engine.hpp"
-#include "engine/core/InputService.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/core/ScriptSystem.hpp"
+#include "engine/core/Profiler.hpp"
 
 namespace tryeditor {
 
 EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context,
                      ImportSystem& import_system, Spawner& spawner, SelectionManager& editor_context,
                      AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager,
-                     AddressablesProvider& addressables_provider, ControllerManager& controller_manager)
+                     ControllerManager& controller_manager)
     : engine_(engine), selection_manager_(editor_context), controller_manager_(controller_manager) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
 
-    static std::string ini_path = (std::filesystem::current_path() / "editor" / "imgui.ini").string();
-    io.IniFilename = ini_path.c_str();
-
+    io.IniFilename = "editor/imgui.ini";
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
@@ -56,11 +50,6 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
 
     ImGuizmo::SetGizmoSizeClipSpace(0.12f);
 
-    // Можно даже переопределить цвета, чтобы сделать их ярче (Опционально)
-    // style.Colors[ImGuizmo::DIRECTION_X] = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); // Ярко-красный
-    // style.Colors[ImGuizmo::DIRECTION_Y] = ImVec4(0.2f, 0.9f, 0.2f, 1.0f); // Ярко-зеленый
-    // style.Colors[ImGuizmo::DIRECTION_Z] = ImVec4(0.2f, 0.2f, 0.9f, 1.0f); // Ярко-синий
-
     // Настройка бэкендов
     ImGui_ImplSDL3_InitForSDLGPU(context.GetWindow());
 
@@ -71,27 +60,111 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
     init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
     ImGui_ImplSDLGPU3_Init(&init_info);
 
-    panels_.emplace_back(std::make_unique<SceneViewportPanel>(context, spawner));
-    panels_.emplace_back(std::make_unique<GameViewportPanel>(context));
-    panels_.emplace_back(
-        std::make_unique<InspectorPanel>(editor_context, import_system, inspector_manager, addressables_provider));
-    panels_.emplace_back(std::make_unique<HierarchyPanel>(selection_manager_));
-    panels_.emplace_back(
-        std::make_unique<FileBrowserPanel>(import_system, editor_context, factory_manager, engine_.Get<tryengine::core::SceneManager>()));
-    panels_.emplace_back(std::make_unique<AddressablesPanel>(addressables_provider));
+    auto* scene_viewport = new SceneViewportPanel(context, spawner);
+    scene_viewport_panel_ = scene_viewport; // сохраняем отдельный указатель для геттера
+    panels_.emplace_back(scene_viewport);
+
+    //panels_.emplace_back(new HierarchyPanel(selection_manager_));
+    panels_.emplace_back(new GameViewportPanel(context));
+    // panels_.emplace_back(new FileBrowserPanel(
+    //     import_system,
+    //     editor_context,
+    //     factory_manager,
+    //     engine_.Get<tryengine::core::SceneManager>()
+    // ));
 }
 
 EditorGUI::~EditorGUI() {
+    for (auto* panel : panels_) {
+        delete panel;
+    }
+
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 }
 
-void EditorGUI::UpdatePanels(const tryengine::core::Engine& engine) const {
-    for (const auto& panel : panels_) {
-        panel->OnUpdate(engine.Get<tryengine::core::Clock>().GetDeltaTime(), engine.Get<tryengine::core::InputService>().GetInputState(),
-                        engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+
+static void RenderProfilerPanel() {
+    if (!ImGui::Begin("Performance Profiler")) {
+        ImGui::End();
+        return;
     }
+
+    auto& profiler = tryengine::core::Profiler::Instance();
+    const float* frame_history = profiler.GetFrameTimeHistory();
+    size_t offset = profiler.GetFrameHistoryOffset();
+
+    // 1. Считаем текущее время кадра и FPS
+    size_t last_idx = (offset + tryengine::core::PROFILER_HISTORY_SIZE - 1) % tryengine::core::PROFILER_HISTORY_SIZE;
+    float current_frame_ms = frame_history[last_idx];
+    float fps = current_frame_ms > 0.0f ? 1000.0f / current_frame_ms : 0.0f;
+
+    // 2. Главный график Frame Time
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "Frame: %.2f ms (%.1f FPS)", current_frame_ms, fps);
+
+    ImGui::Text("Frame Time History");
+    ImGui::PlotLines(
+        "##FrameTimePlot",
+        frame_history,
+        static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
+        static_cast<int>(offset),
+        overlay,
+        0.0f,   // Min ms
+        33.3f,  // Max ms (шкала до 33мс / ~30 FPS, чтобы наглядно видеть спайки)
+        ImVec2(ImGui::GetContentRegionAvail().x, 70.0f) // Ширина во всё окно, высота 70px
+    );
+
+    ImGui::Separator();
+
+    // 3. Таблица метрик с индивидуальными графиками (Sparklines)
+    if (ImGui::BeginTable("ProfilerTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+        ImGui::TableSetupColumn("Zone / Function", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+        ImGui::TableSetupColumn("Total (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn("Avg (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+        ImGui::TableHeadersRow();
+
+        for (const auto& [name, metric] : profiler.GetMetrics()) {
+            ImGui::TableNextRow();
+
+            // Имя
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(metric.name.data());
+
+            // Кол-во вызовов за кадр
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%u", metric.call_count);
+
+            // Суммарное время за кадр
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%.3f", metric.total_time_ms);
+
+            // Среднее время за 1 вызов
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%.3f", metric.avg_time_ms);
+
+            // Мини-график (Sparkline) для этой зоны
+            ImGui::TableSetColumnIndex(4);
+            ImGui::PushID(metric.name.data());
+            ImGui::PlotLines(
+                "##sparkline",
+                metric.history,
+                static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
+                static_cast<int>(metric.history_offset),
+                nullptr,
+                0.0f,
+                FLT_MAX, // Авто-шкала под максимальные значения зоны
+                ImVec2(120.0f, 18.0f)
+            );
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::End();
 }
 
 void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing) {
@@ -100,22 +173,23 @@ void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, b
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
-    engine_.Get<tryengine::core::ScriptSystem>().InvokeFunction("ren");
-
     DrawMainMenu();
     DrawPlayToolbar(is_playing);
     DrawDockSpace();
 
-    for (const auto& panel : panels_) {
+    for (auto& panel : panels_) {
         panel->OnImGuiRender(engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
     }
+
+    engine_.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("ren");
+    RenderProfilerPanel();
 
     ImGui::Render();
 }
 
 void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
-                              const tryengine::core::Engine& engine) const {
-    for (const auto& panel : panels_) {
+                              tryengine::core::Engine& engine) {
+    for (auto& panel : panels_) {
         panel->OnRender(cmd, render_system, engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
     }
 }
@@ -228,7 +302,7 @@ void EditorGUI::DrawPlayToolbar(bool& is_playing) {
     }
     ImGui::SameLine();
     if (ImGui::Button("Pause", ImVec2(50, 0))) {
-        // Логика паузы
+        TRY_LOG_INFO("Pause click");
     }
 
     ImGui::End();

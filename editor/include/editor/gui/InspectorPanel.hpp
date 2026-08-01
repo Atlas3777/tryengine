@@ -27,7 +27,7 @@ public:
 private:
     void DrawEntityInspector(entt::registry& reg);
     void DrawAssetInspector(const std::filesystem::path& path) const;
-    void DrawAssetFooter();
+    // void DrawAssetFooter();
 
 
     void DrawMetaComponent(entt::registry& reg, entt::entity entity, entt::meta_type type);

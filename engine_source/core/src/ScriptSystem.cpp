@@ -6,6 +6,8 @@
 #include <iostream>
 #include <set>
 
+#include "engine/core/Assert.hpp"
+
 DECLARE_MODULE(Module_Renderer);
 DECLARE_MODULE(Module_TryEditor);
 
@@ -34,7 +36,7 @@ public:
     std::set<std::string> tracked_files;
 };
 
-ScriptSystem::ScriptSystem() {
+ScriptSystem::ScriptSystem(const std::string& path) {
     das::setDasRoot(DAS_ROOT_DIR);
     InitializeDaScriptModules();
 
@@ -50,13 +52,16 @@ ScriptSystem::ScriptSystem() {
     if (projectProgram && !projectProgram->failed()) {
         fAccess = das::make_smart<das::FsFileAccess>("project.das_project", projectProgram);
     } else {
-        std::cerr << "[ScriptSystem] Предупреждение: не удалось загрузить project.das_project при старте. Используется дефолтный доступ.\n";
+        std::cerr << "[ScriptSystem] Предупреждение: не удалось загрузить project.das_project при старте. Используется "
+                     "дефолтный доступ.\n";
         fAccess = das::make_smart<das::FsFileAccess>();
     }
 
     das::require_dynamic_modules(fAccess, das::getDasRoot(), "", load_modules, tout);
 
     das::Module::Initialize();
+
+    LoadMainScript(path);
 }
 
 ScriptSystem::~ScriptSystem() {
@@ -72,8 +77,7 @@ ScriptSystem::~ScriptSystem() {
 
 bool ScriptSystem::LoadMainScript(const std::string& path) {
     main_script_path_ = path;
-    auto a = CompileAndLoad(path);
-    return a;
+    return CompileAndLoad(path);
 }
 
 bool ScriptSystem::CompileAndLoad(const std::string& path) {
@@ -199,29 +203,33 @@ void ScriptSystem::InvokeHook(const std::string& hook_substring) {
             // `live_vars::__before_reload_live_vars`)
             if (name.find(hook_substring) != std::string::npos) {
                 std::cout << "[LiveCoding] Вызов хука: " << name << "\n";
-                das::Func f(fn);
-                das::das_invoke_function<void>::invoke(das_ctx, nullptr, f);
+                // Хуки живут внутри Live Coding, падение здесь не должно ронять редактор —
+                // используем безопасный вызов с логированием.
+                InvokeSimFunctionSafe(fn, name);
             }
         }
     }
 }
 
 void ScriptSystem::InvokeStart() {
-    if (das_ctx && fn_start) {
-        das::Func start_func(fn_start);
-        das::das_invoke_function<void>::invoke(das_ctx, nullptr, start_func);
-    }
+    TRY_CHECK(das_ctx, "Нет контекста");
+    TRY_CHECK(fn_start, "Не найдена функция start");
+
+    // start() зовется редко (при запуске/после релоада), поэтому используем
+    // безопасный путь — если скрипт упадет, увидим точное сообщение вместо крэша.
+    InvokeSimFunctionSafe(fn_start, "start");
 }
 
-
 void ScriptSystem::InvokeUpdate(float dt) {
-    // КРИТИЧЕСКИЙ МОМЕНТ: если система заморожена из-за ошибки компиляции, игнорируем тик обновления
     if (is_frozen_)
         return;
 
     if (das_ctx && fn_update) {
-        das::Func update_func(fn_update);
-        das::das_invoke_function<void>::invoke(das_ctx, nullptr, update_func, dt);
+        // update() зовется каждый кадр. По умолчанию тоже безопасный путь —
+        // так проще всего найти, где именно падает скрипт. Когда убедитесь,
+        // что update() стабилен, можно перейти на InvokeSimFunctionSafe ->
+        // прямой das_invoke_function (без try/catch) ради лишних микросекунд.
+        InvokeSimFunctionSafe(fn_update, "update", dt);
     }
 }
 

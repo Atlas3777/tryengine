@@ -1,40 +1,33 @@
 #include "engine/graphics/GraphicsContext.hpp"
 
-#include <string>
+#include <cassert>
+
+#include "engine/core/Assert.hpp"
+
 namespace tryengine::graphics {
-bool GraphicsContext::Initialize(const int width, const int height, const std::string& title) {
-    // SDL_SetHint(SDL_HINT_VIDEO_WAYLAND_ALLOW_LIBDECOR, "1");
-    // SDL_SetHint(SDL_HINT_X11_FORCE_OVERRIDE_REDIRECT, "1"); //Not Work
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-        SDL_Log("SDL_Init failed: %s", SDL_GetError());
-        return false;
+
+GraphicsContext::GraphicsContext(const uint32_t width, const uint32_t height, const eastl::string_view title) {
+    if (!TRY_VERIFY(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS), "SDL_Init failed: {}", SDL_GetError())) {
+        return;
     }
+
+    TRY_LOG_INFO(TRY_VARS(width, height));
 
     constexpr SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-
-    m_window = SDL_CreateWindow(title.c_str(), width, height, flags);
-    if (!m_window) {
-        SDL_Log("Could not create window: %s", SDL_GetError());
-        return false;
-    }
+    m_window = SDL_CreateWindow(title.data(), static_cast<int>(width), static_cast<int>(height), flags);
+    TRY_CHECK(m_window, "Не удалось создать окно SDL: {}", SDL_GetError());
 
     m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
-    if (!m_device) {
-        SDL_Log("Failed to create GPU Device: %s", SDL_GetError());
-        return false;
-    }
+    TRY_CHECK(m_device, "Не удалось создать GPU Device: {}", SDL_GetError());
 
-    if (!SDL_ClaimWindowForGPUDevice(m_device, m_window)) {
-        SDL_Log("GPU Claim window failed: %s", SDL_GetError());
-        return false;
-    }
+    TRY_CHECK(SDL_ClaimWindowForGPUDevice(m_device, m_window), "Не удалось привязать окно к GPU Device: {}", SDL_GetError());
+
+    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
     // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
     // SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
-    return true;
 }
 
-
-void GraphicsContext::Terminate() {
+GraphicsContext::~GraphicsContext() {
     if (m_device) {
         if (m_window) {
             SDL_ReleaseWindowFromGPUDevice(m_device, m_window);
@@ -50,4 +43,4 @@ void GraphicsContext::Terminate() {
 
     SDL_Quit();
 }
-} // namespace tryengine
+}  // namespace tryengine::graphics

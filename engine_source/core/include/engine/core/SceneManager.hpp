@@ -7,13 +7,14 @@
 #include "engine/core/Scene.hpp"
 
 namespace tryengine::core {
-class ResourceManager;
-class ComponentRegistry;
 
 class SceneManager {
 public:
-    SceneManager(ComponentRegistry& component_registry, ResourceManager& resource_manager)
-        : component_registry_(component_registry), resource_manager_(resource_manager) {};
+    // SceneManager(/*ComponentRegistry& component_registry,*/ resources::ResourceManager& resource_manager)
+        // :
+    // component_registry_(component_registry),
+    // resource_manager_(resource_manager) {};
+    SceneManager() = default;
     SceneManager(const SceneManager&) = delete;
     SceneManager& operator=(const SceneManager&) = delete;
     SceneManager(SceneManager&&) = delete;
@@ -21,20 +22,19 @@ public:
 
     ~SceneManager() = default;
 
-    bool LoadScene(const std::string& scene_name);
-    bool LoadScene(uint64_t id);
+    // bool LoadScene(const std::string& scene_name);
+    // bool LoadScene(uint64_t id);
     void SetActiveScene(std::unique_ptr<Scene> scene) {
         if (!scene) return;
         active_scene_ = std::move(scene);
     }
 
     [[nodiscard]] Scene& GetActiveScene() const { return *active_scene_; }
-    [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return component_registry_; }
+    // [[nodiscard]] ComponentRegistry& GetComponentRegistry() const { return component_registry_; }
 
 private:
     std::unique_ptr<Scene> active_scene_ = nullptr;
-    ComponentRegistry& component_registry_;
-    ResourceManager& resource_manager_;
+    // ComponentRegistry& component_registry_;
 };
 
 }  // namespace tryengine::core

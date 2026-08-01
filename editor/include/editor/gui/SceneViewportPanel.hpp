@@ -13,6 +13,8 @@
 #include "editor/Spawner.hpp"
 #include "editor/gui/IPanel.hpp"
 #include "editor/utils/EditorGUIUtils.hpp"
+#include "engine/async/GlobalExecutors.hpp"
+#include "engine/async/RunAndForget.hpp"
 #include "engine/core/Components.hpp"
 #include "engine/graphics/May.hpp"
 #include "engine/graphics/RenderSystem.hpp"
@@ -23,8 +25,14 @@ public:
     SceneViewportPanel(tryengine::graphics::GraphicsContext& context, Spawner& spawner) : BaseViewport(context), spawner_(spawner) {}
 
     const char* GetName() const override { return "Scene"; }
+    tryengine::graphics::RenderTarget* GetTarget() const {
+        // if (target_.get())
+        //     TRY_LOG_INFO("GetTarget");
+        // else
+        //     TRY_LOG_INFO("TARGET NULL");
 
-    void OnUpdate(double dt, const tryengine::core::InputState& input, entt::registry& reg) override;
+        return target_.get();
+    }
 
     void OnImGuiRender(entt::registry& reg) override {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
@@ -57,7 +65,7 @@ public:
                     data->expected_asset_type == tryengine::AssetType::Gltf)
                 {
                     std::cout << "Spawning asset ID: " << data->asset_id << std::endl;
-                    spawner_.Spawn(reg, data->asset_id);
+                    tryengine::async::ThreadPool().RunAndForget(spawner_.Spawn(reg, data->asset_id));
                 } else {
                     std::cout << "Wrong asset type for spawning!" << std::endl;
                 }
@@ -72,11 +80,16 @@ public:
     }
 
     void OnRender(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& rs, entt::registry& reg) override {
+
+        // std::vector<PointLightGPU> vector;
+        // script_system.InvokeFunction("GatherLights", &vector);
+        // std::cout << vector.size() << "\n";
+
         const auto editor_camera = reg.view<tryengine::Camera, EditorCameraTag>().front();
         if (editor_camera == entt::null) return;
 
         // Step 1: Наполняем независимую от ECS очередь команд рендера через EnTT-заглушку
-        tryengine::graphics::SubmitSceneFromEnTT(reg, editor_camera, rs);
+        tryengine::graphics::SubmitSceneFromEnTT(reg, rs);
 
         // Step 2: Вычисляем параметры камеры на основе текущего размера текстуры вьюпорта
         auto& cam_transform = reg.get<tryengine::Transform>(editor_camera);
@@ -98,9 +111,7 @@ public:
             const auto& l = light_view.get<tryengine::LightComponent>(entity);
 
             tryengine::graphics::PointLightGPU render_light;
-            // Упаковываем радиус в позицию
             render_light.position_radius = glm::vec4(t.position, l.radius);
-            // Упаковываем интенсивность в цвет
             render_light.color_intensity = glm::vec4(l.color, l.intensity);
 
             scene_lights.push_back(render_light);

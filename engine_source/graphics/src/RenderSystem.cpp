@@ -1,7 +1,8 @@
 #include "engine/graphics/RenderSystem.hpp"
-#include <glm/gtc/matrix_inverse.hpp>
+
 #include <algorithm>
 #include <cstring>
+#include <glm/gtc/matrix_inverse.hpp>
 
 namespace tryengine::graphics {
 
@@ -23,11 +24,8 @@ void RenderSystem::Submit(const DrawCommand& cmd) {
     draw_queue_.push_back(cmd);
 }
 
-void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
-                                   RenderTarget& target,
-                                   const CameraData& camera,
+void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer, RenderTarget& target, const CameraData& camera,
                                    const std::vector<PointLightGPU>& lights) {
-
     if (!lights.empty()) {
         if (!light_storage_buffer_ || current_buffer_capacity_ < lights.size()) {
             if (light_storage_buffer_) {
@@ -51,8 +49,8 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
         SDL_UnmapGPUTransferBuffer(device_, xfer_buffer);
 
         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buffer);
-        SDL_GPUTransferBufferLocation src{ xfer_buffer, 0 };
-        SDL_GPUBufferRegion dst{ light_storage_buffer_, 0, static_cast<Uint32>(xfer_info.size) };
+        SDL_GPUTransferBufferLocation src{xfer_buffer, 0};
+        SDL_GPUBufferRegion dst{light_storage_buffer_, 0, xfer_info.size};
 
         SDL_UploadToGPUBuffer(copy_pass, &src, &dst, true);
         SDL_EndGPUCopyPass(copy_pass);
@@ -80,9 +78,8 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
         return;
     }
 
-    std::sort(draw_queue_.begin(), draw_queue_.end(), [](const DrawCommand& a, const DrawCommand& b) {
-        return a.sorting_key < b.sorting_key;
-    });
+    std::sort(draw_queue_.begin(), draw_queue_.end(),
+              [](const DrawCommand& a, const DrawCommand& b) { return a.sorting_key < b.sorting_key; });
 
     GlobalLightUniforms global_light_data{};
     global_light_data.ambient_color = ambient.ambient_color;
@@ -100,7 +97,8 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
     SDL_GPUBuffer* current_index_buffer = nullptr;
 
     for (const auto& command : draw_queue_) {
-        if (!command.pipeline || !command.vertex_buffer || !command.material) continue;
+        if (!command.pipeline || !command.vertex_buffer || !command.material)
+            continue;
 
         if (command.pipeline != current_pipeline) {
             SDL_BindGPUGraphicsPipeline(scene_pass, command.pipeline);
@@ -110,7 +108,6 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
             current_index_buffer = nullptr;
         }
 
-        // Vertex Uniforms (Слот 0 вершинного шейдера)
         struct alignas(16) CombinedUBO {
             glm::mat4 view;
             glm::mat4 proj;
@@ -123,11 +120,9 @@ void RenderSystem::ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
         ubo.normalMatrix = glm::inverseTranspose(ubo.model);
         SDL_PushGPUVertexUniformData(cmd_buffer, 0, &ubo, sizeof(CombinedUBO));
 
-        // Смена Материала
         if (command.material != current_material) {
             auto shader = command.material->shader;
 
-            // ВАЖНОЕ ПРЕДУПРЕЖДЕНИЕ: uniform_binding_slot материала НЕ должен быть равен 0!
             if (shader->layout.uniform_buffer_size > 0) {
                 SDL_PushGPUFragmentUniformData(cmd_buffer, shader->layout.uniform_binding_slot,
                                                command.material->uniform_buffer.data(),

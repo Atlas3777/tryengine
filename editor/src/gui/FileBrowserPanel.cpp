@@ -4,7 +4,6 @@
 #include "editor/SelectionManager.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
 #include "editor/import/ImportSystem.hpp"
-#include "editor/meta/MetaSerializer.hpp"
 #include "editor/utils/EditorGUIUtils.hpp"
 
 namespace tryeditor {
@@ -171,9 +170,9 @@ void FileBrowserPanel::DrawDirectoryContent() {
                         std::filesystem::path meta_path = path.string() + ".meta";
                         if (std::filesystem::exists(meta_path)) {
                             try {
-                                auto header = MetaSerializer::ReadHeader(meta_path);
+                                // auto header = MetaSerializer::ReadHeader(meta_path);
                                 // Предполагается, что GUID имеет тип uint64_t
-                                scene_manager_.LoadScene(header->guid);
+                                // scene_manager_.LoadScene(header->guid);
                             } catch (const std::exception& e) {
                                 // Здесь можно залогировать ошибку чтения меты
                                 ImGui::TextColored(ImVec4(1, 0, 0, 1), "Meta Error: %s", e.what());
@@ -197,19 +196,20 @@ void FileBrowserPanel::DrawDirectoryContent() {
                         std::filesystem::path meta_path = path.string() + ".meta";
                         if (!std::filesystem::exists(meta_path)) {
                             ImGui::TextColored(ImVec4(1, 1, 0, 1), "Missing .meta file");
-                        } else {
-                            auto header = MetaSerializer::ReadHeader(meta_path);
-                            AssetPayload payload{};
-                            payload.asset_id = header->guid;
-                            payload.expected_asset_type = entt::hashed_string{header->asset_type.c_str()}.value();
-
-                            ImGui::SetDragDropPayload("ASSET_BROWSER_ITEM", &payload, sizeof(AssetPayload));
-
-                            ImGui::Text("Asset: %s", path.filename().string().c_str());
-                            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Type: %s", header->asset_type.c_str());
-                            ImGui::Separator();
-                            ImGui::TextDisabled("ID: %llu", header->guid);
                         }
+                        // else {
+                        //     // auto header = MetaSerializer::ReadHeader(meta_path);
+                        //     AssetPayload payload{};
+                        //     payload.asset_id = header->guid;
+                        //     payload.expected_asset_type = entt::hashed_string{header->asset_type.c_str()}.value();
+                        //
+                        //     ImGui::SetDragDropPayload("ASSET_BROWSER_ITEM", &payload, sizeof(AssetPayload));
+                        //
+                        //     ImGui::Text("Asset: %s", path.filename().string().c_str());
+                        //     ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Type: %s", header->asset_type.c_str());
+                        //     ImGui::Separator();
+                        //     ImGui::TextDisabled("ID: %llu", header->guid);
+                        // }
                     } catch (const std::exception& e) {
                         ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error: %s", e.what());
                     } catch (...) {
@@ -265,7 +265,7 @@ void FileBrowserPanel::DrawDirectoryContent() {
                                 selection_manager_.Select(new_path);
                             }
 
-                            import_system_.Refresh();
+                            // import_system_.Refresh();
                         } catch (const std::exception& e) {
                             // TODO: Здесь можно добавить вывод ошибки в консоль движка
                         }
@@ -297,18 +297,18 @@ void FileBrowserPanel::DrawDirectoryContent() {
                     strncpy(rename_buffer_, filename_string.c_str(), sizeof(rename_buffer_));
                     set_focus_to_rename_ = true;
                 }
-                if (ImGui::MenuItem("Delete", "Del")) {
-                    if (entry.is_directory()) {
-                        import_system_.DeleteDirectory(path);
-                    } else {
-                        import_system_.DeleteAsset(path);
-                    }
-                    import_system_.Refresh();
-
-                    if (selection_manager_.GetSelectedAsset() == path) {
-                        selection_manager_.ClearSelection();
-                    }
-                }
+                // if (ImGui::MenuItem("Delete", "Del")) {
+                //     if (entry.is_directory()) {
+                //         import_system_.DeleteDirectory(path);
+                //     } else {
+                //         import_system_.DeleteAsset(path);
+                //     }
+                //     import_system_.Refresh();
+                //
+                //     if (selection_manager_.GetSelectedAsset() == path) {
+                //         selection_manager_.ClearSelection();
+                //     }
+                // }
                 ImGui::EndPopup();
             }
 

@@ -10,12 +10,12 @@ var DAS_PAK_ROOT = "/home/artem/tryengine/"
 [export]
 def module_get(req, from : string) : module_info {
     if (req == "tryRenderer") {
-            print("[Project Resolver] Нативный C++ модуль: tryRenderer (перенаправляем в C++ регистр)\n")
+            //print("[Project Resolver] Нативный C++ модуль: tryRenderer (перенаправляем в C++ регистр)\n")
             return ("tryRenderer", "", "")
     }
 
      if (req == "tryeditor") {
-            print("[Project Resolver] Нативный C++ модуль: tryeditor (перенаправляем в C++ регистр)\n")
+            //print("[Project Resolver] Нативный C++ модуль: tryeditor (перенаправляем в C++ регистр)\n")
             return ("tryeditor", "", "")
     }
 
@@ -49,7 +49,7 @@ def module_get(req, from : string) : module_info {
 
         let path = "{gdr}/modules/dasImgui/widgets/{file_name}.das"
 
-        print("[Project Resolver] Mapping '{req}' to file: {path}\n")
+        //print("[Project Resolver] Mapping '{req}' to file: {path}\n")
 
         return (sub, path, "")
     }
@@ -64,7 +64,7 @@ def module_get(req, from : string) : module_info {
         let sub = slice(req, 5, length(req))
         let das_root = get_das_root()
         let path = "{das_root}/modules/dasLiveHost/live/{sub}.das"
-        print("[Project Resolver] Глобальный модуль live/. Маппинг '{req}' в: {path}\n")
+        //print("[Project Resolver] Глобальный модуль live/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 
@@ -72,7 +72,7 @@ def module_get(req, from : string) : module_info {
         let sub = slice(req, 5, length(req))
         let das_root = get_das_root()
         let path = "{das_root}/modules/dasGlfw/dasglfw/{sub}.das"
-        print("[Project Resolver] Глобальный модуль glfw/. Маппинг '{req}' в: {path}\n")
+        //print("[Project Resolver] Глобальный модуль glfw/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 
@@ -82,13 +82,13 @@ def module_get(req, from : string) : module_info {
 
         // Если это драйвер имгуя — это нативный C++ модуль, у него нет .das файла
         if (sub == "opengl_imgui_driver") {
-            print("[Project Resolver] Нативный C++ модуль: {req} (перенаправляем в C++ регистр)\n")
+            //print("[Project Resolver] Нативный C++ модуль: {req} (перенаправляем в C++ регистр)\n")
             return (sub, "", "")
         }
 
         let das_root = get_das_root()
         let path = "{das_root}/modules/dasOpenGL/opengl/{sub}.das"
-        print("[Project Resolver] Глобальный модуль opengl/. Маппинг '{req}' в: {path}\n")
+        //print("[Project Resolver] Глобальный модуль opengl/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 

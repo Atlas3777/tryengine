@@ -9,10 +9,12 @@ set(BUILD_DOC OFF CACHE BOOL "" FORCE)
 set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
 set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
 
+
 FetchContent_Declare(imgui     GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.6-docking)
 FetchContent_Declare(imguizmo  GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master)
 FetchContent_Declare(stb       GIT_REPOSITORY https://github.com/nothings/stb.git    GIT_TAG master)
 FetchContent_Declare(tinygltf  GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.0)
+#FetchContent_Declare(shaderc   GIT_REPOSITORY https://github.com/google/shaderc.git  GIT_TAG main GIT_SUBMODULES_RECURSE TRUE)
 
 FetchContent_MakeAvailable(imgui imguizmo stb tinygltf)
 
@@ -50,41 +52,41 @@ target_link_libraries(imguizmo PRIVATE imgui_lib)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/editor/*.hpp")
 
-add_executable(editor ${SOURCES} ${HEADERS})
-target_include_directories(editor PRIVATE include src)
+list(REMOVE_ITEM SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+)
 
-target_link_libraries(editor PRIVATE
-        engine_core
-        engine_resources
-        engine_graphics
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
+
+add_library(editor_core STATIC ${SOURCES} ${HEADERS})
+
+set_target_properties(editor_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_include_directories(editor_core PUBLIC include src)
+
+target_link_libraries(editor_core PUBLIC
+        engine::core
+        engine::resources
+        engine::graphics
+        engine::async
         imgui_lib
-        imguizmo        
+        imguizmo
         ${CMAKE_DL_LIBS}
         tinygltf
         stb_image
+        PkgConfig::SHADERC
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/Module_TryEditor.cpp
-            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
-    )
-endif()
+add_executable(editor src/main.cpp)
+target_link_libraries(editor PRIVATE editor_core)
 
 add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp)
-target_link_libraries(tryeditor_shared PRIVATE engine_core imgui_lib)
+target_link_libraries(tryeditor_shared PRIVATE editor_core)
 
 set_target_properties(tryeditor_shared PROPERTIES
-        # Клади собранный файл прямо в созданную нами папку модулей
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryeditor"
-        # Подменяем расширение .so на .shared_module
         SUFFIX ".shared_module"
         PREFIX ""
         OUTPUT_NAME "tryeditor"
 )
-
-# Не забываем отключить RTTI и для этой цели
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/Module_TryEditor.cpp
-            PROPERTIES COMPILE_OPTIONS "-fno-rtti"
-    )
-endif()

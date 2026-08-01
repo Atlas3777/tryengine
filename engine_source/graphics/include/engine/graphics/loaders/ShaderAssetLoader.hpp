@@ -3,14 +3,11 @@
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_log.h>
 #include <algorithm>
-#include <cereal/archives/binary.hpp>
-#include <cereal/archives/json.hpp>
-#include <fstream>
 #include <memory>
 #include <string>
 
-#include "engine/core/ResourceManager.hpp"
 #include "engine/graphics/Types.hpp"
+#include "engine/resources/ResourceManager.hpp"
 
 namespace tryengine::graphics {
 
@@ -18,24 +15,17 @@ class ShaderAssetLoader {
 public:
     using result_type = std::shared_ptr<Shader>;
 
-    explicit ShaderAssetLoader(core::ResourceManager& rm, SDL_GPUDevice* device)
+    explicit ShaderAssetLoader(resources::ResourceManager& rm, SDL_GPUDevice* device)
         : device_(device), resource_manager_(rm) {}
 
     result_type operator()(uint64_t id, const std::string& path) const {
-        std::ifstream is(path, std::ios::binary);  // Обязательно binary мода
-        if (!is.is_open()) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShaderLoader: cannot open %s", path.c_str());
-            return nullptr;
-        }
-
         ShaderAsset asset{};
-        try {
-            cereal::BinaryInputArchive archive(is);  // Читаем бинарник
-            archive(asset);
-        } catch (const std::exception& e) {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShaderLoader: parse error in %s: %s", path.c_str(), e.what());
-            return nullptr;
-        }
+        // // auto ec = resources::read_beve_file(asset, path);
+        // if (ec) {
+        //     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ShaderLoader: failed to read %s: %s", path.c_str(),
+        //                  glz::format_error(ec).c_str());
+        //     return nullptr;
+        // }
 
         auto shader = std::make_shared<Shader>();
 
@@ -105,7 +95,7 @@ public:
 
 private:
     SDL_GPUDevice* device_;
-    core::ResourceManager& resource_manager_;
+    resources::ResourceManager& resource_manager_;
 };
 
 }  // namespace tryengine::graphics

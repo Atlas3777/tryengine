@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include "engine/core/ResourceManager.hpp"
+#include "engine/resources/ResourceManager.hpp"
 #include "engine/resources/Types.hpp"
 
 namespace tryengine::resources {
@@ -11,7 +11,7 @@ class MeshDataLoader {
 public:
     using result_type = std::shared_ptr<MeshData>;
 
-    explicit MeshDataLoader(core::ResourceManager& resM) : res(&resM) {}
+    explicit MeshDataLoader(ResourceManager& resM) : res(&resM) {}
 
     result_type operator()(uint64_t id, const std::string& path) const {
         std::ifstream is(path, std::ios::binary);
@@ -50,6 +50,6 @@ public:
     }
 
 private:
-    core::ResourceManager* res;
+    ResourceManager* res;
 };
 }  // namespace tryengine::resources

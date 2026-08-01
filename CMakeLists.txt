@@ -1,15 +1,17 @@
 cmake_minimum_required(VERSION 3.31)
 project(tryengine)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build" FORCE)
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
@@ -39,6 +41,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND USE_ASAN)
     set(ASAN_FLAGS "-fsanitize=address" "-fno-omit-frame-pointer" "-fsanitize=undefined")
     add_compile_options(${ASAN_FLAGS})
     add_link_options(${ASAN_FLAGS})
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options("-fno-rtti")
+    message(STATUS "RTTI is DISABLED (-fno-rtti)")
+elseif(MSVC)
+    add_compile_options("/GR-")
+    message(STATUS "RTTI is DISABLED (/GR-)")
 endif()
 
 add_subdirectory(engine_source)

@@ -7,7 +7,11 @@
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 
+namespace tryengine::graphics {
+class RenderSystem;
+}
 namespace tryeditor {
+class SceneViewportPanel;
 class ControllerManager;
 class SceneManagerController;
 class AddressablesProvider;
@@ -21,15 +25,16 @@ public:
         SelectionManager& editor_context,
         AssetsFactoryManager& factory_manager,
         AssetInspectorManager& inspector_manager,
-        AddressablesProvider& addressables_provider,
         ControllerManager& controller_manager);
     ~EditorGUI();
-    void UpdatePanels(const tryengine::core::Engine& engine) const;
+
     void RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing);
     void RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
-                       const tryengine::core::Engine& engine) const;
+                       tryengine::core::Engine& engine);
     void RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GPUCommandBuffer* cmd);
 
+    // Геттеры для доступа к панели
+    static SceneViewportPanel* GetSceneViewportPanel() { return scene_viewport_panel_; }
 private:
     void DrawDockSpace();
     void DrawPlayToolbar(bool& is_playing);
@@ -39,6 +44,9 @@ private:
     SelectionManager& selection_manager_;
     ControllerManager& controller_manager_;
 
-    std::vector<std::unique_ptr<IPanel>> panels_;
+    // Прямой указатель на панель вьюпорта
+    static inline SceneViewportPanel* scene_viewport_panel_ = nullptr;
+
+    eastl::vector<IPanel*> panels_;
 };
 }  // namespace tryeditor

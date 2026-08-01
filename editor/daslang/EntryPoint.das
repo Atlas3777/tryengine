@@ -11,8 +11,3 @@ require tryeditor/Editor
 def main(){
 
 }
-
-[init]
-def teeeeeest(){
-    print("aa\n")
-}

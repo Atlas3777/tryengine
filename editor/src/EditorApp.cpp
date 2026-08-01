@@ -3,91 +3,113 @@
 #include <imgui_impl_sdl3.h>
 
 #include "editor/AppBootstrap.hpp"
+#include "editor/AssetSourceDatabase.hpp"
+#include "editor/BaseSystem.hpp"
 #include "editor/Editor.hpp"
 #include "editor/InputMapper.hpp"
 #include "editor/gui/EditorGUI.hpp"
+#include "editor/gui/SceneViewportPanel.hpp"
+#include "engine/async/GlobalExecutors.hpp"
+#include "engine/async/PollHandle.hpp"
 #include "engine/core/BaseSystem.hpp"
-#include "engine/core/Clock.hpp"
 #include "engine/core/ComponentRegistry.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/InputService.hpp"
-#include "engine/core/ResourceManager.hpp"
+#include "engine/core/Profiler.hpp"
 #include "engine/core/SceneManager.hpp"
 #include "engine/core/ScriptSystem.hpp"
-
+#include "engine/core/Time.hpp"
+#include "engine/resources/ReadFullFile.hpp"
+#include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
 
+EditorApp::EditorApp() = default;
+EditorApp::~EditorApp() = default;
+
+using namespace tryengine::core;
+using namespace tryengine::graphics;
+using namespace tryengine::resources;
+using namespace tryengine::async;
+
 void EditorApp::Init() {
-    AppBootstrap::CheckBaseProjectData();
+    graphics_context_ = std::make_unique<GraphicsContext>(1280, 720, "tryengine");
+    render_system_ = std::make_unique<RenderSystem>(graphics_context_->GetDevice());
+    engine_ = std::make_unique<Engine>();
 
-    engine_ = std::make_unique<tryengine::core::Engine>();
+    engine_->RegisterSystem<Time>();
+    engine_->RegisterSystem<SceneManager>();
+    engine_->RegisterSystem<InputService>(this->input_state_);
+    engine_->RegisterSystem<ScriptSystem>("./editor/daslang/EntryPoint.das");
+    engine_->RegisterSystem<ResourceManager>();
 
-    auto& resource_manager_ = engine_->RegisterSystem<tryengine::core::ResourceManager>();
-    auto& component_registry_ = engine_->RegisterSystem<tryengine::core::ComponentRegistry>();
-    engine_->RegisterSystem<tryengine::core::Clock>();
-    engine_->RegisterSystem<tryengine::core::SceneManager>(component_registry_, resource_manager_);
-    engine_->RegisterSystem<tryengine::core::ScriptSystem>();
-    engine_->RegisterSystem<tryengine::core::InputService>(this->input_state_);
-
-    graphics_context_ = std::make_unique<tryengine::graphics::GraphicsContext>();
-    if (!graphics_context_->Initialize(1280, 720, "tryengine")) {
-        SDL_Log("Failed to initialize WindowManager");
-        return;
-    }
-
-    render_system_ = std::make_unique<tryengine::graphics::RenderSystem>(graphics_context_->GetDevice());
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
 
-    editor_->Init();
+    editor_->LoadDefaultScene();
+    engine_->Get<ScriptSystem>().InvokeStart();
 
-    editor_->running = true;
-    editor_->play_mode = false;
-
-    auto& script_system = engine_->Get<tryengine::core::ScriptSystem>();
-    if (script_system.LoadMainScript("./editor/daslang/EntryPoint.das")) {
-        script_system.InvokeStart();
-    } else {
-        std::cerr << "Failed to compile entry_point.das \n";
+    auto task = RunPollable(ThreadPool(),editor_->GetAssetSourceDatabase().InitEngineContentSync(async_file_manager_));
+    while (!task.IsReady())
+    {
+        async_file_manager_.Pull();
+        MainThread().Pull();
+        async_file_manager_.Submit();
+        std::this_thread::yield();
     }
-    std::vector<tryengine::graphics::PointLightGPU> vector;
-    script_system.InvokeFunction("GatherLights", &vector);
 
-    std::cout << vector.size() << "\n";
+    RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().AsyncLoadGameContent(async_file_manager_));
 }
 
 void EditorApp::Run() {
+    editor_->running = true;
+    editor_->play_mode = false;
+
+    auto& time = engine_->Get<Time>();
+
     while (editor_->running) {
-        UpdateInput();
-        const auto time_state = engine_->Get<tryengine::core::Clock>().Update();
-        float dt = static_cast<float>(time_state.delta_time);
+        TRY_PROFILE_SCOPE("Main Loop Frame");
+        {
+            TRY_PROFILE_SCOPE("Render Less Frame");
+            UpdateInput();
+            time.NewFrame();
+            async_file_manager_.Pull();
+            MainThread().Pull();
 
-        editor_->GetEditorGUI().UpdatePanels(*engine_);
+            auto& reg = engine_->Get<SceneManager>().GetActiveScene().GetRegistry();
+            auto& panel = *editor_->GetGUI().GetSceneViewportPanel();
+            if (panel.is_input_captured_ && (panel.is_focused_ || panel.is_hovered_)) {
+                UpdateEditorCameraSystem(reg, time.DeltaTime(), input_state_);
+            }
 
-        tryengine::core::UpdateTransformSystem(
-            engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
-        tryengine::core::UpdateCameraMatrices(
-            engine_->Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
+            UpdateTransformSystem(reg);
+            UpdateCameraMatrices(reg);
 
-        engine_->Get<tryengine::core::ScriptSystem>().CheckForReload(dt);
+            engine_->Get<ScriptSystem>().CheckForReload(time.UnscaledDeltaTime());
 
-        if (editor_->play_mode) {
-            engine_->Get<tryengine::core::ScriptSystem>().InvokeUpdate(dt);
+            if (editor_->play_mode)
+                engine_->Get<ScriptSystem>().InvokeUpdate(time.DeltaTime());
+
+            async_file_manager_.Submit();
+
+            editor_->GetGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
         }
 
-        editor_->GetEditorGUI().RecordPanelsGpuCommands(*engine_, editor_->play_mode);
+        {
+            TRY_PROFILE_SCOPE("Render GPU");
+            const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
 
-        const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
+            SDL_GPUTexture* swapchainTexture = nullptr;
+            uint32_t w, h;
+            if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphics_context_->GetWindow(), &swapchainTexture, &w,
+                                                       &h)) {
+                SDL_SubmitGPUCommandBuffer(cmd);
+                continue;
+            }
 
-        SDL_GPUTexture* swapchainTexture = nullptr;
-        uint32_t w, h;
-        if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphics_context_->GetWindow(), &swapchainTexture, &w, &h)) {
-            SDL_SubmitGPUCommandBuffer(cmd);
-            continue;
+            editor_->GetGUI().RenderToPanel(cmd, *render_system_, *engine_);
+            editor_->GetGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
         }
-        editor_->GetEditorGUI().RenderToPanel(cmd, *render_system_, *engine_);
-
-        editor_->GetEditorGUI().RenderPanelsToSwapchain(swapchainTexture, cmd);
+        Profiler::Instance().EndFrame(time.DeltaTime() * 1000.0f);
     }
 }
 

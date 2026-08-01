@@ -45,7 +45,7 @@ public:
             return;
 
         // Step 1: Наполняем очередь рендера игровыми объектами
-        tryengine::graphics::SubmitSceneFromEnTT(reg, mainCamera, rs);
+        tryengine::graphics::SubmitSceneFromEnTT(reg, rs);
 
         // Step 2: Собираем данные игровой камеры с учетом пропорций игрового окна
         auto& cam_transform = reg.get<tryengine::Transform>(mainCamera);

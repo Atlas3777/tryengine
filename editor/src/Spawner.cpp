@@ -2,23 +2,25 @@
 
 #include <entt/entity/registry.hpp>
 
-#include "editor/import/ImportSystem.hpp"
+#include "editor/AssetSourceDatabase.hpp"
 #include "editor/meta/ModelAssetMap.hpp"
+#include "engine/core/Components.hpp"
+#include "engine/graphics/Types.hpp"
 
 namespace tryeditor {
 
-void Spawner::Spawn(entt::registry& reg, const uint64_t asset_id) const {
-    const auto asset_map = import_system_.LoadFromCache<ModelAssetMap>(asset_id, "asset_map");
+tryengine::async::Task<void> Spawner::Spawn(entt::registry& reg, const uint64_t asset_id) const {
+    const auto asset_map = co_await asset_source_db_.GetAsync<ModelAssetMap>(asset_id);
 
-    std::vector<entt::entity> entities(asset_map.nodes.size());
+    std::vector<entt::entity> entities(asset_map->Get()->nodes.size());
 
-    for (size_t i = 0; i < asset_map.nodes.size(); ++i) {
+    for (size_t i = 0; i < asset_map->Get()->nodes.size(); ++i) {
         entities[i] = reg.create();
     }
 
     // 2. Итерируемся по данным и настраиваем компоненты
-    for (size_t i = 0; i < asset_map.nodes.size(); ++i) {
-        const auto& node_data = asset_map.nodes[i];
+    for (size_t i = 0; i < asset_map->Get()->nodes.size(); ++i) {
+        const auto& node_data = asset_map->Get()->nodes[i];
         entt::entity entity = entities[i];
 
         // Имя и Трансформ
@@ -47,14 +49,14 @@ void Spawner::Spawn(entt::registry& reg, const uint64_t asset_id) const {
             }
         }
 
-        // Рендер компоненты (если есть меш)
         if (node_data.mesh_id != 0) {
-            auto mesh_resource = resource_manager_.Get<tryengine::graphics::Mesh>(node_data.mesh_id);
-            reg.emplace<tryengine::MeshFilter>(entity, mesh_resource, node_data.mesh_id);
+            auto mesh_resource = co_await asset_source_db_.GetAsync<tryengine::graphics::Mesh>(node_data.mesh_id);
+            reg.emplace<tryengine::MeshFilter>(entity, *mesh_resource, node_data.mesh_id);
 
-            auto material_resource = resource_manager_.Get<tryengine::graphics::Material>(node_data.material_id);
-            reg.emplace<tryengine::MeshRenderer>(entity, material_resource, node_data.material_id);
+            auto material_resource = co_await asset_source_db_.GetAsync<tryengine::graphics::Material>(node_data.material_id);
+            reg.emplace<tryengine::MeshRenderer>(entity, *material_resource, node_data.material_id);
         }
     }
+    co_return {};
 }
 }  // namespace tryeditor

@@ -27,7 +27,6 @@ struct Relationship {
     next : EntityId
 }
 
-
 struct MeshFilter {
     asset_id : uint64
 }

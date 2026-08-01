@@ -1,18 +1,10 @@
+#include <cstring>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 #include <daScript/simulate/cast.h>
 #include <glm/glm.hpp>
-#include <vector>
-#include <cstring>
 
-namespace tryengine::graphics {
-
-struct alignas(16) PointLightGPU {
-    glm::vec4 position_radius;
-    glm::vec4 color_intensity;
-};
-
-}  // namespace tryengine::graphics
+#include "engine/graphics/RenderCommon.hpp"
 
 namespace das {
 
@@ -51,7 +43,7 @@ inline tryengine::graphics::PointLightGPU make_point_light_gpu(glm::vec4 positio
     return {position_radius, color_intensity};
 }
 
-using PointLightGPUVector = std::vector<tryengine::graphics::PointLightGPU>;
+using PointLightGPUVector = eastl::vector<tryengine::graphics::PointLightGPU>;
 
 MAKE_TYPE_FACTORY(PointLightGPU, tryengine::graphics::PointLightGPU);
 MAKE_TYPE_FACTORY(PointLightGPUVector, PointLightGPUVector);
@@ -97,7 +89,7 @@ public:
         lib.addBuiltInModule();
 
         addAnnotation(new PointLightGPUAnnotation(lib));
-        addAnnotation(new ManagedVectorAnnotation<PointLightGPUVector>("PointLightGPUVector", lib));
+        addVectorAnnotation<PointLightGPUVector>(this, lib, "PointLightGPUVector");
 
         addExtern<DAS_BIND_FUN(make_point_light_gpu), SimNode_ExtFuncCallAndCopyOrMove>(
             *this, lib, "make_point_light", SideEffects::none, "make_point_light_gpu")

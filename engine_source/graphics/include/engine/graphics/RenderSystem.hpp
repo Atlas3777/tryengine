@@ -6,7 +6,7 @@
 
 #include "engine/graphics/PipelineManager.hpp"
 #include "engine/graphics/RenderTarget.hpp"
-#include "engine/graphics/RenderCommon.hpp" // Тут лежат наши новые структуры
+#include "engine/graphics/RenderCommon.hpp"
 
 namespace tryengine::graphics {
 

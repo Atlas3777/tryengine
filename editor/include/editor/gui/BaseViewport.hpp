@@ -6,18 +6,16 @@
 #include "engine/graphics/GraphicsContext.hpp"
 #include "engine/graphics/RenderTarget.hpp"
 
-namespace tryengine::graphics {
-class GraphicsContext;
-}
 namespace tryeditor {
 class BaseViewport : public IPanel {
-protected:
-    tryengine::graphics::GraphicsContext& graphics_context_;
-    std::unique_ptr<tryengine::graphics::RenderTarget> target_ = nullptr;
-
+public:
     bool is_hovered_ = false;
     bool is_focused_ = false;
     bool is_input_captured_ = false;
+
+protected:
+    tryengine::graphics::GraphicsContext& graphics_context_;
+    std::unique_ptr<tryengine::graphics::RenderTarget> target_ = nullptr;
 
     BaseViewport(tryengine::graphics::GraphicsContext& context) : graphics_context_(context) {
         target_ = std::make_unique<tryengine::graphics::RenderTarget>(graphics_context_.GetDevice(), 600, 800,

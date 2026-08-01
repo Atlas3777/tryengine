@@ -1,29 +1,23 @@
 #pragma once
 
+#include <EASTL/string.h>
 #include <SDL3/SDL.h>
 
-#include <string>
 namespace tryengine::graphics {
-class GraphicsContext {
-   public:
-    GraphicsContext() = default;
-    ~GraphicsContext() { Terminate(); }
 
-    // Запрещаем копирование, так как управляем уникальными ресурсами (GPU Device)
+class GraphicsContext {
+public:
+    GraphicsContext(uint32_t width, uint32_t height, eastl::string_view title);
+    ~GraphicsContext();
+
     GraphicsContext(const GraphicsContext&) = delete;
     GraphicsContext& operator=(const GraphicsContext&) = delete;
 
-    bool Initialize(int width, int height, const std::string& title);
-    // SDL_GPUTexture* AcquireSwapchainTexture(SDL_GPUCommandBuffer* cmd) const;
+    [[nodiscard]] SDL_Window* GetWindow() const { return m_window; }
+    [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_device; }
 
-    void Terminate();
-
-    // Геттеры
-    SDL_Window* GetWindow() const { return m_window; }
-    SDL_GPUDevice* GetDevice() const { return m_device; }
-
-   private:
+private:
     SDL_Window* m_window = nullptr;
     SDL_GPUDevice* m_device = nullptr;
 };
-} // namespace tryengine
+}  // namespace tryengine::graphics

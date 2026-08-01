@@ -12,7 +12,7 @@ inline uint64_t MakeSortingKey(uint8_t pass_layer, uint16_t pipeline_id, uint16_
 
 namespace tryengine::graphics {
 
-void SubmitSceneFromEnTT(entt::registry& reg, entt::entity camera_entity, RenderSystem& render_system) {
+void SubmitSceneFromEnTT(entt::registry& reg, RenderSystem& render_system) {
     render_system.ClearQueue();
 
     // Проходим по рендер-сущностям и формируем команды отрисовки
@@ -35,8 +35,8 @@ void SubmitSceneFromEnTT(entt::registry& reg, entt::entity camera_entity, Render
 
         // Генерируем уникальные ID для ключа сортировки (в реальном движке это индексы в менеджерах ресурсов)
         uint16_t pipeline_id = desc.GetHashCode() & 0xFFFF;
-        uint16_t material_id = reinterpret_cast<uintptr_t>(mesh_renderer.material.handle().get()) & 0xFFFF;
-        uint16_t mesh_id     = reinterpret_cast<uintptr_t>(mesh_filter.mesh.handle().get()) & 0xFFFF;
+        uint16_t material_id = reinterpret_cast<uintptr_t>(mesh_renderer.material.Get()) & 0xFFFF;
+        uint16_t mesh_id     = reinterpret_cast<uintptr_t>(mesh_filter.mesh.Get()) & 0xFFFF;
 
         DrawCommand cmd;
         // Задаем ключ: Слой Opaque(0), далее сортировка по Пайплайну -> Материалу -> Мешу
@@ -46,7 +46,7 @@ void SubmitSceneFromEnTT(entt::registry& reg, entt::entity camera_entity, Render
         cmd.index_buffer = mesh_filter.mesh->index_buffer;
         cmd.num_indices = mesh_filter.mesh->num_indices;
         cmd.pipeline = pipeline;
-        cmd.material = mesh_renderer.material.handle().get();
+        cmd.material = mesh_renderer.material.Get();
         cmd.model_matrix = transform.world_matrix;
 
         render_system.Submit(cmd);

@@ -1,17 +1,14 @@
 #include "editor/gui/InspectorPanel.hpp"
 
-#include <cereal/archives/json.hpp>
 #include <entt/entt.hpp>
 #include <entt/meta/meta.hpp>
 #include <fstream>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "editor/utils/EditorGUIUtils.hpp"
-#include "editor/AddressablesProvider.hpp"
 #include "editor/Components.hpp"
 #include "editor/SelectionManager.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
-#include "editor/meta/MetaSerializer.hpp"
 #include "engine/core/Components.hpp"
 
 namespace tryeditor {
@@ -42,114 +39,114 @@ void InspectorPanel::OnImGuiRender(entt::registry& reg) {
     ImGui::EndChild();
 
     if (is_asset_selected) {
-        DrawAssetFooter();
+        // DrawAssetFooter();
     }
 
     ImGui::End();
 }
 
-void InspectorPanel::DrawAssetFooter() {
-    if (selection_manager_.GetSelectedAsset().empty())
-        return;
-
-    // 1. Получаем GUID ассета
-    std::filesystem::path meta_path = selection_manager_.GetSelectedAsset().string() + ".meta";
-    auto header = MetaSerializer::ReadHeader(meta_path);
-    if (!header)
-        return;
-
-    uint64_t asset_guid = header->guid;
-
-    // 2. Ищем ассет в группах
-    auto& groups = addressables_provider_.GetAddressables().GetGroups();
-    tryengine::core::AddressablesGroupAsset* found_group = nullptr;
-    std::string current_address = "";
-
-    for (auto& group : groups) {
-        for (auto& [addr, guid] : group.map) {
-            if (guid == asset_guid) {
-                found_group = &group;
-                current_address = addr;
-                break;
-            }
-        }
-        if (found_group)
-            break;
-    }
-
-    ImGui::Separator();
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("Addressables:");
-    ImGui::SameLine();
-
-    // Автоматический статус
-    if (found_group) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Registered]");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Edit")) {
-            show_settings_window_ = !show_settings_window_;
-        }
-    } else {
-        ImGui::TextDisabled("[Not Registered]");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Add...")) {
-            show_settings_window_ = true;
-        }
-    }
-
-    // Если панель развернута (по нажатию Edit или Add)
-    if (show_settings_window_) {
-        ImGui::BeginChild("AddressablesSettings", ImVec2(0, 150), true);
-
-        if (found_group) {
-            ImGui::Text("Group: %s", found_group->name.c_str());
-            ImGui::Text("Address: %s", current_address.c_str());
-            if (ImGui::Button("Remove", ImVec2(-1, 0))) {
-                found_group->map.erase(current_address);
-                addressables_provider_.SaveGroup(*found_group);
-                addressables_provider_.GetAddressables().Refresh();
-            }
-        } else {
-            // Логика выбора группы для нового ассета
-            static char addr_buffer[128] = "";
-            // Инициализируем буфер именем файла, если он пуст
-            if (addr_buffer[0] == '\0') {
-                strncpy(addr_buffer, selection_manager_.GetSelectedAsset().stem().string().c_str(), 127);
-            }
-
-            ImGui::InputText("Address", addr_buffer, sizeof(addr_buffer));
-
-            if (groups.empty()) {
-                ImGui::TextDisabled("Create a group in Addressables Panel first.");
-            } else {
-                static int sel_idx = 0;
-                if (sel_idx >= groups.size())
-                    sel_idx = 0;
-
-                if (ImGui::BeginCombo("Target Group", groups[sel_idx].name.c_str())) {
-                    for (int i = 0; i < groups.size(); ++i) {
-                        if (ImGui::Selectable(groups[i].name.c_str(), sel_idx == i))
-                            sel_idx = i;
-                    }
-                    ImGui::EndCombo();
-                }
-
-                if (ImGui::Button("Confirm Registration", ImVec2(-1, 0))) {
-                    groups[sel_idx].map[addr_buffer] = asset_guid;
-                    addressables_provider_.SaveGroup(groups[sel_idx]);
-                    addressables_provider_.GetAddressables().Refresh();
-                    addr_buffer[0] = '\0';          // сброс
-                    show_settings_window_ = false;  // закрываем после успеха
-                }
-            }
-        }
-
-        if (ImGui::Button("Close", ImVec2(-1, 0))) {
-            show_settings_window_ = false;
-        }
-        ImGui::EndChild();
-    }
-}
+// void InspectorPanel::DrawAssetFooter() {
+//     if (selection_manager_.GetSelectedAsset().empty())
+//         return;
+//
+//     // 1. Получаем GUID ассета
+//     std::filesystem::path meta_path = selection_manager_.GetSelectedAsset().string() + ".meta";
+//     auto header = MetaSerializer::ReadHeader(meta_path);
+//     if (!header)
+//         return;
+//
+//     uint64_t asset_guid = header->guid;
+//
+//     // 2. Ищем ассет в группах
+//     auto& groups = addressables_provider_.GetAddressables().GetGroups();
+//     tryengine::resources::AddressablesGroupAsset* found_group = nullptr;
+//     std::string current_address = "";
+//
+//     for (auto& group : groups) {
+//         for (auto& [addr, guid] : group.map) {
+//             if (guid == asset_guid) {
+//                 found_group = &group;
+//                 current_address = addr;
+//                 break;
+//             }
+//         }
+//         if (found_group)
+//             break;
+//     }
+//
+//     ImGui::Separator();
+//     ImGui::AlignTextToFramePadding();
+//     ImGui::Text("Addressables:");
+//     ImGui::SameLine();
+//
+//     // Автоматический статус
+//     if (found_group) {
+//         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[Registered]");
+//         ImGui::SameLine();
+//         if (ImGui::SmallButton("Edit")) {
+//             show_settings_window_ = !show_settings_window_;
+//         }
+//     } else {
+//         ImGui::TextDisabled("[Not Registered]");
+//         ImGui::SameLine();
+//         if (ImGui::SmallButton("Add...")) {
+//             show_settings_window_ = true;
+//         }
+//     }
+//
+//     // Если панель развернута (по нажатию Edit или Add)
+//     if (show_settings_window_) {
+//         ImGui::BeginChild("AddressablesSettings", ImVec2(0, 150), true);
+//
+//         if (found_group) {
+//             ImGui::Text("Group: %s", found_group->name.c_str());
+//             ImGui::Text("Address: %s", current_address.c_str());
+//             if (ImGui::Button("Remove", ImVec2(-1, 0))) {
+//                 found_group->map.erase(current_address);
+//                 addressables_provider_.SaveGroup(*found_group);
+//                 addressables_provider_.GetAddressables().Refresh();
+//             }
+//         } else {
+//             // Логика выбора группы для нового ассета
+//             static char addr_buffer[128] = "";
+//             // Инициализируем буфер именем файла, если он пуст
+//             if (addr_buffer[0] == '\0') {
+//                 strncpy(addr_buffer, selection_manager_.GetSelectedAsset().stem().string().c_str(), 127);
+//             }
+//
+//             ImGui::InputText("Address", addr_buffer, sizeof(addr_buffer));
+//
+//             if (groups.empty()) {
+//                 ImGui::TextDisabled("Create a group in Addressables Panel first.");
+//             } else {
+//                 static int sel_idx = 0;
+//                 if (sel_idx >= groups.size())
+//                     sel_idx = 0;
+//
+//                 if (ImGui::BeginCombo("Target Group", groups[sel_idx].name.c_str())) {
+//                     for (int i = 0; i < groups.size(); ++i) {
+//                         if (ImGui::Selectable(groups[i].name.c_str(), sel_idx == i))
+//                             sel_idx = i;
+//                     }
+//                     ImGui::EndCombo();
+//                 }
+//
+//                 if (ImGui::Button("Confirm Registration", ImVec2(-1, 0))) {
+//                     groups[sel_idx].map[addr_buffer] = asset_guid;
+//                     addressables_provider_.SaveGroup(groups[sel_idx]);
+//                     addressables_provider_.GetAddressables().Refresh();
+//                     addr_buffer[0] = '\0';          // сброс
+//                     show_settings_window_ = false;  // закрываем после успеха
+//                 }
+//             }
+//         }
+//
+//         if (ImGui::Button("Close", ImVec2(-1, 0))) {
+//             show_settings_window_ = false;
+//         }
+//         ImGui::EndChild();
+//     }
+// }
 
 void InspectorPanel::DrawAssetInspector(const std::filesystem::path& path) const {
     if (std::filesystem::is_directory(path)) {
@@ -164,13 +161,13 @@ void InspectorPanel::DrawAssetInspector(const std::filesystem::path& path) const
     // 1. Читаем заголовок метафайла, чтобы понять, какой инспектор вызвать
     std::filesystem::path meta_path = path.string() + ".meta";
 
-    auto header = MetaSerializer::ReadHeader(meta_path);
+    // auto header = MetaSerializer::ReadHeader(meta_path);
 
-    if (header != std::nullopt) {
-        asset_inspector_manager_.Draw(path, header->asset_type);
-    } else {
+    // if (header != std::nullopt) {
+        // asset_inspector_manager_.Draw(path, header->asset_type);
+    // } else {
         ImGui::TextDisabled("No valid .meta file found for this asset.");
-    }
+    // }
 }
 
 void InspectorPanel::DrawEntityInspector(entt::registry& reg) {
