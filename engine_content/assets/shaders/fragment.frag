@@ -24,6 +24,7 @@ layout(set = 3, binding = 0) uniform GlobalLightBlock {
     vec4 viewPos;
 } globalLight;
 
+
 void main() {
     vec3 normal = normalize(inNormal);
     vec3 viewDir = normalize(globalLight.viewPos.xyz - inFragPos);
@@ -75,4 +76,6 @@ void main() {
     // 5. Финальный цвет
     vec3 finalLighting = ambient + diffuseAccum + specularAccum;
     outColor = vec4(finalLighting, 1.0) * texColor;
+//     В fragment shader временно замените финальный outColor:
+//    outColor = vec4(normal * 0.5 + 0.5, 1.0);
 }

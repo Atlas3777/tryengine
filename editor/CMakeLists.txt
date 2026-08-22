@@ -1,30 +1,39 @@
-#editor/CMakeLists.txt
-
 include(FetchContent)
 
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
 set(BUILD_DOC OFF CACHE BOOL "" FORCE)
 
-set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
-set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
+set(TINYGLTF3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TINYGLTF3_INSTALL OFF CACHE BOOL "" FORCE)
 
+FetchContent_Declare(imgui        GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.6-docking GIT_SHALLOW TRUE)
+#FetchContent_Declare(imguizmo     GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master GIT_SHALLOW TRUE)
+FetchContent_Declare(stb          GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG master GIT_SHALLOW TRUE)
+FetchContent_Declare(tinygltf     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.1 GIT_SHALLOW TRUE)
+FetchContent_Declare(bc7enc       GIT_REPOSITORY https://github.com/richgel999/bc7enc_rdo.git GIT_TAG master GIT_SHALLOW TRUE SOURCE_SUBDIR "DO_NOT_BUILD")
 
-FetchContent_Declare(imgui     GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.6-docking)
-FetchContent_Declare(imguizmo  GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master)
-FetchContent_Declare(stb       GIT_REPOSITORY https://github.com/nothings/stb.git    GIT_TAG master)
-FetchContent_Declare(tinygltf  GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.0)
-#FetchContent_Declare(shaderc   GIT_REPOSITORY https://github.com/google/shaderc.git  GIT_TAG main GIT_SUBMODULES_RECURSE TRUE)
+FetchContent_Declare(slang
+        DOWNLOAD_ONLY
+        URL "https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-linux-x86_64-glibc-2.28.tar.gz"
+        URL_HASH SHA256=07cf4274f5f1f976d75554cc5c1cc4bd993a9a92442a7726fa701aa457183a26
+)
 
-FetchContent_MakeAvailable(imgui imguizmo stb tinygltf)
+FetchContent_MakeAvailable(imgui stb tinygltf bc7enc slang)
 
-set(IMGUIZMO_CPP "${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp")
-file(READ "${IMGUIZMO_CPP}" IMGUIZMO_CONTENT)
-string(REPLACE "static const float quadMin = 0.5f;" "static const float quadMin = 0.3f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
-string(REPLACE "static const float quadMax = 0.8f;" "static const float quadMax = 1.f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
-string(REPLACE "float mAxisLimit=0.0025f;" "float mAxisLimit=0.0000001f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
-string(REPLACE "float mPlaneLimit=0.02f;" "float mPlaneLimit=0.05f;" IMGUIZMO_CONTENT "${IMGUIZMO_CONTENT}")
-file(WRITE "${IMGUIZMO_CPP}" "${IMGUIZMO_CONTENT}")
+add_library(slang_lib SHARED IMPORTED GLOBAL)
+set_target_properties(slang_lib PROPERTIES
+        IMPORTED_LOCATION "${slang_SOURCE_DIR}/lib/libslang.so"
+        INTERFACE_INCLUDE_DIRECTORIES "${slang_SOURCE_DIR}/include"
+)
+
+add_library(tinygltf STATIC
+        "${tinygltf_SOURCE_DIR}/tiny_gltf_v3.c"
+)
+target_include_directories(tinygltf PUBLIC "${tinygltf_SOURCE_DIR}")
+
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
 add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
@@ -46,8 +55,27 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
 
-target_link_libraries(imguizmo PRIVATE imgui_lib)
+#target_link_libraries(imguizmo PRIVATE imgui_lib)
 
+add_library(bc7enc_lib STATIC
+        ${bc7enc_SOURCE_DIR}/bc7enc.cpp
+        ${bc7enc_SOURCE_DIR}/bc7decomp.cpp
+        ${bc7enc_SOURCE_DIR}/rgbcx.cpp
+        ${bc7enc_SOURCE_DIR}/ert.cpp
+        ${bc7enc_SOURCE_DIR}/rdo_bc_encoder.cpp
+        ${bc7enc_SOURCE_DIR}/utils.cpp
+        ${bc7enc_SOURCE_DIR}/bc7decomp_ref.cpp
+        ${bc7enc_SOURCE_DIR}/lodepng.cpp
+)
+
+target_include_directories(bc7enc_lib PUBLIC ${bc7enc_SOURCE_DIR})
+target_compile_options(bc7enc_lib PRIVATE "-include" "cstdint")
+target_compile_options(bc7enc_lib PRIVATE "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-strict-aliasing>")
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bc7enc_lib PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/editor/*.hpp")
@@ -71,17 +99,18 @@ target_link_libraries(editor_core PUBLIC
         engine::graphics
         engine::async
         imgui_lib
-        imguizmo
-        ${CMAKE_DL_LIBS}
+#        imguizmo
         tinygltf
         stb_image
+        bc7enc_lib
+        slang_lib
         PkgConfig::SHADERC
 )
 
 add_executable(editor src/main.cpp)
 target_link_libraries(editor PRIVATE editor_core)
 
-add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp)
+add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp src/Module_Resources.cpp)
 target_link_libraries(tryeditor_shared PRIVATE editor_core)
 
 set_target_properties(tryeditor_shared PROPERTIES
@@ -89,4 +118,9 @@ set_target_properties(tryeditor_shared PROPERTIES
         SUFFIX ".shared_module"
         PREFIX ""
         OUTPUT_NAME "tryeditor"
+)
+
+# Указываем линкеру, где искать libslang.so при запуске бинарника и подгрузке .shared_module
+set_target_properties(editor tryeditor_shared PROPERTIES
+        BUILD_RPATH "${slang_SOURCE_DIR}/lib"
 )

@@ -5,13 +5,11 @@
 #include <atomic>
 #include <coroutine>
 #include <exception>
-#include <tuple>
 #include <utility>
-#include <vector>
 
 #include "engine/async/Task.hpp"
 #include "engine/core/Error.hpp"
-#include "engine/core/Expected.hpp"
+#include "engine/core/Result.hpp"
 
 namespace tryengine::async {
 
@@ -68,7 +66,10 @@ struct WhenAllTask {
         handle_.resume();
     }
 
-    Result<T>& ResultRef() { return handle_.promise().result; }
+    Result<T>& ResultRef() {
+        TRY_ASSERT(handle_.promise().result.has_value(), "WhenAll subtask result accessed before completion");
+        return *handle_.promise().result;
+    }
 
 private:
     std::coroutine_handle<promise_type> handle_;
@@ -76,7 +77,7 @@ private:
 
 template <typename T>
 struct WhenAllTaskPromise {
-    Result<T> result;
+    std::optional<Result<T>> result;
     WhenAllCounter* counter = nullptr;
 
     WhenAllTask<T> get_return_object() noexcept {
@@ -197,8 +198,8 @@ Task<eastl::tuple<Result<Ts>...>> WhenAll(Executor& executor, Task<Ts>... tasks)
     eastl::tuple<detail::WhenAllTask<Ts>...> wrapped{detail::MakeWhenAllTask(eastl::move(tasks))...};
 
     detail::WhenAllCounter counter(sizeof...(Ts));
-    eastl::apply(
-        [&executor, &counter](auto&... t) { (executor.Post([&t, &counter] { t.Start(counter); }), ...); }, wrapped);
+    eastl::apply([&executor, &counter](auto&... t) { (executor.Post([&t, &counter] { t.Start(counter); }), ...); },
+                 wrapped);
 
     if constexpr (sizeof...(Ts) > 0) {
         co_await detail::WhenAllReadyAwaiter{counter};

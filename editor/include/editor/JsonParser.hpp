@@ -5,16 +5,18 @@
 #include <glaze/json.hpp>
 
 #include "engine/core/Assert.hpp"
+#include "engine/resources/EastlGlazeSerializers.hpp"
+#include "engine/resources/GLMSerialization.hpp"
 
 namespace tryeditor {
 
 template <typename T>
-eastl::optional<T> Deserialize(const eastl::span<const char> buffer) {
+eastl::optional<T> Deserialize(const eastl::span<const uint8_t> buffer) {
     T obj;
     auto ec = glz::read_json(obj, buffer);
 
     if (ec) {
-        TRY_LOG_ERROR("Ошибка при десериализации {}", ec.custom_error_message);
+        LogError("Ошибка при десериализации {}", ec.custom_error_message);
         return eastl::nullopt;
     }
 
@@ -22,12 +24,12 @@ eastl::optional<T> Deserialize(const eastl::span<const char> buffer) {
 }
 
 template <typename T>
-eastl::optional<eastl::vector<char>> Serialize(const T& obj) {
-    eastl::vector<char> buffer;
+eastl::optional<eastl::vector<uint8_t>> Serialize(const T& obj) {
+    eastl::vector<uint8_t> buffer;
 
     const auto ec = glz::write_json(obj, buffer);
     if (ec) {
-        TRY_LOG_ERROR("Ошибка при сериализации {}", ec.custom_error_message);
+        LogError("Ошибка при сериализации {}", ec.custom_error_message);
         return eastl::nullopt;
     }
 
@@ -35,18 +37,13 @@ eastl::optional<eastl::vector<char>> Serialize(const T& obj) {
 }
 
 template <typename T>
-eastl::optional<T> DeserializePartial(const eastl::span<const char> buffer)
-{
+eastl::optional<T> DeserializePartial(const eastl::span<const uint8_t> buffer) {
     T obj;
 
-    auto ec = glz::read<
-        glz::opts{
-            .error_on_unknown_keys = false,
-            .partial_read = true
-        }>(obj, buffer);
+    auto ec = glz::read<glz::opts{.error_on_unknown_keys = false}>(obj, buffer);
 
     if (ec) {
-        TRY_LOG_ERROR("Ошибка при десериализации {}", ec.custom_error_message);
+        LogError("Ошибка при частичной десериализации {}", ec.custom_error_message);
         return eastl::nullopt;
     }
 

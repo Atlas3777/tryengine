@@ -1,10 +1,12 @@
 #include <imgui.h>
+
 #include <daScript/daScript.h>
 
 #include "editor/AssetSourceDatabase.hpp"
+#include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
-#include "editor/gui/SceneViewportPanel.hpp"
 #include "editor/gui/UiFile.hpp"
+#include "engine/core/ScriptSystem.hpp"
 
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
@@ -17,7 +19,7 @@ MAKE_TYPE_FACTORY(UiFolderVector, UiFolderVector);
 MAKE_TYPE_FACTORY(UiFileVector, UiFileVector);
 MAKE_TYPE_FACTORY(Uint32Vector, Uint32Vector);
 
-UiFolderVector& GetEngineFolders() {
+__forceinline UiFolderVector& GetEngineFolders() {
     return tryeditor::AssetSourceDatabase::GetEngineFolders();
 }
 
@@ -29,14 +31,16 @@ void* GetEditorImGuiContext() {
     return ImGui::GetCurrentContext();
 }
 
-void* GetImage() {
-    auto* viewport_panel = tryeditor::EditorGUI::GetSceneViewportPanel();
-    if (!viewport_panel) return nullptr;
+void* GetImage(das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx) return nullptr;
 
-    auto* render_target = viewport_panel->GetTarget();
-    if (!render_target) return nullptr;
+    auto* target = try_ctx->editor.target.get();
+    if (!target) {
+        return nullptr;
+    }
 
-    return render_target->GetColor();
+    return target->GetColor();
 }
 
 using namespace das;

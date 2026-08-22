@@ -27,11 +27,11 @@ public:
 
         {
             std::lock_guard lock(mutex_);
-            // Вектора меняются местами. Емкость (capacity) сохраняется,
-            // поэтому после первых кадров аллокации полностью прекратятся.
             local_closures.swap(closures_);
             local_handles.swap(handles_);
         }
+
+        CurrentExecutorScope scope(this);
 
         for (auto& work : local_closures) {
             work();

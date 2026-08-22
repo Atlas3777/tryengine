@@ -28,6 +28,7 @@ eastl::string_view to_string(LogCategory category) {
         case LogCategory::Gameplay: return "Gameplay";
         case LogCategory::Assert:   return "Assert";
         case LogCategory::Importer:   return "Importer";
+        case LogCategory::Script:   return "Script";
     }
     return "Unknown";
 }
@@ -59,12 +60,13 @@ void Logger::remove_sink(ILogSink* sink) {
         m_sinks.end());
 }
 
-void Logger::log(LogLevel level, LogCategory category, eastl::string_view message) {
+void Logger::log(LogLevel level, LogCategory category, const std::source_location& location,
+                  eastl::string_view message) {
     if (level < m_min_level) {
         return;
     }
 
-    const LogRecord record{level, category, message};
+    const LogRecord record{level, category, message, location};
 
     std::lock_guard lock(m_mutex);
     for (auto& sink : m_sinks) {
@@ -78,6 +80,11 @@ void ConsoleLogSink::write(const LogRecord& record) {
     stream << "[" << to_string(record.level).data() << "] "
            << "[" << to_string(record.category).data() << "] ";
     stream.write(record.message.data(), static_cast<std::streamsize>(record.message.size()));
+
+    if (record.level >= LogLevel::Error) {
+        stream << "\n  at " << record.location.file_name() << ":" << record.location.line();
+    }
+
     stream << "\n";
 }
 

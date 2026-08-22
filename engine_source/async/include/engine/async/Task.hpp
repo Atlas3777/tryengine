@@ -2,11 +2,14 @@
 
 #include <coroutine>
 #include <exception>
+#include <optional>
 #include <utility>
 
 #include "engine/async/Executor.hpp"
+#include "engine/core/Assert.hpp"
 #include "engine/core/Error.hpp"
-#include "engine/core/Expected.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/core/Result.hpp"
 
 namespace tryengine::async {
 using core::Error;
@@ -19,6 +22,7 @@ namespace detail {
 
 struct TaskPromiseBase {
     std::coroutine_handle<> continuation;
+    Executor* origin_executor = nullptr;
 
     std::suspend_always initial_suspend() noexcept { return {}; }
 
@@ -28,7 +32,21 @@ struct TaskPromiseBase {
         template <typename Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
             auto continuation = h.promise().continuation;
-            return continuation ? continuation : std::noop_coroutine();
+            if (!continuation) {
+                return std::noop_coroutine();
+            }
+
+            Executor* origin_exec = h.promise().origin_executor;
+            Executor* current_exec = GetCurrentExecutor();
+
+            TRY_ASSERT(origin_exec != nullptr, "Task completed continuation with unknown origin executor — "
+                                                "some resumption path is missing CurrentExecutorScope");
+
+            if (origin_exec != current_exec) {
+                origin_exec->Schedule(continuation);
+                return std::noop_coroutine();
+            }
+            return continuation;
         }
 
         void await_resume() noexcept {}
@@ -39,7 +57,7 @@ struct TaskPromiseBase {
 
 template <typename T>
 struct TaskPromise final : TaskPromiseBase {
-    Result<T> result;
+    std::optional<Result<T>> result;
 
     Task<T> get_return_object() noexcept;
 
@@ -49,42 +67,35 @@ struct TaskPromise final : TaskPromiseBase {
         result.emplace(std::forward<U>(value));
     }
 
-    void return_value(Error error) { result = std::unexpected(std::move(error)); }
+    void return_value(Error error) { result.emplace(std::move(error)); }
 
-    void return_value(Result<T> value) { result = std::move(value); }
+    void return_value(Result<T> value) { result.emplace(std::move(value)); }
 
-    void return_value(ErrorCode code) { result = std::unexpected(Error(code)); }
 
     void unhandled_exception() noexcept {
         try {
             std::rethrow_exception(std::current_exception());
         } catch (const std::exception& e) {
-            result = std::unexpected(Error(ErrorCode::EngineInternalError, e.what()));
-        } catch (...) {
-            result = std::unexpected(Error(ErrorCode::EngineInternalError, "Unknown exception in Task<T>."));
+            result.emplace(Error(e.what()));
         }
     }
 };
 
 template <>
 struct TaskPromise<void> final : TaskPromiseBase {
-    Result<void> result;
+    std::optional<Result<void>> result;
 
     Task<void> get_return_object() noexcept;
 
-    void return_value(Error error) { result = std::unexpected(std::move(error)); }
+    void return_value(Error error) { result.emplace(std::move(error)); }
 
-    void return_value(Result<void> value) { result = std::move(value); }
-
-    void return_value(ErrorCode code) { result = std::unexpected(Error(code)); }
+    void return_value(Result<void> value) { result.emplace(std::move(value)); }
 
     void unhandled_exception() noexcept {
         try {
             std::rethrow_exception(std::current_exception());
         } catch (const std::exception& e) {
-            result = std::unexpected(Error(ErrorCode::EngineInternalError, e.what()));
-        } catch (...) {
-            result = std::unexpected(Error(ErrorCode::EngineInternalError, "Unknown exception in Task<void>."));
+            result.emplace(Error(e.what()));
         }
     }
 };
@@ -114,7 +125,21 @@ public:
     Task(const Task&) = delete;
     Task& operator=(const Task&) = delete;
 
-    ~Task() { Destroy(); }
+    ~Task() {
+#ifndef NDEBUG
+        if (handle_ && handle_.done()) {
+            auto& promise = handle_.promise();
+            if (promise.result.has_value()) {
+                auto& res = *promise.result;
+                if (!res.has_value()) {
+                    core::LogCritical("Task destroyed with unchecked error: {}", res.error());
+                    TRY_ASSERT(false, "Task containing Error was dropped without co_await!");
+                }
+            }
+        }
+#endif
+        Destroy();
+    }
 
     class Awaiter {
     public:
@@ -124,10 +149,16 @@ public:
 
         std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
             handle_.promise().continuation = awaiting;
+            handle_.promise().origin_executor = GetCurrentExecutor();
             return handle_;
         }
 
-        ResultType await_resume() { return std::move(handle_.promise().result); }
+        ResultType await_resume() {
+            TRY_ASSERT(handle_.promise().result.has_value(), "Task result accessed before completion");
+            ResultType res = std::move(*handle_.promise().result);
+            handle_.promise().result.reset();
+            return res;
+        }
 
     private:
         std::coroutine_handle<promise_type> handle_;

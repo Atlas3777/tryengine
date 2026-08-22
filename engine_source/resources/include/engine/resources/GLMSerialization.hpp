@@ -1,79 +1,67 @@
 #pragma once
 
+#include <hlsl++/vector_float.h>
+#include <hlsl++/matrix_float.h>
+#include <hlsl++/quaternion.h>
 #include <glaze/glaze.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include "engine/core/Components.hpp"
+#include <array>
 
+// hlslpp::float3
 template <>
-struct glz::meta<glm::vec3> {
-    using T = glm::vec3;
-    static constexpr auto value = glz::object(
-        "x", glz::custom<[](const T& m) { return m.x; }, [](T& m, const float v) -> void { m.x = v; }>,
-        "y", glz::custom<[](const T& m) { return m.y; }, [](T& m, const float v) -> void { m.y = v; }>,
-        "z", glz::custom<[](const T& m) { return m.z; }, [](T& m, const float v) -> void { m.z = v; }>
-    );
+struct glz::meta<hlslpp::float3> {
+    using T = hlslpp::float3;
+    static constexpr auto read = [](T& v, const std::array<float, 3>& arr) {
+        hlslpp::load(v, arr.data());
+    };
+    static constexpr auto write = [](const T& v) {
+        std::array<float, 3> arr{};
+        hlslpp::store(arr.data(), v);
+        return arr;
+    };
+    static constexpr auto value = glz::custom<read, write>;
 };
 
+// hlslpp::float4
 template <>
-struct glz::meta<glm::vec4> {
-    using T = glm::vec4;
-    static constexpr auto value = glz::object(
-        "x", glz::custom<[](const T& m) { return m.x; }, [](T& m, const float v) -> void { m.x = v; }>,
-        "y", glz::custom<[](const T& m) { return m.y; }, [](T& m, const float v) -> void { m.y = v; }>,
-        "z", glz::custom<[](const T& m) { return m.z; }, [](T& m, const float v) -> void { m.z = v; }>,
-        "w", glz::custom<[](const T& m) { return m.w; }, [](T& m, const float v) -> void { m.w = v; }>
-    );
+struct glz::meta<hlslpp::float4> {
+    using T = hlslpp::float4;
+    static constexpr auto read = [](T& v, const std::array<float, 4>& arr) {
+        hlslpp::load(v, arr.data());
+    };
+    static constexpr auto write = [](const T& v) {
+        std::array<float, 4> arr{};
+        hlslpp::store(arr.data(), v);
+        return arr;
+    };
+    static constexpr auto value = glz::custom<read, write>;
 };
 
+// hlslpp::quaternion
 template <>
-struct glz::meta<glm::quat> {
-    using T = glm::quat;
-    static constexpr auto value = glz::object(
-        "x", glz::custom<[](const T& m) { return m.x; }, [](T& m, const float v) -> void { m.x = v; }>,
-        "y", glz::custom<[](const T& m) { return m.y; }, [](T& m, const float v) -> void { m.y = v; }>,
-        "z", glz::custom<[](const T& m) { return m.z; }, [](T& m, const float v) -> void { m.z = v; }>,
-        "w", glz::custom<[](const T& m) { return m.w; }, [](T& m, const float v) -> void { m.w = v; }>
-    );
+struct glz::meta<hlslpp::quaternion> {
+    using T = hlslpp::quaternion;
+    static constexpr auto read = [](T& q, const std::array<float, 4>& arr) {
+        hlslpp::load(q, arr.data());
+    };
+    static constexpr auto write = [](const T& q) {
+        std::array<float, 4> arr{};
+        hlslpp::store(arr.data(), q);
+        return arr;
+    };
+    static constexpr auto value = glz::custom<read, write>;
 };
 
+// hlslpp::float4x4
 template <>
-struct glz::meta<glm::mat4> {
-    using T = glm::mat4;
-
-    static constexpr auto col0 = glz::custom<
-        [](const T& m) -> const glm::vec4& { return m[0]; },
-        [](T& m, const glm::vec4& v) -> void { m[0] = v; }
-    >;
-    static constexpr auto col1 = glz::custom<
-        [](const T& m) -> const glm::vec4& { return m[1]; },
-        [](T& m, const glm::vec4& v) -> void { m[1] = v; }
-    >;
-    static constexpr auto col2 = glz::custom<
-        [](const T& m) -> const glm::vec4& { return m[2]; },
-        [](T& m, const glm::vec4& v) -> void { m[2] = v; }
-    >;
-    static constexpr auto col3 = glz::custom<
-        [](const T& m) -> const glm::vec4& { return m[3]; },
-        [](T& m, const glm::vec4& v) -> void { m[3] = v; }
-    >;
-
-    static constexpr auto value = glz::object(
-        "col0", col0,
-        "col1", col1,
-        "col2", col2,
-        "col3", col3
-    );
-};
-
-namespace tryengine {
-}
-
-template <>
-struct glz::meta<tryengine::Transform> {
-    using T = tryengine::Transform;
-    static constexpr auto value = glz::object(
-        "position", &T::position,
-        "rotation", &T::rotation,
-        "scale", &T::scale
-    );
+struct glz::meta<hlslpp::float4x4> {
+    using T = hlslpp::float4x4;
+    static constexpr auto read = [](T& m, const std::array<float, 16>& arr) {
+        hlslpp::load(m, arr.data());
+    };
+    static constexpr auto write = [](const T& m) {
+        std::array<float, 16> arr{};
+        hlslpp::store(arr.data(), m);
+        return arr;
+    };
+    static constexpr auto value = glz::custom<read, write>;
 };

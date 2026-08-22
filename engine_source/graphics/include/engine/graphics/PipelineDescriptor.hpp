@@ -3,12 +3,16 @@
 #include <SDL3/SDL_gpu.h>
 #include <cstring>
 
+#include "engine/resources/Vertex.hpp"
+
 namespace tryengine::graphics {
 
 struct alignas(8) PipelineDescriptor {
     // 1. Шейдеры (Обязательно)
     SDL_GPUShader* vertex_shader = nullptr;
     SDL_GPUShader* fragment_shader = nullptr;
+
+    resources::VertexFormat vertex_format = resources::VertexFormat::Standard;
 
     // 2. Растеризатор и Топология
     SDL_GPUPrimitiveType primitive_type;
@@ -31,10 +35,9 @@ struct alignas(8) PipelineDescriptor {
         // ВАЖНО: Сначала зануляем мусор в памяти (padding)
         std::memset(this, 0, sizeof(PipelineDescriptor));
 
-        // Затем ставим значения по умолчанию (как было в твоем Renderer.cpp)
         primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         fill_mode = SDL_GPU_FILLMODE_FILL;
-        cull_mode = SDL_GPU_CULLMODE_NONE; // Для 3D потом поменяешь на BACK
+        cull_mode = SDL_GPU_CULLMODE_BACK;
 
         enable_depth_test = true;
         enable_depth_write = true;

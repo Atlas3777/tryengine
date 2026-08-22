@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string_view>
+#include <EASTL/string_view.h>
 
 namespace tryengine::core
 {
@@ -23,7 +23,7 @@ enum class ErrorCode
 };
 
 [[nodiscard]]
-constexpr std::string_view ToString(ErrorCode code) noexcept
+constexpr eastl::string_view ToString(ErrorCode code) noexcept
 {
     using enum ErrorCode;
 

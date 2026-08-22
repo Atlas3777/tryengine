@@ -2,7 +2,8 @@
 
 #include <SDL3/SDL_gpu.h>
 #include <memory>
-#include <vector>
+#include <EASTL/span.h>
+#include <EASTL/vector.h>
 
 #include "engine/graphics/PipelineManager.hpp"
 #include "engine/graphics/RenderTarget.hpp"
@@ -17,30 +18,26 @@ public:
 
     AmbientSettings ambient;
 
-    // 1. Очистка очереди перед кадром
-    void ClearQueue();
+    __forceinline void ClearQueue() { draw_queue_.clear(); }
+    __forceinline void Submit(const DrawCommand& cmd) { draw_queue_.push_back(cmd); }
 
-    // 2. Интерфейс для внешних систем (C++, daslang через C-binding и т.д.)
-    void Submit(const DrawCommand& cmd);
-
-    // 3. Выполнение рендеринга накопленной очереди
-    void ExecuteCommands(SDL_GPUCommandBuffer* cmd_buffer,
+    void RenderToTarget(SDL_GPUCommandBuffer* cmd_buffer,
                          RenderTarget& target,
-                         const CameraData& camera,
-                         const std::vector<PointLightGPU>& lights);
+                         CameraData& camera);
 
     PipelineManager* GetPipelineManager() { return pipeline_manager_.get(); }
+
+    eastl::span<PointLightGPU> lights_queue_;
+
 
 private:
     SDL_GPUDevice* device_ = nullptr;
     std::unique_ptr<PipelineManager> pipeline_manager_;
 
-    // Внутренний буфер команд на кадр
-    std::vector<DrawCommand> draw_queue_;
+    eastl::vector<DrawCommand> draw_queue_;
 
-    // В приватную секцию класса RenderSystem:
     SDL_GPUBuffer* light_storage_buffer_ = nullptr;
-    size_t current_buffer_capacity_ = 0; // Трекаем текущий размер буфера ламп
+    size_t current_buffer_capacity_ = 0;
 };
 
 }  // namespace tryengine::graphics

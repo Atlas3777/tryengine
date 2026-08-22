@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include "Inline.hpp"
 
 namespace tryengine::core {
 
@@ -48,15 +48,15 @@ struct InputState {
     bool justPressed[static_cast<int>(Key::Count)] = {false};
     bool justReleased[static_cast<int>(Key::Count)] = {false};
 
-    bool IsDown(Key key) const {
+    __forceinline bool IsDown(Key key) const {
         return isDown[static_cast<uint16_t>(key)];
     }
 
-    bool Pressed(Key key) const {
+    __forceinline bool Pressed(Key key) const {
         return justPressed[static_cast<uint16_t>(key)];
     }
 
-    bool Released(Key key) const {
+    __forceinline bool Released(Key key) const {
         return justReleased[static_cast<uint16_t>(key)];
     }
 
@@ -68,15 +68,15 @@ struct InputState {
     bool mouseJustReleased[static_cast<int>(Mouse::Count)] = {false};
 
     // Теперь принимаем Mouse вместо int
-    bool IsMouseDown(Mouse button) const {
+    __forceinline bool IsMouseDown(Mouse button) const {
         return mouseButtons[static_cast<int>(button)];
     }
 
-    bool MousePressed(Mouse button) const {
+    __forceinline bool MousePressed(Mouse button) const {
         return mouseJustPressed[static_cast<int>(button)];
     }
 
-    bool MouseReleased(Mouse button) const {
+    __forceinline bool MouseReleased(Mouse button) const {
         return mouseJustReleased[static_cast<int>(button)];
     }
 

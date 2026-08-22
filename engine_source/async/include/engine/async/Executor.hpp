@@ -18,15 +18,6 @@ public:
         Post([handle] { handle.resume(); });
     }
 
-    // Fire-and-forget: запускает задачу целиком на этом Executor'е, в том числе
-    // самый первый её шаг (синхронный "пролог" до первого co_await). В отличие от
-    // "голого" co_await или свободной функции без executor'а, ни один код таски не
-    // выполнится на вызывающем потоке.
-    //
-    // Определение — в RunAndForget.hpp, т.к. там уже виден полный Task<T>
-    // (здесь он только forward-declared, чтобы не тащить Task.hpp -> Executor.hpp
-    // -> Task.hpp по кругу). Поэтому Execute/RunAndForget по факту доступны только
-    // в тех .cpp, куда включён RunAndForget.hpp — как и раньше.
     template <typename T>
     void Execute(tryengine::async::Task<T> task);
 
@@ -36,3 +27,23 @@ public:
         Execute(std::move(task));
     }
 };
+
+namespace tryengine::async {
+
+inline thread_local Executor* g_current_executor = nullptr;
+
+inline Executor* GetCurrentExecutor() noexcept {
+    return g_current_executor;
+}
+
+struct CurrentExecutorScope {
+    Executor* prev_;
+    explicit CurrentExecutorScope(Executor* exec) noexcept : prev_(g_current_executor) {
+        g_current_executor = exec;
+    }
+    ~CurrentExecutorScope() {
+        g_current_executor = prev_;
+    }
+};
+
+} // namespace tryengine::async

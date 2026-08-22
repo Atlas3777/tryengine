@@ -8,7 +8,7 @@
 
 #include "engine/async/Task.hpp"
 #include "engine/core/Error.hpp"
-#include "engine/core/Expected.hpp"
+#include "engine/core/Result.hpp"
 
 namespace tryengine::async {
 
@@ -55,7 +55,10 @@ struct SyncWaitTask {
         handle_.resume();
     }
 
-    Result<T>& ResultRef() { return handle_.promise().result; }
+    Result<T>& ResultRef() {
+        TRY_ASSERT(handle_.promise().result.has_value(), "SyncWait task result accessed before completion");
+        return *handle_.promise().result;
+    }
 
 private:
     std::coroutine_handle<promise_type> handle_;
@@ -63,7 +66,7 @@ private:
 
 template <typename T>
 struct SyncWaitPromise {
-    Result<T> result;
+    std::optional<Result<T>> result;
     SyncWaitEvent* event = nullptr;
 
     SyncWaitTask<T> get_return_object() noexcept {

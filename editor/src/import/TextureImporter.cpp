@@ -5,14 +5,12 @@
 // #include <random>
 //
 // #include "engine/resources/Types.hpp"
-//
-// #define STB_IMAGE_IMPLEMENTATION
 // #include "stb_image.h"
 //
 // namespace tryeditor {
 //
-// bool TextureImporter::GenerateArtifact(const AssetContext& ctx, AssetMetaHeader& header, const TextureImportSettings& settings) {
-//
+// bool TextureImporter::GenerateArtifact(const AssetContext& ctx, AssetMetaHeader& header,
+//                                        const TextureImportSettings& settings) {
 //     int width, height, channels;
 //     // Загружаем как RGBA (4 канала) для единообразия в движке
 //     unsigned char* pixels = stbi_load(ctx.asset_path.string().c_str(), &width, &height, &channels, 4);

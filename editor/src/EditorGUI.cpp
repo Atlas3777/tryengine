@@ -1,20 +1,9 @@
 #include "editor/gui/EditorGUI.hpp"
 
-#define GLM_ENABLE_EXPERIMENTAL
-
 #include <imgui.h>
-
-#include <ImGuizmo.h>
-
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlgpu3.h>
 
-#include "editor/ControllerManager.hpp"
-#include "editor/SceneManagerController.hpp"
-// #include "editor/gui/FileBrowserPanel.hpp"
-#include "editor/gui/GameViewportPanel.hpp"
-// #include "editor/gui/HierarchyPanel.hpp"
-#include "editor/gui/SceneViewportPanel.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -22,11 +11,8 @@
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context,
-                     ImportSystem& import_system, Spawner& spawner, SelectionManager& editor_context,
-                     AssetsFactoryManager& factory_manager, AssetInspectorManager& inspector_manager,
-                     ControllerManager& controller_manager)
-    : engine_(engine), selection_manager_(editor_context), controller_manager_(controller_manager) {
+EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context)
+    : engine_(engine) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -38,17 +24,6 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
 
     ImGui::StyleColorsDark();
 
-    ImGuizmo::Style& gizmoStyle = ImGuizmo::GetStyle();
-    gizmoStyle.TranslationLineThickness = 4.0f;
-    gizmoStyle.TranslationLineArrowSize = 6.0f;
-    gizmoStyle.RotationLineThickness = 2.0f;
-    gizmoStyle.RotationOuterLineThickness = 3.0f;
-    gizmoStyle.ScaleLineThickness = 4.0f;
-    gizmoStyle.ScaleLineCircleSize = 6.0f;
-    gizmoStyle.HatchedAxisLineThickness = 6.0f;
-    gizmoStyle.CenterCircleSize = 4.0f;
-
-    ImGuizmo::SetGizmoSizeClipSpace(0.12f);
 
     // Настройка бэкендов
     ImGui_ImplSDL3_InitForSDLGPU(context.GetWindow());
@@ -59,26 +34,9 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
     init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
     init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
     ImGui_ImplSDLGPU3_Init(&init_info);
-
-    auto* scene_viewport = new SceneViewportPanel(context, spawner);
-    scene_viewport_panel_ = scene_viewport; // сохраняем отдельный указатель для геттера
-    panels_.emplace_back(scene_viewport);
-
-    //panels_.emplace_back(new HierarchyPanel(selection_manager_));
-    panels_.emplace_back(new GameViewportPanel(context));
-    // panels_.emplace_back(new FileBrowserPanel(
-    //     import_system,
-    //     editor_context,
-    //     factory_manager,
-    //     engine_.Get<tryengine::core::SceneManager>()
-    // ));
 }
 
 EditorGUI::~EditorGUI() {
-    for (auto* panel : panels_) {
-        delete panel;
-    }
-
     ImGui_ImplSDLGPU3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -167,47 +125,36 @@ static void RenderProfilerPanel() {
     ImGui::End();
 }
 
-void EditorGUI::RecordPanelsGpuCommands(const tryengine::core::Engine& engine, bool& is_playing) {
+void EditorGUI::RecordPanelsGpuCommands(bool& is_playing) {
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    ImGuizmo::BeginFrame();
 
     DrawMainMenu();
     DrawPlayToolbar(is_playing);
     DrawDockSpace();
 
-    for (auto& panel : panels_) {
-        panel->OnImGuiRender(engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
-    }
+    engine_.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("draw_editor");
 
-    engine_.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("ren");
     RenderProfilerPanel();
 
     ImGui::Render();
 }
 
-void EditorGUI::RenderToPanel(SDL_GPUCommandBuffer* cmd, tryengine::graphics::RenderSystem& render_system,
-                              tryengine::core::Engine& engine) {
-    for (auto& panel : panels_) {
-        panel->OnRender(cmd, render_system, engine.Get<tryengine::core::SceneManager>().GetActiveScene().GetRegistry());
-    }
-}
-
-void EditorGUI::RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GPUCommandBuffer* cmd) {
+void EditorGUI::RenderToSwapchain(SDL_GPUTexture* swapchain_texture, SDL_GPUCommandBuffer* cmd) {
     ImDrawData* draw_data = ImGui::GetDrawData();
     ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, cmd);
 
     SDL_GPUColorTargetInfo colorInfo{};
-    colorInfo.texture = swapchainTexture;
+    colorInfo.texture = swapchain_texture;
     colorInfo.clear_color = {0, 0, 0, 1};
     colorInfo.load_op = SDL_GPU_LOADOP_CLEAR;
     colorInfo.store_op = SDL_GPU_STOREOP_STORE;
 
-    const auto guiPass = SDL_BeginGPURenderPass(cmd, &colorInfo, 1, nullptr);
+    const auto gui_pass = SDL_BeginGPURenderPass(cmd, &colorInfo, 1, nullptr);
 
-    ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmd, guiPass);
-    SDL_EndGPURenderPass(guiPass);
+    ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmd, gui_pass);
+    SDL_EndGPURenderPass(gui_pass);
 
     SDL_SubmitGPUCommandBuffer(cmd);
 }
@@ -215,7 +162,7 @@ void EditorGUI::RenderPanelsToSwapchain(SDL_GPUTexture* swapchainTexture, SDL_GP
 void EditorGUI::DrawDockSpace() {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-    float toolbar_height = 30.0f;  // Должно совпадать с высотой из DrawPlayToolbar
+    float toolbar_height = 30.0f;
 
     // Сдвигаем начало DockSpace на высоту тулбара и уменьшаем его общий размер
     ImVec2 dock_pos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + toolbar_height);
@@ -243,16 +190,13 @@ void EditorGUI::DrawDockSpace() {
 }
 
 void EditorGUI::DrawMainMenu() {
-    // Делаем фон меню таким же темным, как и фон обычных окон
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Save Scene")) {
-                controller_manager_.Get<SceneManagerController>().SaveScene();
             }
             if (ImGui::MenuItem("Save Scene As")) {
-                controller_manager_.Get<SceneManagerController>().SaveScene();
             }
             ImGui::EndMenu();
         }
@@ -302,7 +246,7 @@ void EditorGUI::DrawPlayToolbar(bool& is_playing) {
     }
     ImGui::SameLine();
     if (ImGui::Button("Pause", ImVec2(50, 0))) {
-        TRY_LOG_INFO("Pause click");
+        LogInfo("Pause click");
     }
 
     ImGui::End();

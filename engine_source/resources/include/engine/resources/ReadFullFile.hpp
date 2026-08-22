@@ -6,7 +6,7 @@
 #include "engine/resources/AsyncFileManager.hpp"
 
 namespace tryengine::resources {
-inline async::Task<eastl::vector<char>> ReadFullFileNonCopy(AsyncFileManager& async_file_manager,
+inline async::Task<eastl::vector<uint8_t>> ReadFullFileNonCopy(AsyncFileManager& async_file_manager,
                                                                 eastl::string_view file_path) {
     auto stat_handle = async_file_manager.GetStatAsync(file_path);
     co_await stat_handle;
@@ -17,7 +17,7 @@ inline async::Task<eastl::vector<char>> ReadFullFileNonCopy(AsyncFileManager& as
     co_return file_handle.TakeData();
 }
 
-inline async::Task<eastl::vector<char>> ReadFullFileCopy(AsyncFileManager& async_file_manager,
+inline async::Task<eastl::vector<uint8_t>> ReadFullFileCopy(AsyncFileManager& async_file_manager,
                                                              eastl::string_view file_path) {
     auto stat_handle = async_file_manager.GetStatAsyncCopy(file_path);
     co_await stat_handle;

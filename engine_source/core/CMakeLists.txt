@@ -10,11 +10,9 @@ set(EASTL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
 set(EASTL_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(entt     GIT_REPOSITORY https://github.com/skypjack/entt.git   GIT_TAG v3.16.0)
-FetchContent_Declare(glm      GIT_REPOSITORY https://github.com/g-truc/glm.git      GIT_TAG master)
-FetchContent_Declare(EASTL    GIT_REPOSITORY https://github.com/electronicarts/EASTL.git GIT_TAG master SYSTEM)
+FetchContent_Declare(EASTL    GIT_REPOSITORY https://github.com/electronicarts/EASTL.git GIT_TAG master GIT_SHALLOW TRUE SYSTEM)
 
-FetchContent_MakeAvailable(entt glm EASTL)
+FetchContent_MakeAvailable(EASTL)
 
 find_package(DAS REQUIRED)
 find_package(Threads REQUIRED)
@@ -30,8 +28,6 @@ target_compile_features(engine_core PRIVATE cxx_std_23)
 
 target_include_directories(engine_core PUBLIC include PRIVATE src)
 target_link_libraries(engine_core PUBLIC
-        glm::glm
-        EnTT::EnTT
         EASTL
         DAS::libDaScriptDyn
         Threads::Threads

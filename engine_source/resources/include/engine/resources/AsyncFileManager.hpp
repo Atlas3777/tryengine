@@ -13,6 +13,8 @@
 #include <tuple>
 #include <utility>
 
+#include "engine/async/Executor.hpp"
+
 namespace tryengine::resources {
 enum class TaskStatus : uint8_t { Unused, Pending, Completed, Failed };
 
@@ -35,17 +37,16 @@ inline bool operator<=(const FileTime& a, const FileTime& b) noexcept {
 }
 
 struct FileTask {
-    TaskStatus status{TaskStatus::Unused};
-    eastl::vector<char> storage;
-    int bytes_read{-1};
-    uint32_t slot_index{0};
+    TaskStatus status = TaskStatus::Unused;
+    eastl::vector<uint8_t> storage;
+    int bytes_read = -1;
+    uint32_t slot_index = 0;
 
-    // Либо "чужой" (borrowed) — смотрит на буфер вызывающего кода,
-    // либо смотрит на AsyncFileManager::owned_paths_[task_idx],
     eastl::string_view path;
 
-    std::coroutine_handle<> continuation{nullptr};
-    uint32_t* wait_counter{nullptr};
+    std::coroutine_handle<> continuation = nullptr;
+    uint32_t* wait_counter = nullptr;
+    Executor* executor = nullptr;
 };
 
 class FileHandle {
@@ -76,14 +77,14 @@ public:
     [[nodiscard]] int BytesRead() const noexcept { return task_ ? task_->bytes_read : -1; }
     [[nodiscard]] int BytesWritten() const noexcept { return BytesRead(); }
 
-    [[nodiscard]] eastl::span<const char> GetData() const noexcept {
+    [[nodiscard]] eastl::span<const uint8_t> GetData() const noexcept {
         if (IsReady() && task_) {
             return {task_->storage.data(), task_->storage.size()};
         }
         return {};
     }
 
-    [[nodiscard]] eastl::vector<char> TakeData() noexcept {
+    [[nodiscard]] eastl::vector<uint8_t> TakeData() noexcept {
         if (IsReady() && task_) {
             return std::move(task_->storage);
         }
@@ -117,7 +118,7 @@ private:
     friend struct GroupIoAwaiter;
     friend struct VectorIoAwaiter;
 
-    [[nodiscard]] uint32_t TaskIndex() const noexcept;  // определён ниже
+    [[nodiscard]] uint32_t TaskIndex() const noexcept;
 
     FileTask* task_{nullptr};
 };
@@ -130,6 +131,7 @@ struct FileIoAwaiter {
     void await_suspend(std::coroutine_handle<> awaiting) noexcept {
         handle.task_->continuation = awaiting;
         handle.task_->wait_counter = nullptr;
+        handle.task_->executor = async::GetCurrentExecutor();
     }
 
     void await_resume() const noexcept {}
@@ -156,6 +158,7 @@ struct GroupIoAwaiter {
                     if (handle.IsPending() && handle.task_) {
                         handle.task_->continuation = awaiting;
                         handle.task_->wait_counter = &remaining_;
+                        handle.task_->executor = async::GetCurrentExecutor();
                     }
                 };
                 (register_one(h), ...);
@@ -188,6 +191,7 @@ struct VectorIoAwaiter {
             if (h.IsPending() && h.task_) {
                 h.task_->continuation = awaiting;
                 h.task_->wait_counter = &remaining;
+                h.task_->executor = async::GetCurrentExecutor();
             }
         }
     }
@@ -221,31 +225,23 @@ public:
     AsyncFileManager(const AsyncFileManager&) = delete;
     AsyncFileManager& operator=(const AsyncFileManager&) = delete;
 
-    // 1a. Путь ДОЛЖЕН пережить Submit() (литерал / буфер, которым владеет вызывающий
-    //     код весь кадр). Ничего никуда не копируем — нулевой оверхед.
     FileHandle ReadChunkAsync(eastl::string_view path, uint64_t offset, uint32_t size) {
         return ReadChunkAsyncImpl(path, offset, size, PathOwnership::Borrowed);
     }
 
-    // 1b. Путь ВРЕМЕННЫЙ (собран в локальной строке и умрёт после возврата
-    //     из этой функции). Копируем в owned_paths_[task_idx].
     FileHandle ReadChunkAsyncCopy(eastl::string_view path, uint64_t offset, uint32_t size) {
         return ReadChunkAsyncImpl(path, offset, size, PathOwnership::Owned);
     }
 
-    // 2a. Путь ДОЛЖЕН пережить Submit().
     FileHandle GetStatAsync(eastl::string_view path) { return GetStatAsyncImpl(path, PathOwnership::Borrowed); }
 
-    // 2b. Путь ВРЕМЕННЫЙ — копируем.
     FileHandle GetStatAsyncCopy(eastl::string_view path) { return GetStatAsyncImpl(path, PathOwnership::Owned); }
 
-    // 3a. Путь и буфер данных ДОЛЖНЫ пережить выполнение операции (Zero-copy).
-    FileHandle WriteChunkAsync(eastl::string_view path, eastl::span<const char> data, uint64_t offset = 0) {
+    FileHandle WriteChunkAsync(eastl::string_view path, eastl::span<const uint8_t> data, uint64_t offset = 0) {
         return WriteChunkAsyncImpl(path, data, offset, PathOwnership::Borrowed);
     }
 
-    // 3b. Путь или данные ВРЕМЕННЫЕ — копируем путь в owned_paths_, а данные в task.storage.
-    FileHandle WriteChunkAsyncCopy(eastl::string_view path, eastl::span<const char> data, uint64_t offset = 0) {
+    FileHandle WriteChunkAsyncCopy(eastl::string_view path, eastl::span<const uint8_t> data, uint64_t offset = 0) {
         return WriteChunkAsyncImpl(path, data, offset, PathOwnership::Owned);
     }
 
@@ -264,10 +260,12 @@ public:
         while (io_uring_peek_cqe(&ring_, &cqe) == 0) {
             uint64_t data = io_uring_cqe_get_data64(cqe);
 
+            if (data & OPEN_FAIL_TAG) {
+                io_uring_cqe_seen(&ring_, cqe);
+                continue;
+            }
+
             if (data & CLOSE_TAG) {
-                // Хвост цепочки. Неважно, close реально закрыл fd (res >= 0) или был
-                // отменён из-за проваленного openat_direct (IOSQE_IO_LINK оборвал цепочку) —
-                // в обоих случаях ядро больше не тронет этот слот, и его можно вернуть в пул.
                 const uint32_t fd_slot = static_cast<uint32_t>(data & ~CLOSE_TAG);
                 {
                     std::lock_guard lock(ring_mutex_);
@@ -291,11 +289,20 @@ public:
                 if (task.continuation) {
                     bool should_resume = !task.wait_counter || (--(*task.wait_counter) == 0);
                     auto handle = task.continuation;
+                    auto* exec = task.executor;
+
                     task.continuation = nullptr;
                     task.wait_counter = nullptr;
+                    task.executor = nullptr;
 
                     if (should_resume) {
-                        handle.resume();
+                        if (exec) {
+                            // TRY_LOG_INFO("vy");
+                            exec->Schedule(handle);
+                        } else {
+                            TRY_ASSERT(exec, "Executor == nullptr");
+                            handle.resume();
+                        }
                     }
                 }
             }
@@ -306,6 +313,7 @@ public:
 
     void ReleaseTask(uint32_t task_idx) noexcept {
         FileTask& task = tasks_[task_idx];
+        TRY_ASSERT(task.status != TaskStatus::Pending, "Releasing a pending task!");
         task.status = TaskStatus::Unused;
         task.storage.clear();
         task.path = eastl::string_view{};
@@ -317,6 +325,7 @@ public:
 private:
     enum class PathOwnership : uint8_t { Borrowed, Owned };
 
+    static constexpr uint64_t OPEN_FAIL_TAG = 1ull << 62;
     static constexpr uint64_t CLOSE_TAG = 1ull << 63;
 
     void init_task(FileTask& task, uint32_t task_idx) noexcept {
@@ -352,6 +361,8 @@ private:
         std::lock_guard lock(ring_mutex_);
 
         uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
+        TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
         if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
             return FileHandle{};
         }
@@ -369,6 +380,7 @@ private:
         io_uring_sqe* sqe_read = io_uring_get_sqe(&ring_);
         io_uring_sqe* sqe_close = io_uring_get_sqe(&ring_);
 
+        TRY_ASSERT(sqe_open && sqe_read && sqe_close, "AsyncFileManager: Ring SQE allocation failed!");
         if (!sqe_open || !sqe_read || !sqe_close) {
             free_fd_slots_.push_back(fd_slot);
             task.status = TaskStatus::Failed;
@@ -377,6 +389,7 @@ private:
 
         io_uring_prep_openat_direct(sqe_open, AT_FDCWD, task.path.data(), O_RDONLY, 0, fd_slot);
         sqe_open->flags |= IOSQE_IO_LINK | IOSQE_CQE_SKIP_SUCCESS;
+        io_uring_sqe_set_data64(sqe_open, OPEN_FAIL_TAG | task_idx);
 
         io_uring_prep_read(sqe_read, fd_slot, task.storage.data(), size, offset);
         sqe_read->flags |= IOSQE_FIXED_FILE | IOSQE_IO_HARDLINK;
@@ -393,6 +406,7 @@ private:
         std::lock_guard lock(ring_mutex_);
 
         uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
         if (task_idx == UINT32_MAX) {
             return FileHandle{};
         }
@@ -403,12 +417,12 @@ private:
         assign_path(task, task_idx, path, ownership);
 
         io_uring_sqe* sqe_stat = io_uring_get_sqe(&ring_);
+        TRY_ASSERT(sqe_stat, "AsyncFileManager: Ring SQE allocation failed!");
         if (!sqe_stat) {
             task.status = TaskStatus::Failed;
             return FileHandle{&task};
         }
 
-        // statx умеет принимать путь напрямую через AT_FDCWD без предварительного openat
         io_uring_prep_statx(sqe_stat, AT_FDCWD, task.path.data(), 0, STATX_BASIC_STATS,
                             reinterpret_cast<struct statx*>(task.storage.data()));
         io_uring_sqe_set_data64(sqe_stat, task_idx);
@@ -417,13 +431,15 @@ private:
         return FileHandle{&task};
     }
 
-    FileHandle WriteChunkAsyncImpl(eastl::string_view path, eastl::span<const char> data, uint64_t offset,
+    FileHandle WriteChunkAsyncImpl(eastl::string_view path, eastl::span<const uint8_t> data, uint64_t offset,
                                    PathOwnership ownership) {
         EnsureDirectoriesExist(GetParentPath(path));
 
         std::lock_guard lock(ring_mutex_);
 
         uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
+        TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
         if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
             return FileHandle{};
         }
@@ -432,7 +448,7 @@ private:
         init_task(task, task_idx);
         assign_path(task, task_idx, path, ownership);
 
-        const char* write_ptr = data.data();
+        const uint8_t* write_ptr = data.data();
 
         if (ownership == PathOwnership::Owned) {
             task.storage.assign(data.begin(), data.end());
@@ -447,6 +463,7 @@ private:
         io_uring_sqe* sqe_write = io_uring_get_sqe(&ring_);
         io_uring_sqe* sqe_close = io_uring_get_sqe(&ring_);
 
+        TRY_ASSERT(sqe_open && sqe_write && sqe_close, "AsyncFileManager: Ring SQE allocation failed!");
         if (!sqe_open || !sqe_write || !sqe_close) {
             free_fd_slots_.push_back(fd_slot);
             task.status = TaskStatus::Failed;
@@ -458,6 +475,7 @@ private:
 
         io_uring_prep_openat_direct(sqe_open, AT_FDCWD, task.path.data(), open_flags, mode, fd_slot);
         sqe_open->flags |= IOSQE_IO_LINK | IOSQE_CQE_SKIP_SUCCESS;
+        io_uring_sqe_set_data64(sqe_open, OPEN_FAIL_TAG | task_idx);
 
         io_uring_prep_write(sqe_write, fd_slot, write_ptr, static_cast<unsigned int>(data.size()), offset);
         sqe_write->flags |= IOSQE_FIXED_FILE | IOSQE_IO_HARDLINK;
@@ -501,7 +519,6 @@ private:
         mkdir_if_new(buffer, dir_path.size());
     }
 
-    // buffer[0..len) — уже терминированный NUL-ом путь-сегмент.
     void mkdir_if_new(const char* buffer, size_t len) {
         eastl::string_view segment(buffer, len);
         if (known_dirs_.find(eastl::string(segment.data(), segment.size())) != known_dirs_.end()) {
@@ -530,6 +547,7 @@ private:
 
 inline void FileHandle::Release() noexcept {
     if (task_) {
+        TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
         task_->status = TaskStatus::Unused;
         task_->storage.clear();
         task_->path = eastl::string_view{};

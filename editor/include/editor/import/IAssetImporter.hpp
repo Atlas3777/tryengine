@@ -14,19 +14,18 @@ struct ProducedArtifact {
     uint64_t sub_guid{0};
     ArtifactTarget target{ArtifactTarget::Runtime};
     eastl::string extension;
-    eastl::vector<char> bytes;
+    eastl::vector<uint8_t> bytes;
 };
 
 struct ImportResult {
     uint64_t main_guid{0};
     eastl::vector<ProducedArtifact> artifacts;
-    eastl::vector<char> meta_bytes;
+    eastl::vector<uint8_t> meta_bytes;
 };
 
 struct ImportContext {
-    const eastl::span<const char> source_bytes;
-    const eastl::span<const char> meta_bytes;
-    // uint64_t main_guid = 0;
+    const eastl::span<const uint8_t> source_bytes;
+    const eastl::span<const uint8_t> meta_bytes;
 };
 
 class IAssetImporter {

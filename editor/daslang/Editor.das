@@ -12,7 +12,7 @@ require imgui/imgui_boost_runtime
 require tryeditor
 
 [export]
-def ren() {
+def draw_editor() {
     unsafe {
         let ctx_address = get_editor_imgui_context()
         let host_ctx = reinterpret<ImGuiContext?>(ctx_address)

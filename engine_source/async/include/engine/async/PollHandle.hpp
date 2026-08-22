@@ -1,4 +1,3 @@
-// PollHandle.hpp
 #pragma once
 
 #include <atomic>
@@ -13,7 +12,7 @@ namespace tryengine::async {
 template <typename T>
 struct PollState {
     std::atomic<bool> ready{false};
-    Result<T> result;
+    std::optional<Result<T>> result;
 };
 
 template <typename T>
@@ -23,8 +22,15 @@ public:
     explicit PollHandle(std::shared_ptr<PollState<T>> state) noexcept : state_(std::move(state)) {}
 
     [[nodiscard]] bool IsReady() const noexcept { return state_ && state_->ready.load(std::memory_order_acquire); }
-    [[nodiscard]] Result<T>& GetResult() & { return state_->result; }
-    [[nodiscard]] Result<T>&& GetResult() && { return std::move(state_->result); }
+    [[nodiscard]] Result<T>& GetResult() & {
+        TRY_ASSERT(state_ && state_->result.has_value(), "PollHandle result accessed before completion or state is null");
+        return *state_->result;
+    }
+
+    [[nodiscard]] Result<T>&& GetResult() && {
+        TRY_ASSERT(state_ && state_->result.has_value(), "PollHandle result accessed before completion or state is null");
+        return std::move(*state_->result);
+    }
 
 private:
     std::shared_ptr<PollState<T>> state_;
@@ -52,7 +58,8 @@ struct PollDriverPromise {
     };
     Handle get_return_object() noexcept {
         return Handle{std::coroutine_handle<PollDriverPromise>::from_promise(*this)};
-    }};
+    }
+};
 
 // state — обычный параметр корутины, никакого from_promise не нужно
 template <typename T>

@@ -1,0 +1,180 @@
+#pragma once
+
+namespace tryengine::resources {
+
+enum class TextureType {
+    TEXTURETYPE_2D,        /**< The texture is a 2-dimensional image. */
+    TEXTURETYPE_2D_ARRAY,  /**< The texture is a 2-dimensional array image. */
+    TEXTURETYPE_3D,        /**< The texture is a 3-dimensional image. */
+    TEXTURETYPE_CUBE,      /**< The texture is a cube image. */
+    TEXTURETYPE_CUBE_ARRAY /**< The texture is a cube array image. */
+};
+
+enum class MSAACount {
+    SDL_GPU_SAMPLECOUNT_1, /**< No multisampling. */
+    SDL_GPU_SAMPLECOUNT_2, /**< MSAA 2x */
+    SDL_GPU_SAMPLECOUNT_4, /**< MSAA 4x */
+    SDL_GPU_SAMPLECOUNT_8  /**< MSAA 8x */
+};
+
+enum class SDL_GPUCubeMapFace {
+    SDL_GPU_CUBEMAPFACE_POSITIVEX,  //
+    SDL_GPU_CUBEMAPFACE_NEGATIVEX,  //
+    SDL_GPU_CUBEMAPFACE_POSITIVEY,  //
+    SDL_GPU_CUBEMAPFACE_NEGATIVEY,  //
+    SDL_GPU_CUBEMAPFACE_POSITIVEZ,  //
+    SDL_GPU_CUBEMAPFACE_NEGATIVEZ   //
+};
+
+enum class TextureFormat : uint32_t{
+    TEXTUREFORMAT_INVALID,
+
+    /* Unsigned Normalized Float Color Formats */
+    TEXTUREFORMAT_A8_UNORM,
+    TEXTUREFORMAT_R8_UNORM,
+    TEXTUREFORMAT_R8G8_UNORM,
+    TEXTUREFORMAT_R8G8B8A8_UNORM,
+    TEXTUREFORMAT_R16_UNORM,
+    TEXTUREFORMAT_R16G16_UNORM,
+    TEXTUREFORMAT_R16G16B16A16_UNORM,
+    TEXTUREFORMAT_R10G10B10A2_UNORM,
+    TEXTUREFORMAT_B5G6R5_UNORM,
+    TEXTUREFORMAT_B5G5R5A1_UNORM,
+    TEXTUREFORMAT_B4G4R4A4_UNORM,
+    TEXTUREFORMAT_B8G8R8A8_UNORM,
+    /* Compressed Unsigned Normalized Float Color Formats */
+    TEXTUREFORMAT_BC1_RGBA_UNORM,
+    TEXTUREFORMAT_BC2_RGBA_UNORM,
+    TEXTUREFORMAT_BC3_RGBA_UNORM,
+    TEXTUREFORMAT_BC4_R_UNORM,
+    TEXTUREFORMAT_BC5_RG_UNORM,
+    TEXTUREFORMAT_BC7_RGBA_UNORM,
+    /* Compressed Signed Float Color Formats */
+    TEXTUREFORMAT_BC6H_RGB_FLOAT,
+    /* Compressed Unsigned Float Color Formats */
+    TEXTUREFORMAT_BC6H_RGB_UFLOAT,
+    /* Signed Normalized Float Color Formats  */
+    TEXTUREFORMAT_R8_SNORM,
+    TEXTUREFORMAT_R8G8_SNORM,
+    TEXTUREFORMAT_R8G8B8A8_SNORM,
+    TEXTUREFORMAT_R16_SNORM,
+    TEXTUREFORMAT_R16G16_SNORM,
+    TEXTUREFORMAT_R16G16B16A16_SNORM,
+    /* Signed Float Color Formats */
+    TEXTUREFORMAT_R16_FLOAT,
+    TEXTUREFORMAT_R16G16_FLOAT,
+    TEXTUREFORMAT_R16G16B16A16_FLOAT,
+    TEXTUREFORMAT_R32_FLOAT,
+    TEXTUREFORMAT_R32G32_FLOAT,
+    TEXTUREFORMAT_R32G32B32A32_FLOAT,
+    /* Unsigned Float Color Formats */
+    TEXTUREFORMAT_R11G11B10_UFLOAT,
+    /* Unsigned Integer Color Formats */
+    EXTUREFORMAT_R8_UINT,
+    EXTUREFORMAT_R8G8_UINT,
+    EXTUREFORMAT_R8G8B8A8_UINT,
+    EXTUREFORMAT_R16_UINT,
+    EXTUREFORMAT_R16G16_UINT,
+    EXTUREFORMAT_R16G16B16A16_UINT,
+    EXTUREFORMAT_R32_UINT,
+    EXTUREFORMAT_R32G32_UINT,
+    EXTUREFORMAT_R32G32B32A32_UINT,
+    /* Signed Integer Color Formats */
+    TEXTUREFORMAT_R8_INT,
+    TEXTUREFORMAT_R8G8_INT,
+    TEXTUREFORMAT_R8G8B8A8_INT,
+    TEXTUREFORMAT_R16_INT,
+    TEXTUREFORMAT_R16G16_INT,
+    TEXTUREFORMAT_R16G16B16A16_INT,
+    TEXTUREFORMAT_R32_INT,
+    TEXTUREFORMAT_R32G32_INT,
+    TEXTUREFORMAT_R32G32B32A32_INT,
+    /* SRGB Unsigned Normalized Color Formats */
+    TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB,
+    TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB,
+    /* Compressed SRGB Unsigned Normalized Color Formats */
+    TEXTUREFORMAT_BC1_RGBA_UNORM_SRGB,
+    TEXTUREFORMAT_BC2_RGBA_UNORM_SRGB,
+    TEXTUREFORMAT_BC3_RGBA_UNORM_SRGB,
+    TEXTUREFORMAT_BC7_RGBA_UNORM_SRGB,
+    /* Depth Formats */
+    TEXTUREFORMAT_D16_UNORM,
+    TEXTUREFORMAT_D24_UNORM,
+    TEXTUREFORMAT_D32_FLOAT,
+    TEXTUREFORMAT_D24_UNORM_S8_UINT,
+    TEXTUREFORMAT_D32_FLOAT_S8_UINT,
+    /* Compressed ASTC Normalized Float Color Formats*/
+    TEXTUREFORMAT_ASTC_4x4_UNORM,
+    TEXTUREFORMAT_ASTC_5x4_UNORM,
+    TEXTUREFORMAT_ASTC_5x5_UNORM,
+    TEXTUREFORMAT_ASTC_6x5_UNORM,
+    TEXTUREFORMAT_ASTC_6x6_UNORM,
+    TEXTUREFORMAT_ASTC_8x5_UNORM,
+    TEXTUREFORMAT_ASTC_8x6_UNORM,
+    TEXTUREFORMAT_ASTC_8x8_UNORM,
+    TEXTUREFORMAT_ASTC_10x5_UNORM,
+    TEXTUREFORMAT_ASTC_10x6_UNORM,
+    TEXTUREFORMAT_ASTC_10x8_UNORM,
+    TEXTUREFORMAT_ASTC_10x10_UNORM,
+    TEXTUREFORMAT_ASTC_12x10_UNORM,
+    TEXTUREFORMAT_ASTC_12x12_UNORM,
+    /* Compressed SRGB ASTC Normalized Float Color Formats*/
+    TEXTUREFORMAT_ASTC_4x4_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_5x4_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_5x5_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_6x5_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_6x6_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_8x5_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_8x6_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_8x8_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_10x5_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_10x6_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_10x8_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_10x10_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_12x10_UNORM_SRGB,
+    TEXTUREFORMAT_ASTC_12x12_UNORM_SRGB,
+    /* Compressed ASTC Signed Float Color Formats*/
+    TEXTUREFORMAT_ASTC_4x4_FLOAT,
+    TEXTUREFORMAT_ASTC_5x4_FLOAT,
+    TEXTUREFORMAT_ASTC_5x5_FLOAT,
+    TEXTUREFORMAT_ASTC_6x5_FLOAT,
+    TEXTUREFORMAT_ASTC_6x6_FLOAT,
+    TEXTUREFORMAT_ASTC_8x5_FLOAT,
+    TEXTUREFORMAT_ASTC_8x6_FLOAT,
+    TEXTUREFORMAT_ASTC_8x8_FLOAT,
+    TEXTUREFORMAT_ASTC_10x5_FLOAT,
+    TEXTUREFORMAT_ASTC_10x6_FLOAT,
+    TEXTUREFORMAT_ASTC_10x8_FLOAT,
+    TEXTUREFORMAT_ASTC_10x10_FLOAT,
+    TEXTUREFORMAT_ASTC_12x10_FLOAT,
+    TEXTUREFORMAT_ASTC_12x12_FLOAT
+};
+
+enum class TextureFilter : uint8_t {
+    FILTER_NEAREST, /**< Point filtering. */
+    FILTER_LINEAR   /**< Linear filtering. */
+};
+enum class SamplerMipmapMode {
+    SAMPLERMIPMAPMODE_NEAREST, /**< Point filtering. */
+    SAMPLERMIPMAPMODE_LINEAR   /**< Linear filtering. */
+};
+
+enum class SamplerAddressMode {
+    SAMPLERADDRESSMODE_REPEAT,          /**< Specifies that the coordinates will wrap around. */
+    SAMPLERADDRESSMODE_MIRRORED_REPEAT, /**< Specifies that the coordinates will wrap around mirrored. */
+    SAMPLERADDRESSMODE_CLAMP_TO_EDGE    /**< Specifies that the coordinates will clamp to the 0-1 range. */
+};
+
+enum class CompareOp {
+    COMPAREOP_INVALID,
+    COMPAREOP_NEVER,            /**< The comparison always evaluates false. */
+    COMPAREOP_LESS,             /**< The comparison evaluates reference < test. */
+    COMPAREOP_EQUAL,            /**< The comparison evaluates reference == test. */
+    COMPAREOP_LESS_OR_EQUAL,    /**< The comparison evaluates reference <= test. */
+    COMPAREOP_GREATER,          /**< The comparison evaluates reference > test. */
+    COMPAREOP_NOT_EQUAL,        /**< The comparison evaluates reference != test. */
+    COMPAREOP_GREATER_OR_EQUAL, /**< The comparison evaluates reference >= test. */
+    COMPAREOP_ALWAYS            /**< The comparison always evaluates true. */
+};
+
+}  // namespace tryengine::resources

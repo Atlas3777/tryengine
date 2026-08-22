@@ -21,11 +21,11 @@ public:
     void RegisterImporter(eastl::span<const eastl::string_view> extensions, Args&&... args) {
         auto importer = eastl::make_unique<TImporter>(std::forward<Args>(args)...);
 
-        auto settingsId = tryengine::core::TypeRegistry::GetId<TSettings>();
-        if (settingsId >= importers_by_settings_type_.size()) {
-            importers_by_settings_type_.resize(settingsId + 1, nullptr);
+        auto settings_id = tryengine::core::ScopedTypeId<ImportSystem, TSettings>::Value();
+        if (settings_id >= importers_by_settings_type_.size()) {
+            importers_by_settings_type_.resize(settings_id + 1, nullptr);
         }
-        importers_by_settings_type_[settingsId] = importer.get();
+        importers_by_settings_type_[settings_id] = importer.get();
 
         IAssetImporter* ptr = importer.get();
         importers_by_name_[eastl::string(importer->GetName())] = ptr;
@@ -37,7 +37,6 @@ public:
         importers_.push_back(eastl::move(importer));
     }
 
-    // Вспомогательная перегрузка для удобного синтаксиса {...}
     template <typename TImporter, typename TSettings, typename... Args>
     void RegisterImporter(std::initializer_list<eastl::string_view> extensions, Args&&... args) {
         RegisterImporter<TImporter, TSettings>(
@@ -46,9 +45,9 @@ public:
 
     template <typename TSettings>
     [[nodiscard]] IAssetImporter* GetImporterBySettings() const {
-        auto settingsId = tryengine::core::TypeRegistry::GetId<TSettings>();
-        if (settingsId < importers_by_settings_type_.size()) {
-            return importers_by_settings_type_[settingsId];
+        auto settings_id = tryengine::core::ScopedTypeId<ImportSystem, TSettings>::Value();
+        if (settings_id < importers_by_settings_type_.size()) {
+            return importers_by_settings_type_[settings_id];
         }
         return nullptr;
     }

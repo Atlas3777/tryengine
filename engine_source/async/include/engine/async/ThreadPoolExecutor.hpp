@@ -2,11 +2,11 @@
 
 #include <condition_variable>
 #include <cstddef>
-#include <functional>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <vector>
+#include <EASTL/vector.h>
+#include <EASTL/queue.h>
 
 #include "engine/async/Executor.hpp"
 
@@ -14,13 +14,13 @@ namespace tryengine::async {
 
 class ThreadPoolExecutor final : public Executor {
 public:
-    explicit ThreadPoolExecutor(std::size_t threadCount = std::thread::hardware_concurrency()) {
-        if (threadCount == 0) {
-            threadCount = 1;
+    explicit ThreadPoolExecutor(std::size_t thread_count = std::thread::hardware_concurrency()) {
+        if (thread_count == 0) {
+            thread_count = 1;
         }
 
-        workers_.reserve(threadCount);
-        for (std::size_t i = 0; i < threadCount; ++i) {
+        workers_.reserve(thread_count);
+        for (std::size_t i = 0; i < thread_count; ++i) {
             workers_.emplace_back([this] { WorkerLoop(); });
         }
     }
@@ -67,12 +67,13 @@ private:
                 queue_.pop();
             }
 
+            CurrentExecutorScope scope(this);
             work();
         }
     }
 
-    std::vector<std::thread> workers_;
-    std::queue<std::move_only_function<void()>> queue_;
+    eastl::vector<std::thread> workers_;
+    eastl::queue<std::move_only_function<void()>> queue_;
     std::mutex mutex_;
     std::condition_variable cv_;
     bool stopping_ = false;

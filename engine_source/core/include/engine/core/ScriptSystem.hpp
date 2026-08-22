@@ -6,7 +6,10 @@
 #include <string>
 #include <unordered_map>
 
-#include "engine/core/Assert.hpp"  // TRY_CHECK / TRY_LOG_INFO
+#include "Engine.hpp"
+#include "Result.hpp"
+#include "engine/core/Assert.hpp"
+#include "engine/core/MakeError.hpp"
 
 namespace tryengine::core {
 
@@ -16,55 +19,61 @@ enum class ReloadErrorPolicy {
     FreezeExecution          // Поставить обновление на паузу (update не вызывается) до исправления ошибок
 };
 
+// TODO: С копированием разобраться
+class TryengineContext : public das::Context {
+public:
+    Engine& engine;
+
+    // using Context::Context;
+
+    TryengineContext(Engine& eng, uint32_t stackSize = 16 * 1024, bool ph = false)
+        : Context(stackSize, ph), engine(eng) {}
+};
+
+using ContextFactory = std::function<das::Context*(Engine& engine, uint32_t stack_size)>;
+
 class ScriptSystem {
 public:
-    ScriptSystem(const std::string& path);
+    explicit ScriptSystem(Engine& engine, const std::string& path = "");
     ~ScriptSystem();
+    void SetContextFactory(ContextFactory factory) { context_factory_ = std::move(factory); }
 
-    // Загрузка и жизненный цикл главного скрипта
-    bool LoadMainScript(const std::string& path);
+    Result<void> LoadMainScript(const std::string& path);
     void InvokeStart();
-    void InvokeUpdate(float dt);
+    void InvokeUpdate(float time);
 
-    // Проверка изменений файлов на диске (Live Coding)
     void CheckForReload(float dt);
 
-    // Безопасный вызов: реализован через ctx->evalWithCatch (см.
-    // InvokeSimFunctionSafe ниже). Любой panic() внутри скрипта будет
-    // пойман и залогирован через TRY_LOG_INFO с именем функции и текстом
-    // ошибки, приложение не упадет. Чуть медленнее из-за самого
-    // evalWithCatch и проверки ctx->getException() — используйте это по
-    // умолчанию и везде, где не уверены на 100%, что скрипт отработает без
-    // ошибок.
-    //
-    // Ограничение: аргументы марашаллятся вручную через cast<T>::from, а он
-    // поддерживает только примитивы daScript (int32_t/uint32_t/int64_t/
-    // float/double/bool/char*/указатели). Если понадобится передавать
-    // строки как std::string или сложные структуры — их нужно будет явно
-    // привести к поддерживаемому типу перед вызовом.
-    template<typename... Args>
+    template <typename... Args>
     bool InvokeFunctionSafe(const std::string& f_name, Args&&... args) {
         auto function = das_ctx ? das_ctx->findFunction(f_name.c_str()) : nullptr;
 
         if (!das_ctx || !function) {
-            TRY_LOG_INFO("[ScriptSystem] Function not found: {}", f_name);
+            LogInfo(LogCategory::Script, "Function not found: {}", f_name);
             return false;
         }
 
         return InvokeSimFunctionSafe(function, f_name, std::forward<Args>(args)...);
     }
 
-    // Быстрый вызов без перехвата ошибок: используйте только тогда, когда вы
-    // на 100% уверены, что данная скриптовая функция не может упасть
-    // (например вызывается в очень горячем цикле и уже проверена
-    // InvokeFunctionSafe / verifyCall на этапе разработки). Если скрипт всё
-    // же запаникует — приложение упадет так же, как и раньше.
-    template<typename... Args>
+    template <typename T, typename... Args>
+    Result<T> SimpleReturnUnsafe(const eastl::string_view f_name, Args&&... args) {
+        TRY_ASSERT(das_ctx, "Нет контекста");
+        auto function = das_ctx->findFunction(f_name.data());
+
+        if (!function)
+            return LogAndMakeError("Function not found: {}", f_name);
+
+        das::Func custom_func(function);
+        return das::das_invoke_function<T>::invoke(das_ctx, nullptr, custom_func, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
     bool InvokeFunctionFast(const std::string& f_name, Args&&... args) {
         auto function = das_ctx ? das_ctx->findFunction(f_name.c_str()) : nullptr;
 
         if (!das_ctx || !function) {
-            TRY_LOG_INFO("[ScriptSystem] Function not found: {}", f_name);
+            LogInfo(LogCategory::Script, "Function not found: {}", f_name);
             return false;
         }
 
@@ -73,51 +82,34 @@ public:
         return true;
     }
 
-    // Оставлено для обратной совместимости со старым кодом — по умолчанию
-    // безопасно (см. InvokeFunctionSafe). Новый код лучше вызывает
-    // InvokeFunctionSafe / InvokeFunctionFast явно.
-    template<typename... Args>
-    bool InvokeFunction(const std::string& f_name, Args&&... args) {
-        return InvokeFunctionSafe(f_name, std::forward<Args>(args)...);
-    }
-
-    // Геттеры и настройки
     das::Context* GetContext();
     void SetReloadErrorPolicy(ReloadErrorPolicy policy) { error_policy_ = policy; }
     bool IsFrozen() const { return is_frozen_; }
 
 private:
-    bool CompileAndLoad(const std::string& path);
+    Result<void> CompileAndLoad(const std::string& path);
     void InvokeHook(const std::string& hook_substring);
 
-    // Общая безопасная точка вызова SimFunction*, когда он у нас уже есть
-    // (не нужно искать по имени заново). Используется для fn_start,
-    // fn_update и live-coding хуков — именно там раньше падало без единого
-    // сообщения о том, какая функция виновата.
-    //
-    // ВАЖНО: сознательно НЕ используем das_invoke_function здесь — он должен
-    // бросать C++ исключение при panic() внутри скрипта, но на практике это
-    // исключение не всегда долетает до try/catch (сборка без exceptions,
-    // паника внутри AOT-кода и т.п.), и приложение падает молча. Вместо
-    // этого напрямую собираем vec4f-аргументы (cast<T>::from) и зовем
-    // ctx->evalWithCatch — это низкоуровневый механизм, который ловит панику
-    // внутри самого daScript-рантайма и не зависит от C++ exceptions.
-    template<typename... Args>
+    template <typename... Args>
     bool InvokeSimFunctionSafe(das::SimFunction* function, const std::string& f_name, Args&&... args) {
         if constexpr (sizeof...(Args) == 0) {
             das_ctx->evalWithCatch(function, nullptr);
         } else {
-            vec4f arguments[] = { das::cast<std::decay_t<Args>>::from(std::forward<Args>(args))... };
+            vec4f arguments[] = {das::cast<std::decay_t<Args>>::from(std::forward<Args>(args))...};
             das_ctx->evalWithCatch(function, arguments);
         }
 
         if (auto ex = das_ctx->getException()) {
-            TRY_LOG_INFO("[ScriptSystem] Скрипт упал в функции '{}': {}", f_name, ex);
+            LogInfo(LogCategory::Script, "Скрипт упал в функции '{}': {}", f_name, ex);
             return false;
         }
 
         return true;
     }
+
+    Engine& engine_;
+    das::Context* CreateContext(uint32_t stack_size);
+    ContextFactory context_factory_ = nullptr;
 
     std::string main_script_path_;
 

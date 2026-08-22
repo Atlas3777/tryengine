@@ -1,104 +1,144 @@
 #pragma once
 
 #include <SDL3/SDL_gpu.h>
-#include <SDL3/SDL_log.h>
-#include <fstream>
-#include <memory>
-#include <vector>
 
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/graphics/Types.hpp"
-#include "engine/resources/Types.hpp"
+#include "engine/resources/TextureBinary.hpp"
+#include "engine/resources/TextureTypes.hpp"
 
 namespace tryengine::graphics {
 
+constexpr SDL_GPUTextureFormat FormatTo(resources::TextureFormat format) {
+    return static_cast<SDL_GPUTextureFormat>(format);
+}
+
+constexpr SDL_GPUTextureType TypeTo(resources::TextureType format) {
+    return static_cast<SDL_GPUTextureType>(format);
+}
+
 class TextureLoader {
 public:
-    using result_type = std::shared_ptr<Texture>;
+    explicit TextureLoader(SDL_GPUDevice* device) : device_(device) {}
 
-    explicit TextureLoader(resources::ResourceManager& res, SDL_GPUDevice* device)
-        : resource_manager_(&res), device_(device) {}
+    async::Task<TextureSampler> Parse(eastl::span<const uint8_t> data) const {
+        auto texture_result = resources::TextureBinary::UnpackFull(data);
 
-    result_type operator()(uint64_t id, const std::string& path) const {
-        // 1. Читаем бинарный артефакт (.tex)
-        std::ifstream is(path, std::ios::binary);
-        if (!is.is_open()) {
-            SDL_Log("TextureLoader: Failed to open file %s", path.c_str());
-            return nullptr;
+        if (!texture_result.has_value())
+            co_return LogAndMakeError("Texture unpack failed", texture_result.error().Message());
+
+        auto& [header, mips] = *texture_result;
+
+        if (mips.empty())
+            co_return LogAndMakeError("Texture has no mip levels");
+
+        co_await tryengine::async::ExecutorSwitch(tryengine::async::MainThread());
+
+        TextureSampler gpu_texture;
+
+        // 1. Создаем текстуру
+        SDL_GPUTextureCreateInfo info{};
+        info.type = TypeTo(header.type);
+        info.format = FormatTo(header.format);
+        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width = header.width;
+        info.height = header.height;
+        info.sample_count = SDL_GPU_SAMPLECOUNT_8;
+
+        // Закрытие TODO: для 3D текстур это глубина, для остальных - количество слоев/граней
+        info.layer_count_or_depth =
+            (header.type == resources::TextureType::TEXTURETYPE_3D) ? header.depth : header.array_size;
+        info.num_levels = header.mip_count;
+        info.sample_count = static_cast<SDL_GPUSampleCount>(header.msaa_count);
+
+        gpu_texture.texture = SDL_CreateGPUTexture(device_, &info);
+        if (!gpu_texture.texture)
+            co_return LogAndMakeError("Failed to create GPU texture");
+
+        // 2. Считаем общий размер всех mip-уровней для Transfer Buffer
+        Uint64 total_transfer_size = 0;
+        for (const auto& mip : mips) {
+            total_transfer_size += mip.size;
         }
 
-        resources::TextureHeader header{};
-        if (!is.read(reinterpret_cast<char*>(&header), sizeof(resources::TextureHeader))) return nullptr;
+        // 3. Создаем и заполняем Transfer Buffer
+        SDL_GPUTransferBufferCreateInfo trans_info{};
+        trans_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        trans_info.size = static_cast<Uint32>(total_transfer_size);
 
-        std::vector<uint8_t> pixels(header.data_size);
-        if (!is.read(reinterpret_cast<char*>(pixels.data()), header.data_size)) return nullptr;
+        SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device_, &trans_info);
+        if (!transfer_buffer) {
+            SDL_ReleaseGPUTexture(device_, gpu_texture.texture);
+            co_return LogAndMakeError("Failed to create transfer buffer");
+        }
 
-        // 2. Создаем структуру Texture с кастомным делетером для GPU ресурсов
-        auto gpu_texture = std::shared_ptr<Texture>(new Texture(), [device = this->device_](const Texture* t) {
-            if (t->handle) SDL_ReleaseGPUTexture(device, t->handle);
-            if (t->sampler) SDL_ReleaseGPUSampler(device, t->sampler);
-            delete t;
-        });
+        Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device_, transfer_buffer, false));
 
-        gpu_texture->width = header.width;
-        gpu_texture->height = header.height;
+        Uint64 current_offset = 0;
+        for (const auto& mip : mips) {
+            std::memcpy(map + current_offset, mip.data.data(), mip.size);
+            current_offset += mip.size;
+        }
+        SDL_UnmapGPUTransferBuffer(device_, transfer_buffer);
 
-        // 3. Создаем текстуру
-        SDL_GPUTextureCreateInfo info{};
-        info.type = SDL_GPU_TEXTURETYPE_2D;
-        info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        info.width = gpu_texture->width;
-        info.height = gpu_texture->height;
-        info.layer_count_or_depth = 1;
-        info.num_levels = 1;
-
-        gpu_texture->handle = SDL_CreateGPUTexture(device_, &info);
-
-        // 4. Создаем сэмплер на основе данных из заголовка!
-        SDL_GPUSamplerCreateInfo sampler_info{};
-        sampler_info.min_filter = (header.min_filter == resources::TextureFilter::Linear) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
-        sampler_info.mag_filter = (header.mag_filter == resources::TextureFilter::Linear) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
-        sampler_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
-
-        auto map_address_mode = [](resources::TextureAddressMode mode) {
-            if (mode == resources::TextureAddressMode::ClampToEdge) return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-            if (mode == resources::TextureAddressMode::MirroredRepeat) return SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT;
-            return SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
-        };
-        sampler_info.address_mode_u = map_address_mode(header.address_u);
-        sampler_info.address_mode_v = map_address_mode(header.address_v);
-        sampler_info.address_mode_w = sampler_info.address_mode_u;
-
-        gpu_texture->sampler = SDL_CreateGPUSampler(device_, &sampler_info);
-
-        // 5. Загружаем пиксели через Transfer Buffer
-        SDL_GPUTransferBufferCreateInfo tInfo{};
-        tInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tInfo.size = header.data_size;
-
-        SDL_GPUTransferBuffer* tBuf = SDL_CreateGPUTransferBuffer(device_, &tInfo);
-        Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device_, tBuf, false));
-        std::memcpy(map, pixels.data(), header.data_size);
-        SDL_UnmapGPUTransferBuffer(device_, tBuf);
-
+        // 4. Загружаем данные на GPU через Copy Pass
         SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
 
-        SDL_GPUTextureTransferInfo src = {tBuf, 0, 0, 0};
-        SDL_GPUTextureRegion dst = {gpu_texture->handle, 0, 0, 0, 0, 0, gpu_texture->width, gpu_texture->height, 1};
+        current_offset = 0;
+        for (Uint32 i = 0; i < mips.size(); ++i) {
+            const auto& mip = mips[i];
 
-        SDL_UploadToGPUTexture(copy, &src, &dst, false);
+            SDL_GPUTextureTransferInfo src{};
+            src.transfer_buffer = transfer_buffer;
+            src.offset = static_cast<Uint32>(current_offset);
+
+            // ВАЖНО: pixels_per_row и rows_per_layer = 0.
+            // Это указывает SDL, что данные tightly packed. SDL сам рассчитает правильный
+            // row pitch (с учетом блочного сжатия BCn) на основе w, h и формата текстуры.
+            src.pixels_per_row = 0;
+            src.rows_per_layer = 0;
+
+            SDL_GPUTextureRegion dst{};
+            dst.texture = gpu_texture.texture;
+            dst.mip_level = i;
+            dst.layer = 0;  // Для массивов/кубов нужен вложенный цикл по слоям, для 2D оставляем 0
+            dst.x = 0;
+            dst.y = 0;
+            dst.z = 0;
+            dst.w = mip.width;
+            dst.h = mip.height;
+            dst.d = mip.depth;
+
+            SDL_UploadToGPUTexture(copy, &src, &dst, false);
+
+            current_offset += mip.size;
+        }
 
         SDL_EndGPUCopyPass(copy);
         SDL_SubmitGPUCommandBuffer(cmd);
-        SDL_ReleaseGPUTransferBuffer(device_, tBuf);
+        SDL_ReleaseGPUTransferBuffer(device_, transfer_buffer);
 
-        return gpu_texture;
+        // 5. Сэмплер (создаем базовый дефолтный, чтобы структура была валидной)
+        SDL_GPUSamplerCreateInfo sampler_info{};
+        sampler_info.min_filter = SDL_GPU_FILTER_LINEAR;
+        sampler_info.mag_filter = SDL_GPU_FILTER_LINEAR;
+        sampler_info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        sampler_info.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        sampler_info.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        sampler_info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+        sampler_info.mip_lod_bias = 0;
+        sampler_info.max_lod = mips.size();
+        sampler_info.min_lod = 0;
+        // sampler_info.enable_anisotropy = true;
+        // sampler_info.max_anisotropy = mips.size();
+
+        gpu_texture.sampler = SDL_CreateGPUSampler(device_, &sampler_info);
+        gpu_texture.slot = 0;
+
+        co_return gpu_texture;
     }
 
 private:
-    resources::ResourceManager* resource_manager_;
     SDL_GPUDevice* device_;
 };
 

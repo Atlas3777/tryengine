@@ -17,7 +17,7 @@ def DrawSceneViewPort(){
         let img = get_image()
         if (img != null) {
             image(SCENE_VIEW, (user_texture_id = ImTextureRef(intptr(img)),
-                              size = float2(200.0f, 200.0f),
+                              size = float2(1066 / 1.5f, 600 / 1.5f),
                               uv0 = float2(0.0f, 0.0f),
                               uv1 = float2(1.0f, 1.0f),
                               tint_col = float4(1.0f, 1.0f, 1.0f, 1.0f),

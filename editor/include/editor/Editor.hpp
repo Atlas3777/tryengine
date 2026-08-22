@@ -4,13 +4,11 @@
 
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
+#include "engine/graphics/RenderTarget.hpp"
 
 namespace tryeditor {
 class AssetSourceDatabase;
-class ControllerManager;
 class EditorGUI;
-class Spawner;
-class SelectionManager;
 class AssetInspectorManager;
 class AssetsFactoryManager;
 class ImportSystem;
@@ -43,10 +41,11 @@ public:
     ImportSystem& GetImportSystem() { return *import_system_; }
     AssetsFactoryManager& GetAssetsFactory() { return *assets_factory_; }
     AssetInspectorManager& GetAssetInspector() { return *asset_inspector_manager_; }
-    SelectionManager& GetSelectionManager() { return *selection_manager_; }
-    Spawner& GetSpawner() { return *spawner_; }
     EditorGUI& GetGUI() { return *gui_; }
     AssetSourceDatabase& GetAssetSourceDatabase() { return *asset_source_database_; }
+
+    std::unique_ptr<tryengine::graphics::RenderTarget> target;
+
 
 private:
     tryengine::core::Engine& engine_;
@@ -57,9 +56,6 @@ private:
     std::unique_ptr<ImportSystem> import_system_;
     std::unique_ptr<AssetsFactoryManager> assets_factory_;
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
-    std::unique_ptr<SelectionManager> selection_manager_;
-    std::unique_ptr<Spawner> spawner_;
-    std::unique_ptr<ControllerManager> gui_controller_manager_;
     std::unique_ptr<EditorGUI> gui_;
 };
 }

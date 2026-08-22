@@ -11,7 +11,7 @@ GraphicsContext::GraphicsContext(const uint32_t width, const uint32_t height, co
         return;
     }
 
-    TRY_LOG_INFO(TRY_VARS(width, height));
+    LogInfo(TRY_VARS(width, height));
 
     constexpr SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     m_window = SDL_CreateWindow(title.data(), static_cast<int>(width), static_cast<int>(height), flags);

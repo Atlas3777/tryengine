@@ -13,7 +13,8 @@ void Time::NewFrame() {
     raw_dt_ = elapsed.count();
     last_time_ = current_time;
 
-    total_time_ += raw_dt_;
+    unscaled_total_time_ += raw_dt_;
+    scaled_total_time_ += ScaledDeltaTime();
     frame_count_++;
 }
 

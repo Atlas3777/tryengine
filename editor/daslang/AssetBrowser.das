@@ -127,8 +127,6 @@ struct public AssetItem{
 var public PAYLOAD_VALUE : AssetItem
 
 def public DrawAssetBrowser() {
-    assume folders = get_engine_folders()
-    let total_folders = length(folders)
 
     with_style(
         (ImGuiStyleVar.WindowPadding, AB_WINDOW_PADDING),
@@ -136,6 +134,12 @@ def public DrawAssetBrowser() {
         (ImGuiStyleVar.ItemSpacing, AB_ITEM_SPACING),
         (ImGuiStyleVar.IndentSpacing, AB_INDENT)) {
         window(ASSET_BROWSER_WIN, (text = "Asset Browser", closable = false, flags = ImGuiWindowFlags.None)) {
+            checkbox(FOLDER_IDENT, (text = "EngineContent"))
+
+            assume folders = FOLDER_IDENT.value ? get_engine_folders() : get_game_folders()
+            let total_folders = length(folders)
+
+
             if (total_folders == 0) {
                 text("No asset folders loaded.")
                 return
@@ -199,7 +203,7 @@ def public DrawAssetBrowser() {
 // ---------------------------------------------------------------------
 // Дерево папок (левая панель)
 // ---------------------------------------------------------------------
-def DrawFolderTreeNode(folder_idx : int; var folders) {
+def DrawFolderTreeNode(folder_idx : int; let folders) {
     if (folder_idx < 0 || folder_idx >= length(folders)) {
         return
     }
@@ -240,7 +244,7 @@ def DrawFolderTreeNode(folder_idx : int; var folders) {
 // ---------------------------------------------------------------------
 // Содержимое текущей директории (правая панель)
 // ---------------------------------------------------------------------
-def DrawFolderContent(folder_idx : int; var folders) {
+def DrawFolderContent(folder_idx : int; let folders) {
     if (folder_idx < 0 || folder_idx >= length(folders)) {
         text("Select a directory")
         return
@@ -327,12 +331,14 @@ def DrawFolderContent(folder_idx : int; var folders) {
                         drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
                             PAYLOAD_VALUE.index = folders[folder_idx].files[i].asset_idx
                             PAYLOAD_VALUE.name = folders[folder_idx].files[i].name
+                            PAYLOAD_VALUE.guid = folders[folder_idx].files[i].guid
                             unsafe {
                                 SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
                                    uint64(typeinfo sizeof(PAYLOAD_VALUE)),
                                    ImGuiCond.Once)
                                 }
                             text("Dragging asset: {PAYLOAD_VALUE.name}")
+                            text("GUID: {PAYLOAD_VALUE.guid}")
                             text("Dragging asset idx: {PAYLOAD_VALUE.index}")
                         }
                     }

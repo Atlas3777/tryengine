@@ -9,6 +9,8 @@
 #include <format>
 #include <iterator>
 #include <mutex>
+#include <source_location>
+#include <type_traits>
 
 // ---------------------------------------------------------------------------
 // std::format не умеет форматировать eastl::string(_view) из коробки. Без этой
@@ -42,7 +44,7 @@ enum class LogLevel : uint8_t {
 
 // Расширяйте по мере роста движка — это просто список подсистем,
 // компилятор не даст опечататься в отличие от строкового литерала.
-enum class LogCategory : uint16_t {
+enum class LogCategory : uint8_t {
     General = 0,
     Core,
     Graphics,
@@ -52,6 +54,7 @@ enum class LogCategory : uint16_t {
     Gameplay,
     Assert,
     Importer,
+    Script,
 };
 
 eastl::string_view to_string(LogLevel level);
@@ -65,6 +68,7 @@ struct LogRecord {
     LogLevel level;
     LogCategory category;
     eastl::string_view message;
+    std::source_location location;
 };
 
 // Точка расширения. Реализуйте этот интерфейс для ImGui-консоли,
@@ -89,7 +93,8 @@ public:
     void set_min_level(LogLevel level) noexcept { m_min_level = level; }
     LogLevel min_level() const noexcept { return m_min_level; }
 
-    void log(LogLevel level, LogCategory category, eastl::string_view message);
+    void log(LogLevel level, LogCategory category, const std::source_location& location,
+              eastl::string_view message);
 
 private:
     Logger() = default;
@@ -106,6 +111,18 @@ public:
     void write(const LogRecord& record) override;
 };
 
+// ---------------------------------------------------------------------------
+// Дефолтная категория для файла. Определите ДО #include "engine/core/Log.hpp"
+// в конкретном .cpp, если у файла есть основная подсистема:
+//
+//   #define TRY_LOG_DEFAULT_CATEGORY Graphics
+//   #include "engine/core/Log.hpp"
+// ---------------------------------------------------------------------------
+#ifndef TRY_LOG_DEFAULT_CATEGORY
+#define TRY_LOG_DEFAULT_CATEGORY General
+#endif
+#define TRY_LOG_DEFAULT_CATEGORY_Q ::tryengine::core::LogCategory::TRY_LOG_DEFAULT_CATEGORY
+
 namespace detail {
 
 // eastl::format не существует. Пишем std::format прямо в eastl::string через
@@ -117,50 +134,99 @@ eastl::string format(std::format_string<Args...> fmt, Args&&... args) {
     return result;
 }
 
+inline void log_dispatch(LogLevel level, LogCategory category,
+                          const std::source_location& location, eastl::string_view message) {
+    Logger::instance().log(level, category, location, message);
+}
+
 } // namespace detail
+
+// ---------------------------------------------------------------------------
+// LocFmt — пара (format_string, source_location). Ключевая идея: location
+// ловится в consteval-конструкторе как ДЕФОЛТНЫЙ АРГУМЕНТ, который по
+// стандарту C++20 вычисляется в точке вызова, а не в точке объявления.
+// Благодаря этому LogInfo/LogWarn/... — обычные функции, а не макросы:
+// им не нужен __FILE__/__LINE__ через препроцессор.
+//
+// type_identity_t в LogXxx ниже нужен, чтобы Args выводился ТОЛЬКО из
+// хвостового пака аргументов, а не пытался вывестись (неоднозначно) ещё
+// и из самого locFmt.
+// ---------------------------------------------------------------------------
+template <typename... Args>
+struct LocFmt {
+    std::format_string<Args...> fmt;
+    std::source_location loc;
+
+    template <typename S>
+        requires std::is_constructible_v<std::format_string<Args...>, const S&>
+    consteval LocFmt(const S& str, std::source_location loc = std::source_location::current())
+        : fmt(str), loc(loc) {}
+};
+
+// ---------------------------------------------------------------------------
+// LogTrace / LogInfo / LogWarn / LogError / LogCritical.
+//
+// Обычные функции — работает автодополнение категорий, F12 (go to definition),
+// подсказки параметров. Каждая функция — 4 перегрузки:
+//
+//   LogInfo("hello");                       // строка как есть, дефолтная категория
+//   LogInfo(LogCategory::Physics, "hello"); // строка как есть, явная категория
+//   LogInfo("x = {}", x);                   // форматирование, дефолтная категория
+//   LogInfo(LogCategory::Physics, "x = {}", x); // форматирование, явная категория
+//
+// Категория, если указана, всегда идёт ПЕРВЫМ аргументом (а не через
+// default-параметр) — иначе после параметра со значением по умолчанию
+// нельзя поставить обязательный (message), см. правила default-аргументов.
+//
+// Перегрузка с чистым eastl::string_view (без форматирования) существует
+// не просто для краткости: LocFmt требует compile-time литерал (constexpr
+// строка), а eastl::string_view принимает и runtime-строку (переменную,
+// склеенный буфер) — форматирующая перегрузка такое в принципе не может
+// проверить на этапе компиляции.
+// ---------------------------------------------------------------------------
+
+#define TRY_DEFINE_LOG_LEVEL(FuncName, LevelEnumerator)                                                     \
+    inline void FuncName(eastl::string_view message,                                                        \
+                          std::source_location loc = std::source_location::current()) {                     \
+        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, loc, message);           \
+    }                                                                                                        \
+    inline void FuncName(LogCategory category, eastl::string_view message,                                  \
+                          std::source_location loc = std::source_location::current()) {                     \
+        detail::log_dispatch(LogLevel::LevelEnumerator, category, loc, message);                             \
+    }                                                                                                        \
+    template <typename... Args>                                                                             \
+        requires (sizeof...(Args) > 0)                                                                      \
+    void FuncName(LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {                           \
+        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, locFmt.loc,              \
+                              detail::format(locFmt.fmt, std::forward<Args>(args)...));                      \
+    }                                                                                                        \
+    template <typename... Args>                                                                             \
+        requires (sizeof...(Args) > 0)                                                                      \
+    void FuncName(LogCategory category, LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {     \
+        detail::log_dispatch(LogLevel::LevelEnumerator, category, locFmt.loc,                                \
+                              detail::format(locFmt.fmt, std::forward<Args>(args)...));                      \
+    }
+
+TRY_DEFINE_LOG_LEVEL(LogTrace, Trace)
+TRY_DEFINE_LOG_LEVEL(LogInfo, Info)
+TRY_DEFINE_LOG_LEVEL(LogWarn, Warning)
+TRY_DEFINE_LOG_LEVEL(LogError, Error)
+TRY_DEFINE_LOG_LEVEL(LogCritical, Critical)
+
+#undef TRY_DEFINE_LOG_LEVEL
+
 } // namespace tryengine::core
 
 // ---------------------------------------------------------------------------
-// Категория по умолчанию для файла.
-// Определите ДО #include "engine/core/Log.hpp" в конкретном .cpp, чтобы все
-// безкатегорийные вызовы TRY_LOG_* в этом файле шли в нужную категорию:
+// TRY_VARS — псевдо-f-строки. Единственное, что здесь ОБЯЗАНО быть макросом:
+// C++ не умеет резолвить идентификаторы внутри строкового литерала (даже с
+// рефлексией C++26), поэтому это макрос, который берёт текст выражения через
+// #x и сам генерирует "x = {}, y = {}", x, y. Работает и с произвольными
+// выражениями: TRY_VARS(width * 2). Максимум 8 аргументов за один вызов.
 //
-//   #define TRY_LOG_DEFAULT_CATEGORY ::tryengine::core::LogCategory::Graphics
-//   #include "engine/core/Log.hpp"
-// ---------------------------------------------------------------------------
-#ifndef TRY_LOG_DEFAULT_CATEGORY
-#define TRY_LOG_DEFAULT_CATEGORY ::tryengine::core::LogCategory::General
-#endif
-
-// ---------------------------------------------------------------------------
-// Основные макросы логирования
-// ---------------------------------------------------------------------------
-
-#define TRY_LOG_IMPL(level, category, fmt, ...) \
-    ::tryengine::core::Logger::instance().log( \
-        (level), (category), ::tryengine::core::detail::format(fmt __VA_OPT__(,) __VA_ARGS__))
-
-// Без категории — используют TRY_LOG_DEFAULT_CATEGORY.
-#define TRY_LOG_TRACE(fmt, ...) TRY_LOG_IMPL(::tryengine::core::LogLevel::Trace,    TRY_LOG_DEFAULT_CATEGORY, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_INFO(fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Info,     TRY_LOG_DEFAULT_CATEGORY, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_WARN(fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Warning,  TRY_LOG_DEFAULT_CATEGORY, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_ERROR(fmt, ...) TRY_LOG_IMPL(::tryengine::core::LogLevel::Error,    TRY_LOG_DEFAULT_CATEGORY, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_CRIT(fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Critical, TRY_LOG_DEFAULT_CATEGORY, fmt __VA_OPT__(,) __VA_ARGS__)
-
-// С явной категорией — когда в одном файле логика разных подсистем.
-#define TRY_LOG_TRACE_CAT(category, fmt, ...) TRY_LOG_IMPL(::tryengine::core::LogLevel::Trace,    category, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_INFO_CAT(category, fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Info,     category, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_WARN_CAT(category, fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Warning,  category, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_ERROR_CAT(category, fmt, ...) TRY_LOG_IMPL(::tryengine::core::LogLevel::Error,    category, fmt __VA_OPT__(,) __VA_ARGS__)
-#define TRY_LOG_CRIT_CAT(category, fmt, ...)  TRY_LOG_IMPL(::tryengine::core::LogLevel::Critical, category, fmt __VA_OPT__(,) __VA_ARGS__)
-
-// ---------------------------------------------------------------------------
-// TRY_VARS — псевдо-f-строки. C++ не умеет резолвить идентификаторы внутри
-// строкового литерала (даже с рефлексией C++26), поэтому это не настоящая
-// интерполяция, а макрос, который берёт текст выражения через #x и сам
-// генерирует "x = {}, y = {}", x, y — не нужно писать имя дважды.
-// Работает и с произвольными выражениями: TRY_VARS(width * 2).
-// Максимум 8 аргументов за один вызов.
+// Дальше — обычный вызов функции:
+//   LogInfo(TRY_VARS(width, height));
+//   LogInfo(LogCategory::Physics, TRY_VARS(width, height));
 // ---------------------------------------------------------------------------
 
 #define TRY_VARS_FMT_1(x)          #x " = {}"
@@ -182,22 +248,15 @@ eastl::string format(std::format_string<Args...> fmt, Args&&... args) {
     TRY_VARS_CAT(TRY_VARS_FMT_, TRY_VARS_NARG(__VA_ARGS__))(__VA_ARGS__), __VA_ARGS__
 
 // ---------------------------------------------------------------------------
-// Логирование переменных без явного форматирования (авто-f-строка)
+// Короткие имена без tryengine::core:: — именно using-declaration (не
+// using-directive), поэтому в глобальную область попадают ТОЛЬКО эти 5
+// функций (со всеми их перегрузками), а не весь namespace целиком.
+// Logger/LogLevel/LogCategory/ErrorCode и т.д. по-прежнему нужно
+// квалифицировать — но ими пользуются гораздо реже, чем самим логированием.
 // ---------------------------------------------------------------------------
-
-#define TRY_LOG_VARS_IMPL(level, category, ...) \
-TRY_LOG_IMPL((level), (category), TRY_VARS(__VA_ARGS__))
-
-// Без категории
-#define TRY_LOG_VARS_TRACE(...) TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Trace,    TRY_LOG_DEFAULT_CATEGORY, __VA_ARGS__)
-#define TRY_LOG_VARS_INFO(...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Info,     TRY_LOG_DEFAULT_CATEGORY, __VA_ARGS__)
-#define TRY_LOG_VARS_WARN(...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Warning,  TRY_LOG_DEFAULT_CATEGORY, __VA_ARGS__)
-#define TRY_LOG_VARS_ERROR(...) TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Error,    TRY_LOG_DEFAULT_CATEGORY, __VA_ARGS__)
-#define TRY_LOG_VARS_CRIT(...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Critical, TRY_LOG_DEFAULT_CATEGORY, __VA_ARGS__)
-
-// С явной категорией
-#define TRY_LOG_VARS_TRACE_CAT(cat, ...) TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Trace,    cat, __VA_ARGS__)
-#define TRY_LOG_VARS_INFO_CAT(cat, ...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Info,     cat, __VA_ARGS__)
-#define TRY_LOG_VARS_WARN_CAT(cat, ...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Warning,  cat, __VA_ARGS__)
-#define TRY_LOG_VARS_ERROR_CAT(cat, ...) TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Error,    cat, __VA_ARGS__)
-#define TRY_LOG_VARS_CRIT_CAT(cat, ...)  TRY_LOG_VARS_IMPL(::tryengine::core::LogLevel::Critical, cat, __VA_ARGS__)
+using tryengine::core::LogTrace;
+using tryengine::core::LogInfo;
+using tryengine::core::LogWarn;
+using tryengine::core::LogError;
+using tryengine::core::LogCritical;
+using tryengine::core::LogCategory;

@@ -1,106 +1,161 @@
-#include <cstring>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
-#include <daScript/simulate/cast.h>
-#include <glm/glm.hpp>
 
+#include "engine/core/ScriptSystem.hpp"
+#include "engine/graphics/RenderAdapter.hpp"
 #include "engine/graphics/RenderCommon.hpp"
+#include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/resources/AsyncFileManager.hpp"
+#include "engine/resources/ResourceManager.hpp"
 
-namespace das {
+#include "engine/core/InputService.hpp"
+#include "engine/core/InputState.hpp"
 
-//---------------------------------------------------------
-// glm::vec4 <-> float4
-//---------------------------------------------------------
+using namespace tryengine::core;
 
-template <>
-struct typeFactory<glm::vec4> {
-    static __forceinline TypeDeclPtr make(const ModuleLibrary& lib) { return typeFactory<float4>::make(lib); }
-};
+// Биндинг enum'ов — ДО using namespace das (иначе коллизии имён)
+DAS_BASE_BIND_ENUM(Key, Key,
+    Unknown,
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9, Num0,
+    Return, Escape, Backspace, Tab, Space,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    Right, Left, Down, Up,
+    LCtrl, LShift, LAlt, LGui, RCtrl, RShift, RAlt, RGui,
+    Count
+)
 
-template <>
-struct cast<glm::vec4> {
-    static __forceinline glm::vec4 to(vec4f value) {
-        static_assert(sizeof(glm::vec4) == sizeof(vec4f));
-        return prune<glm::vec4, vec4f>::from(value);
-    }
-
-    static __forceinline vec4f from(const glm::vec4& value) {
-        static_assert(sizeof(glm::vec4) == sizeof(vec4f));
-        return prune<vec4f, glm::vec4>::from(value);
-    }
-};
-
-template <>
-struct cast<const glm::vec4> : cast<glm::vec4> {};
-
-}  // namespace das
-
-//---------------------------------------------------------
-// C++ API
-//---------------------------------------------------------
-
-inline tryengine::graphics::PointLightGPU make_point_light_gpu(glm::vec4 position_radius, glm::vec4 color_intensity) {
-    return {position_radius, color_intensity};
-}
-
-using PointLightGPUVector = eastl::vector<tryengine::graphics::PointLightGPU>;
-
-MAKE_TYPE_FACTORY(PointLightGPU, tryengine::graphics::PointLightGPU);
-MAKE_TYPE_FACTORY(PointLightGPUVector, PointLightGPUVector);
+DAS_BASE_BIND_ENUM(Mouse, Mouse,
+    Left, Middle, Right, X1, X2, Count
+)
 
 using namespace das;
 
-//---------------------------------------------------------
-// Annotation
-//---------------------------------------------------------
+MAKE_TYPE_FACTORY(InputState, InputState)
 
-struct PointLightGPUAnnotation : ManagedStructureAnnotation<tryengine::graphics::PointLightGPU, false> {
-    PointLightGPUAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("PointLightGPU", ml) {
-        addField<DAS_BIND_MANAGED_FIELD(position_radius)>("position_radius", "position_radius");
-        addField<DAS_BIND_MANAGED_FIELD(color_intensity)>("color_intensity", "color_intensity");
+struct InputStateAnnotation
+    : ManagedStructureAnnotation<InputState, false /*canNew*/, false /*canDelete*/>
+{
+    InputStateAnnotation(ModuleLibrary & ml)
+        : ManagedStructureAnnotation("InputState", ml)
+    {
+        // Только сырые данные. IsDown/Pressed/Released НЕ биндим —
+        // они реализуются прямо в daslang через индексацию по массиву.
+        addField<DAS_BIND_MANAGED_FIELD(isDown)>("isDown", "isDown");
+        addField<DAS_BIND_MANAGED_FIELD(justPressed)>("justPressed", "justPressed");
+        addField<DAS_BIND_MANAGED_FIELD(justReleased)>("justReleased", "justReleased");
+
+        addField<DAS_BIND_MANAGED_FIELD(mouseX)>("mouseX", "mouseX");
+        addField<DAS_BIND_MANAGED_FIELD(mouseY)>("mouseY", "mouseY");
+        addField<DAS_BIND_MANAGED_FIELD(mouseDeltaX)>("mouseDeltaX", "mouseDeltaX");
+        addField<DAS_BIND_MANAGED_FIELD(mouseDeltaY)>("mouseDeltaY", "mouseDeltaY");
+
+        addField<DAS_BIND_MANAGED_FIELD(mouseButtons)>("mouseButtons", "mouseButtons");
+        addField<DAS_BIND_MANAGED_FIELD(mouseJustPressed)>("mouseJustPressed", "mouseJustPressed");
+        addField<DAS_BIND_MANAGED_FIELD(mouseJustReleased)>("mouseJustReleased", "mouseJustReleased");
     }
 };
 
-//---------------------------------------------------------
-// Bulk copy: array<PointLightGPU> (daslang) -> std::vector<PointLightGPU> (C++)
-//---------------------------------------------------------
-
-vec4f copy_lights_interop(Context & ctx, SimNode_CallBase * call, vec4f * args) {
-    Array * src = cast<Array *>::to(args[0]);            // array<PointLightGPU> -- any
-    PointLightGPUVector * dst = cast<PointLightGPUVector *>::to(args[1]); // конкретный ref-тип
-
-    dst->resize(src->size);
-    if (src->size > 0) {
-        memcpy(dst->data(), src->data,
-               size_t(src->size) * sizeof(tryengine::graphics::PointLightGPU));
+InputState* get_input_state(Context * ctx) {
+    auto * try_ctx = static_cast<tryengine::core::TryengineContext *>(ctx);
+    auto * input = try_ctx->engine.TryGet<tryengine::core::InputService>();
+    if (!input) {
+        LogError("InputState not found");
+        return nullptr;
     }
-
-    return v_zero();
+    LogInfo("InputState found!");
+    return &input->GetInputState();
 }
 
-//---------------------------------------------------------
-// Module
-//---------------------------------------------------------
-
-class Module_Renderer : public Module {
+class Module_Input : public Module {
 public:
-    Module_Renderer() : Module("tryRenderer") {
+    Module_Input() : Module("tryInput") {
         ModuleLibrary lib(this);
         lib.addBuiltInModule();
 
-        addAnnotation(new PointLightGPUAnnotation(lib));
-        addVectorAnnotation<PointLightGPUVector>(this, lib, "PointLightGPUVector");
+        addAnnotation(new InputStateAnnotation(lib));
 
-        addExtern<DAS_BIND_FUN(make_point_light_gpu), SimNode_ExtFuncCallAndCopyOrMove>(
-            *this, lib, "make_point_light", SideEffects::none, "make_point_light_gpu")
-            ->args({"position_radius", "color_intensity"});
+        addEnumeration(new EnumerationKey());
+        addEnumeration(new EnumerationMouse());
 
-        // arg0 = vec4f ("any" array<T> — берём array<PointLightGPU>)
-        // arg1 = PointLightGPUVector& — конкретный mutable ref, отсюда и modifyArgument проходит валидацию
-        addInterop<copy_lights_interop, void, vec4f, PointLightGPUVector &>(
-            *this, lib, "copy_lights",
-            SideEffects::modifyArgument, "copy_lights_interop")
-            ->args({"arr", "outVec"});
+        addExtern<DAS_BIND_FUN(get_input_state)>(
+            *this, lib, "get_input_state",
+            SideEffects::accessGlobal, "get_input_state");
+
+        verifyAotReady();
+    }
+};
+
+REGISTER_DYN_MODULE(Module_Input, Module_Input);
+REGISTER_MODULE(Module_Input);
+
+
+uint64_t GetSlotMapValueMesh(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
+        auto resource_handle = res_manager->Get<tryengine::graphics::Mesh>(guid);
+
+        if (!resource_handle.has_value())
+            LogError(resource_handle.error().Message());
+
+        // emplace возвращает Key, который автоматически приводится к uint64_t!
+        return render_adapter->slot_map_mesh.emplace(*resource_handle);
+    }
+
+    LogError("RenderAdapter not found");
+    return 0;
+}
+
+uint64_t GetSlotMapValueMaterial(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
+        auto resource_handle = res_manager->Get<tryengine::graphics::Material>(guid);
+
+        if (!resource_handle.has_value())
+            LogError(resource_handle.error().Message());
+
+        // emplace сохраняет хэндл материала в slot_map_material
+        return render_adapter->slot_map_material.emplace(*resource_handle);
+    }
+
+    LogError("RenderAdapter not found");
+    return 0;
+}
+
+class Module_Resources : public das::Module {
+public:
+    Module_Resources() : Module("tryResources") {
+        das::ModuleLibrary lib(this);
+        lib.addBuiltInModule();
+
+        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMesh)>(*this, lib, "GetSlotMapValueMesh",
+                                                       das::SideEffects::accessGlobal, "GetSlotMapValueMesh");
+
+        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMaterial)>(*this, lib, "GetSlotMapValueMaterial",
+                                                       das::SideEffects::accessGlobal, "GetSlotMapValueMaterial");
+
+        verifyAotReady();
+    } // das::SimNode_ExtFuncCallAndCopyOrMove
+};
+
+REGISTER_DYN_MODULE(Module_Resources, Module_Resources);
+REGISTER_MODULE(Module_Resources);
+
+class Module_Renderer : public das::Module {
+public:
+    Module_Renderer() : Module("tryRenderer") {
+        das::ModuleLibrary lib(this);
+        lib.addBuiltInModule();
     }
 };
 

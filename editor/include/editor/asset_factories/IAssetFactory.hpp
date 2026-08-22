@@ -5,7 +5,7 @@
 #include <string>
 
 #include "editor/meta/AssetMetaHeader.hpp"
-#include "engine/core/RandomUtil.hpp"
+#include "engine/core/Random.hpp"
 
 namespace tryeditor {
 
@@ -38,7 +38,7 @@ public:
 
         // 2. Создаем мету
         AssetMetaHeader header;
-        header.guid = tryengine::core::RandomUtil::GenerateInt64();
+        header.guid = tryengine::core::random::GenerateInt64();
         header.importer_type = "NativeImporter";
         // header.asset_type = GetAssetType();
 
@@ -61,7 +61,7 @@ public:
 
         // 2. Создаем мету
         AssetMetaHeader header;
-        header.guid = tryengine::core::RandomUtil::GenerateInt64();
+        header.guid = tryengine::core::random::GenerateInt64();
         header.importer_type = "NativeImporter";
         // header.asset_type = GetAssetType();
 
