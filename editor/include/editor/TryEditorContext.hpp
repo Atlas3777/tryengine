@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Editor.hpp"
-#include "engine/core/ScriptSystem.hpp"
+#include "editor/Editor.hpp"
+#include "engine/core/TryengineContext.hpp"
 
 namespace tryeditor {
 
@@ -13,4 +13,4 @@ public:
         : TryengineContext(eng, stackSize, ph), editor(ed) {}
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

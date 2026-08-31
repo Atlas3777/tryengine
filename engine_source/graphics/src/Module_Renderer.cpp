@@ -1,64 +1,54 @@
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
-#include "engine/core/ScriptSystem.hpp"
+#include "engine/core/InputService.hpp"
+#include "engine/core/InputState.hpp"
+#include "engine/core/TryengineContext.hpp"
 #include "engine/graphics/RenderAdapter.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
-#include "engine/core/InputService.hpp"
-#include "engine/core/InputState.hpp"
-
 using namespace tryengine::core;
 
 // Биндинг enum'ов — ДО using namespace das (иначе коллизии имён)
-DAS_BASE_BIND_ENUM(Key, Key,
-    Unknown,
-    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-    Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9, Num0,
-    Return, Escape, Backspace, Tab, Space,
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-    Right, Left, Down, Up,
-    LCtrl, LShift, LAlt, LGui, RCtrl, RShift, RAlt, RGui,
-    Count
-)
+DAS_BASE_BIND_ENUM(Key, Key, Unknown, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+                   Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9, Num0, Return, Escape, Backspace, Tab, Space,
+                   F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, Right, Left, Down, Up, LCtrl, LShift, LAlt, LGui,
+                   RCtrl, RShift, RAlt, RGui, Count)
 
-DAS_BASE_BIND_ENUM(Mouse, Mouse,
-    Left, Middle, Right, X1, X2, Count
-)
+DAS_BASE_BIND_ENUM(Mouse, Mouse, Left, Middle, Right, X1, X2, Count)
+
+// Биндинг enum TaskStatus
+DAS_BASE_BIND_ENUM(tryengine::resources::TaskStatus, TaskStatus, Unused, Pending, Completed, Failed)
 
 using namespace das;
 
 MAKE_TYPE_FACTORY(InputState, InputState)
 
-struct InputStateAnnotation
-    : ManagedStructureAnnotation<InputState, false /*canNew*/, false /*canDelete*/>
-{
-    InputStateAnnotation(ModuleLibrary & ml)
-        : ManagedStructureAnnotation("InputState", ml)
-    {
+struct InputStateAnnotation : ManagedStructureAnnotation<InputState, false /*canNew*/, false /*canDelete*/> {
+    InputStateAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("InputState", ml) {
         // Только сырые данные. IsDown/Pressed/Released НЕ биндим —
         // они реализуются прямо в daslang через индексацию по массиву.
-        addField<DAS_BIND_MANAGED_FIELD(isDown)>("isDown", "isDown");
-        addField<DAS_BIND_MANAGED_FIELD(justPressed)>("justPressed", "justPressed");
-        addField<DAS_BIND_MANAGED_FIELD(justReleased)>("justReleased", "justReleased");
+        addField<DAS_BIND_MANAGED_FIELD(is_down)>("isDown", "is_down");
+        addField<DAS_BIND_MANAGED_FIELD(just_pressed)>("justPressed", "just_pressed");
+        addField<DAS_BIND_MANAGED_FIELD(just_released)>("justReleased", "just_released");
 
-        addField<DAS_BIND_MANAGED_FIELD(mouseX)>("mouseX", "mouseX");
-        addField<DAS_BIND_MANAGED_FIELD(mouseY)>("mouseY", "mouseY");
-        addField<DAS_BIND_MANAGED_FIELD(mouseDeltaX)>("mouseDeltaX", "mouseDeltaX");
-        addField<DAS_BIND_MANAGED_FIELD(mouseDeltaY)>("mouseDeltaY", "mouseDeltaY");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_x)>("mouseX", "mouse_x");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_y)>("mouseY", "mouse_y");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_delta_x)>("mouseDeltaX", "mouse_delta_x");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_delta_y)>("mouseDeltaY", "mouse_delta_y");
 
-        addField<DAS_BIND_MANAGED_FIELD(mouseButtons)>("mouseButtons", "mouseButtons");
-        addField<DAS_BIND_MANAGED_FIELD(mouseJustPressed)>("mouseJustPressed", "mouseJustPressed");
-        addField<DAS_BIND_MANAGED_FIELD(mouseJustReleased)>("mouseJustReleased", "mouseJustReleased");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_buttons)>("mouseButtons", "mouse_buttons");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_just_pressed)>("mouseJustPressed", "mouse_just_pressed");
+        addField<DAS_BIND_MANAGED_FIELD(mouse_just_released)>("mouseJustReleased", "mouse_just_released");
     }
 };
 
-InputState* get_input_state(Context * ctx) {
-    auto * try_ctx = static_cast<tryengine::core::TryengineContext *>(ctx);
-    auto * input = try_ctx->engine.TryGet<tryengine::core::InputService>();
+InputState* get_input_state(das::Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    auto* input = try_ctx->engine.TryGet<InputService>();
     if (!input) {
         LogError("InputState not found");
         return nullptr;
@@ -78,9 +68,8 @@ public:
         addEnumeration(new EnumerationKey());
         addEnumeration(new EnumerationMouse());
 
-        addExtern<DAS_BIND_FUN(get_input_state)>(
-            *this, lib, "get_input_state",
-            SideEffects::accessGlobal, "get_input_state");
+        addExtern<DAS_BIND_FUN(get_input_state)>(*this, lib, "get_input_state", SideEffects::accessGlobal,
+                                                 "get_input_state");
 
         verifyAotReady();
     }
@@ -88,7 +77,6 @@ public:
 
 REGISTER_DYN_MODULE(Module_Input, Module_Input);
 REGISTER_MODULE(Module_Input);
-
 
 uint64_t GetSlotMapValueMesh(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
@@ -100,8 +88,10 @@ uint64_t GetSlotMapValueMesh(uint64_t guid, das::Context* ctx) {
     if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
         auto resource_handle = res_manager->Get<tryengine::graphics::Mesh>(guid);
 
-        if (!resource_handle.has_value())
+        if (!resource_handle.has_value()) {
             LogError(resource_handle.error().Message());
+            return 0;
+        }
 
         // emplace возвращает Key, который автоматически приводится к uint64_t!
         return render_adapter->slot_map_mesh.emplace(*resource_handle);
@@ -121,9 +111,10 @@ uint64_t GetSlotMapValueMaterial(uint64_t guid, das::Context* ctx) {
     if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
         auto resource_handle = res_manager->Get<tryengine::graphics::Material>(guid);
 
-        if (!resource_handle.has_value())
+        if (!resource_handle.has_value()) {
             LogError(resource_handle.error().Message());
-
+            return 0;
+        }
         // emplace сохраняет хэндл материала в slot_map_material
         return render_adapter->slot_map_material.emplace(*resource_handle);
     }
@@ -139,13 +130,13 @@ public:
         lib.addBuiltInModule();
 
         das::addExtern<DAS_BIND_FUN(GetSlotMapValueMesh)>(*this, lib, "GetSlotMapValueMesh",
-                                                       das::SideEffects::accessGlobal, "GetSlotMapValueMesh");
+                                                          das::SideEffects::accessGlobal, "GetSlotMapValueMesh");
 
-        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMaterial)>(*this, lib, "GetSlotMapValueMaterial",
-                                                       das::SideEffects::accessGlobal, "GetSlotMapValueMaterial");
+        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMaterial)>(
+            *this, lib, "GetSlotMapValueMaterial", das::SideEffects::accessGlobal, "GetSlotMapValueMaterial");
 
         verifyAotReady();
-    } // das::SimNode_ExtFuncCallAndCopyOrMove
+    }  // das::SimNode_ExtFuncCallAndCopyOrMove
 };
 
 REGISTER_DYN_MODULE(Module_Resources, Module_Resources);
@@ -161,3 +152,113 @@ public:
 
 REGISTER_DYN_MODULE(Module_Renderer, Module_Renderer);
 REGISTER_MODULE(Module_Renderer);
+
+using namespace tryengine::resources;
+
+MAKE_TYPE_FACTORY(FileHandle, FileHandle)
+
+MAKE_TYPE_FACTORY(FileTime, FileTime)
+
+struct FileTimeAnnotation : ManagedStructureAnnotation<FileTime, true, true> {
+    FileTimeAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("FileTime", ml) {
+        addField<DAS_BIND_MANAGED_FIELD(sec)>("sec", "sec");
+        addField<DAS_BIND_MANAGED_FIELD(nsec)>("nsec", "nsec");
+    }
+};
+
+struct FileHandleAnnotation : ManagedStructureAnnotation<FileHandle, false, true> {
+    FileHandleAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("FileHandle", ml) {
+        addProperty<DAS_BIND_MANAGED_PROP(IsReady)>("IsReady", "IsReady");
+        addProperty<DAS_BIND_MANAGED_PROP(IsFailed)>("IsFailed", "IsFailed");
+        addProperty<DAS_BIND_MANAGED_PROP(IsPending)>("IsPending", "IsPending");
+        addProperty<DAS_BIND_MANAGED_PROP(GetFileSize)>("GetFileSize", "GetFileSize");
+    }
+
+
+    bool isLocal() const override { return true; }
+    bool canMove() const override { return true; }
+    bool canCopy() const override { return false; }
+    bool hasNonTrivialDtor() const override { return true; }
+};
+
+// --- Функции ввода-вывода, извлекающие AsyncFileManager из TryengineContext ---
+
+FileHandle ReadChunkAsync(const char* path, uint64_t offset, uint32_t size, Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    auto* manager = try_ctx ? try_ctx->engine.TryGet<AsyncFileManager>() : nullptr;
+    if (!manager) {
+        LogError("AsyncFileManager not found in TryengineContext");
+        return FileHandle{};
+    }
+    return manager->ReadChunkAsyncCopy(path, offset, size);
+}
+
+FileHandle WriteChunkAsync(const char* path, const das::TArray<uint8_t>& data, uint64_t offset, Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    auto* manager = try_ctx ? try_ctx->engine.TryGet<AsyncFileManager>() : nullptr;
+    if (!manager) {
+        LogError("AsyncFileManager not found in TryengineContext");
+        return FileHandle{};
+    }
+    eastl::span span_data(reinterpret_cast<const uint8_t*>(data.data), data.size);
+    return manager->WriteChunkAsyncCopy(path, span_data, offset);
+}
+
+FileHandle GetStatAsync(const char* path, Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    auto* manager = try_ctx ? try_ctx->engine.TryGet<AsyncFileManager>() : nullptr;
+    if (!manager) {
+        LogError("AsyncFileManager not found in TryengineContext");
+        return FileHandle{};
+    }
+    return manager->GetStatAsyncCopy(path);
+}
+
+das::Array GetDataSpan(tryengine::resources::FileHandle& self) {
+    das::Array arr{};
+
+    auto* data = self.GetData().data();
+
+    arr.data = (char*)(data);
+    arr.size = static_cast<uint32_t>(self.GetData().size());
+    arr.capacity = static_cast<uint32_t>(self.GetData().size());
+    return arr;
+}
+
+void finalize_file_handle(FileHandle& handle) {
+    handle.Release();
+}
+
+class Module_AsyncFileManager : public das::Module {
+public:
+    Module_AsyncFileManager() : Module("tryAsyncFile") {
+        das::ModuleLibrary lib(this);
+        lib.addBuiltInModule();
+
+        // Аннотации и enum
+        addAnnotation(new FileTimeAnnotation(lib));
+        addAnnotation(new FileHandleAnnotation(lib));
+        addEnumeration(new EnumerationTaskStatus());
+
+        // Вспомогательные функции
+        addExtern<DAS_BIND_FUN(finalize_file_handle)>(
+            *this, lib, "finalize_file_handle", SideEffects::modifyArgument, "finalize_file_handle");
+
+        addExtern<DAS_BIND_FUN(ReadChunkAsync), das::SimNode_ExtFuncCallAndCopyOrMove>(
+            *this, lib, "ReadChunkAsync", SideEffects::accessGlobal, "ReadChunkAsync");
+
+        addExtern<DAS_BIND_FUN(WriteChunkAsync), das::SimNode_ExtFuncCallAndCopyOrMove>(
+            *this, lib, "WriteChunkAsync", SideEffects::accessGlobal, "WriteChunkAsync");
+
+        addExtern<DAS_BIND_FUN(GetStatAsync), das::SimNode_ExtFuncCallAndCopyOrMove>(
+            *this, lib, "GetStatAsync", SideEffects::accessGlobal, "GetStatAsync");
+
+        addExtern<DAS_BIND_FUN(GetDataSpan), das::SimNode_ExtFuncCallAndCopyOrMove>(
+            *this, lib, "GetDataSpan", das::SideEffects::none, "GetDataSpan");
+
+        verifyAotReady();
+    }
+};
+
+REGISTER_DYN_MODULE(Module_AsyncFileManager, Module_AsyncFileManager);
+REGISTER_MODULE(Module_AsyncFileManager);

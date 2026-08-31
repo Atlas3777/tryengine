@@ -18,7 +18,7 @@ struct ProducedArtifact {
 };
 
 struct ImportResult {
-    uint64_t main_guid{0};
+    uint64_t main_guid = 0;
     eastl::vector<ProducedArtifact> artifacts;
     eastl::vector<uint8_t> meta_bytes;
 };

@@ -1,4 +1,3 @@
-// engine/core/Log.hpp
 #pragma once
 
 #include <EASTL/string.h>

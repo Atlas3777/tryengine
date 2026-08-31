@@ -1,4 +1,4 @@
-#include "editor/InputMapper.hpp"
+#include "engine/graphics/InputMapper.hpp"
 
 namespace tryeditor {
 
@@ -8,9 +8,9 @@ void InputMapper::ProcessEvent(const SDL_Event& event, tryengine::core::InputSta
             auto key = static_cast<uint16_t>(event.key.scancode);
             if (key < static_cast<uint16_t>(tryengine::core::Key::Count)) {
                 if (!event.key.repeat) {
-                    state.justPressed[key] = true;
+                    state.just_pressed[key] = true;
                 }
-                state.isDown[key] = true;
+                state.is_down[key] = true;
             }
             break;
         }
@@ -18,27 +18,27 @@ void InputMapper::ProcessEvent(const SDL_Event& event, tryengine::core::InputSta
         case SDL_EVENT_KEY_UP: {
             auto key = static_cast<uint16_t>(event.key.scancode);
             if (key < static_cast<uint16_t>(tryengine::core::Key::Count)) {
-                state.justReleased[key] = true;
-                state.isDown[key] = false;
+                state.just_released[key] = true;
+                state.is_down[key] = false;
             }
             break;
         }
 
         case SDL_EVENT_MOUSE_MOTION: {
-            state.mouseX = event.motion.x;
-            state.mouseY = event.motion.y;
-            state.mouseDeltaX += event.motion.xrel;
-            state.mouseDeltaY += event.motion.yrel;
+            state.mouse_x = event.motion.x;
+            state.mouse_y = event.motion.y;
+            state.mouse_delta_x += event.motion.xrel;
+            state.mouse_delta_y += event.motion.yrel;
             break;
         }
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN: {
             int btnIdx = event.button.button - 1;
             if (btnIdx >= 0 && btnIdx < static_cast<int>(tryengine::core::Mouse::Count)) {
-                if (!state.mouseButtons[btnIdx]) {
-                    state.mouseJustPressed[btnIdx] = true;
+                if (!state.mouse_buttons[btnIdx]) {
+                    state.mouse_just_pressed[btnIdx] = true;
                 }
-                state.mouseButtons[btnIdx] = true;
+                state.mouse_buttons[btnIdx] = true;
             }
             break;
         }
@@ -46,8 +46,8 @@ void InputMapper::ProcessEvent(const SDL_Event& event, tryengine::core::InputSta
         case SDL_EVENT_MOUSE_BUTTON_UP: {
             int btnIdx = event.button.button - 1;
             if (btnIdx >= 0 && btnIdx < static_cast<int>(tryengine::core::Mouse::Count)) {
-                state.mouseJustReleased[btnIdx] = true;
-                state.mouseButtons[btnIdx] = false;
+                state.mouse_just_released[btnIdx] = true;
+                state.mouse_buttons[btnIdx] = false;
             }
             break;
         }

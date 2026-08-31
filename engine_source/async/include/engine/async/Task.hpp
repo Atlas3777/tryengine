@@ -71,13 +71,18 @@ struct TaskPromise final : TaskPromiseBase {
 
     void return_value(Result<T> value) { result.emplace(std::move(value)); }
 
-
     void unhandled_exception() noexcept {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
         try {
             std::rethrow_exception(std::current_exception());
         } catch (const std::exception& e) {
             result.emplace(Error(e.what()));
+        } catch (...) {
+            result.emplace(Error("Unknown exception in coroutine"));
         }
+#else
+        TRY_CHECK(false, "Unhandled exception reached coroutine in -fno-exceptions mode");
+#endif
     }
 };
 
@@ -92,11 +97,17 @@ struct TaskPromise<void> final : TaskPromiseBase {
     void return_value(Result<void> value) { result.emplace(std::move(value)); }
 
     void unhandled_exception() noexcept {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
         try {
             std::rethrow_exception(std::current_exception());
         } catch (const std::exception& e) {
             result.emplace(Error(e.what()));
+        } catch (...) {
+            result.emplace(Error("Unknown exception in coroutine"));
         }
+#else
+        TRY_CHECK(false, "Unhandled exception reached coroutine in -fno-exceptions mode");
+#endif
     }
 };
 

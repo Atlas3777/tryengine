@@ -8,7 +8,6 @@ set(TINYGLTF3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TINYGLTF3_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(imgui        GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.6-docking GIT_SHALLOW TRUE)
-#FetchContent_Declare(imguizmo     GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git GIT_TAG master GIT_SHALLOW TRUE)
 FetchContent_Declare(stb          GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG master GIT_SHALLOW TRUE)
 FetchContent_Declare(tinygltf     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.1 GIT_SHALLOW TRUE)
 FetchContent_Declare(bc7enc       GIT_REPOSITORY https://github.com/richgel999/bc7enc_rdo.git GIT_TAG master GIT_SHALLOW TRUE SOURCE_SUBDIR "DO_NOT_BUILD")
@@ -55,8 +54,6 @@ target_include_directories(imgui_lib PUBLIC
 )
 target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
 
-#target_link_libraries(imguizmo PRIVATE imgui_lib)
-
 add_library(bc7enc_lib STATIC
         ${bc7enc_SOURCE_DIR}/bc7enc.cpp
         ${bc7enc_SOURCE_DIR}/bc7decomp.cpp
@@ -99,7 +96,6 @@ target_link_libraries(editor_core PUBLIC
         engine::graphics
         engine::async
         imgui_lib
-#        imguizmo
         tinygltf
         stb_image
         bc7enc_lib

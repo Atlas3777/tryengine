@@ -3,14 +3,10 @@ Language: Cpp
 BasedOnStyle: Google
 ColumnLimit: 120
 IndentWidth: 4
-AccessModifierOffset: -4 # Выравнивает public/private по левому краю класса (вместо отступа в 2 пробела)
+AccessModifierOffset: -4
 
 # Улучшенная сортировка инклудов
 IncludeCategories:
-  - Regex: '^<imgui\.h>'
-    Priority: 0
-  - Regex: '^<ImGuizmo\.h>'
-    Priority: 1
   - Regex: '^<.*' # Системные заголовочные файлы <...>
     Priority: 2
   - Regex: '^".*' # Пользовательские заголовочные файлы "..."

@@ -3,6 +3,7 @@
 #include <EASTL/hash_map.h>
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
+#include <mutex>
 
 #include "editor/FileWatcher.hpp"
 #include "editor/gui/ResourceLoader.h"
@@ -54,19 +55,24 @@ public:
     void OnFileDeleted(const char* path);
 
 private:
-    tryengine::async::Task<void> ProcessDomain(DomainScanResult& scan_data, tryengine::resources::AsyncFileManager& file_manager, StorageDomain domain);
+    tryengine::async::Task<void> ProcessDomain(DomainScanResult& scan_data,
+                                              tryengine::resources::AsyncFileManager& file_manager,
+                                              StorageDomain domain);
 
-    // Вспомогательный метод для проставления GUID в UiFolder и заполнения хеш-карт
-    tryengine::async::Task<void> ResolveExistingGuids(DomainScanResult& scan_data, tryengine::resources::AsyncFileManager& file_manager);
+    tryengine::async::Task<void> ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
+                                                  tryengine::resources::AsyncFileManager& file_manager);
 
-    tryengine::async::Task<void> ImportOrphans(DomainScanResult& scan_data, tryengine::resources::AsyncFileManager& file_manager) const;
-    tryengine::async::Task<void> ReimportStaleAssets(const DomainScanResult& scan_data, tryengine::resources::AsyncFileManager& file_manager) const;
+    tryengine::async::Task<void> ProcessExistingAsset(eastl::string asset_path, eastl::string meta_path,
+                                                      AssetMountPoint mount,
+                                                      tryengine::resources::AsyncFileManager& file_manager);
 
-    void RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid, const eastl::vector<uint64_t>& sub_assets) const;
+    void RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,
+                               const eastl::vector<uint64_t>& sub_assets) const;
 
     inline static eastl::vector<UiFolder> engine_folders_;
     inline static eastl::vector<UiFolder> game_folders_;
 
+    mutable std::mutex db_mutex_;
     eastl::hash_map<uint64_t, eastl::string> guid_to_path_;
     eastl::hash_map<eastl::string, uint64_t> path_to_guid_;
 

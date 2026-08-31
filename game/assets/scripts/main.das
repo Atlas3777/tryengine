@@ -1,28 +1,30 @@
 options gen2
 
 require daslib/decs
+
 require tryengine/Types
-require tryeditor/Hierarchy
-require tryeditor/Mover
-require daslib/math_boost
+require tryengine/Scene
 require tryengine/Input
+require tryengine/Render
 
 [export]
-def start(){
-    // let chair_eid = create_entity() @(eid, cmp) {
-    //     cmp.tag := "Sun"
-    //     apply_decs_template(cmp, Relationship())
-    //     apply_decs_template(cmp, Transform(
-    //         position = float3(0.0f, 100.0f, 0.0f),
-    //         rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-    //         scale = float3(1.0f, 1.0f, 1.0f)
-    //     ))
-    //     apply_decs_template(cmp, PointLight(
-    //         intensity = 1,
-    //         color = float3(2, 1, 1),
-    //         radius = 150
-    //     ))
-    // }
+def Start(){
+    update_input()
+
+    let chair_eid = create_entity() @(eid, cmp) {
+        cmp.tag := "Sun"
+        apply_decs_template(cmp, Relationship())
+        apply_decs_template(cmp, Transform(
+            position = float3(0.0f, 100.0f, 0.0f),
+            rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
+            scale = float3(1.0f, 1.0f, 1.0f)
+        ))
+        apply_decs_template(cmp, PointLight(
+            intensity = 1.0f,
+            color = float3(2f, 1f, 1f),
+            radius = 150.0f
+        ))
+    }
 
     let laptop_eid = create_entity() @(eid, cmp) {
         cmp.tag := "PointLight"
@@ -33,17 +35,17 @@ def start(){
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
          apply_decs_template(cmp, PointLight(
-            intensity = 1,
-            color = float3(0, 0, 1),
-            radius = 30
+            intensity = 1.0f,
+            color = float3(0f, 0f, 1f),
+            radius = 30.0f
         ))
     }
 
     let camera_erd = create_entity() @(eid, cmp){
         cmp.tag := "Camera"
         apply_decs_template(cmp, Transform(
-            position = float3(0.0f, 2.0f, 5.0f),
-            rotation = float4(0, 0, 0, 1),
+            position = float3(0.0f, 0.0f, 2.0f),
+            rotation = float4(0f, 0f, 0f, 1f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
         apply_decs_template(cmp, Camera(
@@ -57,32 +59,22 @@ def start(){
     commit()
 }
 
-def Spawn(){
-    let test_eid = create_entity() @(eid, cmp) {
-        cmp.tag := "teest"
-        apply_decs_template(cmp, Transform(
-            position = float3(0.0f, 0.0f, 0.0f),
-            rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-            scale = float3(1.0f, 1.0f, 1.0f)
-        ))
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
-        apply_decs_template(cmp, Relationship())
-    }
-    commit()
-}
-
 [export]
-def EditorUpdate(dt : float){
-    if (pressed(Key.K))
-        Spawn()
-    Move(dt)
-}
+def Update() {
 
-[export]
-def update(time : float) {
-    query()$(var t : Transform, var l : PointLight) {
-        t.position.y += sin(time)
+    query()$(camera : Camera, var t : Transform) {
+        t.position.z += 0.01
     }
 
+    query()$(var t : Transform, var inputState : float3){
+        inputState = float3(0, 0, 0)
+        if (is_down(Key.I)) { inputState.y =  1.0f }
+        if (is_down(Key.K)) { inputState.y = -1.0f }
+        if (is_down(Key.J)) { inputState.x = -1.0f }
+        if (is_down(Key.L)) { inputState.x =  1.0f }
+    }
+
+    query()$(var t : Transform, let inputState : float3, let speed : float){
+        t.position += inputState * 0.08 * speed;
+    }
 }

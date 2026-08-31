@@ -5,17 +5,18 @@
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/async/GlobalExecutors.hpp"
-#include "engine/async/SyncWait.hpp"
-#include "engine/async/WhenAll.hpp"
+#include "engine/async/RunAndForget.hpp"
 #include "engine/core/FormatUtils.h"
 #include "engine/core/MakeError.hpp"
 #include "engine/resources/AssetRegistry.hpp"
 #include "engine/resources/ReadFullFile.hpp"
+#include "EASTL/hash_map.h"
 
 namespace tryeditor {
 
 using namespace tryengine::resources;
 using namespace tryengine::async;
+using tryengine::core::Error;
 
 const char* meta_ext = ".meta";
 
@@ -44,7 +45,7 @@ AssetSourceDatabase::AssetSourceDatabase(ImportSystem& import_system, AssetRegis
 
 void AssetSourceDatabase::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,
                                                 const eastl::vector<uint64_t>& sub_assets) const {
-    LogInfo(LogCategory::Importer,"add to registry: main guid - {}", main_guid);
+    LogInfo(LogCategory::Importer, "add to registry: main guid - {}", main_guid);
     if (sub_assets.empty()) {
         registry_.RegisterArtifact(main_guid,
                                    tryengine::fmt::format("{}/runtime/{}/0", mount.artifacts_dir.c_str(), main_guid));
@@ -62,7 +63,6 @@ Task<void> AssetSourceDatabase::InitEngineContentSync(AsyncFileManager& file_man
         .name = "engine", .assets_dir = "engine_content/assets", .artifacts_dir = "engine_content/artifacts"};
 
     DomainScanResult scan_data{.mount = engine_mount};
-    // Шаг 1: Единственный сканирующий обход ФС
     LoadResourcesAndBuildUi(engine_mount.assets_dir.c_str(), scan_data.assets, scan_data.metas, scan_data.orphan_assets,
                             scan_data.orphan_metas, scan_data.folders);
 
@@ -78,7 +78,6 @@ Task<void> AssetSourceDatabase::AsyncLoadGameContent(AsyncFileManager& file_mana
     AssetMountPoint game_mount{.name = "game", .assets_dir = "game/assets", .artifacts_dir = "game/artifacts"};
 
     DomainScanResult scan_data{.mount = game_mount};
-    // Шаг 1: Единственный сканирующий обход ФС
     LoadResourcesAndBuildUi(game_mount.assets_dir.c_str(), scan_data.assets, scan_data.metas, scan_data.orphan_assets,
                             scan_data.orphan_metas, scan_data.folders);
 
@@ -94,12 +93,15 @@ Task<void> AssetSourceDatabase::AsyncLoadGameContent(AsyncFileManager& file_mana
 
 Task<void> AssetSourceDatabase::ProcessDomain(DomainScanResult& scan_data, AsyncFileManager& file_manager,
                                               StorageDomain domain) {
-    // 2. Заполняем GUID в нодах и мапах для существующих ассетов
-    co_await ResolveExistingGuids(scan_data, file_manager);
+    // 1. Запуск индивидуальных асинхронных задач для существующих пар (.asset + .meta)
+    for (size_t i = 0; i < scan_data.assets.size(); ++i) {
+        RunAndForget(ThreadPool(), ProcessExistingAsset(scan_data.assets[i], scan_data.metas[i],
+                                                       scan_data.mount, file_manager));
+    }
 
-    co_await ImportOrphans(scan_data, file_manager);
-
-    co_await ReimportStaleAssets(scan_data, file_manager);
+    // 2. Запуск асинхронного импорта сиротских ассетов без мета-файлов
+    for (const auto& orphan : scan_data.orphan_assets)
+        RunAndForget(ThreadPool(), ImportOrphanAsset(orphan, scan_data.mount, file_manager));
 
     auto& target_folders = GetFoldersMutable(domain);
     target_folders = eastl::move(scan_data.folders);
@@ -107,403 +109,247 @@ Task<void> AssetSourceDatabase::ProcessDomain(DomainScanResult& scan_data, Async
     co_return {};
 }
 
-Task<void> AssetSourceDatabase::ImportOrphans(DomainScanResult& scan_data, AsyncFileManager& file_manager) const {
-    const uint32_t count = scan_data.orphan_assets.size();
-    if (count == 0)
-        co_return {};
+Task<void> AssetSourceDatabase::ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
+                                                 AsyncFileManager& file_manager) {
+    // 1. Получение размера файла
+    FileHandle stat_handle = file_manager.GetStatAsyncCopy(asset_path);
+    co_await stat_handle;
 
-    eastl::vector<FileHandle> stat_handles;
-    stat_handles.reserve(count);
-    for (const auto& path : scan_data.orphan_assets) {
-        stat_handles.push_back(file_manager.GetStatAsync(path));
+    if (stat_handle.IsFailed())
+        co_return LogAndMakeError("Не удалось получить stat для ассета-сироты: {}", asset_path.c_str());
+
+    // 2. Чтение ассета
+    FileHandle read_handle = file_manager.ReadChunkAsyncCopy(asset_path, 0, stat_handle.GetFileSize());
+    co_await read_handle;
+
+    if (read_handle.IsFailed()) {
+        co_return LogAndMakeError("Не удалось прочитать ассет-сироту: {}", asset_path.c_str());
     }
 
-    co_await WaitAllFiles(stat_handles);
+    // 3. Поиск импортера
+    const size_t dot_pos = asset_path.rfind('.');
+    if (dot_pos == eastl::string::npos)
+        co_return LogAndMakeError("Файл не имеет расширения: {}", asset_path.c_str());
 
-    eastl::vector<FileHandle> read_handles;
-    read_handles.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        const uint64_t file_size = stat_handles[i].GetFileSize();
-        read_handles.push_back(file_manager.ReadChunkAsync(scan_data.orphan_assets[i], 0, file_size));
+
+    const auto ext = asset_path.substr(dot_pos);
+    IAssetImporter* importer = import_system_.GetImporterByExtension(ext.c_str());
+    if (!importer)
+        co_return LogAndMakeError("Не найден импортер для расширения: {}", asset_path.c_str());
+
+
+    // 4. Импорт
+    ImportContext ctx(read_handle.GetData());
+    auto import_res = co_await importer->Import(ctx);
+    if (!import_res.has_value()) {
+        LogError(LogCategory::Importer, "Ошибка импорта ассета-сироты {}: {}", asset_path.c_str(),
+                 import_res.error().Message());
+        co_return eastl::move(import_res.error());
     }
 
-    co_await WaitAllFiles(read_handles);
+    const auto& res = *import_res;
 
-    eastl::vector<Task<ImportResult>> import_tasks;
-    eastl::vector<uint32_t> valid_orphan_indices;  // <--- Сохраняем исходные индексы
-    import_tasks.reserve(count);
-    valid_orphan_indices.reserve(count);
-
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!read_handles[i].IsReady())
-            continue;
-
-        eastl::string_view asset_path = scan_data.orphan_assets[i];
-        const size_t dot_pos = asset_path.rfind('.');
-
-        if (dot_pos == eastl::string_view::npos)
-            continue;
-
-        const auto ext = asset_path.substr(dot_pos);
-
-        if (IAssetImporter* importer = import_system_.GetImporterByExtension(ext)) {
-            ImportContext ctx(read_handles[i].GetData());
-            import_tasks.emplace_back(importer->Import(ctx));
-            valid_orphan_indices.push_back(i);  // <--- Маппим задачу k на индекс i
-        } else {
-            LogWarn(LogCategory::Importer, "Не найден импортер для расширения: {}", ext.data());
-        }
-    }
-
-    if (import_tasks.empty())
-        co_return {};
-
-    auto import_results = co_await WhenAll(ThreadPool(), eastl::move(import_tasks));
-
-    if (!import_results.has_value()) {
-        LogInfo("Ошибка выполнения WhenAll: {}", import_results.error().Message());
-        co_return Error(import_results.error().Message().data());
-    }
-
-    const auto& import_tasks_value = *import_results;
-
+    // 5. Запись артефактов и мета-файла
     eastl::vector<FileHandle> write_handles;
+    eastl::vector<uint64_t> runtime_sub_guids;
 
-    for (size_t k = 0; k < import_tasks_value.size(); ++k) {
-        const auto& import_result = import_tasks_value[k];
-        if (!import_result.has_value())
-            continue;
+    for (const auto& artifact : res.artifacts) {
+        const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
+        auto path = tryengine::fmt::format("{}/{}/{}/{}", mount.artifacts_dir.c_str(), sub_folder,
+                                           res.main_guid, artifact.sub_guid);
 
-        const uint32_t orphan_idx = valid_orphan_indices[k];  // <--- Берем точный исходный индекс!
-        const auto& res = *import_result;
-        eastl::vector<uint64_t> runtime_sub_guids;
-        for (const auto& artifact : res.artifacts) {
-            const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
+        LogInfo(LogCategory::Importer, "Write Path artifact: {}", path.c_str());
+        write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
 
-            tryengine::fmt::StringFormat path("{}/{}/{}/{}", scan_data.mount.artifacts_dir.c_str(), sub_folder,
-                                              res.main_guid, artifact.sub_guid);
+        if (artifact.target == ArtifactTarget::Runtime)
+            runtime_sub_guids.push_back(artifact.sub_guid);
 
-            LogInfo("Write Path artifact: {}", path.c_str());
-            write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
-
-            if (artifact.target == ArtifactTarget::Runtime) {
-                runtime_sub_guids.push_back(artifact.sub_guid);
-            }
-        }
-
-        if (runtime_sub_guids.size() == 1 && runtime_sub_guids[0] == 0) {
-            RegisterArtifactPaths(scan_data.mount, res.main_guid, {});
-        } else if (!runtime_sub_guids.empty()) {
-            RegisterArtifactPaths(scan_data.mount, res.main_guid, runtime_sub_guids);
-        }
-
-        if (!res.meta_bytes.empty()) {
-            tryengine::fmt::StringFormat meta_path("{}{}", scan_data.orphan_assets[orphan_idx].c_str(), meta_ext);
-            write_handles.push_back(file_manager.WriteChunkAsyncCopy(meta_path.c_str(), res.meta_bytes));
-        }
     }
 
-    file_manager.Submit();
+    if (!res.meta_bytes.empty()) {
+        auto meta_path = tryengine::fmt::format("{}{}", asset_path.c_str(), meta_ext);
+        write_handles.push_back(file_manager.WriteChunkAsyncCopy(meta_path.c_str(), res.meta_bytes));
+    }
+
     co_await WaitAllFiles(write_handles);
 
     for (const auto& write_handle : write_handles) {
-        if (write_handle.IsFailed()) {
-            LogError("Не удалось записать файл на диск: {}", write_handle.GetPath().data());
-        }
+        if (write_handle.IsFailed())
+            co_return LogAndMakeError("Не удалось записать артефакт: {}", write_handle.GetPath().data());
+
     }
 
+    // 6. Регистрация артефактов и обновление карт под мьютексом
+    RegisterArtifactPaths(mount, res.main_guid, runtime_sub_guids);
+
+    {
+        std::lock_guard lock(db_mutex_);
+        guid_to_path_[res.main_guid] = asset_path;
+        path_to_guid_[asset_path] = res.main_guid;
+    }
+
+    LogInfo(LogCategory::Importer, "Ассет-сирота успешно импортирован: {}", asset_path.c_str());
     co_return {};
+}
+
+static Task<FileHandle> GetOldestFileTime(AsyncFileManager& file_manager, eastl::vector<eastl::string> artifacts) {
+    if (artifacts.empty()) {
+        co_return LogAndMakeError("Empty artifact list");
+    }
+
+    eastl::vector<FileHandle> stat_handles;
+    stat_handles.reserve(artifacts.size());
+    for (const auto& artifact : artifacts)
+        stat_handles.push_back(file_manager.GetStatAsyncCopy(artifact));
+
+    co_await WaitAllFiles(stat_handles);
+
+    for (auto& handle : stat_handles)
+        if (handle.IsFailed())
+            co_return std::move(handle);
+
+
+    uint32_t oldest_index = 0;
+    for (uint32_t i = 1; i < stat_handles.size(); ++i)
+        if (stat_handles[i].GetMtime() < stat_handles[oldest_index].GetMtime())
+            oldest_index = i;
+
+
+    co_return std::move(stat_handles[oldest_index]);
 }
 
 static eastl::vector<eastl::string> FindAllArtifacts(const AssetMountPoint& mount, const AssetMetaHeader& header) {
     eastl::vector<eastl::string> paths;
     paths.reserve(header.sub_assets.size() + 1);
 
-    if (header.sub_assets.empty())
+    if (header.sub_assets.empty()) {
         paths.emplace_back(tryengine::fmt::format("{}/runtime/{}/{}", mount.artifacts_dir.c_str(), header.guid, 0));
-
-    for (const auto sub_id : header.sub_assets)
-        paths.emplace_back(
-            tryengine::fmt::format("{}/runtime/{}/{}", mount.artifacts_dir.c_str(), header.guid, sub_id));
-
-    // for (auto& path : paths) {
-    //     TRY_LOG_INFO("{}. Path: {}", header.importer_type, path.c_str());
-    // }
+    } else {
+        for (const auto sub_id : header.sub_assets) {
+            paths.emplace_back(
+                tryengine::fmt::format("{}/runtime/{}/{}", mount.artifacts_dir.c_str(), header.guid, sub_id));
+        }
+    }
 
     return paths;
 }
 
-static Task<FileHandle> GetOldestFileTime(AsyncFileManager& file_manager, eastl::vector<eastl::string> artifacts) {
-    if (artifacts.empty()) {
-        LogCritical("Empty artifact list");
-        co_return LogAndMakeError("Empty artifact list");
+Task<void> AssetSourceDatabase::ProcessExistingAsset(eastl::string asset_path, eastl::string meta_path,
+                                                   AssetMountPoint mount, AsyncFileManager& file_manager) {
+    // 1. Stat ассета и мета-файла
+    FileHandle asset_stat = file_manager.GetStatAsyncCopy(asset_path);
+    FileHandle meta_stat = file_manager.GetStatAsyncCopy(meta_path);
+
+    co_await WaitAllFiles(asset_stat, meta_stat);
+
+    if (asset_stat.IsFailed() || meta_stat.IsFailed())
+        co_return LogAndMakeError("Не удалось получить stat для: {}", asset_path.c_str());
+
+    // 2. Чтение мета-файла
+    FileHandle meta_read = file_manager.ReadChunkAsyncCopy(meta_path, 0, meta_stat.GetFileSize());
+    co_await meta_read;
+
+    if (meta_read.IsFailed())
+        co_return LogAndMakeError("Не удалось прочитать мета-файл: {}", meta_path.c_str());
+
+    auto header_res = DeserializePartial<HeaderOnly>(meta_read.GetData());
+    if (!header_res.has_value())
+        co_return LogAndMakeError("Ошибка парсинга заголовка мета-файла: {}", meta_path.c_str());
+
+    const auto& header = header_res->header;
+
+    {
+        std::lock_guard lock(db_mutex_);
+        guid_to_path_[header.guid] = asset_path;
+        path_to_guid_[asset_path] = header.guid;
     }
 
-    eastl::vector<FileHandle> sub_asset_stat_handles;
-    sub_asset_stat_handles.reserve(artifacts.size());
-    for (const auto& artifact : artifacts)
-        sub_asset_stat_handles.push_back(file_manager.GetStatAsync(artifact));
+    RegisterArtifactPaths(mount, header.guid, header.sub_assets);
 
-    co_await WaitAllFiles(sub_asset_stat_handles);
+    // 3. Проверка времени модификации артефактов
+    auto artifact_paths = FindAllArtifacts(mount, header);
 
-    for (auto& handle : sub_asset_stat_handles) {
-        if (handle.IsFailed()) {
-            co_return std::move(handle);
-        }
-    }
+    auto oldest_artifact_stat_res = co_await GetOldestFileTime(file_manager, eastl::move(artifact_paths));
 
-    uint32_t oldest_index = 0;
-    for (uint32_t i = 1; i < sub_asset_stat_handles.size(); ++i) {
-        if (sub_asset_stat_handles[i].GetMtime() < sub_asset_stat_handles[oldest_index].GetMtime()) {
-            oldest_index = i;
-        }
-    }
+    auto& oldest_artifact_stat = *oldest_artifact_stat_res;
 
-    co_return std::move(sub_asset_stat_handles[oldest_index]);
-}
-
-Task<void> AssetSourceDatabase::ReimportStaleAssets(const DomainScanResult& scan_data,
-                                                    AsyncFileManager& file_manager) const {
-    const uint32_t count = scan_data.assets.size();
-    if (count == 0)
-        co_return {};
-
-    eastl::vector<FileHandle> asset_stat_handles;
-    eastl::vector<FileHandle> meta_stat_handles;
-    asset_stat_handles.reserve(count);
-    meta_stat_handles.reserve(count);
-
-    for (uint32_t i = 0; i < count; ++i) {
-        asset_stat_handles.push_back(file_manager.GetStatAsync(scan_data.assets[i]));
-        meta_stat_handles.push_back(file_manager.GetStatAsync(scan_data.metas[i]));
-    }
-
-    co_await WaitAllFiles(asset_stat_handles);
-    co_await WaitAllFiles(meta_stat_handles);
-
-    eastl::vector<FileHandle> meta_read_handles;
-    meta_read_handles.reserve(count);
-
-    for (uint32_t i = 0; i < count; ++i) {
-        uint64_t meta_size = meta_stat_handles[i].GetFileSize();
-        meta_read_handles.push_back(file_manager.ReadChunkAsync(scan_data.metas[i], 0, meta_size));
-    }
-
-    co_await WaitAllFiles(meta_read_handles);
-
-    struct HeaderCandidate {
-        uint32_t original_index;
-        eastl::string importer_type;
-    };
-
-    eastl::vector<HeaderCandidate> candidates;
-    candidates.reserve(count);
-
-    eastl::vector<Task<FileHandle>> artifact_mtime_tasks;
-    artifact_mtime_tasks.reserve(count);
-
-    for (uint32_t i = 0; i < count; ++i) {
-        auto meta_bytes = meta_read_handles[i].GetData();
-        auto header = DeserializePartial<HeaderOnly>(meta_bytes);
-        if (!header.has_value())
-            continue;
-
-        LogTrace(LogCategory::Importer, "reimport candidates: guid - {}", header->header.guid);
-
-        candidates.push_back({i, header->header.importer_type});
-        auto artifact_paths = FindAllArtifacts(scan_data.mount, header->header);
-        artifact_mtime_tasks.push_back(GetOldestFileTime(file_manager, eastl::move(artifact_paths)));
-    }
-
-    auto artifact_results_res = co_await WhenAll(eastl::move(artifact_mtime_tasks));
-    if (!artifact_results_res.has_value()) {
-        co_return LogAndMakeError("Ошибка при получении состояния артефактов");
-    }
-
-    const auto& artifact_results = *artifact_results_res;
-
-    struct StaleItem {
-        uint32_t original_index;
-        IAssetImporter* importer;
-    };
-
-    eastl::vector<StaleItem> stale_items;
-
-    for (size_t k = 0; k < candidates.size(); ++k) {
-        if (!artifact_results[k].has_value())
-            continue;
-
-        const uint32_t i = candidates[k].original_index;
-
-        // Если хоть один артефакт не найден на диске — нужен реимпорт
-        if (artifact_results[k]->IsFailed()) {
-            if (IAssetImporter* importer = import_system_.GetImporterByName(candidates[k].importer_type)) {
-                stale_items.push_back({i, importer});
-                LogInfo(LogCategory::Importer, "NEED reimport (missing artifact): {}", scan_data.assets[i]);
-            }
-            continue;
-        }
-
-        const FileTime meta_mtime = meta_stat_handles[i].GetMtime();
-        const FileTime asset_mtime = asset_stat_handles[i].GetMtime();
-        const FileTime artifact_mtime = artifact_results[k]->GetMtime();
+    bool need_reimport = false;
+    if (oldest_artifact_stat.IsFailed()) {
+        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}", asset_path.c_str());
+        need_reimport = true;
+    } else {
+        const FileTime meta_mtime = meta_stat.GetMtime();
+        const FileTime asset_mtime = asset_stat.GetMtime();
+        const FileTime artifact_mtime = oldest_artifact_stat.GetMtime();
 
         if ((meta_mtime > artifact_mtime) || (asset_mtime > artifact_mtime)) {
-            if (IAssetImporter* importer = import_system_.GetImporterByName(candidates[k].importer_type)) {
-                stale_items.push_back({i, importer});
-                LogInfo(LogCategory::Importer, "NEED reimport: {}", scan_data.assets[i]);
-            }
+            LogInfo(LogCategory::Importer, "NEED reimport: {}", asset_path.c_str());
+            need_reimport = true;
         } else {
-            LogInfo(LogCategory::Importer, "NOT need reimport: {}", scan_data.assets[i]);
+            LogInfo(LogCategory::Importer, "NOT need reimport: {}", asset_path.c_str());
         }
     }
 
-    if (stale_items.empty())
+    if (!need_reimport)
         co_return {};
 
-    eastl::vector<FileHandle> asset_read_handles;
-    asset_read_handles.reserve(stale_items.size());
 
-    for (const auto& item : stale_items) {
-        const uint64_t asset_size = asset_stat_handles[item.original_index].GetFileSize();
-        asset_read_handles.push_back(file_manager.ReadChunkAsync(scan_data.assets[item.original_index], 0, asset_size));
+    // 4. Повторный импорт устаревшего ассета
+    IAssetImporter* importer = import_system_.GetImporterByName(header.importer_type.c_str());
+    if (!importer)
+        co_return LogAndMakeError("Не найден импортер для типа: {}, путь {}", header.importer_type.c_str(), asset_path);
+
+    FileHandle asset_read = file_manager.ReadChunkAsyncCopy(asset_path, 0, asset_stat.GetFileSize());
+    co_await asset_read;
+
+    if (asset_read.IsFailed())
+        co_return LogAndMakeError("Не удалось прочитать файл ассета для реимпорта: {}", asset_path.c_str());
+
+    ImportContext ctx(asset_read.GetData(), meta_read.GetData());
+    auto import_res = co_await importer->Import(ctx);
+
+    if (!import_res.has_value()) {
+        LogError(LogCategory::Importer, "Ошибка реимпорта для {}: {}", asset_path.c_str(), import_res.error().Message());
+        co_return eastl::move(import_res.error());
     }
 
-    co_await WaitAllFiles(asset_read_handles);
-
-    eastl::vector<Task<ImportResult>> import_tasks;
-    import_tasks.reserve(stale_items.size());
-
-    for (size_t k = 0; k < stale_items.size(); ++k) {
-        const uint32_t i = stale_items[k].original_index;
-        ImportContext ctx(asset_read_handles[k].GetData(), meta_read_handles[i].GetData());
-        import_tasks.emplace_back(stale_items[k].importer->Import(ctx));
-    }
-
-    auto import_results_res = co_await WhenAll(ThreadPool(), eastl::move(import_tasks));
-    if (!import_results_res.has_value()) {
-        tryengine::core::LogError("Ошибка выполнения WhenAll при повторном импорте: {}",
-                                  import_results_res.error().Message());
-        co_return {};
-    }
-
-    const auto& import_results = *import_results_res;
-
+    const auto& res = *import_res;
     eastl::vector<FileHandle> write_handles;
+    eastl::vector<uint64_t> runtime_sub_guids;
 
-    for (size_t k = 0; k < import_results.size(); ++k) {
-        const auto& import_result = import_results[k];
-        if (!import_result.has_value()) {
-            LogError("Ошибка повторного импорта: {}", import_result.error().Message());
-            continue;
-        }
+    for (const auto& artifact : res.artifacts) {
+        const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
+        auto path = tryengine::fmt::format("{}/{}/{}/{}", mount.artifacts_dir.c_str(), sub_folder,
+                                           res.main_guid, artifact.sub_guid);
 
-        const uint32_t i = stale_items[k].original_index;  // Всегда корректный абсолютный индекс!
-        const auto& res = *import_result;
-
-        eastl::vector<uint64_t> runtime_sub_guids;
-        for (const auto& artifact : res.artifacts) {
-            const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
-
-            tryengine::fmt::StringFormat path("{}/{}/{}/{}", scan_data.mount.artifacts_dir.c_str(), sub_folder,
-                                              res.main_guid, artifact.sub_guid);
-
-            write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
-
-            if (artifact.target == ArtifactTarget::Runtime) {
-                runtime_sub_guids.push_back(artifact.sub_guid);
-            }
-        }
-
-        if (runtime_sub_guids.size() == 1 && runtime_sub_guids[0] == 0) {
-            RegisterArtifactPaths(scan_data.mount, res.main_guid, {});
-        } else if (!runtime_sub_guids.empty()) {
-            RegisterArtifactPaths(scan_data.mount, res.main_guid, runtime_sub_guids);
+        write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
+        if (artifact.target == ArtifactTarget::Runtime) {
+            runtime_sub_guids.push_back(artifact.sub_guid);
         }
     }
 
-    file_manager.Submit();
     co_await WaitAllFiles(write_handles);
 
     for (const auto& write_handle : write_handles) {
         if (write_handle.IsFailed()) {
-            LogError("Не удалось записать файл на диск: {}", write_handle.GetPath().data());
+            co_return LogAndMakeError("Не удалось записать артефакт при реимпорте: {}",
+                                     write_handle.GetPath().data());
         }
     }
 
+    RegisterArtifactPaths(mount, res.main_guid, runtime_sub_guids);
     co_return {};
 }
 
-Task<void> AssetSourceDatabase::ResolveExistingGuids(DomainScanResult& scan_data, AsyncFileManager& file_manager) {
-    const uint32_t count = scan_data.metas.size();
-    if (count == 0)
-        co_return {};
-
-    // 1. Асинхронно запрашиваем размеры мета-файлов и читаем их
-    eastl::vector<FileHandle> meta_stat_handles;
-    meta_stat_handles.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        meta_stat_handles.push_back(file_manager.GetStatAsync(scan_data.metas[i]));
-    }
-    co_await WaitAllFiles(meta_stat_handles);
-
-    eastl::vector<FileHandle> meta_read_handles;
-    meta_read_handles.reserve(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        uint64_t meta_size = meta_stat_handles[i].GetFileSize();
-        meta_read_handles.push_back(file_manager.ReadChunkAsync(scan_data.metas[i], 0, meta_size));
-    }
-    co_await WaitAllFiles(meta_read_handles);
-
-    // 2. Десериализуем GUID'ы во временный вектор
-    eastl::vector<uint64_t> guids(count, 0);
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!meta_read_handles[i].IsReady())
-            continue;
-
-        auto meta_bytes = meta_read_handles[i].GetData();
-        auto header = DeserializePartial<HeaderOnly>(meta_bytes);
-        if (header.has_value()) {
-            uint64_t guid = header->header.guid;
-            guids[i] = guid;
-
-            // Заполняем глобальные хеш-карты
-            guid_to_path_[guid] = scan_data.assets[i];
-            path_to_guid_[scan_data.assets[i]] = guid;
-
-            // Заполняем AssetRegistry реальным путём к рантайм-артефакту(ам),
-            // чтобы ResourceCache не полагался на дефолтный fallback-путь.
-            RegisterArtifactPaths(scan_data.mount, guid, header->header.sub_assets);
-        }
-    }
-
-    // 3. Заполняем GUID в UiFolder без повторного обхода диска (чисто в памяти)
-    for (auto& folder : scan_data.folders) {
-        for (auto& file : folder.files) {
-            if (file.asset_idx < guids.size()) {
-                file.guid = guids[file.asset_idx];
-            }
-        }
-    }
-
-    co_return {};
-}
-
-void AssetSourceDatabase::OnFileCreatedOrModified(const char* path) {
-    // 1. Проверяем, мета ли это или ассет
-    // 2. Вычитываем только этот .meta файл
-    // 3. Добавляем/обновляем запись в guid_to_path_[guid] = path
-    // 4. Находим целевой UiFolder по родительской директории пути и точечно обновляем vector<UiFile>
-}
+void AssetSourceDatabase::OnFileCreatedOrModified(const char* path) {}
 
 void AssetSourceDatabase::OnFileDeleted(const char* path) {
+    std::lock_guard lock(db_mutex_);
     auto it = path_to_guid_.find(eastl::string(path));
     if (it != path_to_guid_.end()) {
         uint64_t guid = it->second;
         guid_to_path_.erase(guid);
         path_to_guid_.erase(it);
-
-        // Точечно удаляем UiFile из соответствующего UiFolder по guid
     }
 }
 

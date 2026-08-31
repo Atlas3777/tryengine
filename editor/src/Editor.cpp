@@ -61,11 +61,9 @@ void Editor::RegisterAssetsInspector() const {
 }
 
 void Editor::RegisterAssetsImporters() const {
-    // import_system_->RegisterImporter<NativeImporter, EmptySettings>({".scene", ".mat", ".prefab"}, *assets_factory_);
     import_system_->RegisterImporter<GlslImporter, GlslShaderImportSettings>({".vert", ".frag"});
     import_system_->RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"});
     import_system_->RegisterImporter<SlangImporter, SlangImportSettings>({".slang"});
-    // import_system_->RegisterImporter<TextureImporter, TextureImportSettings>({".png", ".jpg"});
 }
 
 void Editor::RegisterResourceLoaders() const {
@@ -81,57 +79,6 @@ void Editor::RegisterResourceLoaders() const {
         tryengine::graphics::ShaderLoader(res_manager, graphics_context_.GetDevice()));
     res_manager.RegisterType<tryengine::graphics::TextureSampler>(
             tryengine::graphics::TextureLoader(graphics_context_.GetDevice()));
-
-    // res_manager.RegisterType<tryengine::resources::MeshData>(tryengine::resources::MeshDataLoader(res_manager_));
-    // res_manager.RegisterLoader<tryengine::graphics::Mesh>(
-    //     tryengine::graphics::MeshLoader(res_manager_, graphics_context_.GetDevice()));
-    //
-    // res_manager.RegisterLoader<tryengine::graphics::Texture>(
-    //     tryengine::graphics::TextureLoader(res_manager_, graphics_context_.GetDevice()));
-
-    // res_manager.RegisterLoader<tryengine::graphics::Material>(tryengine::graphics::MaterialLoader(res_manager_));
-}
-
-void Editor::LoadDefaultScene() const {
-    // auto scene = std::make_unique<tryengine::core::Scene>("nameless_scene");
-    //
-    // auto& registry = scene->GetRegistry();
-    //
-    // const auto game_camera = registry.create();
-    // registry.emplace<tryengine::Tag>(game_camera, "GameCamera");
-    // registry.emplace<tryengine::Transform>(
-    //     game_camera, tryengine::Transform{glm::vec3(0.f, 2.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    // registry.emplace<tryengine::Camera>(game_camera);
-    // registry.emplace<tryengine::MainCameraTag>(game_camera);
-    // registry.emplace<tryengine::Relationship>(game_camera);
-    //
-    // const auto editor_camera = registry.create();
-    // registry.emplace<tryengine::Tag>(editor_camera, "EditorCamera");
-    // registry.emplace<tryengine::Transform>(
-    //     editor_camera, tryengine::Transform{glm::vec3(0.f, 0.f, 10.f), glm::quat(), glm::vec3(1.f)});
-    // registry.emplace<tryengine::Camera>(editor_camera);
-    // registry.emplace<EditorCameraTag>(editor_camera);
-    // registry.emplace<tryengine::Relationship>(editor_camera);
-    //
-    // // Основной белый источник света (Сверху-справа)
-    // const auto main_light = registry.create();
-    // registry.emplace<tryengine::Tag>(main_light, "Main_PointLight");
-    // registry.emplace<tryengine::Transform>(
-    //     main_light, tryengine::Transform{glm::vec3(10.f, 5.f, 0.f), glm::quat(), glm::vec3(1.f)});
-    // registry.emplace<tryengine::LightComponent>(main_light,
-    //                                             tryengine::LightComponent{glm::vec3(1.0f, 0.95f, 0.9f), 1.2f, 20.0f});
-    // registry.emplace<tryengine::Relationship>(main_light);
-    //
-    // // Дополнительный заполняющий синий источник (Слева)
-    // const auto fill_light = registry.create();
-    // registry.emplace<tryengine::Tag>(fill_light, "Fill_BlueLight");
-    // registry.emplace<tryengine::Transform>(
-    //     fill_light, tryengine::Transform{glm::vec3(-5.f, 3.f, 0.f), glm::quat(), glm::vec3(1.f)});
-    // registry.emplace<tryengine::LightComponent>(fill_light,
-    //                                             tryengine::LightComponent{glm::vec3(0.2f, 0.5f, 1.0f), 1.0f, 15.0f});
-    // registry.emplace<tryengine::Relationship>(fill_light);
-    //
-    // engine_.Get<tryengine::core::SceneManager>().SetActiveScene(std::move(scene));
 }
 
 }  // namespace tryeditor

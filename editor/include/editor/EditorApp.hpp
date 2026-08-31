@@ -25,6 +25,5 @@ private:
     std::unique_ptr<tryengine::core::Engine> engine_;
     std::unique_ptr<Editor> editor_;
     tryengine::core::InputState input_state_;
-    tryengine::resources::AsyncFileManager async_file_manager_;
 };
 }  // namespace tryeditor

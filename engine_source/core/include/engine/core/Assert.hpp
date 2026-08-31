@@ -1,20 +1,20 @@
-// engine/core/Assert.hpp
 #pragma once
 
-#include "engine/core/Log.hpp"
-#include <source_location>
-#include <cstdlib>
 #include <EASTL/string.h>
+#include <cstdlib>
+#include <source_location>
+
+#include "engine/core/Log.hpp"
 
 // ---------------------------------------------------------------------------
 // Кроссплатформенный триггер точки останова отладчика
 // ---------------------------------------------------------------------------
 #if defined(__clang__) || defined(__GNUC__)
-    #define TRY_DEBUG_BREAK() __builtin_trap()
+#define TRY_DEBUG_BREAK() __builtin_trap()
 #elif defined(_MSC_VER)
-    #define TRY_DEBUG_BREAK() __debugbreak()
+#define TRY_DEBUG_BREAK() __debugbreak()
 #else
-    #define TRY_DEBUG_BREAK() std::abort()
+#define TRY_DEBUG_BREAK() std::abort()
 #endif
 
 namespace tryengine::core::detail {
@@ -22,26 +22,18 @@ namespace tryengine::core::detail {
 // Раньше file:line форматировались вручную прямо в текст сообщения.
 // Теперь location — структурное поле LogRecord (см. Log.hpp), поэтому
 // report_failure просто передаёт его дальше, а не печатает сам.
-inline void report_failure(
-    const char* kind,              // "Assertion" / "Verify" / "Check"
-    const char* condition_text,
-    LogLevel level,
-    const eastl::string& message,
-    const std::source_location& location)
-{
+inline void report_failure(const char* kind,  // "Assertion" / "Verify" / "Check"
+                           const char* condition_text, LogLevel level, const eastl::string& message,
+                           const std::source_location& location) {
     Logger::instance().log(level, LogCategory::Assert, location,
-        detail::format("{} failed: ({})  {}", kind, condition_text, message));
+                           detail::format("{} failed: ({})  {}", kind, condition_text, message));
 }
 
 // Сообщение форматируется лениво (только при провале условия) —
 // MessageFn это лямбда без аргументов, возвращающая eastl::string.
 template <typename MessageFn>
-bool verify_impl(
-    bool condition,
-    const char* condition_text,
-    MessageFn&& make_message,
-    const std::source_location& location)
-{
+bool verify_impl(bool condition, const char* condition_text, MessageFn&& make_message,
+                 const std::source_location& location) {
     if (!condition) [[unlikely]] {
         report_failure("Verify", condition_text, LogLevel::Error, make_message(), location);
 #if !defined(NDEBUG)
@@ -51,25 +43,27 @@ bool verify_impl(
     return condition;
 }
 
-} // namespace tryengine::core::detail
+}  // namespace tryengine::core::detail
 
 // ---------------------------------------------------------------------------
 // TRY_ASSERT — только debug. Программистская ошибка / инвариант.
 // В release условие даже не вычисляется (как и раньше).
 // ---------------------------------------------------------------------------
 #if !defined(NDEBUG)
-    #define TRY_ASSERT(condition, msg, ...) \
-        do { \
-            if (!(condition)) [[unlikely]] { \
-                ::tryengine::core::detail::report_failure( \
-                    "Assertion", #condition, ::tryengine::core::LogLevel::Critical, \
-                    ::tryengine::core::detail::format(msg __VA_OPT__(,) __VA_ARGS__), \
-                    std::source_location::current()); \
-                TRY_DEBUG_BREAK(); \
-            } \
-        } while (0)
+#define TRY_ASSERT(condition, msg, ...)                                                                              \
+    do {                                                                                                             \
+        if (!(condition)) [[unlikely]] {                                                                             \
+            ::tryengine::core::detail::report_failure(                                                               \
+                "Assertion", #condition, ::tryengine::core::LogLevel::Critical,                                      \
+                ::tryengine::core::detail::format(msg __VA_OPT__(, ) __VA_ARGS__), std::source_location::current()); \
+            TRY_DEBUG_BREAK();                                                                                       \
+        }                                                                                                            \
+    } while (0)
 #else
-    #define TRY_ASSERT(condition, msg, ...) do { (void)sizeof(condition); } while (0)
+#define TRY_ASSERT(condition, msg, ...) \
+    do {                                \
+        (void) sizeof(condition);       \
+    } while (0)
 #endif
 
 // ---------------------------------------------------------------------------
@@ -82,10 +76,10 @@ bool verify_impl(
 //       return false;
 //   }
 // ---------------------------------------------------------------------------
-#define TRY_VERIFY(condition, msg, ...) \
-    ::tryengine::core::detail::verify_impl( \
-        static_cast<bool>(condition), #condition, \
-        [&] { return ::tryengine::core::detail::format(msg __VA_OPT__(,) __VA_ARGS__); }, \
+#define TRY_VERIFY(condition, msg, ...)                                                    \
+    ::tryengine::core::detail::verify_impl(                                                \
+        static_cast<bool>(condition), #condition,                                          \
+        [&] { return ::tryengine::core::detail::format(msg __VA_OPT__(, ) __VA_ARGS__); }, \
         std::source_location::current())
 
 // ---------------------------------------------------------------------------
@@ -93,14 +87,13 @@ bool verify_impl(
 // завершается (даже в release). Для невосстановимых ошибок инициализации,
 // без которых движок не может продолжать работу (например GPU device).
 // ---------------------------------------------------------------------------
-#define TRY_CHECK(condition, msg, ...) \
-    do { \
-        if (!(condition)) [[unlikely]] { \
-            ::tryengine::core::detail::report_failure( \
-                "Check", #condition, ::tryengine::core::LogLevel::Critical, \
-                ::tryengine::core::detail::format(msg __VA_OPT__(,) __VA_ARGS__), \
-                std::source_location::current()); \
-            TRY_DEBUG_BREAK(); \
-            std::abort(); \
-        } \
+#define TRY_CHECK(condition, msg, ...)                                                                               \
+    do {                                                                                                             \
+        if (!(condition)) [[unlikely]] {                                                                             \
+            ::tryengine::core::detail::report_failure(                                                               \
+                "Check", #condition, ::tryengine::core::LogLevel::Critical,                                          \
+                ::tryengine::core::detail::format(msg __VA_OPT__(, ) __VA_ARGS__), std::source_location::current()); \
+            TRY_DEBUG_BREAK();                                                                                       \
+            std::abort();                                                                                            \
+        }                                                                                                            \
     } while (0)

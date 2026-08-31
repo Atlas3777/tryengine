@@ -6,13 +6,12 @@
 
 #include "engine/core/Engine.hpp"
 #include "engine/core/Log.hpp"
-#include "engine/core/ScriptSystem.hpp"
 #include "engine/core/Profiler.hpp"
+#include "engine/core/ScriptSystem.hpp"
 
 namespace tryeditor {
 
-EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context)
-    : engine_(engine) {
+EditorGUI::EditorGUI(tryengine::core::Engine& engine, const tryengine::graphics::GraphicsContext& context) : engine_(engine) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -23,7 +22,6 @@ EditorGUI::EditorGUI(tryengine::core::Engine& engine, tryengine::graphics::Graph
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
     ImGui::StyleColorsDark();
-
 
     // Настройка бэкендов
     ImGui_ImplSDL3_InitForSDLGPU(context.GetWindow());
@@ -41,7 +39,6 @@ EditorGUI::~EditorGUI() {
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 }
-
 
 static void RenderProfilerPanel() {
     if (!ImGui::Begin("Performance Profiler")) {
@@ -63,21 +60,18 @@ static void RenderProfilerPanel() {
     snprintf(overlay, sizeof(overlay), "Frame: %.2f ms (%.1f FPS)", current_frame_ms, fps);
 
     ImGui::Text("Frame Time History");
-    ImGui::PlotLines(
-        "##FrameTimePlot",
-        frame_history,
-        static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
-        static_cast<int>(offset),
-        overlay,
-        0.0f,   // Min ms
-        33.3f,  // Max ms (шкала до 33мс / ~30 FPS, чтобы наглядно видеть спайки)
-        ImVec2(ImGui::GetContentRegionAvail().x, 70.0f) // Ширина во всё окно, высота 70px
+    ImGui::PlotLines("##FrameTimePlot", frame_history, static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
+                     static_cast<int>(offset), overlay,
+                     0.0f,   // Min ms
+                     33.3f,  // Max ms (шкала до 33мс / ~30 FPS, чтобы наглядно видеть спайки)
+                     ImVec2(ImGui::GetContentRegionAvail().x, 70.0f)  // Ширина во всё окно, высота 70px
     );
 
     ImGui::Separator();
 
     // 3. Таблица метрик с индивидуальными графиками (Sparklines)
-    if (ImGui::BeginTable("ProfilerTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+    if (ImGui::BeginTable("ProfilerTable", 5,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("Zone / Function", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthFixed, 45.0f);
         ImGui::TableSetupColumn("Total (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
@@ -107,16 +101,10 @@ static void RenderProfilerPanel() {
             // Мини-график (Sparkline) для этой зоны
             ImGui::TableSetColumnIndex(4);
             ImGui::PushID(metric.name.data());
-            ImGui::PlotLines(
-                "##sparkline",
-                metric.history,
-                static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
-                static_cast<int>(metric.history_offset),
-                nullptr,
-                0.0f,
-                FLT_MAX, // Авто-шкала под максимальные значения зоны
-                ImVec2(120.0f, 18.0f)
-            );
+            ImGui::PlotLines("##sparkline", metric.history, static_cast<int>(tryengine::core::PROFILER_HISTORY_SIZE),
+                             static_cast<int>(metric.history_offset), nullptr, 0.0f,
+                             FLT_MAX,  // Авто-шкала под максимальные значения зоны
+                             ImVec2(120.0f, 18.0f));
             ImGui::PopID();
         }
         ImGui::EndTable();
@@ -125,13 +113,13 @@ static void RenderProfilerPanel() {
     ImGui::End();
 }
 
-void EditorGUI::RecordPanelsGpuCommands(bool& is_playing) {
+void EditorGUI::RecordPanelsGpuCommands(PlayModeState& state) {
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
     DrawMainMenu();
-    DrawPlayToolbar(is_playing);
+    DrawPlayToolbar(state);
     DrawDockSpace();
 
     engine_.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("draw_editor");
@@ -214,14 +202,12 @@ void EditorGUI::DrawMainMenu() {
     ImGui::PopStyleColor();
 }
 
-void EditorGUI::DrawPlayToolbar(bool& is_playing) {
+void EditorGUI::DrawPlayToolbar(PlayModeState& state) {
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     // Задаем жесткую высоту панели
     float toolbar_height = 30.0f;
 
-    // Позиция WorkPos автоматически учитывает отступ от MainMenuBar,
-    // поэтому панель встанет ровно под вкладками File/Edit
     ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x, viewport->WorkPos.y));
     ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x, toolbar_height));
     ImGui::SetNextWindowViewport(viewport->ID);
@@ -231,8 +217,7 @@ void EditorGUI::DrawPlayToolbar(bool& is_playing) {
                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(0.0f, 8.0f));  // Отступы для центрирования кнопок по вертикали
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 8.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyle().Colors[ImGuiCol_WindowBg]);
 
     ImGui::Begin("PlayToolbar", nullptr, toolbar_flags);
@@ -241,8 +226,12 @@ void EditorGUI::DrawPlayToolbar(bool& is_playing) {
     float button_area_width = 120.0f;  // Примерная ширина двух кнопок с отступом
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - button_area_width) * 0.5f);
 
-    if (ImGui::Button(is_playing ? "Stop" : "Play", ImVec2(50, 0))) {
-        is_playing = !is_playing;
+    if (ImGui::Button("Stop/Play", ImVec2(50, 0))) {
+        if (state == PlayModeState::Play) {
+            state = PlayModeState::Edit;
+        } else if (state == PlayModeState::Edit) {
+            state = PlayModeState::Play;
+        }
     }
     ImGui::SameLine();
     if (ImGui::Button("Pause", ImVec2(50, 0))) {

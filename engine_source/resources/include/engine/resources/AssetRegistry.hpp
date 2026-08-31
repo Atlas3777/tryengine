@@ -20,8 +20,7 @@ public:
         if (it != map_.end())
             return it->second;
 
-        // LogWarn();
-        return eastl::nullopt;//("Path for guid {} not found", guid);
+        return eastl::nullopt;
     }
 
 private:

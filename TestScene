@@ -1,0 +1,247 @@
+requireMeshs: u64[] = [
+	2069228533742692363
+]
+requireMaterials: u64[] = [
+	12330106561749381653
+]
+entities: Entity[] = [
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		eid: EntityId = {
+			id: u32 = 0
+			generation: i32 = 1
+		}
+		tag: string = "Sun"
+		PointLight_intensity: f32 = 1
+		Transform_rotation: f32x4 = [0 0 0 1]
+		PointLight_color: f32x3 = [2 1 1]
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [0 100 0]
+		Transform_scale: f32x3 = [1 1 1]
+		PointLight_radius: f32 = 150
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		eid: EntityId = {
+			id: u32 = 1
+			generation: i32 = 1
+		}
+		tag: string = "PointLight"
+		PointLight_intensity: f32 = 1
+		Transform_rotation: f32x4 = [0 0 0 1]
+		PointLight_color: f32x3 = [0 0 1]
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [10 0 0]
+		Transform_scale: f32x3 = [1 1 1]
+		PointLight_radius: f32 = 30
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Camera_far_plane: f32 = 100
+		eid: EntityId = {
+			id: u32 = 2
+			generation: i32 = 1
+		}
+		tag: string = "Camera"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [0 0 2]
+		Transform_scale: f32x3 = [1 1 1]
+		Camera_near_plane: f32 = 0.01
+		Camera_fov: f32 = 60
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 12330106561749381653
+		eid: EntityId = {
+			id: u32 = 3
+			generation: i32 = 1
+		}
+		tag: string = "teest"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		inputState: f32x3 = [0 0 0]
+		mesh: u64 = 1
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		meshGuid: u64 = 2069228533742692363
+		speed: f32 = 3
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [0 0 0]
+		Transform_scale: f32x3 = [1 1 1]
+		material: u64 = 1
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 12330106561749381653
+		eid: EntityId = {
+			id: u32 = 4
+			generation: i32 = 1
+		}
+		tag: string = "Right 1"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		mesh: u64 = 4294967297
+		meshGuid: u64 = 2069228533742692363
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [5 5 0]
+		Transform_scale: f32x3 = [1 1 1]
+		material: u64 = 4294967297
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 12330106561749381653
+		eid: EntityId = {
+			id: u32 = 5
+			generation: i32 = 1
+		}
+		tag: string = "Right 2"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		mesh: u64 = 8589934593
+		meshGuid: u64 = 2069228533742692363
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [5 10 0]
+		Transform_scale: f32x3 = [1 1 1]
+		material: u64 = 8589934593
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 12330106561749381653
+		eid: EntityId = {
+			id: u32 = 6
+			generation: i32 = 1
+		}
+		tag: string = "Left 1"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		mesh: u64 = 12884901889
+		meshGuid: u64 = 2069228533742692363
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-5 5 0]
+		Transform_scale: f32x3 = [1 1 1]
+		material: u64 = 12884901889
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 12330106561749381653
+		eid: EntityId = {
+			id: u32 = 7
+			generation: i32 = 1
+		}
+		tag: string = "Left 2"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		mesh: u64 = 17179869185
+		meshGuid: u64 = 2069228533742692363
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-5 10 0]
+		Transform_scale: f32x3 = [1 1 1]
+		material: u64 = 17179869185
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+]

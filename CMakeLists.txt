@@ -44,11 +44,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND USE_ASAN)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    add_compile_options("-fno-rtti")
-    message(STATUS "RTTI is DISABLED (-fno-rtti)")
+    add_compile_options("-fno-rtti" "-fno-exceptions")
+    message(STATUS "RTTI and Exceptions are DISABLED (-fno-rtti, -fno-exceptions)")
 elseif(MSVC)
-    add_compile_options("/GR-")
-    message(STATUS "RTTI is DISABLED (/GR-)")
+    # /EHs- /EHc- отключают обработку исключений C++
+    add_compile_options("/GR-" "/EHs-" "/EHc-")
+    # Отключает поддержку исключений в стандартной библиотеке MSVC (STL)
+    add_compile_definitions(_HAS_EXCEPTIONS=0)
+    message(STATUS "RTTI and Exceptions are DISABLED (/GR-, /EHs-, /EHc-, _HAS_EXCEPTIONS=0)")
 endif()
 
 add_subdirectory(engine_source)

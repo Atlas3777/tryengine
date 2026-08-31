@@ -69,16 +69,17 @@ def get_camera() : CameraC? {
     query() <| $(let transform : Transform, let camera : Camera){
         cameraC.position = transform.position
 
-        let forward = quat_mul_vec(transform.rotation, float3(0.0f, 0.0f, -1.0f))
-        let up = quat_mul_vec(transform.rotation, float3(0.0f, 1.0f, 0.0f))
-        let target = transform.position + forward
+        // Вектор взгляда берем по +Y, вектор верха — по +Z
+        let forward = quat_mul_vec(transform.rotation, float3(0.0f, 1.0f, 0.0f))
+        let up      = quat_mul_vec(transform.rotation, float3(0.0f, 0.0f, 1.0f))
+        let target  = transform.position + forward
 
         cameraC.view = look_at_rh(transform.position, target, up)
 
         let aspect = 16.0f / 9.0f
         let fov_rad = radians(camera.fov)
         cameraC.proj = perspective_rh(fov_rad, aspect, camera.near_plane, camera.far_plane)
-        cameraC.proj[3][3] = 0
+        cameraC.proj[3][3] = 0.0f
     }
 
     return unsafe(addr(cameraC))

@@ -37,6 +37,7 @@ void RenderAdapter::CollectLight(core::Engine& engine, RenderSystem& render_syst
 
     const auto array = *result;
     auto* points = reinterpret_cast<PointLightGPU*>(array->data);
+    // LogInfo("light's size = {}", array->size);
 
     render_system.lights_queue_ = eastl::span(points, array->size);
 }

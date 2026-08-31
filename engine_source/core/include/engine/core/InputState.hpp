@@ -44,55 +44,55 @@ enum class Mouse : uint8_t {
 };
 
 struct InputState {
-    bool isDown[static_cast<int>(Key::Count)] = {false};
-    bool justPressed[static_cast<int>(Key::Count)] = {false};
-    bool justReleased[static_cast<int>(Key::Count)] = {false};
+    bool is_down[static_cast<int>(Key::Count)] = {false};
+    bool just_pressed[static_cast<int>(Key::Count)] = {false};
+    bool just_released[static_cast<int>(Key::Count)] = {false};
 
     __forceinline bool IsDown(Key key) const {
-        return isDown[static_cast<uint16_t>(key)];
+        return is_down[static_cast<uint16_t>(key)];
     }
 
     __forceinline bool Pressed(Key key) const {
-        return justPressed[static_cast<uint16_t>(key)];
+        return just_pressed[static_cast<uint16_t>(key)];
     }
 
     __forceinline bool Released(Key key) const {
-        return justReleased[static_cast<uint16_t>(key)];
+        return just_released[static_cast<uint16_t>(key)];
     }
 
-    float mouseX = 0.0f, mouseY = 0.0f;
-    float mouseDeltaX = 0.0f, mouseDeltaY = 0.0f;
+    float mouse_x = 0.0f, mouse_y = 0.0f;
+    float mouse_delta_x = 0.0f, mouse_delta_y = 0.0f;
 
-    bool mouseButtons[static_cast<int>(Mouse::Count)] = {false};
-    bool mouseJustPressed[static_cast<int>(Mouse::Count)] = {false};
-    bool mouseJustReleased[static_cast<int>(Mouse::Count)] = {false};
+    bool mouse_buttons[static_cast<int>(Mouse::Count)] = {false};
+    bool mouse_just_pressed[static_cast<int>(Mouse::Count)] = {false};
+    bool mouse_just_released[static_cast<int>(Mouse::Count)] = {false};
 
     // Теперь принимаем Mouse вместо int
     __forceinline bool IsMouseDown(Mouse button) const {
-        return mouseButtons[static_cast<int>(button)];
+        return mouse_buttons[static_cast<int>(button)];
     }
 
     __forceinline bool MousePressed(Mouse button) const {
-        return mouseJustPressed[static_cast<int>(button)];
+        return mouse_just_pressed[static_cast<int>(button)];
     }
 
     __forceinline bool MouseReleased(Mouse button) const {
-        return mouseJustReleased[static_cast<int>(button)];
+        return mouse_just_released[static_cast<int>(button)];
     }
 
     void ResetFrame() {
         for (int i = 0; i < static_cast<int>(Key::Count); ++i) {
-            justPressed[i] = false;
-            justReleased[i] = false;
+            just_pressed[i] = false;
+            just_released[i] = false;
         }
 
         for (int i = 0; i < static_cast<int>(Mouse::Count); ++i) {
-            mouseJustPressed[i] = false;
-            mouseJustReleased[i] = false;
+            mouse_just_pressed[i] = false;
+            mouse_just_released[i] = false;
         }
 
-        mouseDeltaX = 0.0f;
-        mouseDeltaY = 0.0f;
+        mouse_delta_x = 0.0f;
+        mouse_delta_y = 0.0f;
     }
 };
 

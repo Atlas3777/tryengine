@@ -4,7 +4,6 @@ module Types shared public
 
 require math
 require daslib/decs_boost
-require tryeditor
 require tryResources
 
 [decs_template]
@@ -16,9 +15,9 @@ struct PointLight{
 
 [decs_template]
 struct Transform {
-    position : float3 = float3(0, 0, 0)
-    rotation : float4 = quat_from_euler(float3(0, 0, 0))
-    scale    : float3 = float3(1, 1, 1)
+    position : float3
+    rotation : float4
+    scale    : float3
 }
 
 [decs_template]

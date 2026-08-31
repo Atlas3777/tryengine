@@ -3,6 +3,7 @@
 #include "InputState.hpp"
 
 namespace tryengine::core {
+
 class InputService {
 public:
     InputService(InputState& input_state) : input_state(input_state) {};

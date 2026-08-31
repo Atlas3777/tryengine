@@ -2,16 +2,19 @@
 
 #include <memory>
 
+#include "PlayModeState.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
 #include "engine/graphics/RenderTarget.hpp"
 
 namespace tryeditor {
+
 class AssetSourceDatabase;
 class EditorGUI;
 class AssetInspectorManager;
 class AssetsFactoryManager;
 class ImportSystem;
+
 class Editor {
 public:
     Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& graphics_context);
@@ -22,30 +25,19 @@ public:
 
     ~Editor();
 
-    void SaveScene();
-    void SaveSceneForPlayMode();
-    void LoadDefaultScene() const;
-
     void RegisterResourceLoaders() const;
     void RegisterAssetsImporters() const;
     void RegisterAssetsFactories() const;
     void RegisterAssetsInspector() const;
 
     bool running = false;
-    bool play_mode = false;
+    // bool play_mode = false;
+    PlayModeState state;
 
-    tryengine::core::Engine& GetEngine() { return engine_; }
-    tryengine::graphics::GraphicsContext& GetGraphicsContext() { return graphics_context_; }
-
-    // Геттеры для редакторских подсистем
-    ImportSystem& GetImportSystem() { return *import_system_; }
-    AssetsFactoryManager& GetAssetsFactory() { return *assets_factory_; }
-    AssetInspectorManager& GetAssetInspector() { return *asset_inspector_manager_; }
-    EditorGUI& GetGUI() { return *gui_; }
-    AssetSourceDatabase& GetAssetSourceDatabase() { return *asset_source_database_; }
+    [[nodiscard]] EditorGUI& GetGUI() const { return *gui_; }
+    [[nodiscard]] AssetSourceDatabase& GetAssetSourceDatabase() const { return *asset_source_database_; }
 
     std::unique_ptr<tryengine::graphics::RenderTarget> target;
-
 
 private:
     tryengine::core::Engine& engine_;
@@ -58,4 +50,4 @@ private:
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
     std::unique_ptr<EditorGUI> gui_;
 };
-}
+}  // namespace tryeditor

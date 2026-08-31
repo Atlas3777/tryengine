@@ -3,10 +3,11 @@
 #include <engine/graphics/RenderSystem.hpp>
 #include <imgui_impl_sdl3.h>
 
+#include "../../engine_source/graphics/include/engine/graphics/InputMapper.hpp"
 #include "editor/AssetSourceDatabase.hpp"
 #include "editor/CreateFile.hpp"
 #include "editor/Editor.hpp"
-#include "editor/InputMapper.hpp"
+#include "editor/EditorScriptSetup.hpp"
 #include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/async/GlobalExecutors.hpp"
@@ -15,7 +16,7 @@
 #include "engine/core/InputService.hpp"
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/core/Time.hpp"
+#include "engine/core/TimeManager.hpp"
 #include "engine/graphics/RenderAdapter.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/resources/ResourceManager.hpp"
@@ -30,49 +31,55 @@ using namespace tryengine::graphics;
 using namespace tryengine::resources;
 using namespace tryengine::async;
 
+struct EditorClock{};
+
 void EditorApp::Init() {
     graphics_context_ = std::make_unique<GraphicsContext>(1280, 720, "tryengine");
 
     engine_ = std::make_unique<Engine>();
     engine_->RegisterSystem<RenderSystem>(graphics_context_->GetDevice());
     engine_->RegisterSystem<RenderAdapter>();
-    engine_->RegisterSystem<Time>();
     engine_->RegisterSystem<InputService>(this->input_state_);
-    engine_->RegisterSystem<AssetRegistry>();
-    engine_->RegisterSystem<ResourceManager>(async_file_manager_, engine_->Get<AssetRegistry>());
 
-    auto& script_system = engine_->RegisterSystem<ScriptSystem>(*engine_);
+    engine_->RegisterSystem<AssetRegistry>();
+    engine_->RegisterSystem<AsyncFileManager>();
+    engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+    auto& tm = engine_->RegisterSystem<TimeManager>();
+
+    tm.RegisterClock<GameClock>();
+    tm.RegisterClock<GameWorldClock, GameClock>();
+    tm.RegisterClock<GameUIClock, GameClock>();
+
+    tm.RegisterClock<EditorClock>();
+
     editor_ = std::make_unique<Editor>(*engine_, *graphics_context_);
 
-    script_system.SetContextFactory([this](Engine& eng, uint32_t stack_size) -> das::Context* {
-        return new TryEditorContext(eng, *editor_, stack_size);
-    });
+    auto& script_system = engine_->RegisterSystem<ScriptSystem>(GetEditorScriptConfig(*engine_, *editor_));
 
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
 
-    editor_->LoadDefaultScene();
-
     const auto task =
-        RunPollable(ThreadPool(), editor_->GetAssetSourceDatabase().InitEngineContentSync(async_file_manager_));
+        RunPollable(ThreadPool(), editor_->GetAssetSourceDatabase().InitEngineContentSync(engine_->Get<AsyncFileManager>()));
 
     while (!task.IsReady()) {
-        async_file_manager_.Pull();
+        engine_->Get<AsyncFileManager>().Pull();
         MainThread().Pull();
-        async_file_manager_.Submit();
+        engine_->Get<AsyncFileManager>().Submit();
         std::this_thread::yield();
     }
 
-    engine_->Get<ScriptSystem>().InvokeStart();
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
 
-    RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().AsyncLoadGameContent(async_file_manager_));
+    RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().AsyncLoadGameContent(engine_->Get<AsyncFileManager>()));
 }
 
 void EditorApp::Run() {
     editor_->running = true;
-    editor_->play_mode = false;
+    editor_->state = PlayModeState::Edit;
     auto& render_system = engine_->Get<RenderSystem>();
 
-    auto& time = engine_->Get<Time>();
+    auto& tm = engine_->Get<TimeManager>();
+    auto& script_system = engine_->Get<ScriptSystem>();
 
     while (editor_->running) {
         TRY_PROFILE_SCOPE("Main Loop Frame");
@@ -80,20 +87,18 @@ void EditorApp::Run() {
             TRY_PROFILE_SCOPE("Render Less Frame");
             UpdateInput();
 
-            time.NewFrame();
-            async_file_manager_.Pull();
+            tm.NewFrame();
+            engine_->Get<AsyncFileManager>().Pull();
             MainThread().Pull();
 
-            engine_->Get<ScriptSystem>().CheckForReload(time.UnscaledDeltaTime());
+            script_system.InvokeFunctionFast("EditorUpdate");
 
-            engine_->Get<ScriptSystem>().InvokeFunctionFast("EditorUpdate", time.UnscaledDeltaTime());
+            if (editor_->state == PlayModeState::Play) {
+                script_system.InvokeFunctionSafe("Update");
+            }
+            engine_->Get<AsyncFileManager>().Submit();
 
-            if (editor_->play_mode)
-                engine_->Get<ScriptSystem>().InvokeUpdate(time.ScaledTotalTime());
-
-            async_file_manager_.Submit();
-
-            editor_->GetGUI().RecordPanelsGpuCommands(editor_->play_mode);
+            editor_->GetGUI().RecordPanelsGpuCommands(editor_->state);
         }
 
         {
@@ -109,12 +114,12 @@ void EditorApp::Run() {
             }
 
             engine_->Get<RenderAdapter>().CollectDrawable(*engine_, render_system);
-            auto camera_data = engine_->Get<ScriptSystem>().SimpleReturnUnsafe<CameraData*>("get_camera");
+            auto camera_data = script_system.SimpleReturnUnsafe<CameraData*>("get_camera");
             render_system.RenderToTarget(cmd, *editor_->target, *(*camera_data));
 
             editor_->GetGUI().RenderToSwapchain(swapchain_texture, cmd);
         }
-        Profiler::Instance().EndFrame(time.ScaledDeltaTime() * 1000.0f);
+        Profiler::Instance().EndFrame(tm.Root().DeltaTime() * 1000.0f);
     }
 }
 

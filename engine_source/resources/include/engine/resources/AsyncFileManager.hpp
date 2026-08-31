@@ -24,7 +24,8 @@ struct FileTime {
 };
 
 inline bool operator>(const FileTime& a, const FileTime& b) noexcept {
-    if (a.sec != b.sec) return a.sec > b.sec;
+    if (a.sec != b.sec)
+        return a.sec > b.sec;
     return a.nsec > b.nsec;
 }
 
@@ -81,6 +82,7 @@ public:
         if (IsReady() && task_) {
             return {task_->storage.data(), task_->storage.size()};
         }
+        TRY_ASSERT(false,"IsReady == false");
         return {};
     }
 
@@ -88,6 +90,7 @@ public:
         if (IsReady() && task_) {
             return std::move(task_->storage);
         }
+        TRY_ASSERT(false,"IsReady == false");
         return {};
     }
 
@@ -123,6 +126,19 @@ private:
     FileTask* task_{nullptr};
 };
 
+inline void FileHandle::Release() noexcept {
+    LogInfo("FileHandle Release");
+    if (task_) {
+        TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
+        task_->status = TaskStatus::Unused;
+        task_->storage.clear();
+        task_->path = eastl::string_view{};
+        task_->continuation = nullptr;
+        task_->wait_counter = nullptr;
+        task_ = nullptr;
+    }
+}
+
 struct FileIoAwaiter {
     const FileHandle& handle;
 
@@ -147,7 +163,7 @@ struct GroupIoAwaiter {
     uint32_t remaining_ = 0;
 
     bool await_ready() noexcept {
-        std::apply([this](const auto&... h) { ((h.IsPending() ? ++remaining_ : (void) 0), ...); }, handles);
+        std::apply([this](const auto&... h) { ((void) (h.IsPending() && ++remaining_), ...); }, handles);
         return remaining_ == 0;
     }
 
@@ -170,7 +186,7 @@ struct GroupIoAwaiter {
 };
 
 template <typename... Handles>
-    requires (std::same_as<std::decay_t<Handles>, FileHandle> && ...)
+    requires(std::same_as<std::decay_t<Handles>, FileHandle> && ...)
 inline GroupIoAwaiter<Handles...> WaitAllFiles(const Handles&... handles) noexcept {
     return GroupIoAwaiter<Handles...>{std::tie(handles...)};
 }
@@ -181,7 +197,8 @@ struct VectorIoAwaiter {
 
     bool await_ready() noexcept {
         for (const auto& h : handles) {
-            if (h.IsPending()) ++remaining;
+            if (h.IsPending())
+                ++remaining;
         }
         return remaining == 0;
     }
@@ -497,10 +514,12 @@ private:
     }
 
     void EnsureDirectoriesExist(eastl::string_view dir_path) {
-        if (dir_path.empty()) return;
+        if (dir_path.empty())
+            return;
 
         char buffer[512];
-        if (dir_path.size() >= sizeof(buffer)) return;
+        if (dir_path.size() >= sizeof(buffer))
+            return;
 
         eastl::copy(dir_path.begin(), dir_path.end(), buffer);
         buffer[dir_path.size()] = '\0';
@@ -544,17 +563,5 @@ private:
     std::mutex dirs_mutex_;
     eastl::hash_set<eastl::string> known_dirs_;
 };
-
-inline void FileHandle::Release() noexcept {
-    if (task_) {
-        TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
-        task_->status = TaskStatus::Unused;
-        task_->storage.clear();
-        task_->path = eastl::string_view{};
-        task_->continuation = nullptr;
-        task_->wait_counter = nullptr;
-        task_ = nullptr;
-    }
-}
 
 }  // namespace tryengine::resources

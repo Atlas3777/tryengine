@@ -3,7 +3,7 @@
 #include <EASTL/span.h>
 #include <EASTL/vector.h>
 
-#include "TextureTypes.hpp"
+#include "engine/resources/TextureTypes.hpp"
 #include "engine/core/Result.hpp"
 
 namespace tryengine::resources {

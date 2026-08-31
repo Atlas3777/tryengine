@@ -8,5 +8,6 @@ def initialize(project_path : string) {
         register_dynamic_module("{project_path}/tryengine.shared_module", "Module_Renderer")
         register_dynamic_module("{project_path}/tryengine.shared_module", "Module_Resources")
         register_dynamic_module("{project_path}/tryengine.shared_module", "Module_Input")
+        register_dynamic_module("{project_path}/tryengine.shared_module", "Module_AsyncFileManager")
     }
 }
