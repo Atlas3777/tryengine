@@ -106,14 +106,6 @@ def save_scene_to_config() : string {
     scene.entities <- entities_list
 
     return write_config(CF(scene))
-
-    // var root_obj : table<string; StructField?>
-    // var entities_cf = CF(entities_list)
-    // entities_cf.name = "entities"
-    // entities_cf.typeName = "Entity[]"
-    // root_obj["entities"] = entities_cf
-
-    // return write_config(CF(root_obj))
 }
 
 

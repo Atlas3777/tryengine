@@ -127,7 +127,7 @@ private:
 };
 
 inline void FileHandle::Release() noexcept {
-    LogInfo("FileHandle Release");
+    // LogInfo("FileHandle Release"); TODO: утечка
     if (task_) {
         TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
         task_->status = TaskStatus::Unused;

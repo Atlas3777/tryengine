@@ -6,10 +6,12 @@ require tryengine/Types
 require tryengine/Scene
 require tryengine/Input
 require tryengine/Render
+require tryeditor/QuadTreeDebugWindow
 
 [export]
 def Start(){
     update_input()
+    init_quadtree_debug()
 
     let chair_eid = create_entity() @(eid, cmp) {
         cmp.tag := "Sun"
@@ -53,10 +55,15 @@ def Start(){
             near_plane = 0.01f,
             far_plane = 100.0f
         ))
+        cmp |> set("dsf", TTT(gp = 2))
         apply_decs_template(cmp, Relationship())
     }
 
     commit()
+}
+
+struct TTT{
+    gp : int
 }
 
 [export]

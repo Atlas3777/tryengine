@@ -1,6 +1,7 @@
 #pragma once
 
 #include <EASTL/string.h>
+#include <EASTL/unordered_map.h>
 #include <EASTL/vector.h>
 
 #include "engine/graphics/RuntimeTypes.hpp"

@@ -2,115 +2,70 @@
 
 #include <SDL3/SDL_gpu.h>
 #include <algorithm>
-#include <memory>
 
-#include "editor/JsonParser.hpp"
-#include "engine/graphics/AssetTypes.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
-#include "engine/resources/ResourceManager.hpp"
+#include "engine/graphics/ShaderBinary.hpp"
+#include "engine/async/Task.hpp"
 
 namespace tryengine::graphics {
 
 class ShaderLoader {
 public:
-    explicit ShaderLoader(resources::ResourceManager& rm, SDL_GPUDevice* device)
-        : device_(device), resource_manager_(rm) {}
+    explicit ShaderLoader(SDL_GPUDevice* device) : device_(device) {}
 
     async::Task<Shader> Parse(eastl::span<const uint8_t> data) const {
         co_await tryengine::async::ExecutorSwitch(tryengine::async::MainThread());
 
-        auto res = tryeditor::Deserialize<ShaderAsset>(data);
+        auto unpack_result = UnpackShaderBinary(data);
+        if (!unpack_result.has_value()) {
+            co_return LogAndMakeError("Failed to unpack ShaderBinary container");
+        }
+        auto& binary_content = *unpack_result;
 
-        if (!res.has_value())
-            co_return core::Error("Deserialize of ShaderAsset failed");
-
-        ShaderAsset& asset = *res;
-
-        size_t fragment_code_size;
-
-        auto path_to_fragment = resource_manager_.GetAssetRegistry().GetArtifactPath(asset.fragment_shader_id);
-
-        if (!path_to_fragment.has_value())
-            co_return LogAndMakeError("path for guid {} not found", asset.fragment_shader_id);
-
-
-        void* fragment_code = SDL_LoadFile(path_to_fragment->c_str(), &fragment_code_size);
-
-
-        SDL_GPUShaderCreateInfo fragment_info{};
-        fragment_info.code = (Uint8*) fragment_code;
-        fragment_info.code_size = fragment_code_size;
-        fragment_info.entrypoint = "main";
-        fragment_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
-        fragment_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
-        fragment_info.num_samplers = 1;
-        fragment_info.num_storage_buffers = 1;
-        fragment_info.num_storage_textures = 0;
-        fragment_info.num_uniform_buffers = 1;
-
-        SDL_GPUShader* fragment_shader = SDL_CreateGPUShader(device_, &fragment_info);
-        SDL_free(fragment_code);
-
-        size_t vertex_code_size;
-
-        auto path_to_vertex = resource_manager_.GetAssetRegistry().GetArtifactPath(asset.vertex_shader_id);
-
-        if (!path_to_vertex.has_value())
-            co_return LogAndMakeError("path for guid {} not found", asset.vertex_shader_id);
-
-
-        void* vertex_code = SDL_LoadFile(path_to_vertex->c_str(), &vertex_code_size);
-
-        SDL_GPUShaderCreateInfo vertex_info;
-        vertex_info.code = (Uint8*) vertex_code;
-        vertex_info.code_size = vertex_code_size;
-        vertex_info.entrypoint = "main";
+        // 1. Вертексный шейдер
+        SDL_GPUShaderCreateInfo vertex_info{};
+        vertex_info.code = binary_content.vertex_spv.data();
+        vertex_info.code_size = binary_content.vertex_spv.size();
+        vertex_info.entrypoint = "vsMain";
         vertex_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
         vertex_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
-        vertex_info.num_samplers = 0;
-        vertex_info.num_storage_buffers = 0;
-        vertex_info.num_storage_textures = 0;
-        vertex_info.num_uniform_buffers = 1;
+        vertex_info.num_samplers = binary_content.vertex_counts.num_samplers;
+        vertex_info.num_storage_buffers = binary_content.vertex_counts.num_storage_buffers;
+        vertex_info.num_storage_textures = binary_content.vertex_counts.num_storage_textures;
+        vertex_info.num_uniform_buffers = binary_content.vertex_counts.num_uniform_buffers;
 
         SDL_GPUShader* vertex_shader = SDL_CreateGPUShader(device_, &vertex_info);
-        SDL_free(vertex_code);
 
-        if (fragment_shader == nullptr) {
-            co_return core::Error("Could not load vertex shader");
-        }
-        if (vertex_shader == nullptr) {
-            co_return core::Error("Could not load vertex shader");
+        // 2. Фрагментный шейдер
+        SDL_GPUShaderCreateInfo fragment_info{};
+        fragment_info.code = binary_content.fragment_spv.data();
+        fragment_info.code_size = binary_content.fragment_spv.size();
+        fragment_info.entrypoint = "fsMain";
+        fragment_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+        fragment_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+        fragment_info.num_samplers = binary_content.fragment_counts.num_samplers;
+        fragment_info.num_storage_buffers = binary_content.fragment_counts.num_storage_buffers;
+        fragment_info.num_storage_textures = binary_content.fragment_counts.num_storage_textures;
+        fragment_info.num_uniform_buffers = binary_content.fragment_counts.num_uniform_buffers;
+
+        SDL_GPUShader* fragment_shader = SDL_CreateGPUShader(device_, &fragment_info);
+
+        if (!vertex_shader || !fragment_shader) {
+            if (vertex_shader) SDL_ReleaseGPUShader(device_, vertex_shader);
+            if (fragment_shader) SDL_ReleaseGPUShader(device_, fragment_shader);
+            co_return core::Error("Could not create SDL_GPUShader from SPIR-V binary");
         }
 
-        Shader shader;
-        shader.fragment_shader = fragment_shader;
+        Shader shader{};
         shader.vertex_shader = vertex_shader;
+        shader.fragment_shader = fragment_shader;
+        shader.reflection = std::move(binary_content.reflection);
 
-        // 2. Формируем Runtime Layout
-        for (const auto& p : asset.params) {
-            shader.layout.AddParam(p.name, p.type);
-        }
-        for (const auto& [name, slot] : asset.textures) {
-            shader.layout.texture_slots[name] = slot;
-        }
-
-        // 3. Подготавливаем дефолтный буфер
-        shader.default_uniform_data.assign(shader.layout.uniform_buffer_size, 0);
-        for (const auto& p : asset.params) {
-            auto it = std::find_if(shader.layout.params.begin(), shader.layout.params.end(),
-                                   [&](auto& info) { return info.name == p.name; });
-
-            if (it != shader.layout.params.end() && !p.default_values.empty()) {
-                std::memcpy(shader.default_uniform_data.data() + it->offset, p.default_values.data(),
-                            std::min((size_t) it->size, p.default_values.size() * sizeof(float)));
-            }
-        }
         co_return shader;
     }
 
 private:
-    SDL_GPUDevice* device_;
-    resources::ResourceManager& resource_manager_;
+    SDL_GPUDevice* device_ = nullptr;
 };
 
 }  // namespace tryengine::graphics

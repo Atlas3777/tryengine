@@ -4,6 +4,8 @@
 
 namespace tryengine::graphics {
 class RenderTarget {
+    static constexpr SDL_GPUTextureFormat GetHardCodeDepthFormat() { return  SDL_GPU_TEXTUREFORMAT_D16_UNORM; }
+
 public:
     RenderTarget(SDL_GPUDevice* device, uint32_t w, uint32_t h, SDL_GPUTextureFormat format, bool useDepth = true)
         : device(device), width(w), height(h), color_format(format), use_depth(useDepth) {
@@ -26,6 +28,8 @@ public:
 
     [[nodiscard]] SDL_GPUTexture* GetColor() const { return color_texture; }
     [[nodiscard]] SDL_GPUTexture* GetDepth() const { return depth_texture; }
+    [[nodiscard]] SDL_GPUTextureFormat GetColorFormat() const { return color_format; }
+    [[nodiscard]] SDL_GPUTextureFormat GetDepthFormat() const { return GetHardCodeDepthFormat(); }
     [[nodiscard]] uint32_t GetWidth() const { return width; }
     [[nodiscard]] uint32_t GetHeight() const { return height; }
     [[nodiscard]] bool UseDepth() const { return use_depth; }
@@ -55,7 +59,7 @@ private:
 
         SDL_GPUTextureCreateInfo depthInfo{};
         depthInfo.type = SDL_GPU_TEXTURETYPE_2D;
-        depthInfo.format = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+        depthInfo.format = GetHardCodeDepthFormat();
         depthInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
         depthInfo.width = width;
         depthInfo.height = height;

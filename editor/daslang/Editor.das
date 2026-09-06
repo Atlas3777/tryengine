@@ -6,6 +6,7 @@ require tryeditor/Hierarchy
 require tryeditor/Inspector
 require tryeditor/AssetBrowser
 require tryeditor/SceneViewPort
+require tryeditor/QuadTreeDebugWindow
 
 require imgui
 require imgui/imgui_boost_runtime
@@ -109,11 +110,11 @@ def draw_editor() {
     }
     begin_frame()
 
-
     DrawHierarchy()
     DrawInspector()
     DrawAssetBrowser()
     DrawSceneViewPort()
+    DrawQuadTreeDebug()
 
     end_of_frame()
 }

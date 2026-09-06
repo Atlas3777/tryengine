@@ -39,11 +39,11 @@ void RenderAdapter::CollectLight(core::Engine& engine, RenderSystem& render_syst
     auto* points = reinterpret_cast<PointLightGPU*>(array->data);
     // LogInfo("light's size = {}", array->size);
 
-    render_system.lights_queue_ = eastl::span(points, array->size);
+    auto lights_queue_ = eastl::span(points, array->size);
 }
 
 void RenderAdapter::CollectDrawCommand(core::Engine& engine, RenderSystem& render_system) {
-    render_system.ClearQueue();
+    // render_system.ClearQueue();
 
     auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("get_render_obj");
 
