@@ -33,20 +33,25 @@ public:
         uint32_t num_attributes = 0;
 
         switch (desc.vertex_format) {
-            case resources::VertexFormat::Standard: {
-                vertex_buffer_description.pitch = sizeof(resources::Vertex);
-                num_attributes = 4;
-
-                // Location 0: Position
-                vertex_attributes[0] = { .location = 0, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = offsetof(resources::Vertex, x) };
-                // Location 1: Normal
-                vertex_attributes[1] = { .location = 1, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = offsetof(resources::Vertex, nx) };
-                // Location 2: Color
-                vertex_attributes[2] = { .location = 2, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = offsetof(resources::Vertex, r) };
-                // Location 3: UV
-                vertex_attributes[3] = { .location = 3, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = offsetof(resources::Vertex, u) };
+            case resources::VertexFormat::None: {
+                num_attributes = 0;
                 break;
             }
+
+            // case resources::VertexFormat::Standard: {
+            //     vertex_buffer_description.pitch = sizeof(resources::Vertex);
+            //     num_attributes = 4;
+            //
+            //     // Location 0: Position
+            //     vertex_attributes[0] = { .location = 0, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = offsetof(resources::Vertex, x) };
+            //     // Location 1: Normal
+            //     vertex_attributes[1] = { .location = 1, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = offsetof(resources::Vertex, nx) };
+            //     // Location 2: Color
+            //     vertex_attributes[2] = { .location = 2, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = offsetof(resources::Vertex, r) };
+            //     // Location 3: UV
+            //     vertex_attributes[3] = { .location = 3, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = offsetof(resources::Vertex, u) };
+            //     break;
+            // }
 
             case resources::VertexFormat::StaticPacked: {
                 LogTrace(LogCategory::Graphics, "StaticPaced");
@@ -106,6 +111,7 @@ public:
             }
         }
 
+
         // --- ПЕРЕНОС ДАННЫХ ИЗ ДЕСКРИПТОРА ---
         SDL_GPUGraphicsPipelineCreateInfo pipeline_info{};
 
@@ -120,10 +126,17 @@ public:
         pipeline_info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 
         // 3. Вершины
-        pipeline_info.vertex_input_state.num_vertex_buffers = 1;
-        pipeline_info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_description;
-        pipeline_info.vertex_input_state.num_vertex_attributes = num_attributes;
-        pipeline_info.vertex_input_state.vertex_attributes = vertex_attributes;
+        if (num_attributes > 0) {
+            pipeline_info.vertex_input_state.num_vertex_buffers = 1;
+            pipeline_info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_description;
+            pipeline_info.vertex_input_state.num_vertex_attributes = num_attributes;
+            pipeline_info.vertex_input_state.vertex_attributes = vertex_attributes;
+        } else {
+            pipeline_info.vertex_input_state.num_vertex_buffers = 0;
+            pipeline_info.vertex_input_state.vertex_buffer_descriptions = nullptr;
+            pipeline_info.vertex_input_state.num_vertex_attributes = 0;
+            pipeline_info.vertex_input_state.vertex_attributes = nullptr;
+        }
 
         // 4. Блендинг и цвет
         SDL_GPUColorTargetDescription colorTargetDesc{};
@@ -149,12 +162,14 @@ public:
         pipeline_info.depth_stencil_state.compare_op = desc.depth_compare_op;
 
         // --- СОЗДАНИЕ ---
-        LogTrace(LogCategory::Graphics, "Pipeline create");
         SDL_GPUGraphicsPipeline* new_pipeline = SDL_CreateGPUGraphicsPipeline(device, &pipeline_info);
 
         if (new_pipeline) {
             pipeline_cache_[hash] = new_pipeline;
+            LogTrace(LogCategory::Graphics, "Pipeline create");
         }
+        else
+            LogError(LogCategory::Graphics, "Pipeline create failed: {}", SDL_GetError());
 
         return new_pipeline;
     }

@@ -2,12 +2,17 @@
 
 #include <EASTL/fixed_vector.h>
 #include <EASTL/hash_map.h>
+#include <EASTL/optional.h>
+#include <EASTL/span.h>
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
 #include <EASTL/vector.h>
 #include <SDL3/SDL_gpu.h>
+#include <cstring>
 #include <memory>
+#include <utility>
 
+#include "engine/core/Log.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
 
 namespace tryengine::graphics {
@@ -45,13 +50,72 @@ public:
 
     [[nodiscard]] RGResourceHandle Get(RGTag tag) const {
         auto it = entries_.find(tag);
-        return it != entries_.end() ? it->second : RGResourceHandle{};
+        if (it != entries_.end())
+            return it->second;
+
+        LogError("Resource not found ");
+        return RGResourceHandle{};
     }
 
     void Clear() { entries_.clear(); }
 
 private:
     eastl::hash_map<RGTag, RGResourceHandle> entries_;
+};
+
+class CPUBlackboard {
+public:
+    CPUBlackboard() = default;
+
+    void Put(RGTag tag, const void* data, size_t size_bytes) {
+        auto& buffer = entries_[tag];
+        buffer.resize(size_bytes);
+        if (data && size_bytes > 0) {
+            std::memcpy(buffer.data(), data, size_bytes);
+        }
+    }
+
+    template <typename T>
+    void Put(RGTag tag, const T& data) {
+        Put(tag, &data, sizeof(T));
+    }
+
+    [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(RGTag tag) const {
+        auto it = entries_.find(tag);
+        if (it != entries_.end()) {
+            return eastl::span(it->second.data(), it->second.size());
+        }
+
+        LogError("CPUBlackboard: Entry not found for tag.");
+        return eastl::nullopt;
+    }
+
+    [[nodiscard]] const void* GetData(RGTag tag) const {
+        auto span = GetSpan(tag);
+        return span->data();
+    }
+
+    [[nodiscard]] size_t GetSize(RGTag tag) const {
+        auto span = GetSpan(tag);
+        return span->size();
+    }
+
+    template <typename T>
+    [[nodiscard]] const T* GetAs(RGTag tag) const {
+        auto span = GetSpan(tag);
+        if (span->size() >= sizeof(T)) {
+            return reinterpret_cast<const T*>(span->data());
+        }
+        LogError("CPUBlackboard: Data size is smaller than requested struct.");
+        return nullptr;
+    }
+
+    [[nodiscard]] bool Has(RGTag tag) const { return entries_.find(tag) != entries_.end(); }
+
+    void Clear() { entries_.clear(); }
+
+private:
+    eastl::hash_map<RGTag, eastl::vector<uint8_t>> entries_;
 };
 
 enum class RGAccess : uint8_t { Read, Write, Create };
@@ -69,6 +133,7 @@ public:
     SDL_GPUCommandBuffer* cmd_buffer = nullptr;
     SDL_GPURenderPass* gpu_pass = nullptr;
     Blackboard* frame_bb = nullptr;
+    CPUBlackboard* cpu_bb = nullptr;
 
     [[nodiscard]] SDL_GPUTexture* GetTexture(RGResourceHandle h) const;
     [[nodiscard]] SDL_GPUBuffer* GetBuffer(RGResourceHandle h) const;
@@ -76,7 +141,7 @@ public:
     void SetGraph(class RenderGraph* graph) { graph_ = graph; }
 
 private:
-    class RenderGraph* graph_ = nullptr;
+    RenderGraph* graph_ = nullptr;
 };
 
 class PassNodeBase {
@@ -96,7 +161,7 @@ template <typename PassData>
 class PassNode final : public PassNodeBase {
 public:
     PassData data{};
-    eastl::function<void(RGExecuteContext&, const PassData&)> execute_fn; // TODO: убрать function
+    eastl::function<void(RGExecuteContext&, const PassData&)> execute_fn;
 
     void Execute(RGExecuteContext& ctx) override {
         if (execute_fn) {
@@ -109,8 +174,7 @@ class RenderGraph;
 
 class RenderGraphBuilder {
 public:
-    explicit RenderGraphBuilder(RenderGraph& graph, PassNodeBase* pass)
-        : graph_(graph), pass_(pass) {}
+    explicit RenderGraphBuilder(RenderGraph& graph, PassNodeBase* pass) : graph_(graph), pass_(pass) {}
 
     RGResourceHandle CreateTexture(eastl::string_view dbg_name, const RGTextureDesc& desc);
     RGResourceHandle CreateBuffer(eastl::string_view dbg_name, const RGBufferDesc& desc);
@@ -120,6 +184,9 @@ public:
 
     void Export(RGTag tag, RGResourceHandle h);
     RGResourceHandle Import(RGTag tag);
+
+    CPUBlackboard& GetCPUBlackboard();
+    const CPUBlackboard& GetCPUBlackboard() const;
 
     void MarkSideEffect() { pass_->has_side_effect = true; }
 
@@ -175,6 +242,14 @@ public:
     explicit RenderGraph(SDL_GPUDevice* device);
     ~RenderGraph();
 
+    // Запись CPU-данных ДО создания пассов
+    template <typename T>
+    void PutCPUData(RGTag tag, const T& data) {
+        cpu_bb_.Put(tag, data);
+    }
+
+    void PutCPUData(RGTag tag, const void* data, size_t size_bytes) { cpu_bb_.Put(tag, data, size_bytes); }
+
     template <typename PassData, typename SetupFn, typename ExecFn>
     PassData& AddPass(eastl::string_view name, SetupFn&& setup, ExecFn&& exec) {
         auto pass = std::make_unique<PassNode<PassData>>();
@@ -209,6 +284,9 @@ public:
     Blackboard& GetBlackboard() { return frame_bb_; }
     const Blackboard& GetBlackboard() const { return frame_bb_; }
 
+    CPUBlackboard& GetCPUBlackboard() { return cpu_bb_; }
+    const CPUBlackboard& GetCPUBlackboard() const { return cpu_bb_; }
+
     SDL_GPUTexture* GetPhysicalTexture(RGResourceHandle h) const;
     SDL_GPUBuffer* GetPhysicalBuffer(RGResourceHandle h) const;
 
@@ -220,6 +298,7 @@ private:
     eastl::vector<std::unique_ptr<PassNodeBase>> passes_;
     eastl::vector<RGVirtualResource> resources_;
     Blackboard frame_bb_;
+    CPUBlackboard cpu_bb_;
     RGResourcePool pool_;
 
     eastl::fixed_vector<uint32_t, 128> sorted_order_;

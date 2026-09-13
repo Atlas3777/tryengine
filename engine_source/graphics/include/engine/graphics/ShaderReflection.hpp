@@ -17,6 +17,12 @@ constexpr const char* kGlobalLightUBO = "GlobalLightUBO";
 constexpr const char* kPointLightBuffer = "PointLightBuffer";
 }  // namespace reserved_names
 
+enum class BindingScope : uint8_t {
+    PerObj,   // Ресурсы, меняющиеся каждый draw call
+    Material,  // Параметры материала
+    Pass       // Глобальные ресурсы кадра/прохода из RenderGraph Blackboard
+};
+
 enum class ShaderParamType : uint8_t { Float, Int, Vec2, Vec3, Vec4, Mat3, Mat4 };
 
 constexpr uint32_t GetTypeSize(ShaderParamType type) {
@@ -36,6 +42,8 @@ enum class ShaderResourceKind : uint8_t {
     UniformBuffer,
     SampledTexture,
     StorageBufferRead,
+    StorageBufferWrite,
+    StorageTexture,
 };
 
 enum class ShaderStage : uint8_t { Vertex, Fragment };
@@ -53,14 +61,27 @@ struct ShaderReflectedBinding {
     RGTag name_hash = 0;
     ShaderResourceKind kind = ShaderResourceKind::UniformBuffer;
     ShaderStage stage = ShaderStage::Fragment;
+    BindingScope scope = BindingScope::Material;
     uint32_t set = 0;
     uint32_t binding = 0;
+    uint32_t slot = 0; // Порядковый 0-based индекс для SDL3 GPU привязок
     uint32_t size = 0;
     eastl::vector<ShaderReflectedParam> params;
 
     [[nodiscard]] bool IsReserved() const {
-        return name == reserved_names::kFrameUBO || name == reserved_names::kGlobalLightUBO ||
-               name == reserved_names::kPointLightBuffer;
+        return scope != BindingScope::Material;
+    }
+
+    [[nodiscard]] bool IsPerObj() const {
+        return scope == BindingScope::PerObj;
+    }
+
+    [[nodiscard]] bool IsMaterial() const {
+        return scope == BindingScope::Material;
+    }
+
+    [[nodiscard]] bool IsPass() const {
+        return scope == BindingScope::Pass;
     }
 
     [[nodiscard]] const ShaderReflectedParam* FindParamByTag(RGTag tag) const {
@@ -98,7 +119,7 @@ struct ShaderReflectionData {
     template <typename Fn>
     void ForEachMaterialBinding(Fn&& fn) const {
         for (const auto& b : bindings) {
-            if (!b.IsReserved()) fn(b);
+            if (b.IsMaterial()) fn(b);
         }
     }
 };
@@ -144,8 +165,10 @@ inline void WriteReflection(eastl::vector<uint8_t>& out, const ShaderReflectionD
         WriteString(out, b.name);
         WriteU32(out, static_cast<uint32_t>(b.kind));
         WriteU32(out, static_cast<uint32_t>(b.stage));
+        WriteU32(out, static_cast<uint32_t>(b.scope));
         WriteU32(out, b.set);
         WriteU32(out, b.binding);
+        WriteU32(out, b.slot);
         WriteU32(out, b.size);
 
         WriteU32(out, static_cast<uint32_t>(b.params.size()));
@@ -174,14 +197,17 @@ inline bool ReadReflection(eastl::span<const uint8_t> bytes, size_t& cursor, Sha
         if (!ReadString(bytes, cursor, b.name)) return false;
         b.name_hash = RGTagOf(b.name);
 
-        uint32_t kind = 0, stage = 0;
+        uint32_t kind = 0, stage = 0, scope = 0;
         if (!ReadU32(bytes, cursor, kind)) return false;
         if (!ReadU32(bytes, cursor, stage)) return false;
+        if (!ReadU32(bytes, cursor, scope)) return false;
         b.kind = static_cast<ShaderResourceKind>(kind);
         b.stage = static_cast<ShaderStage>(stage);
+        b.scope = static_cast<BindingScope>(scope);
 
         if (!ReadU32(bytes, cursor, b.set)) return false;
         if (!ReadU32(bytes, cursor, b.binding)) return false;
+        if (!ReadU32(bytes, cursor, b.slot)) return false;
         if (!ReadU32(bytes, cursor, b.size)) return false;
 
         uint32_t param_count = 0;
@@ -202,4 +228,4 @@ inline bool ReadReflection(eastl::span<const uint8_t> bytes, size_t& cursor, Sha
 
 }  // namespace detail
 
-}  // namespace tryengine::graphics
+}  // namespace tryengine::graphicss

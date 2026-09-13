@@ -72,30 +72,43 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
         mat_data.shader_asset_id = tryengine::resources::assets::DEFAULT_PBR_SHADER;
 
         const auto& pbr = gltf_mat.pbr_metallic_roughness;
-        mat_data.scalar_params["albedo_color"] = {(float)pbr.base_color_factor[0], (float)pbr.base_color_factor[1],
-                                                    (float)pbr.base_color_factor[2], (float)pbr.base_color_factor[3]};
-        mat_data.scalar_params["roughness"] = {(float)pbr.roughness_factor};
-        mat_data.scalar_params["metallic"] = {(float)pbr.metallic_factor};
 
-        if (pbr.base_color_texture.index >= 0) {
-            int img_idx = m->textures[pbr.base_color_texture.index].source;
-            const tg3_image& gltf_img = m->images[img_idx];
+        // Поля MaterialUBO в Standard.slang: albedo_color, roughness, metallic
+        mat_data.scalar_params["albedo_color"] = {
+            static_cast<float>(pbr.base_color_factor[0]),
+            static_cast<float>(pbr.base_color_factor[1]),
+            static_cast<float>(pbr.base_color_factor[2]),
+            static_cast<float>(pbr.base_color_factor[3])
+        };
 
-            eastl::string tex_name = gltf_img.name.len > 0
-                ? eastl::string(gltf_img.name.data, gltf_img.name.len)
-                : tryengine::fmt::format("Texture_{}", img_idx);
+        mat_data.scalar_params["roughness"] = {static_cast<float>(pbr.roughness_factor)};
+        mat_data.scalar_params["metallic"] = {static_cast<float>(pbr.metallic_factor)};
 
-            int sampler_idx = m->textures[gltf_mat.pbr_metallic_roughness.base_color_texture.index].sampler;
-            tg3_sampler s = m->samplers[sampler_idx];
+        // Обработка текстуры albedo
+        if (pbr.base_color_texture.index >= 0 && pbr.base_color_texture.index < static_cast<int>(m->textures_count)) {
+            const tg3_texture& gltf_tex = m->textures[pbr.base_color_texture.index];
 
-            tryengine::resources::Sampler sampler;
-            sampler.min_filter = MapGltfFilter(s.min_filter);
-            sampler.mag_filter = MapGltfFilter(s.mag_filter);
-            sampler.address_mode_u = MapGltfWrap(s.wrap_s);
-            sampler.address_mode_v = MapGltfWrap(s.wrap_t);
+            if (gltf_tex.source >= 0 && gltf_tex.source < static_cast<int>(m->images_count)) {
+                const tg3_image& gltf_img = m->images[gltf_tex.source];
 
-            uint64_t expected_tex_guid = tryengine::core::random::CombineID(main_uuid, tex_name);
-            mat_data.texture_params["albedo_map"] = tryengine::graphics::TextureBindingAssets(expected_tex_guid, sampler);
+                eastl::string tex_name = gltf_img.name.len > 0
+                    ? eastl::string(gltf_img.name.data, gltf_img.name.len)
+                    : tryengine::fmt::format("Texture_{}", gltf_tex.source);
+
+                tryengine::resources::Sampler sampler{}; // Дефолтные настройки (Linear/Repeat)
+
+                if (gltf_tex.sampler >= 0 && gltf_tex.sampler < static_cast<int>(m->samplers_count)) {
+                    const tg3_sampler& s = m->samplers[gltf_tex.sampler];
+                    sampler.min_filter = MapGltfFilter(s.min_filter);
+                    sampler.mag_filter = MapGltfFilter(s.mag_filter);
+                    sampler.address_mode_u = MapGltfWrap(s.wrap_s);
+                    sampler.address_mode_v = MapGltfWrap(s.wrap_t);
+                }
+
+                uint64_t expected_tex_guid = tryengine::core::random::CombineID(main_uuid, tex_name);
+
+                mat_data.texture_params["albedo_map"] = tryengine::graphics::TextureBindingAssets(expected_tex_guid, sampler);
+            }
         }
 
         auto serialized_mat = Serialize(mat_data);
@@ -108,7 +121,7 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
         mat_artifact.sub_guid = mat_sub_id;
         mat_artifact.target = ArtifactTarget::Runtime;
         mat_artifact.extension = ".matbin";
-        mat_artifact.bytes = *serialized_mat;
+        mat_artifact.bytes = std::move(*serialized_mat);
 
         result.artifacts.push_back(std::move(mat_artifact));
         asset_map.sub_assets.push_back({mat_sub_id, tryengine::fmt::format("{}", mat_sub_id)});

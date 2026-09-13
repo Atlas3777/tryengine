@@ -11,7 +11,7 @@ namespace tryengine::resources {
 
 constexpr uint32_t GetVertexStride(VertexFormat format) {
     switch (format) {
-        case VertexFormat::Standard:        return sizeof(Vertex);               // 48
+        case VertexFormat::None:        return 0;               // 0
         case VertexFormat::StaticPacked:    return sizeof(VertexStaticPacked);   // 32
         case VertexFormat::SkinnedPacked:   return sizeof(VertexSkinnedPacked);  // 32
         case VertexFormat::SkinnedStandard: return sizeof(VertexSkinned);       // 64 TODO : VertexSkinned надо изменить
@@ -21,7 +21,7 @@ constexpr uint32_t GetVertexStride(VertexFormat format) {
     TRY_ASSERT(false, "Invalid vertex format");
     return 0;
 }
-static_assert(sizeof(Vertex) == 48);
+// static_assert(sizeof(Vertex) == 48);
 static_assert(sizeof(VertexStaticPacked) == 32);
 static_assert(sizeof(VertexSkinnedPacked) == 32);
 // static_assert(sizeof(VertexSkinned) == 64); не верно
@@ -45,7 +45,7 @@ struct MeshHeader {
     uint32_t vertex_count = 0;
     uint32_t index_count = 0;
 
-    VertexFormat vertex_format = VertexFormat::Standard;
+    VertexFormat vertex_format = VertexFormat::StaticPacked;
     IndexFormat index_format = IndexFormat::UInt16;
     uint8_t padding[2];
 

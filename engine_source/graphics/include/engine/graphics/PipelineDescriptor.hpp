@@ -12,7 +12,7 @@ struct alignas(8) PipelineDescriptor {
     SDL_GPUShader* vertex_shader = nullptr;
     SDL_GPUShader* fragment_shader = nullptr;
 
-    resources::VertexFormat vertex_format = resources::VertexFormat::Standard;
+    resources::VertexFormat vertex_format = resources::VertexFormat::StaticPacked;
 
     // 2. Растеризатор и Топология
     SDL_GPUPrimitiveType primitive_type;

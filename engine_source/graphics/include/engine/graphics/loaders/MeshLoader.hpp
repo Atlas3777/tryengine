@@ -5,6 +5,7 @@
 #include "engine/resources/MeshBinary.hpp"
 
 namespace tryengine::graphics {
+
 class MeshLoader {
 public:
     explicit MeshLoader(SDL_GPUDevice* device) : device(device) {}
@@ -69,4 +70,5 @@ public:
 private:
     SDL_GPUDevice* device;
 };
+
 }  // namespace tryengine::graphics

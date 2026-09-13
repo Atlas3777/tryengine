@@ -133,7 +133,6 @@ public:
         // sampler_info.max_anisotropy = mips.size();
 
         gpu_texture.sampler = SDL_CreateGPUSampler(device_, &sampler_info);
-        gpu_texture.slot = 0;
 
         co_return gpu_texture;
     }

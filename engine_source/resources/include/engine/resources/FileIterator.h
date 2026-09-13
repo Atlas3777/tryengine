@@ -80,8 +80,8 @@ void IterateDirectoryRecursive(eastl::string& current_path, Context parent_ctx, 
 }
 
 }  // namespace detail
-
 template <typename Context, typename F>
+requires std::invocable<F, const eastl::string&, const char*, bool, Context>
 void Iterate(const eastl::string_view path, Context root_ctx, F&& callback) {
     eastl::string path_buffer(path.data(), path.size());
     detail::IterateDirectoryRecursive(path_buffer, root_ctx, eastl::forward<F>(callback));

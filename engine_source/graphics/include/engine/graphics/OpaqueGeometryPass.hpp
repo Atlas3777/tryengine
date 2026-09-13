@@ -1,19 +1,29 @@
 #pragma once
 
-#include <SDL3/SDL_gpu.h>
-
-#include "engine/graphics/IRenderPass.hpp"
-#include "engine/graphics/RenderProfile.hpp"
+#include "MeshDrawCall.hpp"
+#include "engine/core/Engine.hpp"
+#include "rg/RenderGraph.hpp"
 
 namespace tryengine::graphics {
 
-class OpaqueGeometryPass : public IRenderPass {
+class RGExecuteContext;
+class RenderQueueRegistry;
+class PipelineManager;
+struct Material;
+struct Mesh;
+
+struct OpaquePass {
+    RGResourceHandle color_target;
+    RGResourceHandle depth_target;
+    RGResourceHandle light_buffer;
+    eastl::span<const MeshDrawCall> opaque_pass_queue;
+};
+
+
+class OpaqueGeometryPass {
 public:
-    void Execute(SDL_GPUCommandBuffer* cmd, const RenderProfile& profile) override {
-        // Здесь мы вызываем SDL_BeginGPURenderPass
-        // Здесь мы делаем SDL_BindGPUGraphicsPipeline
-        // И здесь же цикл по entt::registry для отрисовки мешей
-    }
+    static eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine, PipelineManager& pipeline_manager);
+    static void ExecuteDrawCommands(const RGExecuteContext& ctx, eastl::span<const MeshDrawCall> queue);
 };
 
 }  // namespace tryengine::graphics

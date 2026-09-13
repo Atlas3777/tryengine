@@ -1,14 +1,12 @@
 #include "editor/EditorApp.hpp"
 
-#include <engine/graphics/RenderSystem.hpp>
 #include <imgui_impl_sdl3.h>
 
-#include "../../engine_source/graphics/include/engine/graphics/InputMapper.hpp"
-#include "editor/AssetSourceDatabase.hpp"
+#include "editor/AssetPipeline.hpp"
 #include "editor/CreateFile.hpp"
 #include "editor/Editor.hpp"
+#include "editor/EditorRender.hpp"
 #include "editor/EditorScriptSetup.hpp"
-#include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/PollHandle.hpp"
@@ -17,8 +15,7 @@
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
-#include "engine/graphics/RenderAdapter.hpp"
-#include "engine/graphics/RenderCommon.hpp"
+#include "engine/graphics/InputMapper.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
@@ -37,8 +34,8 @@ void EditorApp::Init() {
     graphics_context_ = std::make_unique<GraphicsContext>(1280, 720, "tryengine");
 
     engine_ = std::make_unique<Engine>();
-    engine_->RegisterSystem<RenderSystem>(graphics_context_->GetDevice());
-    engine_->RegisterSystem<RenderAdapter>();
+    engine_->RegisterSystem<RenderGraph>(graphics_context_->GetDevice());
+    engine_->RegisterSystem<EditorRender>(*graphics_context_, engine_->Get<RenderGraph>());
     engine_->RegisterSystem<InputService>(this->input_state_);
 
     engine_->RegisterSystem<AssetRegistry>();
@@ -68,6 +65,14 @@ void EditorApp::Init() {
         std::this_thread::yield();
     }
 
+    auto shader_r = engine_->Get<ResourceManager>().Get<Shader>(10245112668937909950);
+    if (shader_r.has_value()) {
+        engine_->Get<EditorRender>().SetDebugShader(*shader_r);
+    }
+    else {
+        LogError("Не нашли кеш..?");
+    }
+
     engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
 
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().AsyncLoadGameContent(engine_->Get<AsyncFileManager>()));
@@ -76,10 +81,10 @@ void EditorApp::Init() {
 void EditorApp::Run() {
     editor_->running = true;
     editor_->state = PlayModeState::Edit;
-    auto& render_system = engine_->Get<RenderSystem>();
 
     auto& tm = engine_->Get<TimeManager>();
     auto& script_system = engine_->Get<ScriptSystem>();
+    auto& render = engine_->Get<EditorRender>();
 
     while (editor_->running) {
         TRY_PROFILE_SCOPE("Main Loop Frame");
@@ -98,27 +103,9 @@ void EditorApp::Run() {
             }
             engine_->Get<AsyncFileManager>().Submit();
 
-            editor_->GetGUI().RecordPanelsGpuCommands(editor_->state);
         }
 
-        {
-            TRY_PROFILE_SCOPE("Render GPU");
-            const auto cmd = SDL_AcquireGPUCommandBuffer(graphics_context_->GetDevice());
-
-            SDL_GPUTexture* swapchain_texture = nullptr;
-            uint32_t w, h;
-            if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, graphics_context_->GetWindow(), &swapchain_texture, &w,
-                                                       &h)) {
-                SDL_SubmitGPUCommandBuffer(cmd);
-                continue;
-            }
-
-            engine_->Get<RenderAdapter>().CollectDrawable(*engine_, render_system);
-            auto camera_data = script_system.SimpleReturnUnsafe<CameraData*>("get_camera");
-            render_system.RenderToTarget(cmd, *editor_->target, *(*camera_data));
-
-            editor_->GetGUI().RenderToSwapchain(swapchain_texture, cmd);
-        }
+        render.Render(*engine_, *graphics_context_, editor_->state);
         Profiler::Instance().EndFrame(tm.Root().DeltaTime() * 1000.0f);
     }
 }

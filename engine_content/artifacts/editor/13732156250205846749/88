@@ -1,0 +1,90 @@
+================ SHADER REFLECTION DUMP ================
+
+========================================================
+  VERTEX SHADER BINDINGS
+========================================================
+Resource: "FrameUBO" (Hash: 0xAC6FAD5A)
+  - Scope: PerObj | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Slot: 0, Size: 128 bytes
+  - Members:
+      * "model" | Offset: 0 | Size: 64 | Type: Mat4
+      * "normalMatrix" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+Resource: "Camera" (Hash: 0xE74C7B6E)
+  - Scope: Pass | Kind: UniformBuffer
+  - Set: 1, Binding: 1, Slot: 1, Size: 128 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+
+========================================================
+  FRAGMENT SHADER BINDINGS
+========================================================
+Resource: "albedo_map" (Hash: 0x756D3891)
+  - Scope: Material | Kind: SampledTexture
+  - Set: 2, Binding: 0, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "PointLightBuffer" (Hash: 0xC05139F1)
+  - Scope: Pass | Kind: StorageBufferRead
+  - Set: 2, Binding: 1, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "GlobalLightUBO" (Hash: 0xE38E69BE)
+  - Scope: Pass | Kind: UniformBuffer
+  - Set: 3, Binding: 0, Slot: 0, Size: 32 bytes
+  - Members:
+      * "ambientColor" | Offset: 0 | Size: 16 | Type: Vec4
+      * "viewPos" | Offset: 16 | Size: 16 | Type: Vec4
+--------------------------------------------------------
+Resource: "MaterialUBO" (Hash: 0x220A6028)
+  - Scope: Material | Kind: UniformBuffer
+  - Set: 3, Binding: 1, Slot: 1, Size: 32 bytes
+  - Members:
+      * "albedo_color" | Offset: 0 | Size: 16 | Type: Vec4
+      * "roughness" | Offset: 16 | Size: 4 | Type: Float
+      * "metallic" | Offset: 20 | Size: 4 | Type: Float
+      * "_padding" | Offset: 24 | Size: 8 | Type: Vec2
+--------------------------------------------------------
+
+========================================================
+  FULL PROGRAM COMBINED BINDINGS
+========================================================
+Resource: "FrameUBO" (Hash: 0xAC6FAD5A)
+  - Scope: PerObj | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Slot: 0, Size: 128 bytes
+  - Members:
+      * "model" | Offset: 0 | Size: 64 | Type: Mat4
+      * "normalMatrix" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+Resource: "Camera" (Hash: 0xE74C7B6E)
+  - Scope: Pass | Kind: UniformBuffer
+  - Set: 1, Binding: 1, Slot: 0, Size: 128 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+Resource: "albedo_map" (Hash: 0x756D3891)
+  - Scope: Material | Kind: SampledTexture
+  - Set: 2, Binding: 0, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "PointLightBuffer" (Hash: 0xC05139F1)
+  - Scope: Pass | Kind: StorageBufferRead
+  - Set: 2, Binding: 1, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "GlobalLightUBO" (Hash: 0xE38E69BE)
+  - Scope: Pass | Kind: UniformBuffer
+  - Set: 3, Binding: 0, Slot: 0, Size: 32 bytes
+  - Members:
+      * "ambientColor" | Offset: 0 | Size: 16 | Type: Vec4
+      * "viewPos" | Offset: 16 | Size: 16 | Type: Vec4
+--------------------------------------------------------
+Resource: "MaterialUBO" (Hash: 0x220A6028)
+  - Scope: Material | Kind: UniformBuffer
+  - Set: 3, Binding: 1, Slot: 0, Size: 32 bytes
+  - Members:
+      * "albedo_color" | Offset: 0 | Size: 16 | Type: Vec4
+      * "roughness" | Offset: 16 | Size: 4 | Type: Float
+      * "metallic" | Offset: 20 | Size: 4 | Type: Float
+      * "_padding" | Offset: 24 | Size: 8 | Type: Vec2
+--------------------------------------------------------
+

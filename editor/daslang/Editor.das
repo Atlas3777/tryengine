@@ -11,14 +11,20 @@ require tryeditor/QuadTreeDebugWindow
 require imgui
 require imgui/imgui_boost_runtime
 require tryeditor
+require tryResources
 
 require daslib/decs
 
 require tryeditor/Mover
+require tryeditor/DebugRender
 
 require tryengine/Scene
 require tryengine/Types
 require tryengine/Input
+
+
+let mesh_id = 7406961248628371591ul
+let mat_id = 17382367342812171849ul
 
 [export]
 def EditorUpdate(){
@@ -30,13 +36,18 @@ def EditorUpdate(){
     if (pressed(Key.P))
         start_task(LoadSceneAsync("TestScene"))
 
-
+    if (pressed(Key.H)){
+        print("request mesh + mat \n")
+        RequestLoadMesh(mesh_id)
+        RequestLoadMaterial(mat_id)
+    }
     if (pressed(Key.B))
         Spawn()
     Move(0.08)
 }
 
 def Spawn(){
+    print("Spawn \n")
     let test_eid = create_entity() @(eid, cmp) {
         cmp.tag := "teest"
         apply_decs_template(cmp, Transform(
@@ -47,8 +58,8 @@ def Spawn(){
         cmp.inputState := float3(0, 0, 0)
         cmp.speed := float(3)
 
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
+        cmp.meshGuid := 7406961248628371591ul
+        cmp.materialGuid := 17382367342812171849ul
         apply_decs_template(cmp, Relationship())
     }
 
@@ -59,8 +70,8 @@ def Spawn(){
             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
         apply_decs_template(cmp, Relationship())
     }
     create_entity() @(eid, cmp) {
@@ -70,8 +81,8 @@ def Spawn(){
             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
         apply_decs_template(cmp, Relationship())
     }
     create_entity() @(eid, cmp) {
@@ -81,8 +92,8 @@ def Spawn(){
             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
         apply_decs_template(cmp, Relationship())
     }
 
@@ -93,8 +104,8 @@ def Spawn(){
             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
-        cmp.meshGuid := 2069228533742692363ul
-        cmp.materialGuid := 12330106561749381653ul
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
         apply_decs_template(cmp, Relationship())
     }
 
@@ -115,6 +126,8 @@ def draw_editor() {
     DrawAssetBrowser()
     DrawSceneViewPort()
     DrawQuadTreeDebug()
+
+    AddLine(float3(0, 0, 0), float3(0, 0, 10), Color.Red)
 
     end_of_frame()
 }

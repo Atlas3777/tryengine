@@ -4,7 +4,7 @@
 #include "engine/core/InputService.hpp"
 #include "engine/core/InputState.hpp"
 #include "engine/core/TryengineContext.hpp"
-#include "engine/graphics/RenderAdapter.hpp"
+#include "engine/graphics/OpaqueGeometryPass.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
@@ -78,49 +78,84 @@ public:
 REGISTER_DYN_MODULE(Module_Input, Module_Input);
 REGISTER_MODULE(Module_Input);
 
-uint64_t GetSlotMapValueMesh(uint64_t guid, das::Context* ctx) {
+void RequestLoadMesh(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
 
     if (!res_manager)
         LogError("Resource Manager not found");
 
-    if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
-        auto resource_handle = res_manager->Get<tryengine::graphics::Mesh>(guid);
-
-        if (!resource_handle.has_value()) {
-            LogError(resource_handle.error().Message());
-            return 0;
-        }
-
-        // emplace возвращает Key, который автоматически приводится к uint64_t!
-        return render_adapter->slot_map_mesh.emplace(*resource_handle);
-    }
-
-    LogError("RenderAdapter not found");
-    return 0;
+    res_manager->RequestLoad<tryengine::graphics::Mesh>(guid);
 }
 
-uint64_t GetSlotMapValueMaterial(uint64_t guid, das::Context* ctx) {
+void RequestLoadMaterial(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
 
     if (!res_manager)
         LogError("Resource Manager not found");
 
-    if (auto* render_adapter = try_ctx->engine.TryGet<tryengine::graphics::RenderAdapter>()) {
-        auto resource_handle = res_manager->Get<tryengine::graphics::Material>(guid);
+    res_manager->RequestLoad<tryengine::graphics::Material>(guid);
+}
 
-        if (!resource_handle.has_value()) {
-            LogError(resource_handle.error().Message());
-            return 0;
-        }
-        // emplace сохраняет хэндл материала в slot_map_material
-        return render_adapter->slot_map_material.emplace(*resource_handle);
-    }
+bool ResourceIsReadyMesh(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
 
-    LogError("RenderAdapter not found");
-    return 0;
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    return res_manager->IsReady<tryengine::graphics::Mesh>(guid);
+}
+
+bool ResourceIsReadyMaterial(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    return res_manager->IsReady<tryengine::graphics::Material>(guid);
+}
+
+uint64_t GetMeshPointer(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    return res_manager->GetPointer<tryengine::graphics::Mesh>(guid);
+}
+
+uint64_t GetMaterialPointer(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    return res_manager->GetPointer<tryengine::graphics::Material>(guid);
+}
+
+void ReleaseMeshResource(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    res_manager->Release<tryengine::graphics::Mesh>(guid);
+}
+
+void ReleaseMaterialResource(uint64_t guid, das::Context* ctx) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+
+    if (!res_manager)
+        LogError("Resource Manager not found");
+
+    res_manager->Release<tryengine::graphics::Material>(guid);
 }
 
 class Module_Resources : public das::Module {
@@ -129,11 +164,30 @@ public:
         das::ModuleLibrary lib(this);
         lib.addBuiltInModule();
 
-        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMesh)>(*this, lib, "GetSlotMapValueMesh",
-                                                          das::SideEffects::accessGlobal, "GetSlotMapValueMesh");
 
-        das::addExtern<DAS_BIND_FUN(GetSlotMapValueMaterial)>(
-            *this, lib, "GetSlotMapValueMaterial", das::SideEffects::accessGlobal, "GetSlotMapValueMaterial");
+        das::addExtern<DAS_BIND_FUN(RequestLoadMaterial)>(*this, lib, "RequestLoadMaterial",
+                                                          das::SideEffects::accessGlobal, "RequestLoadMaterial");
+
+        das::addExtern<DAS_BIND_FUN(RequestLoadMesh)>(*this, lib, "RequestLoadMesh",
+                                                  das::SideEffects::accessGlobal, "RequestLoadMesh");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsReadyMaterial)>(*this, lib, "ResourceIsReadyMaterial",
+                                          das::SideEffects::accessGlobal, "ResourceIsReadyMaterial");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsReadyMesh)>(*this, lib, "ResourceIsReadyMesh",
+                                  das::SideEffects::accessGlobal, "ResourceIsReadyMesh");
+
+        das::addExtern<DAS_BIND_FUN(ReleaseMaterialResource)>(*this, lib, "ReleaseMaterialResource",
+                          das::SideEffects::accessGlobal, "ReleaseMaterialResource");
+
+        das::addExtern<DAS_BIND_FUN(ReleaseMeshResource)>(*this, lib, "ReleaseMeshResource",
+                  das::SideEffects::accessGlobal, "ReleaseMeshResource");
+
+        das::addExtern<DAS_BIND_FUN(GetMeshPointer)>(*this, lib, "GetMeshPointer",
+                                                          das::SideEffects::accessGlobal, "GetMeshPointer");
+
+        das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(
+            *this, lib, "GetMaterialPointer", das::SideEffects::accessGlobal, "GetMaterialPointer");
 
         verifyAotReady();
     }  // das::SimNode_ExtFuncCallAndCopyOrMove

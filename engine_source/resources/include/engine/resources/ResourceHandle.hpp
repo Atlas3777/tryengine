@@ -1,8 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
-
 #include "ResourceControlBlock.hpp"
 #include "engine/core/Assert.hpp"
 #include "engine/core/Inline.hpp"
@@ -14,22 +12,50 @@ class ResourceHandle {
 public:
     ResourceHandle() = default;
 
-    // Конструктор для кэша/хранилища, которое создает этот блок
-    explicit ResourceHandle(std::shared_ptr<ResourceControlBlock<T>> control_block)
-        : control_block_(std::move(control_block)) {}
+    explicit ResourceHandle(ResourceControlBlock<T>* control_block)
+        : control_block_(control_block) {
+        if (control_block_) {
+            control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
 
-    // Копирование и перемещение (дефолтные, так как shared_ptr делает всё за нас)
-    ResourceHandle(const ResourceHandle&) = default;
-    ResourceHandle(ResourceHandle&&) noexcept = default;
-    ResourceHandle& operator=(const ResourceHandle&) = default;
-    ResourceHandle& operator=(ResourceHandle&&) noexcept = default;
-    ~ResourceHandle() = default;
+    ResourceHandle(const ResourceHandle& other) : control_block_(other.control_block_) {
+        if (control_block_) {
+            control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
 
-    // Сравнение хэндлов (указывают ли они на один и тот же асет)
+    ResourceHandle(ResourceHandle&& other) noexcept : control_block_(other.control_block_) {
+        other.control_block_ = nullptr;
+    }
+
+    ResourceHandle& operator=(const ResourceHandle& other) {
+        if (this != &other) {
+            Reset();
+            control_block_ = other.control_block_;
+            if (control_block_) {
+                control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        return *this;
+    }
+
+    ResourceHandle& operator=(ResourceHandle&& other) noexcept {
+        if (this != &other) {
+            Reset();
+            control_block_ = other.control_block_;
+            other.control_block_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~ResourceHandle() {
+        Reset();
+    }
+
     __forceinline bool operator==(const ResourceHandle& other) const noexcept { return control_block_ == other.control_block_; }
     __forceinline bool operator!=(const ResourceHandle& other) const noexcept { return control_block_ != other.control_block_; }
 
-    // Состояние ресурса (потокобезопасное)
     __forceinline bool IsReady() const noexcept {
         return control_block_ && control_block_->state.load(std::memory_order_acquire) == ResourceState::Ready;
     }
@@ -42,10 +68,8 @@ public:
         return control_block_ ? control_block_->state.load(std::memory_order_acquire) : ResourceState::Empty;
     }
 
-    // Быстрая проверка на валидность через if (handle)
     __forceinline explicit operator bool() const noexcept { return IsReady(); }
 
-    // Доступ к данным (строгий assert в дебаге, если ресурс еще не готов)
     __forceinline T& operator*() const {
         TRY_ASSERT(IsReady(), "Attempted to dereference a resource that is not ready!");
         return *(control_block_->data);
@@ -53,23 +77,26 @@ public:
 
     __forceinline T* operator->() const {
         TRY_ASSERT(IsReady(), "Attempted to access a resource that is not ready!");
-        return control_block_->data.get();
+        return control_block_->data;
     }
 
-    // Безопасный сырой указатель (вернет nullptr, если загрузка не завершена)
-    __forceinline T* Get() const noexcept { return IsReady() ? control_block_->data.get() : nullptr; }
+    __forceinline T* Get() const noexcept { return IsReady() ? control_block_->data : nullptr; }
 
-    __forceinline void Reset() noexcept { control_block_.reset(); }
+    void Reset() noexcept {
+        if (control_block_) {
+            control_block_->ref_count.fetch_sub(1, std::memory_order_acq_rel);
+            control_block_ = nullptr;
+        }
+    }
 
-    // Метод для вашей будущей функции Purge() в кэше.
-    // Позволяет узнать, держит ли этот асет кто-то еще в движке, кроме самого кэша.
-    __forceinline long UseCount() const noexcept { return control_block_ ? control_block_.use_count() : 0; }
+    __forceinline uint32_t RefCount() const noexcept {
+        return control_block_ ? control_block_->ref_count.load(std::memory_order_relaxed) : 0;
+    }
 
-    // Внутренний доступ для кэша и лоадеров
-    const std::shared_ptr<ResourceControlBlock<T>>& GetControlBlock() const noexcept { return control_block_; }
+    ResourceControlBlock<T>* GetControlBlock() const noexcept { return control_block_; }
 
 private:
-    std::shared_ptr<ResourceControlBlock<T>> control_block_{nullptr};
+    ResourceControlBlock<T>* control_block_{nullptr};
 };
 
 }  // namespace tryengine::resources

@@ -36,6 +36,14 @@ RGResourceHandle RenderGraphBuilder::Import(RGTag tag) {
     return graph_.ImportTag(pass_, tag);
 }
 
+CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() {
+    return graph_.GetCPUBlackboard();
+}
+
+const CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() const {
+    return graph_.GetCPUBlackboard();
+}
+
 RGResourcePool::~RGResourcePool() {
     for (auto& entry : texture_pool_) {
         if (entry.texture) SDL_ReleaseGPUTexture(device_, entry.texture);
@@ -289,6 +297,7 @@ void RenderGraph::Execute(SDL_GPUCommandBuffer* cmd) {
     ctx.device = device_;
     ctx.cmd_buffer = cmd;
     ctx.frame_bb = &frame_bb_;
+    ctx.cpu_bb = &cpu_bb_;
     ctx.SetGraph(this);
 
     for (uint32_t idx : sorted_order_) {
@@ -302,6 +311,7 @@ void RenderGraph::Reset() {
     passes_.clear();
     resources_.clear();
     frame_bb_.Clear();
+    cpu_bb_.Clear();
     sorted_order_.clear();
 }
 

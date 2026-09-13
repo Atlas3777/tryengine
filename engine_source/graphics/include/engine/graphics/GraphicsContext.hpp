@@ -13,11 +13,11 @@ public:
     GraphicsContext(const GraphicsContext&) = delete;
     GraphicsContext& operator=(const GraphicsContext&) = delete;
 
-    [[nodiscard]] SDL_Window* GetWindow() const { return m_window; }
-    [[nodiscard]] SDL_GPUDevice* GetDevice() const { return m_device; }
+    [[nodiscard]] SDL_Window* GetWindow() const { return window_; }
+    [[nodiscard]] SDL_GPUDevice* GetDevice() const { return device_; }
 
 private:
-    SDL_Window* m_window = nullptr;
-    SDL_GPUDevice* m_device = nullptr;
+    SDL_Window* window_ = nullptr;
+    SDL_GPUDevice* device_ = nullptr;
 };
 }  // namespace tryengine::graphics

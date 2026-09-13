@@ -9,8 +9,7 @@
 
 namespace tryeditor {
 
-class AssetSourceDatabase;
-class EditorGUI;
+class AssetPipeline;
 class AssetInspectorManager;
 class AssetsFactoryManager;
 class ImportSystem;
@@ -34,20 +33,16 @@ public:
     // bool play_mode = false;
     PlayModeState state;
 
-    [[nodiscard]] EditorGUI& GetGUI() const { return *gui_; }
-    [[nodiscard]] AssetSourceDatabase& GetAssetSourceDatabase() const { return *asset_source_database_; }
-
-    std::unique_ptr<tryengine::graphics::RenderTarget> target;
+    [[nodiscard]] AssetPipeline& GetAssetSourceDatabase() const { return *asset_pipeline_; }
 
 private:
     tryengine::core::Engine& engine_;
     tryengine::graphics::GraphicsContext& graphics_context_;
 
-    std::unique_ptr<AssetSourceDatabase> asset_source_database_;
+    std::unique_ptr<AssetPipeline> asset_pipeline_;
 
-    std::unique_ptr<ImportSystem> import_system_;
+    // std::unique_ptr<ImportSystem> import_system_;
     std::unique_ptr<AssetsFactoryManager> assets_factory_;
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
-    std::unique_ptr<EditorGUI> gui_;
 };
 }  // namespace tryeditor

@@ -56,6 +56,18 @@ def GetFileSize(path : string) : uint64 {
     yield size
 }
 
+// struct SceneHeader{
+//     max_depth : int
+//     quad_min_size
+//     quad_struct : array<SceneQuad>
+// }
+
+// struct SceneQuad{
+//     requireMeshs : array<uint64>
+//     requireMaterials : array<uint64>
+//     entities : array<StructField?>
+// }
+
 struct Scene {
     requireMeshs : array<uint64>
     requireMaterials : array<uint64>
@@ -402,8 +414,8 @@ def LoadSceneAsync(path : string) : void {
         }
     }
 
-    // print("[DEBUG I/O] Path: '{path}', Stat size: {file_size}, Loaded bytes: {length(bytes)}\n")
-    // print("[DEBUG CONTENT START]\n{config_text}\n[DEBUG CONTENT END]\n")
+    print("[DEBUG I/O] Path: '{path}', Stat size: {file_size}, Loaded bytes: {length(bytes)}\n")
+    print("[DEBUG CONTENT START]\n{config_text}\n[DEBUG CONTENT END]\n")
 
     load_scene_from_config(config_text)
 }

@@ -51,12 +51,12 @@ struct alignas(16) VertexSkinnedPacked {
 // ИТОГО: 32 байта
 
 enum class VertexFormat : uint8_t {
-    Standard,        // resources::Vertex (48 байт)
+    None,            // Без VBO / атрибутов (Vertex Pulling, процедурные шейдеры)
     StaticPacked,    // VertexStaticPacked (32 байта)
     SkinnedPacked,   // VertexSkinnedPacked (32 байта)
     SkinnedStandard, // VertexSkinned (64 байта) // переделать.
     PositionOnly,    // VertexPositionOnly (12 байт)
-    Ui2D             // Vertex2D (20 байт)
+    Ui2D,             // Vertex2D (20 байт)
 };
 
 enum class IndexFormat : uint8_t {

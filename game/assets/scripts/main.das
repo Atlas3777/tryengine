@@ -7,6 +7,7 @@ require tryengine/Scene
 require tryengine/Input
 require tryengine/Render
 require tryeditor/QuadTreeDebugWindow
+require tryResources
 
 [export]
 def Start(){

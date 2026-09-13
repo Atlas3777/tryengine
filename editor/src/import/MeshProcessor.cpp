@@ -142,6 +142,10 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(
         }
 
         switch (format) {
+            case VertexFormat::None: {
+                TRY_ASSERT(false, "VertexFormat::None");
+                break;
+            }
             case VertexFormat::StaticPacked: {
                 auto* dst = reinterpret_cast<VertexStaticPacked*>(write_ptr);
                 std::memcpy(dst->position, pos, sizeof(float) * 3);
@@ -181,14 +185,14 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(
                 }
                 break;
             }
-            case VertexFormat::Standard: {
-                auto* dst = reinterpret_cast<Vertex*>(write_ptr);
-                dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];
-                dst->nx = norm_ptr[0]; dst->ny = norm_ptr[1]; dst->nz = norm_ptr[2];
-                dst->r = color_rgba[0]; dst->g = color_rgba[1]; dst->b = color_rgba[2]; dst->a = color_rgba[3];
-                dst->u = uv_ptr[0]; dst->v = uv_ptr[1];
-                break;
-            }
+            // case VertexFormat::Standard: {
+            //     auto* dst = reinterpret_cast<Vertex*>(write_ptr);
+            //     dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];
+            //     dst->nx = norm_ptr[0]; dst->ny = norm_ptr[1]; dst->nz = norm_ptr[2];
+            //     dst->r = color_rgba[0]; dst->g = color_rgba[1]; dst->b = color_rgba[2]; dst->a = color_rgba[3];
+            //     dst->u = uv_ptr[0]; dst->v = uv_ptr[1];
+            //     break;
+            // }
             case VertexFormat::SkinnedStandard: {
                 auto* dst = reinterpret_cast<VertexSkinned*>(write_ptr);
                 dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];

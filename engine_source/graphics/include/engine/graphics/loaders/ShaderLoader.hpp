@@ -1,7 +1,6 @@
 #pragma once
 
 #include <SDL3/SDL_gpu.h>
-#include <algorithm>
 
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/ShaderBinary.hpp"
@@ -17,16 +16,15 @@ public:
         co_await tryengine::async::ExecutorSwitch(tryengine::async::MainThread());
 
         auto unpack_result = UnpackShaderBinary(data);
-        if (!unpack_result.has_value()) {
+        if (!unpack_result.has_value())
             co_return LogAndMakeError("Failed to unpack ShaderBinary container");
-        }
+
         auto& binary_content = *unpack_result;
 
-        // 1. Вертексный шейдер
         SDL_GPUShaderCreateInfo vertex_info{};
         vertex_info.code = binary_content.vertex_spv.data();
         vertex_info.code_size = binary_content.vertex_spv.size();
-        vertex_info.entrypoint = "vsMain";
+        vertex_info.entrypoint = "main";
         vertex_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
         vertex_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
         vertex_info.num_samplers = binary_content.vertex_counts.num_samplers;
@@ -36,11 +34,10 @@ public:
 
         SDL_GPUShader* vertex_shader = SDL_CreateGPUShader(device_, &vertex_info);
 
-        // 2. Фрагментный шейдер
         SDL_GPUShaderCreateInfo fragment_info{};
         fragment_info.code = binary_content.fragment_spv.data();
         fragment_info.code_size = binary_content.fragment_spv.size();
-        fragment_info.entrypoint = "fsMain";
+        fragment_info.entrypoint = "main";
         fragment_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
         fragment_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
         fragment_info.num_samplers = binary_content.fragment_counts.num_samplers;

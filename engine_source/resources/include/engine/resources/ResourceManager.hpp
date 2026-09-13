@@ -15,15 +15,10 @@ namespace tryengine::resources {
 class ResourceManager {
 public:
     ResourceManager(AsyncFileManager& file_manager, AssetRegistry& registry)
-        : file_manager_(file_manager), registry_(registry){}
+        : file_manager_(file_manager), registry_(registry) {}
 
     template <typename T, typename Loader>
     void RegisterType(Loader&& loader) {
-        RegisterTypeWithLocator<T>(std::forward<Loader>(loader), AssetRegistryLocator{registry_});
-    }
-
-    template <typename T, typename Loader, typename Locator>
-    void RegisterTypeWithLocator(Loader&& loader, Locator&& locator) {
         auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
 
         std::lock_guard lock(mutex_);
@@ -31,60 +26,58 @@ public:
         if (type_id >= caches_.size())
             caches_.resize(type_id + 1);
 
-        caches_[type_id] = std::make_unique<ResourceCache<T, std::decay_t<Loader>, std::decay_t<Locator>>>(
-            file_manager_, std::forward<Loader>(loader), std::forward<Locator>(locator));
+        caches_[type_id] = std::make_unique<ResourceCache<T, std::decay_t<Loader>>>(
+            file_manager_, registry_, std::forward<Loader>(loader));
     }
 
     template <typename T>
     async::Task<ResourceHandle<T>> GetAsync(uint64_t guid) {
-        ICacheBase* cache_ptr = nullptr;
-        {
-            std::lock_guard lock(mutex_);
-            auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
-            if (type_id < caches_.size()) {
-                cache_ptr = caches_[type_id].get();
-            }
-        }
-
-        if (!cache_ptr) {
+        auto* cache = GetTypedCache<T>();
+        if (!cache)
             co_return LogAndMakeError("Loader Not Registered in ResourceManager guid {}", guid);
-        }
 
-        auto* typed_cache = static_cast<IResourceCache<T>*>(cache_ptr);
-
-        co_return co_await typed_cache->GetOrLoadAsync(guid);
+        co_return co_await cache->GetOrLoadAsync(guid);
     }
 
     template <typename T>
     Result<ResourceHandle<T>> Get(uint64_t guid) {
-        ICacheBase* cache_ptr = nullptr;
-        {
-            std::lock_guard lock(mutex_);
-            auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
-            if (type_id < caches_.size()) {
-                cache_ptr = caches_[type_id].get();
-            }
-        }
-
-        if (!cache_ptr)
+        auto* cache = GetTypedCache<T>();
+        if (!cache)
             return LogAndMakeError("Loader Not Registered in ResourceManager guid {}", guid);
 
-        auto* typed_cache = static_cast<IResourceCache<T>*>(cache_ptr);
-        return typed_cache->Get(guid);
+        return cache->Get(guid);
+    }
+
+    // --- daslang / ecs API ---
+
+    template <typename T>
+    void RequestLoad(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        TRY_ASSERT(cache, "Cache for type not registered");
+        cache->RequestLoad(guid);
     }
 
     template <typename T>
-    ResourceHandle<T> GetUnsafe(uint64_t guid) {
-        ICacheBase* cache_ptr = nullptr;
-        {
-            std::lock_guard lock(mutex_);
-            auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
-            if (type_id < caches_.size()) {
-                cache_ptr = caches_[type_id].get();
-            }
+    bool IsReady(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->IsReady(guid) : false;
+    }
+
+    template <typename T>
+    uint64_t GetPointer(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        TRY_ASSERT(cache, "Cache for type not registered");
+
+        void* raw_ptr = cache->GetRawPointer(guid);
+        return reinterpret_cast<uint64_t>(raw_ptr);
+    }
+
+    template <typename T>
+    void Release(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        if (cache) {
+            cache->Release(guid);
         }
-        auto* typed_cache = static_cast<IResourceCache<T>*>(cache_ptr);
-        return typed_cache->Get(guid);
     }
 
     void Purge() {
@@ -99,6 +92,16 @@ public:
     AssetRegistry& GetAssetRegistry() { return registry_; }
 
 private:
+    template <typename T>
+    IResourceCache<T>* GetTypedCache() {
+        std::lock_guard lock(mutex_);
+        auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
+        if (type_id < caches_.size()) {
+            return static_cast<IResourceCache<T>*>(caches_[type_id].get());
+        }
+        return nullptr;
+    }
+
     std::mutex mutex_;
     AsyncFileManager& file_manager_;
     AssetRegistry& registry_;

@@ -19,30 +19,18 @@ struct public QuadTreeConfig {
     splitMultiplier : float = 1.3f
     mergeMultiplier : float = 1.5f
 
-    fovAngle : float = PI / 3// 1.04719f // 60 градусов (PI / 3)
+    fovAngle : float = PI / 3
     viewDistance : float = 2200.0f
 
     maxDepth : int
-    splitDistance : array<float>
-    mergeDistance : array<float>
 }
 
 def public init_config(var cfg : QuadTreeConfig&) {
-    cfg.splitDistance |> clear()
-    cfg.mergeDistance |> clear()
-
     var currentSize = cfg.rootSize
     cfg.maxDepth = 0
     while (currentSize > cfg.minChunkSize + 0.001f) {
         currentSize *= 0.5f
         cfg.maxDepth++
-    }
-
-    var nodeSize = cfg.rootSize
-    for (d in range(cfg.maxDepth + 1)) {
-        cfg.splitDistance |> push(nodeSize * cfg.splitMultiplier)
-        cfg.mergeDistance |> push(nodeSize * cfg.mergeMultiplier)
-        nodeSize *= 0.5f
     }
 }
 
@@ -223,7 +211,12 @@ def private update_node(var tree : QuadTree&; nodeIdx : int; observerPos : float
     let depth = tree.nodes[nodeIdx].depth
     let canGoDeeper = depth < tree.config.maxDepth
 
-    if (canGoDeeper && dist < tree.config.splitDistance[depth]) {
+    // Размер узла и дистанции рассчитываются на лету из halfSize
+    let nodeSize = tree.nodes[nodeIdx].halfSize * 2.0f
+    let splitDist = nodeSize * tree.config.splitMultiplier
+    let mergeDist = nodeSize * tree.config.mergeMultiplier
+
+    if (canGoDeeper && dist < splitDist) {
         if (tree.nodes[nodeIdx].state == NodeState.Loaded) {
             split_node(tree, nodeIdx)
         }
@@ -233,7 +226,7 @@ def private update_node(var tree : QuadTree&; nodeIdx : int; observerPos : float
             update_node(tree, childIdx, observerPos)
         }
     } else {
-        if (tree.nodes[nodeIdx].state == NodeState.Split && dist > tree.config.mergeDistance[depth]) {
+        if (tree.nodes[nodeIdx].state == NodeState.Split && dist > mergeDist) {
             merge_node(tree, nodeIdx)
         }
     }

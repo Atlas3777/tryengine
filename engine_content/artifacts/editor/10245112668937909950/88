@@ -1,0 +1,37 @@
+================ SHADER REFLECTION DUMP ================
+
+========================================================
+  VERTEX SHADER BINDINGS
+========================================================
+Resource: "debugLines" (Hash: 0x571AB783)
+  - Scope: Material | Kind: StorageBufferRead
+  - Set: 0, Binding: 0, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "Camera" (Hash: 0xE74C7B6E)
+  - Scope: Material | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Slot: 0, Size: 128 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+
+========================================================
+  FRAGMENT SHADER BINDINGS
+========================================================
+  <No resources bound for this stage>
+
+========================================================
+  FULL PROGRAM COMBINED BINDINGS
+========================================================
+Resource: "debugLines" (Hash: 0x571AB783)
+  - Scope: Material | Kind: StorageBufferRead
+  - Set: 0, Binding: 0, Slot: 0, Size: 0 bytes
+--------------------------------------------------------
+Resource: "Camera" (Hash: 0xE74C7B6E)
+  - Scope: Material | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Slot: 0, Size: 128 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+

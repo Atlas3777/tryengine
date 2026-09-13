@@ -74,6 +74,7 @@ public:
     [[nodiscard]] bool IsReady() const noexcept { return task_ && task_->status == TaskStatus::Completed; }
     [[nodiscard]] bool IsFailed() const noexcept { return task_ && task_->status == TaskStatus::Failed; }
     [[nodiscard]] bool IsPending() const noexcept { return task_ && task_->status == TaskStatus::Pending; }
+    [[nodiscard]] uint32_t GetSlotIndex() const noexcept { return task_ ? task_->slot_index : UINT32_MAX; }
 
     [[nodiscard]] int BytesRead() const noexcept { return task_ ? task_->bytes_read : -1; }
     [[nodiscard]] int BytesWritten() const noexcept { return BytesRead(); }
@@ -82,7 +83,7 @@ public:
         if (IsReady() && task_) {
             return {task_->storage.data(), task_->storage.size()};
         }
-        TRY_ASSERT(false,"IsReady == false");
+        TRY_ASSERT(false, "IsReady == false");
         return {};
     }
 
@@ -90,7 +91,7 @@ public:
         if (IsReady() && task_) {
             return std::move(task_->storage);
         }
-        TRY_ASSERT(false,"IsReady == false");
+        TRY_ASSERT(false, "IsReady == false");
         return {};
     }
 
@@ -262,6 +263,73 @@ public:
         return WriteChunkAsyncImpl(path, data, offset, PathOwnership::Owned);
     }
 
+    // 1. Открытие файла (возвращает FileHandle; после completion task_.slot_index содержит открытый fd_slot)
+    FileHandle OpenAsync(eastl::string_view path, int flags = O_RDONLY, mode_t mode = 0644) {
+        return OpenAsyncImpl(path, flags, mode, PathOwnership::Borrowed);
+    }
+
+    FileHandle OpenAsyncCopy(eastl::string_view path, int flags = O_RDONLY, mode_t mode = 0644) {
+        return OpenAsyncImpl(path, flags, mode, PathOwnership::Owned);
+    }
+
+    // 2. Чтение из уже открытого дескриптора (fd_slot)
+    FileHandle ReadChunkFDAsync(uint32_t fd_slot, uint64_t offset, uint32_t size) {
+        std::lock_guard lock(ring_mutex_);
+
+        uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
+        if (task_idx == UINT32_MAX) {
+            return FileHandle{};
+        }
+
+        FileTask& task = tasks_[task_idx];
+        init_task(task, task_idx);
+        task.storage.resize(size);
+        task.slot_index = fd_slot;
+
+        io_uring_sqe* sqe_read = io_uring_get_sqe(&ring_);
+        TRY_ASSERT(sqe_read, "AsyncFileManager: Ring SQE allocation failed!");
+        if (!sqe_read) {
+            task.status = TaskStatus::Failed;
+            return FileHandle{&task};
+        }
+
+        io_uring_prep_read(sqe_read, fd_slot, task.storage.data(), size, offset);
+        sqe_read->flags |= IOSQE_FIXED_FILE;
+        io_uring_sqe_set_data64(sqe_read, task_idx);
+
+        has_unsubmitted_sqes_ = true;
+        return FileHandle{&task};
+    }
+
+    FileHandle CloseFDAsync(uint32_t fd_slot) {
+        std::lock_guard lock(ring_mutex_);
+
+        uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
+        if (task_idx == UINT32_MAX) {
+            return FileHandle{};
+        }
+
+        FileTask& task = tasks_[task_idx];
+        init_task(task, task_idx);
+        task.slot_index = fd_slot;
+
+        io_uring_sqe* sqe_close = io_uring_get_sqe(&ring_);
+        TRY_ASSERT(sqe_close, "AsyncFileManager: Ring SQE allocation failed!");
+        if (!sqe_close) {
+            task.status = TaskStatus::Failed;
+            return FileHandle{&task};
+        }
+
+        io_uring_prep_close_direct(sqe_close, fd_slot);
+        const uint64_t data = CLOSE_TAG | (static_cast<uint64_t>(fd_slot) << 32) | task_idx;
+        io_uring_sqe_set_data64(sqe_close, data);
+
+        has_unsubmitted_sqes_ = true;
+        return FileHandle{&task};
+    }
+
     uint32_t Submit() {
         std::lock_guard lock(ring_mutex_);
         if (has_unsubmitted_sqes_) {
@@ -283,15 +351,41 @@ public:
             }
 
             if (data & CLOSE_TAG) {
-                const uint32_t fd_slot = static_cast<uint32_t>(data & ~CLOSE_TAG);
+                // Извлекаем fd_slot из бит 32..62, а task_idx из бит 0..31
+                const uint32_t fd_slot = static_cast<uint32_t>((data >> 32) & 0x7FFFFFFF);
+                const uint32_t task_idx = static_cast<uint32_t>(data & 0xFFFFFFFF);
+
                 {
                     std::lock_guard lock(ring_mutex_);
                     free_fd_slots_.push_back(fd_slot);
                 }
+
+                // Если закрытие было инициировано через CloseFDAsync, завершаем его таск
+                if (task_idx < MAX_CONCURRENT_TASKS) {
+                    FileTask& task = tasks_[task_idx];
+                    task.status = (cqe->res >= 0) ? TaskStatus::Completed : TaskStatus::Failed;
+                    task.bytes_read = cqe->res;
+
+                    if (task.continuation) {
+                        bool should_resume = !task.wait_counter || (--(*task.wait_counter) == 0);
+                        auto handle = task.continuation;
+                        auto* exec = task.executor;
+
+                        task.continuation = nullptr;
+                        task.wait_counter = nullptr;
+                        task.executor = nullptr;
+
+                        if (should_resume && exec) {
+                            exec->Schedule(handle);
+                        }
+                    }
+                }
+
                 io_uring_cqe_seen(&ring_, cqe);
                 continue;
             }
 
+            // Обработка обычных операций (Read, Write, Stat, OpenAsync)
             const uint64_t task_idx = data;
             if (task_idx < MAX_CONCURRENT_TASKS) {
                 FileTask& task = tasks_[task_idx];
@@ -314,7 +408,6 @@ public:
 
                     if (should_resume) {
                         if (exec) {
-                            // TRY_LOG_INFO("vy");
                             exec->Schedule(handle);
                         } else {
                             TRY_ASSERT(exec, "Executor == nullptr");
@@ -413,7 +506,8 @@ private:
         io_uring_sqe_set_data64(sqe_read, task_idx);
 
         io_uring_prep_close_direct(sqe_close, fd_slot);
-        io_uring_sqe_set_data64(sqe_close, CLOSE_TAG | fd_slot);
+        const uint64_t close_data = CLOSE_TAG | (static_cast<uint64_t>(fd_slot) << 32) | UINT32_MAX;
+        io_uring_sqe_set_data64(sqe_close, close_data);
 
         has_unsubmitted_sqes_ = true;
         return FileHandle{&task};
@@ -499,7 +593,8 @@ private:
         io_uring_sqe_set_data64(sqe_write, task_idx);
 
         io_uring_prep_close_direct(sqe_close, fd_slot);
-        io_uring_sqe_set_data64(sqe_close, CLOSE_TAG | fd_slot);
+        const uint64_t close_data = CLOSE_TAG | (static_cast<uint64_t>(fd_slot) << 32) | UINT32_MAX;
+        io_uring_sqe_set_data64(sqe_close, close_data);
 
         has_unsubmitted_sqes_ = true;
         return FileHandle{&task};
@@ -548,6 +643,40 @@ private:
         if (res == 0 || errno == EEXIST) {
             known_dirs_.emplace(segment.data(), segment.size());
         }
+    }
+
+    FileHandle OpenAsyncImpl(eastl::string_view path, int flags, mode_t mode, PathOwnership ownership) {
+        std::lock_guard lock(ring_mutex_);
+
+        uint32_t task_idx = allocate_task_slot();
+        TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
+        TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
+        if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
+            return FileHandle{};
+        }
+
+        FileTask& task = tasks_[task_idx];
+        init_task(task, task_idx);
+        assign_path(task, task_idx, path, ownership);
+
+        uint32_t fd_slot = free_fd_slots_.back();
+        free_fd_slots_.pop_back();
+        task.slot_index = fd_slot;
+
+        io_uring_sqe* sqe_open = io_uring_get_sqe(&ring_);
+        TRY_ASSERT(sqe_open, "AsyncFileManager: Ring SQE allocation failed!");
+        if (!sqe_open) {
+            free_fd_slots_.push_back(fd_slot);
+            task.status = TaskStatus::Failed;
+            return FileHandle{&task};
+        }
+
+        io_uring_prep_openat_direct(sqe_open, AT_FDCWD, task.path.data(), flags, mode, fd_slot);
+        // Флаг IOSQE_CQE_SKIP_SUCCESS HE ставится, чтобы обработать успешное открытие в Pull()
+        io_uring_sqe_set_data64(sqe_open, task_idx);
+
+        has_unsubmitted_sqes_ = true;
+        return FileHandle{&task};
     }
 
     std::mutex ring_mutex_;

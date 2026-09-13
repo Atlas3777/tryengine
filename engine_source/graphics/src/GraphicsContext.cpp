@@ -4,7 +4,10 @@
 
 #include "engine/core/Assert.hpp"
 
+#include <vulkan/vulkan.h> // Обязательно для макроса VK_MAKE_API_VERSION
+
 namespace tryengine::graphics {
+
 
 GraphicsContext::GraphicsContext(const uint32_t width, const uint32_t height, const eastl::string_view title) {
     if (!TRY_VERIFY(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS), "SDL_Init failed: {}", SDL_GetError())) {
@@ -14,31 +17,43 @@ GraphicsContext::GraphicsContext(const uint32_t width, const uint32_t height, co
     LogInfo(TRY_VARS(width, height));
 
     constexpr SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    m_window = SDL_CreateWindow(title.data(), static_cast<int>(width), static_cast<int>(height), flags);
-    TRY_CHECK(m_window, "Не удалось создать окно SDL: {}", SDL_GetError());
+    window_ = SDL_CreateWindow(title.data(), static_cast<int>(width), static_cast<int>(height), flags);
+    TRY_CHECK(window_, "Не удалось создать окно SDL: {}", SDL_GetError());
 
-    m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
-    TRY_CHECK(m_device, "Не удалось создать GPU Device: {}", SDL_GetError());
+    // 1. Настраиваем Vulkan 1.2 для поддержки SPIR-V 1.5
+    SDL_GPUVulkanOptions vk_options{};
+    vk_options.vulkan_api_version = VK_MAKE_API_VERSION(0, 1, 2, 0);
 
-    TRY_CHECK(SDL_ClaimWindowForGPUDevice(m_device, m_window), "Не удалось привязать окно к GPU Device: {}", SDL_GetError());
+    // 2. Создаем свойства для GPU устройства
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, true); // Эквивалент true во 2-м аргументе
+    SDL_SetPointerProperty(props, SDL_PROP_GPU_DEVICE_CREATE_VULKAN_OPTIONS_POINTER, &vk_options);
 
-    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
-    // SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
-    // SDL_SetGPUSwapchainParameters(m_device, m_window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+    // 3. Создаем устройство и очищаем контейнер свойств
+    device_ = SDL_CreateGPUDeviceWithProperties(props);
+    SDL_DestroyProperties(props);
+
+    // device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, nullptr);
+
+    TRY_CHECK(device_, "Не удалось создать GPU Device: {}", SDL_GetError());
+
+    TRY_CHECK(SDL_ClaimWindowForGPUDevice(device_, window_), "Не удалось привязать окно к GPU Device: {}",
+              SDL_GetError());
 }
 
 GraphicsContext::~GraphicsContext() {
-    if (m_device) {
-        if (m_window) {
-            SDL_ReleaseWindowFromGPUDevice(m_device, m_window);
+    if (device_) {
+        if (window_) {
+            SDL_ReleaseWindowFromGPUDevice(device_, window_);
         }
-        SDL_DestroyGPUDevice(m_device);
-        m_device = nullptr;
+        SDL_DestroyGPUDevice(device_);
+        device_ = nullptr;
     }
 
-    if (m_window) {
-        SDL_DestroyWindow(m_window);
-        m_window = nullptr;
+    if (window_) {
+        SDL_DestroyWindow(window_);
+        window_ = nullptr;
     }
 
     SDL_Quit();

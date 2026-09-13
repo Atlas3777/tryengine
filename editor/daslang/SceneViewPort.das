@@ -12,12 +12,22 @@ require tryeditor
 
 var a : AssetItem
 
+var size : float2
+
+[export]
+def GetEditorViewportSize : float2 {
+    return size;
+    // return size / float2(6, 6);
+}
+
 def DrawSceneViewPort(){
     window(SCENE_VIEW_WND, (text = "SceneView", closable = false, flags = ImGuiWindowFlags.None)) {
         let img = get_image()
+        size = GetContentRegionAvail()
+
         if (img != null) {
             image(SCENE_VIEW, (user_texture_id = ImTextureRef(intptr(img)),
-                              size = float2(1066 / 1.5f, 600 / 1.5f),
+                              size = size,
                               uv0 = float2(0.0f, 0.0f),
                               uv1 = float2(1.0f, 1.0f),
                               tint_col = float4(1.0f, 1.0f, 1.0f, 1.0f),

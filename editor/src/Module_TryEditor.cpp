@@ -1,12 +1,12 @@
+#include <daScript/daScript.h>
 #include <imgui.h>
 
-#include <daScript/daScript.h>
-
-#include "editor/AssetSourceDatabase.hpp"
+#include "editor/AssetPipeline.hpp"
 #include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "editor/gui/UiFile.hpp"
 #include "engine/core/ScriptSystem.hpp"
+#include "engine/graphics/rg/RenderGraph.hpp"
 
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
@@ -19,12 +19,14 @@ MAKE_TYPE_FACTORY(UiFolderVector, UiFolderVector);
 MAKE_TYPE_FACTORY(UiFileVector, UiFileVector);
 MAKE_TYPE_FACTORY(Uint32Vector, Uint32Vector);
 
-__forceinline UiFolderVector& GetEngineFolders() {
-    return tryeditor::AssetSourceDatabase::GetEngineFolders();
+__forceinline UiFolderVector& GetEngineFolders(das::Context* ctx) {
+    auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    return try_ctx->editor.GetAssetSourceDatabase().engine_folders_;
 }
 
-const UiFolderVector& GetGameFolders() {
-    return tryeditor::AssetSourceDatabase::GetGameFolders();
+const UiFolderVector& GetGameFolders(das::Context* ctx) {
+    auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    return try_ctx->editor.GetAssetSourceDatabase().game_folders_;
 }
 
 void* GetEditorImGuiContext() {
@@ -33,14 +35,18 @@ void* GetEditorImGuiContext() {
 
 void* GetImage(das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    if (!try_ctx) return nullptr;
 
-    auto* target = try_ctx->editor.target.get();
-    if (!target) {
+    if (!try_ctx)
         return nullptr;
+
+    if (auto rg_ = try_ctx->engine.TryGet<tryengine::graphics::RenderGraph>()) {
+        tryengine::graphics::RGResourceHandle viewport_handle = rg_->GetBlackboard().Get(tryengine::graphics::RGTag_v<"SceneViewport">);
+        return rg_->GetPhysicalTexture(viewport_handle);
     }
 
-    return target->GetColor();
+    LogError("Render Graph not Found");
+
+    return nullptr;
 }
 
 using namespace das;

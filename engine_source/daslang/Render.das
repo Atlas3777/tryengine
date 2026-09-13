@@ -87,15 +87,22 @@ def get_camera() : CameraC? {
 
 
 def start_load(){
+    var counter : int
     query() $[REQUIRE_NOT(mesh, material)] (eid : EntityId, let transform : Transform, let meshGuid : uint64, let materialGuid : uint64){
-
-        var slot_map_mesh = GetSlotMapValueMesh(meshGuid)
-        var slot_map_material = GetSlotMapValueMaterial(materialGuid)
-
-        update_entity(eid) @(eid, cmp) {
-            cmp |> set("mesh", slot_map_mesh)
-            cmp |> set("material", slot_map_material)
+        counter++
+        if (ResourceIsReadyMesh(meshGuid) && ResourceIsReadyMaterial(materialGuid)){
+            var mesh_ptr = GetMeshPointer(meshGuid)
+            var mat_ptr = GetMaterialPointer(materialGuid)
+            print("ура, загрузились, обновляемся.\n")
+            print("кстати guid mat {materialGuid:d}, mesh - {meshGuid:d} \n")
+            update_entity(eid) @(eid, cmp) {
+                cmp |> set("mesh", mesh_ptr)
+                cmp |> set("material", mat_ptr)
+            }
         }
+    }
+    if (counter > 0){
+        print("пытаемся загрузиться для {counter} объектов\n")
     }
 
     commit()

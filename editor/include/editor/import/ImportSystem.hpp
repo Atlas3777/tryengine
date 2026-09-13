@@ -40,7 +40,7 @@ public:
     template <typename TImporter, typename TSettings, typename... Args>
     void RegisterImporter(std::initializer_list<eastl::string_view> extensions, Args&&... args) {
         RegisterImporter<TImporter, TSettings>(
-            eastl::span<const eastl::string_view>(extensions.begin(), extensions.end()), std::forward<Args>(args)...);
+            eastl::span(extensions.begin(), extensions.end()), std::forward<Args>(args)...);
     }
 
     template <typename TSettings>

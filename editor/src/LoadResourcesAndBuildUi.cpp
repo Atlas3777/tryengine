@@ -1,8 +1,7 @@
-#include "editor/gui/ResourceLoader.h"
-
 #include <EASTL/functional.h>
 #include <EASTL/hash_map.h>
 
+#include "editor/gui/LoadResourcesAndBuildUi.h"
 #include "engine/resources/FileIterator.h"
 
 namespace tryeditor {
