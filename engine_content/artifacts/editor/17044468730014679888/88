@@ -1,0 +1,41 @@
+================ SHADER REFLECTION DUMP ================
+
+========================================================
+  VERTEX SHADER BINDINGS
+========================================================
+Resource: "UBO" (Hash: 0xD491083B)
+  - Scope: Material (Set 1) | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Size: 256 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+      * "model" | Offset: 128 | Size: 64 | Type: Mat4
+      * "normalMatrix" | Offset: 192 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+
+========================================================
+  FRAGMENT SHADER BINDINGS
+========================================================
+Resource: "UBO" (Hash: 0xD491083B)
+  - Scope: Material (Set 1) | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Size: 256 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+      * "model" | Offset: 128 | Size: 64 | Type: Mat4
+      * "normalMatrix" | Offset: 192 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+
+========================================================
+  FULL PROGRAM COMBINED BINDINGS
+========================================================
+Resource: "UBO" (Hash: 0xD491083B)
+  - Scope: Material (Set 1) | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Size: 256 bytes
+  - Members:
+      * "view" | Offset: 0 | Size: 64 | Type: Mat4
+      * "proj" | Offset: 64 | Size: 64 | Type: Mat4
+      * "model" | Offset: 128 | Size: 64 | Type: Mat4
+      * "normalMatrix" | Offset: 192 | Size: 64 | Type: Mat4
+--------------------------------------------------------
+

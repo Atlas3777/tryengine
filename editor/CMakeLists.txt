@@ -42,17 +42,21 @@ add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui_demo.cpp
         ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
 set_target_properties(imgui_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_compile_definitions(imgui_lib PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1)
+target_compile_definitions(imgui_lib PUBLIC
+        IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
+        VK_NO_PROTOTYPES
+        IMGUI_IMPL_VULKAN_USE_VOLK
+)
 
 target_include_directories(imgui_lib PUBLIC
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
 )
-target_link_libraries(imgui_lib PRIVATE SDL3::SDL3)
+target_link_libraries(imgui_lib PRIVATE SDL3::SDL3 volk)
 
 add_library(bc7enc_lib STATIC
         ${bc7enc_SOURCE_DIR}/bc7enc.cpp
@@ -95,6 +99,7 @@ target_link_libraries(editor_core PUBLIC
         engine::resources
         engine::graphics
         engine::async
+        engine::platform
         imgui_lib
         tinygltf
         stb_image

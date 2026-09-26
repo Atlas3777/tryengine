@@ -4,9 +4,11 @@
 
 #include "editor/Editor.hpp"
 #include "engine/core/Engine.hpp"
-#include "engine/core/InputState.hpp"
-#include "engine/resources/AsyncFileManager.hpp"
 
+namespace tryengine::graphics {
+class FrameSync;
+class VulkanSwapchain;
+}
 namespace tryeditor {
 class EditorApp {
 public:
@@ -16,14 +18,14 @@ public:
     EditorApp& operator=(const EditorApp&) = delete;
 
     void Init();
-    void Run();
-    void Shutdown();
+    void Run() const;
+    void Shutdown() const;
 
 private:
-    void UpdateInput();
-    std::unique_ptr<tryengine::graphics::GraphicsContext> graphics_context_;
+    std::unique_ptr<tryengine::graphics::VulkanDevice> vulkan_device_;
+    std::unique_ptr<tryengine::graphics::VulkanSwapchain> swapchain_;
+    std::unique_ptr<tryengine::graphics::FrameSync> frame_sync_;
     std::unique_ptr<tryengine::core::Engine> engine_;
     std::unique_ptr<Editor> editor_;
-    tryengine::core::InputState input_state_;
 };
 }  // namespace tryeditor

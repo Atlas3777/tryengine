@@ -2,6 +2,7 @@
 #include <imgui.h>
 
 #include "editor/AssetPipeline.hpp"
+#include "editor/EditorRender.hpp"
 #include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "editor/gui/UiFile.hpp"
@@ -35,18 +36,27 @@ void* GetEditorImGuiContext() {
 
 void* GetImage(das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-
     if (!try_ctx)
         return nullptr;
 
-    if (auto rg_ = try_ctx->engine.TryGet<tryengine::graphics::RenderGraph>()) {
-        tryengine::graphics::RGResourceHandle viewport_handle = rg_->GetBlackboard().Get(tryengine::graphics::RGTag_v<"SceneViewport">);
-        return rg_->GetPhysicalTexture(viewport_handle);
+    auto* rg = try_ctx->engine.TryGet<tryengine::graphics::RenderGraph>();
+    if (!rg) {
+        LogError("Render Graph not Found");
+        return nullptr;
     }
 
-    LogError("Render Graph not Found");
+    // 1. Извлекаем RGResourceHandle из Blackboard RenderGraph
+    tryeditor::RGResourceHandle viewport_handle = rg->GetBlackboard().Get(tryengine::graphics::RGTag_v<"SceneViewport">);
 
-    return nullptr;
+    // 2. Получаем чистый VkImageView из RenderGraph (без зависимости от ImGui)
+    VkImageView view = rg->GetPhysicalImageView(viewport_handle);
+    if (!view)
+        return nullptr;
+
+    // 3. Слой редактора (EditorRender) возвращает кэшированный VkDescriptorSet для ImGui
+    VkDescriptorSet ds = try_ctx->engine.Get<tryeditor::EditorRender>().GetOrCreateImguiTexture(view);
+
+    return ds;
 }
 
 using namespace das;

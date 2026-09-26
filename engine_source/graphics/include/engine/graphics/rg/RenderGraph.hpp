@@ -1,21 +1,31 @@
 #pragma once
 
+#ifndef VK_NO_PROTOTYPES
+#define VK_NO_PROTOTYPES
+#endif
+
+#include <volk.h>
+#include <vk_mem_alloc.h>
+
 #include <EASTL/fixed_vector.h>
+#include <EASTL/functional.h>
 #include <EASTL/hash_map.h>
 #include <EASTL/optional.h>
 #include <EASTL/span.h>
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
 #include <EASTL/vector.h>
-#include <SDL3/SDL_gpu.h>
 #include <cstring>
 #include <memory>
-#include <utility>
+#include <algorithm>
 
+#include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
 
 namespace tryengine::graphics {
+
+class VulkanDevice;
 
 struct RGResourceHandle {
     static constexpr uint32_t kInvalid = 0xFFFFFFFFu;
@@ -26,22 +36,75 @@ struct RGResourceHandle {
     friend bool operator==(const RGResourceHandle&, const RGResourceHandle&) = default;
 };
 
-enum class RGResourceType : uint8_t { Texture, Buffer, ExternalTexture, ExternalBuffer };
+enum class RGResourceType : uint8_t {
+    Texture,
+    Buffer,
+    ExternalTexture,
+    ExternalBuffer
+};
 
 struct RGTextureDesc {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t layers = 1;
     uint32_t mips = 1;
-    SDL_GPUTextureFormat format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    SDL_GPUTextureUsageFlags usage = 0;
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
     eastl::string debug_name;
 };
 
 struct RGBufferDesc {
     uint64_t size = 0;
-    SDL_GPUBufferUsageFlags usage = 0;
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VmaMemoryUsage memory_usage = VMA_MEMORY_USAGE_AUTO;
+    VmaAllocationCreateFlags alloc_flags = 0;
     eastl::string debug_name;
+};
+
+enum class RGAccessType : uint8_t {
+    Read,
+    Write,
+    Create
+};
+
+enum class RGUsageHint : uint32_t {
+    None                   = 0,
+    ColorAttachment        = 1 << 0,
+    DepthStencilAttachment = 1 << 1,
+    DepthStencilReadOnly   = 1 << 2,
+    ShaderRead             = 1 << 3,
+    StorageRead            = 1 << 4,
+    StorageWrite           = 1 << 5,
+    StorageReadWrite       = StorageRead | StorageWrite,
+    TransferSrc            = 1 << 6,
+    TransferDst            = 1 << 7,
+    Present                = 1 << 8
+};
+
+inline constexpr RGUsageHint operator|(RGUsageHint a, RGUsageHint b) {
+    return static_cast<RGUsageHint>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+inline constexpr bool operator&(RGUsageHint a, RGUsageHint b) {
+    return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
+}
+
+struct RGResourceAccess {
+    RGTag tag = 0;
+    RGResourceHandle handle;
+    RGAccessType access = RGAccessType::Read;
+    RGUsageHint usage_hint = RGUsageHint::None;
+};
+
+/// Результат суб-аллокации транзиентной памяти для кадра
+struct TransientAllocation {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceAddress bda_address = 0; // Включает смещение (base_bda + offset)
+    uint8_t* mapped_ptr = nullptr;
+
+    [[nodiscard]] bool IsValid() const { return buffer != VK_NULL_HANDLE; }
 };
 
 class Blackboard {
@@ -53,7 +116,7 @@ public:
         if (it != entries_.end())
             return it->second;
 
-        LogError("Resource not found ");
+        TRY_ASSERT(false, "Ресурс {} не найден в Blackboard", GetRGTagName(tag));
         return RGResourceHandle{};
     }
 
@@ -86,27 +149,27 @@ public:
             return eastl::span(it->second.data(), it->second.size());
         }
 
-        LogError("CPUBlackboard: Entry not found for tag.");
+        LogError("CPUBlackboard: Запись для тега {} не найдена.", tag);
         return eastl::nullopt;
     }
 
     [[nodiscard]] const void* GetData(RGTag tag) const {
         auto span = GetSpan(tag);
-        return span->data();
+        return span ? span->data() : nullptr;
     }
 
     [[nodiscard]] size_t GetSize(RGTag tag) const {
         auto span = GetSpan(tag);
-        return span->size();
+        return span ? span->size() : 0;
     }
 
     template <typename T>
     [[nodiscard]] const T* GetAs(RGTag tag) const {
         auto span = GetSpan(tag);
-        if (span->size() >= sizeof(T)) {
+        if (span && span->size() >= sizeof(T)) {
             return reinterpret_cast<const T*>(span->data());
         }
-        LogError("CPUBlackboard: Data size is smaller than requested struct.");
+        LogError("CPUBlackboard: Размер данных меньше запрашиваемой структуры.");
         return nullptr;
     }
 
@@ -118,27 +181,53 @@ private:
     eastl::hash_map<RGTag, eastl::vector<uint8_t>> entries_;
 };
 
-enum class RGAccess : uint8_t { Read, Write, Create };
+class RenderGraph;
 
-struct RGResourceAccess {
-    RGTag tag = 0;
+struct RGColorAttachment {
     RGResourceHandle handle;
-    RGAccess access = RGAccess::Read;
-    SDL_GPUTextureUsageFlags usage_hint = 0;
+    VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    VkAttachmentStoreOp store_op = VK_ATTACHMENT_STORE_OP_STORE;
+    VkClearValue clear_value = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkImageView resolve_view = VK_NULL_HANDLE;
+    VkAttachmentLoadOp resolve_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    VkAttachmentStoreOp resolve_store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+};
+
+struct RGDepthStencilAttachment {
+    RGResourceHandle handle;
+    VkAttachmentLoadOp depth_load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    VkAttachmentStoreOp depth_store_op = VK_ATTACHMENT_STORE_OP_STORE;
+    VkClearValue clear_value = {.depthStencil = {1.0f, 0}};
+    VkAttachmentLoadOp stencil_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    VkAttachmentStoreOp stencil_store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 };
 
 class RGExecuteContext {
 public:
-    SDL_GPUDevice* device = nullptr;
-    SDL_GPUCommandBuffer* cmd_buffer = nullptr;
-    SDL_GPURenderPass* gpu_pass = nullptr;
+    VkDevice device = VK_NULL_HANDLE;
+    VkCommandBuffer cmd_buffer = VK_NULL_HANDLE;
     Blackboard* frame_bb = nullptr;
     CPUBlackboard* cpu_bb = nullptr;
 
-    [[nodiscard]] SDL_GPUTexture* GetTexture(RGResourceHandle h) const;
-    [[nodiscard]] SDL_GPUBuffer* GetBuffer(RGResourceHandle h) const;
+    [[nodiscard]] VkImage GetTexture(RGResourceHandle h) const;
+    [[nodiscard]] VkImageView GetImageView(RGResourceHandle h) const;
+    [[nodiscard]] VkBuffer GetBuffer(RGResourceHandle h) const;
 
-    void SetGraph(class RenderGraph* graph) { graph_ = graph; }
+    /// Начинает Vulkan 1.3+ Dynamic Rendering проход (vkCmdBeginRendering)
+    void BeginRendering(
+        eastl::span<const RGColorAttachment> color_attachments,
+        const RGDepthStencilAttachment* depth_attachment = nullptr,
+        VkRect2D render_area = {},
+        uint32_t layer_count = 1
+    );
+
+    /// Завершает Dynamic Rendering проход (vkCmdEndRendering)
+    void EndRendering();
+
+    /// Выделяет память в транзиентном линейном буфере текущего кадра
+    [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256) const;
+
+    void SetGraph(RenderGraph* graph) { graph_ = graph; }
 
 private:
     RenderGraph* graph_ = nullptr;
@@ -155,6 +244,10 @@ public:
     bool culled = false;
 
     eastl::fixed_vector<uint32_t, 8> deps;
+
+    // Сгенерированные Synchronization 2 барьеры для вызова перед началом пасса
+    eastl::vector<VkImageMemoryBarrier2> image_barriers;
+    eastl::vector<VkBufferMemoryBarrier2> buffer_barriers;
 };
 
 template <typename PassData>
@@ -170,8 +263,6 @@ public:
     }
 };
 
-class RenderGraph;
-
 class RenderGraphBuilder {
 public:
     explicit RenderGraphBuilder(RenderGraph& graph, PassNodeBase* pass) : graph_(graph), pass_(pass) {}
@@ -179,8 +270,8 @@ public:
     RGResourceHandle CreateTexture(eastl::string_view dbg_name, const RGTextureDesc& desc);
     RGResourceHandle CreateBuffer(eastl::string_view dbg_name, const RGBufferDesc& desc);
 
-    RGResourceHandle Read(RGResourceHandle h, SDL_GPUTextureUsageFlags hint = 0);
-    RGResourceHandle Write(RGResourceHandle h, SDL_GPUTextureUsageFlags hint = 0);
+    RGResourceHandle Read(RGResourceHandle h, RGUsageHint usage = RGUsageHint::ShaderRead);
+    RGResourceHandle Write(RGResourceHandle h, RGUsageHint usage = RGUsageHint::StorageWrite);
 
     void Export(RGTag tag, RGResourceHandle h);
     RGResourceHandle Import(RGTag tag);
@@ -201,8 +292,17 @@ struct RGVirtualResource {
     RGTextureDesc texture_desc;
     RGBufferDesc buffer_desc;
 
-    SDL_GPUTexture* physical_texture = nullptr;
-    SDL_GPUBuffer* physical_buffer = nullptr;
+    VkImage physical_image = VK_NULL_HANDLE;
+    VkImageView physical_image_view = VK_NULL_HANDLE;
+    VmaAllocation image_allocation = VK_NULL_HANDLE;
+
+    VkBuffer physical_buffer = VK_NULL_HANDLE;
+    VmaAllocation buffer_allocation = VK_NULL_HANDLE;
+
+    // Отслеживание текущего состояния ресурса в графе
+    VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkPipelineStageFlags2 current_stage = VK_PIPELINE_STAGE_2_NONE;
+    VkAccessFlags2 current_access = VK_ACCESS_2_NONE;
 
     PassNodeBase* producer_pass = nullptr;
     uint32_t ref_count = 0;
@@ -211,38 +311,65 @@ struct RGVirtualResource {
 
 class RGResourcePool {
 public:
-    explicit RGResourcePool(SDL_GPUDevice* device) : device_(device) {}
+    explicit RGResourcePool(VulkanDevice& device);
     ~RGResourcePool();
 
-    SDL_GPUTexture* AcquireTexture(const RGTextureDesc& desc);
-    SDL_GPUBuffer* AcquireBuffer(const RGBufferDesc& desc);
-
-    void ReleaseAll();
-
-private:
-    struct TextureEntry {
-        SDL_GPUTexture* texture = nullptr;
+    struct PooledTexture {
+        VkImage image = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
         RGTextureDesc desc;
         bool in_use = false;
     };
 
-    struct BufferEntry {
-        SDL_GPUBuffer* buffer = nullptr;
+    struct PooledBuffer {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
         RGBufferDesc desc;
         bool in_use = false;
     };
 
-    SDL_GPUDevice* device_ = nullptr;
-    eastl::vector<TextureEntry> texture_pool_;
-    eastl::vector<BufferEntry> buffer_pool_;
+    PooledTexture AcquireTexture(const RGTextureDesc& desc);
+    PooledBuffer AcquireBuffer(const RGBufferDesc& desc);
+
+    void ReleaseAll();
+    void DestroyAll();
+
+private:
+    VulkanDevice& device_;
+    eastl::vector<PooledTexture> texture_pool_;
+    eastl::vector<PooledBuffer> buffer_pool_;
+};
+
+// Внутренние структуры кадрового линейного аллокатора
+struct TransientPage {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    uint8_t* mapped_ptr = nullptr;
+    VkDeviceSize size = 0;
+    VkDeviceAddress bda_address = 0;
+};
+
+struct FrameTransientAllocator {
+    eastl::vector<TransientPage> pages;
+    size_t current_page_index = 0;
+    VkDeviceSize current_offset = 0;
 };
 
 class RenderGraph {
 public:
-    explicit RenderGraph(SDL_GPUDevice* device);
+    static constexpr uint32_t kMaxFramesInFlight = 2;
+    static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024; // 16 MB на страницу
+
+    explicit RenderGraph(VulkanDevice& device);
     ~RenderGraph();
 
-    // Запись CPU-данных ДО создания пассов
+    /// Устанавливает текущий индекс кадра в полете (0..kMaxFramesInFlight-1)
+    void BeginFrame(uint32_t frame_index);
+
+    /// Выделяет динамическую транзиентную память из текущего кадрового Bump Allocator
+    TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256);
+
     template <typename T>
     void PutCPUData(RGTag tag, const T& data) {
         cpu_bb_.Put(tag, data);
@@ -265,20 +392,31 @@ public:
         return static_cast<PassNode<PassData>*>(raw_pass)->data;
     }
 
-    RGResourceHandle ImportExternalTexture(eastl::string_view name, SDL_GPUTexture* texture, const RGTextureDesc& desc);
-    RGResourceHandle ImportExternalBuffer(eastl::string_view name, SDL_GPUBuffer* buffer, const RGBufferDesc& desc);
+    RGResourceHandle ImportExternalTexture(
+        eastl::string_view name,
+        VkImage image,
+        VkImageView image_view,
+        const RGTextureDesc& desc,
+        VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
+    );
+
+    RGResourceHandle ImportExternalBuffer(
+        eastl::string_view name,
+        VkBuffer buffer,
+        const RGBufferDesc& desc
+    );
 
     RGResourceHandle CreateTexture(PassNodeBase* pass, eastl::string_view dbg_name, const RGTextureDesc& desc);
     RGResourceHandle CreateBuffer(PassNodeBase* pass, eastl::string_view dbg_name, const RGBufferDesc& desc);
 
-    RGResourceHandle RegisterRead(PassNodeBase* pass, RGResourceHandle h, SDL_GPUTextureUsageFlags hint);
-    RGResourceHandle RegisterWrite(PassNodeBase* pass, RGResourceHandle h, SDL_GPUTextureUsageFlags hint);
+    RGResourceHandle RegisterRead(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage);
+    RGResourceHandle RegisterWrite(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage);
 
     void ExportTag(RGTag tag, RGResourceHandle h);
     RGResourceHandle ImportTag(PassNodeBase* pass, RGTag tag);
 
     void Compile();
-    void Execute(SDL_GPUCommandBuffer* cmd);
+    void Execute(VkCommandBuffer cmd);
     void Reset();
 
     Blackboard& GetBlackboard() { return frame_bb_; }
@@ -287,14 +425,19 @@ public:
     CPUBlackboard& GetCPUBlackboard() { return cpu_bb_; }
     const CPUBlackboard& GetCPUBlackboard() const { return cpu_bb_; }
 
-    SDL_GPUTexture* GetPhysicalTexture(RGResourceHandle h) const;
-    SDL_GPUBuffer* GetPhysicalBuffer(RGResourceHandle h) const;
+    VkImage GetPhysicalImage(RGResourceHandle h) const;
+    VkImageView GetPhysicalImageView(RGResourceHandle h) const;
+    VkBuffer GetPhysicalBuffer(RGResourceHandle h) const;
+
+    VulkanDevice& GetDevice() const { return device_; }
 
 private:
     void CullPasses();
     void TopologicalSort();
+    void BuildBarriers();
+    void CleanupTransientAllocators();
 
-    SDL_GPUDevice* device_ = nullptr;
+    VulkanDevice& device_;
     eastl::vector<std::unique_ptr<PassNodeBase>> passes_;
     eastl::vector<RGVirtualResource> resources_;
     Blackboard frame_bb_;
@@ -302,6 +445,10 @@ private:
     RGResourcePool pool_;
 
     eastl::fixed_vector<uint32_t, 128> sorted_order_;
+
+    // Аллокаторы для кадровой динамической памяти
+    uint32_t frame_index_ = 0;
+    FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];
 };
 
 }  // namespace tryengine::graphics

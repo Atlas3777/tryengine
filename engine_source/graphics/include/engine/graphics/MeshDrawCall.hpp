@@ -4,20 +4,14 @@
 
 namespace tryengine::graphics {
 
+struct Mesh;
+struct Material;
+
 struct MeshDrawCall {
     hlslpp::float4x4 model_matrix;
-
-    SDL_GPUBuffer* vertex_buffer = nullptr;
-    SDL_GPUBuffer* index_buffer = nullptr;
-
-    SDL_GPUGraphicsPipeline* pipeline = nullptr;
-
-    Material* material = nullptr;
-    uint64_t sorting_key;
-
-    uint32_t num_indices = 0;
-
-    resources::IndexFormat index_format = resources::IndexFormat::None;
+    const Mesh* mesh = nullptr;
+    const Material* material = nullptr;
+    uint64_t sorting_key = 0;
 };
 
 }  // namespace tryengine::graphics

@@ -65,7 +65,7 @@ struct CameraC {
 var cameraC : CameraC
 
 [export]
-def get_camera() : CameraC? {
+def get_camera(viewport_size : float2) : CameraC? {
     query() <| $(let transform : Transform, let camera : Camera){
         cameraC.position = transform.position
 
@@ -76,10 +76,12 @@ def get_camera() : CameraC? {
 
         cameraC.view = look_at_rh(transform.position, target, up)
 
-        let aspect = 16.0f / 9.0f
+        let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)
         cameraC.proj = perspective_rh(fov_rad, aspect, camera.near_plane, camera.far_plane)
         cameraC.proj[3][3] = 0.0f
+        // FIX: Инвертируем Y для Vulkan NDC (где +Y направлен вниз)
+        cameraC.proj[1][1] *= -1.0f
     }
 
     return unsafe(addr(cameraC))
@@ -100,6 +102,7 @@ def start_load(){
                 cmp |> set("material", mat_ptr)
             }
         }
+        // print("пытаемся, guidMat {materialGuid:d} guidMesh {meshGuid:d}\n")
     }
     if (counter > 0){
         print("пытаемся загрузиться для {counter} объектов\n")

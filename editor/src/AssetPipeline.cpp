@@ -135,7 +135,7 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
 
 
     // 4. Импорт
-    ImportContext ctx(read_handle.GetData());
+    ImportContext ctx(asset_path, read_handle.GetData());
     auto import_res = co_await importer->Import(ctx);
     if (!import_res.has_value()) {
         LogError(LogCategory::Importer, "Ошибка импорта ассета-сироты {}: {}", asset_path.c_str(),
@@ -271,7 +271,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(eastl::string asset_path, eastl::
 
     bool need_reimport = false;
     if (oldest_artifact_stat.IsFailed()) {
-        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}", asset_path.c_str());
+        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}, {}", asset_path.c_str(), oldest_artifact_stat.GetPath());
         need_reimport = true;
     } else {
         const FileTime meta_mtime = meta_stat.GetMtime();
@@ -301,7 +301,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(eastl::string asset_path, eastl::
     if (asset_read.IsFailed())
         co_return LogAndMakeError("Не удалось прочитать файл ассета для реимпорта: {}", asset_path.c_str());
 
-    ImportContext ctx(asset_read.GetData(), meta_read.GetData());
+    ImportContext ctx(asset_path, asset_read.GetData(), meta_read.GetData());
     auto import_res = co_await importer->Import(ctx);
 
     if (!import_res.has_value()) {

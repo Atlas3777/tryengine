@@ -17,7 +17,7 @@ struct AmbientSettings {
     hlslpp::float4 clear_color{0.1f, 0.1f, 0.12f, 1.0f};
 };
 
-struct GlobalLightUniforms {
+struct GlobalLight {
     hlslpp::float4 ambient_color;
     hlslpp::float4 view_pos;
 };

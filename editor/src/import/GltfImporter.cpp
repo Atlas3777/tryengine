@@ -1,9 +1,9 @@
 #include "editor/import/GltfImporter.hpp"
 
-#include <hlsl++/matrix_float_type.h>
-#include <hlsl++/quaternion_type.h>
-#include <hlsl++/quaternion.h>
 #include <hlsl++.h>
+#include <hlsl++/matrix_float_type.h>
+#include <hlsl++/quaternion.h>
+#include <hlsl++/quaternion_type.h>
 
 #include "editor/JsonParser.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
@@ -21,9 +21,6 @@
 #include "tiny_gltf_v3.h"
 
 namespace tryeditor {
-using tryengine::resources::SamplerAddressMode;
-using tryengine::resources::TextureFilter;
-
 namespace {
 
 int FindAttribute(const tg3_primitive& prim, const char* name) {
@@ -53,16 +50,15 @@ const uint8_t* GetAccessorData(const tg3_model* m, int accessor_index, uint32_t&
 }
 
 eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* m, uint64_t main_uuid,
-                                          ModelAssetMap& asset_map) {
+                                         ModelAssetMap& asset_map) {
     eastl::vector<uint64_t> material_guids;
     material_guids.reserve(m->materials_count);
 
     for (uint32_t i = 0; i < m->materials_count; ++i) {
         const tg3_material& gltf_mat = m->materials[i];
 
-        eastl::string mat_name = gltf_mat.name.len > 0
-            ? eastl::string(gltf_mat.name.data, gltf_mat.name.len)
-            : tryengine::fmt::format("Material_{}", i);
+        eastl::string mat_name = gltf_mat.name.len > 0 ? eastl::string(gltf_mat.name.data, gltf_mat.name.len)
+                                                       : tryengine::fmt::format("Material_{}", i);
 
         uint64_t mat_sub_id = tryengine::core::random::CombineID(main_uuid, mat_name);
         material_guids.push_back(mat_sub_id);
@@ -75,11 +71,8 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
 
         // Поля MaterialUBO в Standard.slang: albedo_color, roughness, metallic
         mat_data.scalar_params["albedo_color"] = {
-            static_cast<float>(pbr.base_color_factor[0]),
-            static_cast<float>(pbr.base_color_factor[1]),
-            static_cast<float>(pbr.base_color_factor[2]),
-            static_cast<float>(pbr.base_color_factor[3])
-        };
+            static_cast<float>(pbr.base_color_factor[0]), static_cast<float>(pbr.base_color_factor[1]),
+            static_cast<float>(pbr.base_color_factor[2]), static_cast<float>(pbr.base_color_factor[3])};
 
         mat_data.scalar_params["roughness"] = {static_cast<float>(pbr.roughness_factor)};
         mat_data.scalar_params["metallic"] = {static_cast<float>(pbr.metallic_factor)};
@@ -91,23 +84,13 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
             if (gltf_tex.source >= 0 && gltf_tex.source < static_cast<int>(m->images_count)) {
                 const tg3_image& gltf_img = m->images[gltf_tex.source];
 
-                eastl::string tex_name = gltf_img.name.len > 0
-                    ? eastl::string(gltf_img.name.data, gltf_img.name.len)
-                    : tryengine::fmt::format("Texture_{}", gltf_tex.source);
-
-                tryengine::resources::Sampler sampler{}; // Дефолтные настройки (Linear/Repeat)
-
-                if (gltf_tex.sampler >= 0 && gltf_tex.sampler < static_cast<int>(m->samplers_count)) {
-                    const tg3_sampler& s = m->samplers[gltf_tex.sampler];
-                    sampler.min_filter = MapGltfFilter(s.min_filter);
-                    sampler.mag_filter = MapGltfFilter(s.mag_filter);
-                    sampler.address_mode_u = MapGltfWrap(s.wrap_s);
-                    sampler.address_mode_v = MapGltfWrap(s.wrap_t);
-                }
+                eastl::string tex_name = gltf_img.name.len > 0 ? eastl::string(gltf_img.name.data, gltf_img.name.len)
+                                                               : tryengine::fmt::format("Texture_{}", gltf_tex.source);
 
                 uint64_t expected_tex_guid = tryengine::core::random::CombineID(main_uuid, tex_name);
 
-                mat_data.texture_params["albedo_map"] = tryengine::graphics::TextureBindingAssets(expected_tex_guid, sampler);
+                mat_data.texture_params["albedo_map"] =
+                    tryengine::graphics::TextureBindingAssets(expected_tex_guid);
             }
         }
 
@@ -131,57 +114,123 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
 }
 
 void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uuid, ModelAssetMap& asset_map) {
-    for (uint32_t i = 0; i < m->images_count; ++i) {
-        const tg3_image& gltf_img = m->images[i];
+    if (!m)
+        return;
 
-        eastl::string base_name = gltf_img.name.len > 0
-            ? eastl::string(gltf_img.name.data, gltf_img.name.len)
-            : tryengine::fmt::format("Texture_{}", i);
+    for (uint32_t i = 0; i < m->textures_count; ++i) {
+        const tg3_texture& gltf_tex = m->textures[i];
 
-        uint64_t tex_sub_id = tryengine::core::random::CombineID(main_uuid, base_name);
+        tryengine::resources::VkFilter min_filter = tryengine::resources::VkFilter::VK_FILTER_LINEAR;
+        tryengine::resources::VkFilter mag_filter = tryengine::resources::VkFilter::VK_FILTER_LINEAR;
+        tryengine::resources::VkSamplerMipmapMode mipmap_mode = tryengine::resources::VkSamplerMipmapMode::VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-        const u_char* compressed_data = nullptr;
-        size_t compressed_size = 0;
+        tryengine::resources::VkSamplerAddressMode wrap_u = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        tryengine::resources::VkSamplerAddressMode wrap_v = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        // В glTF 2.0 нет wrap_w, используем безопасный дефолт REPEAT
+        tryengine::resources::VkSamplerAddressMode wrap_w = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        if (gltf_img.buffer_view >= 0) {
-            const tg3_buffer_view& bv = m->buffer_views[gltf_img.buffer_view];
-            compressed_data = m->buffers[bv.buffer].data.data + bv.byte_offset;
-            compressed_size = bv.byte_length;
+        if (gltf_tex.sampler >= 0 && gltf_tex.sampler < static_cast<int32_t>(m->samplers_count)) {
+            const tg3_sampler& sampler = m->samplers[gltf_tex.sampler];
+
+            if (sampler.min_filter != -1) {
+                min_filter = MapGltfMinFilter(sampler.min_filter);
+                mipmap_mode = MapGltfMipmapMode(sampler.min_filter);
+            }
+            if (sampler.mag_filter != -1) {
+                mag_filter = MapGltfMagFilter(sampler.mag_filter);
+            }
+            wrap_u = MapGltfWrap(sampler.wrap_s);
+            wrap_v = MapGltfWrap(sampler.wrap_t);
         }
 
-        if (!compressed_data || compressed_size == 0)
+        if (gltf_tex.source < 0 || gltf_tex.source >= static_cast<int32_t>(m->images_count)) {
+            continue;
+        }
+
+        const tg3_image& gltf_img = m->images[gltf_tex.source];
+
+        eastl::string base_name = gltf_tex.name.len > 0
+                                      ? eastl::string(gltf_tex.name.data, gltf_tex.name.len)
+                                      : (gltf_img.name.len > 0 ? eastl::string(gltf_img.name.data, gltf_img.name.len)
+                                                               : tryengine::fmt::format("Texture_{}", i));
+
+        const uint8_t* raw_bytes = nullptr;
+        size_t byte_count = 0;
+
+        if (gltf_img.buffer_view >= 0 && gltf_img.buffer_view < static_cast<int32_t>(m->buffer_views_count)) {
+            const tg3_buffer_view& bv = m->buffer_views[gltf_img.buffer_view];
+            if (bv.buffer >= 0 && bv.buffer < static_cast<int32_t>(m->buffers_count)) {
+                raw_bytes = m->buffers[bv.buffer].data.data + bv.byte_offset;
+                byte_count = bv.byte_length;
+            }
+        } else if (gltf_img.image.data && gltf_img.image.count > 0) {
+            raw_bytes = gltf_img.image.data;
+            byte_count = gltf_img.image.count;
+        }
+
+        if (!raw_bytes || byte_count == 0)
             continue;
 
-        eastl::span<const uint8_t> input_bytes(compressed_data, compressed_size);
+        bool is_srgb = false;
+        for (uint32_t mat_idx = 0; mat_idx < m->materials_count; ++mat_idx) {
+            const tg3_material& mat = m->materials[mat_idx];
+
+            if (mat.pbr_metallic_roughness.base_color_texture.index == static_cast<int32_t>(i) ||
+                mat.emissive_texture.index == static_cast<int32_t>(i)) {
+                is_srgb = true;
+                break;
+            }
+        }
+
+        tryengine::resources::VkCompareOp compare_op = tryengine::resources::VkCompareOp::VK_COMPARE_OP_ALWAYS;
+        bool enable_anisotropy = false;
+        bool enable_compare = false;
+        float mip_lod_bias = 0.0f;
+        float max_anisotropy = 1.0f;
+        float min_lod = 0.0f;
+        float max_lod = 0.0f;
 
         TextureProcessSettings settings;
-        settings.format = tryengine::resources::TextureFormat::TEXTUREFORMAT_BC7_RGBA_UNORM;
-        auto process_result = TextureProcessor::ProcessFromEncodedMemory(input_bytes, settings);
+        settings.format = is_srgb ? tryengine::resources::TextureFormat::VK_FORMAT_BC7_SRGB_BLOCK
+                                  : tryengine::resources::TextureFormat::VK_FORMAT_BC7_UNORM_BLOCK;
+
+        settings.sampler = tryengine::resources::SamplerDesc{
+            min_filter, mag_filter, mipmap_mode, wrap_u, wrap_v, wrap_w,
+            compare_op, enable_anisotropy, enable_compare, mip_lod_bias,
+            max_anisotropy, min_lod, max_lod
+        };
+
+        tryengine::Result<eastl::vector<uint8_t>> process_result;
+
+        if (gltf_img.as_is && gltf_img.width > 0 && gltf_img.height > 0) {
+            process_result =
+                TextureProcessor::ProcessFromRawPixels(raw_bytes, gltf_img.width, gltf_img.height, settings);
+        } else {
+            eastl::span input_bytes(raw_bytes, byte_count);
+            process_result = TextureProcessor::ProcessFromEncodedMemory(input_bytes, settings);
+        }
 
         if (!process_result.has_value()) {
             LogError("Failed to process texture {}: {}", base_name.c_str(), process_result.error().Message());
-            continue;
         }
 
-        ProducedArtifact tex_artifact;
-        tex_artifact.sub_guid = tex_sub_id;
-        tex_artifact.target = ArtifactTarget::Runtime;
-        tex_artifact.extension = ".tex";
-        tex_artifact.bytes = std::move(*process_result);
-
-        result.artifacts.push_back(std::move(tex_artifact));
-        asset_map.sub_assets.push_back({tex_sub_id, tryengine::fmt::format("{}.tex", tex_sub_id)});
+        ProducedArtifact artifact;
+        artifact.bytes = eastl::move(*process_result);
+        artifact.sub_guid = tryengine::core::random::CombineID(main_uuid, base_name);
+        artifact.target = ArtifactTarget::Runtime;
+        result.artifacts.push_back(artifact);
+        asset_map.sub_assets.push_back({artifact.sub_guid, tryengine::fmt::format("{}.tex", artifact.sub_guid)});
     }
 }
 
 eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const tg3_model* m, uint64_t main_uuid,
-                                                       ModelAssetMap& asset_map) {
+                                                     ModelAssetMap& asset_map) {
     eastl::vector<eastl::vector<uint64_t>> mesh_primitive_guids(m->meshes_count);
 
     for (uint32_t i = 0; i < m->meshes_count; ++i) {
         const tg3_mesh& gltf_mesh = m->meshes[i];
         eastl::string mesh_name = gltf_mesh.name.len > 0 ? eastl::string(gltf_mesh.name.data, gltf_mesh.name.len)
-                                                           : tryengine::fmt::format("Mesh_{}", i);
+                                                         : tryengine::fmt::format("Mesh_{}", i);
 
         for (uint32_t p = 0; p < gltf_mesh.primitives_count; ++p) {
             eastl::string prim_name = tryengine::fmt::format("{}_prim_{}", mesh_name, p);
@@ -190,19 +239,20 @@ eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const
 
             RawPrimitiveInput raw_input;
 
-            int pos_idx    = FindAttribute(prim, "POSITION");
-            int norm_idx   = FindAttribute(prim, "NORMAL");
-            int uv_idx     = FindAttribute(prim, "TEXCOORD_0");
-            int color_idx  = FindAttribute(prim, "COLOR_0");
-            int joint_idx  = FindAttribute(prim, "JOINTS_0");
+            int pos_idx = FindAttribute(prim, "POSITION");
+            int norm_idx = FindAttribute(prim, "NORMAL");
+            int uv_idx = FindAttribute(prim, "TEXCOORD_0");
+            int color_idx = FindAttribute(prim, "COLOR_0");
+            int joint_idx = FindAttribute(prim, "JOINTS_0");
             int weight_idx = FindAttribute(prim, "WEIGHTS_0");
 
-            raw_input.positions.data = GetAccessorData(m, pos_idx, raw_input.positions.stride, raw_input.positions.count);
-            raw_input.normals.data   = GetAccessorData(m, norm_idx, raw_input.normals.stride, raw_input.normals.count);
-            raw_input.uvs.data       = GetAccessorData(m, uv_idx, raw_input.uvs.stride, raw_input.uvs.count);
-            raw_input.colors.data    = GetAccessorData(m, color_idx, raw_input.colors.stride, raw_input.colors.count);
-            raw_input.joints.data    = GetAccessorData(m, joint_idx, raw_input.joints.stride, raw_input.joints.count);
-            raw_input.weights.data   = GetAccessorData(m, weight_idx, raw_input.weights.stride, raw_input.weights.count);
+            raw_input.positions.data =
+                GetAccessorData(m, pos_idx, raw_input.positions.stride, raw_input.positions.count);
+            raw_input.normals.data = GetAccessorData(m, norm_idx, raw_input.normals.stride, raw_input.normals.count);
+            raw_input.uvs.data = GetAccessorData(m, uv_idx, raw_input.uvs.stride, raw_input.uvs.count);
+            raw_input.colors.data = GetAccessorData(m, color_idx, raw_input.colors.stride, raw_input.colors.count);
+            raw_input.joints.data = GetAccessorData(m, joint_idx, raw_input.joints.stride, raw_input.joints.count);
+            raw_input.weights.data = GetAccessorData(m, weight_idx, raw_input.weights.stride, raw_input.weights.count);
 
             if (color_idx >= 0) {
                 const tg3_accessor& color_acc = m->accessors[color_idx];
@@ -220,23 +270,26 @@ eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const
             }
 
             if (prim.indices >= 0) {
-                raw_input.indices.data = GetAccessorData(m, prim.indices, raw_input.indices.stride, raw_input.indices.count);
+                raw_input.indices.data =
+                    GetAccessorData(m, prim.indices, raw_input.indices.stride, raw_input.indices.count);
                 const tg3_accessor& idx_acc = m->accessors[prim.indices];
-                if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) raw_input.indices.format = tryengine::resources::IndexFormat::UInt16;
-                else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT) raw_input.indices.format = tryengine::resources::IndexFormat::UInt32;
+                if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT)
+                    raw_input.indices.format = tryengine::resources::IndexFormat::UInt16;
+                else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT)
+                    raw_input.indices.format = tryengine::resources::IndexFormat::UInt32;
                 else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
-                    TRY_ASSERT(false, "Unsupported index buffer format");
                     raw_input.indices.format = tryengine::resources::IndexFormat::UInt8;
                 }
             }
 
             // --- Запекание меша ---
             MeshProcessSettings process_settings;
-            process_settings.auto_select_format = true; // Автоматически выберет SkinnedPacked / StaticPacked / PositionOnly
+            process_settings.auto_select_format = true;
 
             auto process_result = MeshProcessor::ProcessPrimitive(raw_input, process_settings);
             if (!process_result.has_value()) {
-                LogError("Failed to process mesh primitive {}: {}", prim_name.c_str(), process_result.error().Message());
+                LogError("Failed to process mesh primitive {}: {}", prim_name.c_str(),
+                         process_result.error().Message());
                 continue;
             }
 
@@ -257,8 +310,8 @@ eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const
 }
 
 void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
-                   const eastl::vector<eastl::vector<uint64_t>>& mesh_primitive_guids,
-                   const eastl::vector<uint64_t>& material_guids) {
+                  const eastl::vector<eastl::vector<uint64_t>>& mesh_primitive_guids,
+                  const eastl::vector<uint64_t>& material_guids) {
     asset_map.nodes.resize(m->nodes_count);
 
     for (uint32_t i = 0; i < m->nodes_count; ++i) {
@@ -266,34 +319,37 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
 
         ModelNodeData node_data;
         node_data.name = gltf_node.name.len > 0 ? eastl::string(gltf_node.name.data, gltf_node.name.len)
-                                                 : tryengine::fmt::format("Node_{}", i);
+                                                : tryengine::fmt::format("Node_{}", i);
 
         // --- ТРАНСФОРМ ---
         if (gltf_node.has_matrix) {
             // В glTF матрица хранится по столбцам (column-major)
-            hlslpp::float3 col0(static_cast<float>(gltf_node.matrix[0]), static_cast<float>(gltf_node.matrix[1]), static_cast<float>(gltf_node.matrix[2]));
-            hlslpp::float3 col1(static_cast<float>(gltf_node.matrix[4]), static_cast<float>(gltf_node.matrix[5]), static_cast<float>(gltf_node.matrix[6]));
-            hlslpp::float3 col2(static_cast<float>(gltf_node.matrix[8]), static_cast<float>(gltf_node.matrix[9]), static_cast<float>(gltf_node.matrix[10]));
+            hlslpp::float3 col0(static_cast<float>(gltf_node.matrix[0]), static_cast<float>(gltf_node.matrix[1]),
+                                static_cast<float>(gltf_node.matrix[2]));
+            hlslpp::float3 col1(static_cast<float>(gltf_node.matrix[4]), static_cast<float>(gltf_node.matrix[5]),
+                                static_cast<float>(gltf_node.matrix[6]));
+            hlslpp::float3 col2(static_cast<float>(gltf_node.matrix[8]), static_cast<float>(gltf_node.matrix[9]),
+                                static_cast<float>(gltf_node.matrix[10]));
 
             // Позиция находится в 4-м столбце (индексы 12, 13, 14)
-            node_data.local_transform.position = hlslpp::float3(static_cast<float>(gltf_node.matrix[12]),
-                                                                static_cast<float>(gltf_node.matrix[13]),
-                                                                static_cast<float>(gltf_node.matrix[14]));
+            node_data.local_transform.position =
+                hlslpp::float3(static_cast<float>(gltf_node.matrix[12]), static_cast<float>(gltf_node.matrix[13]),
+                               static_cast<float>(gltf_node.matrix[14]));
 
             // Масштаб — это длины базисных векторов
-            node_data.local_transform.scale = hlslpp::float3(hlslpp::length(col0), hlslpp::length(col1), hlslpp::length(col2));
+            node_data.local_transform.scale =
+                hlslpp::float3(hlslpp::length(col0), hlslpp::length(col1), hlslpp::length(col2));
 
             // Нормализуем столбцы для получения чистой матрицы вращения 3x3
-            if (node_data.local_transform.scale.x > 0.0f) col0 /= node_data.local_transform.scale.x;
-            if (node_data.local_transform.scale.y > 0.0f) col1 /= node_data.local_transform.scale.y;
-            if (node_data.local_transform.scale.z > 0.0f) col2 /= node_data.local_transform.scale.z;
+            if (node_data.local_transform.scale.x > 0.0f)
+                col0 /= node_data.local_transform.scale.x;
+            if (node_data.local_transform.scale.y > 0.0f)
+                col1 /= node_data.local_transform.scale.y;
+            if (node_data.local_transform.scale.z > 0.0f)
+                col2 /= node_data.local_transform.scale.z;
 
             // Конструируем float3x3 построчно (row0, row1, row2)
-            hlslpp::float3x3 rot_mat(
-                col0.x, col1.x, col2.x,
-                col0.y, col1.y, col2.y,
-                col0.z, col1.z, col2.z
-            );
+            hlslpp::float3x3 rot_mat(col0.x, col1.x, col2.x, col0.y, col1.y, col2.y, col0.z, col1.z, col2.z);
 
             node_data.local_transform.rotation = hlslpp::quaternion(rot_mat);
         } else {
@@ -306,9 +362,9 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
                 static_cast<float>(gltf_node.rotation[0]), static_cast<float>(gltf_node.rotation[1]),
                 static_cast<float>(gltf_node.rotation[2]), static_cast<float>(gltf_node.rotation[3]));
 
-            node_data.local_transform.scale = hlslpp::float3(static_cast<float>(gltf_node.scale[0]),
-                                                               static_cast<float>(gltf_node.scale[1]),
-                                                               static_cast<float>(gltf_node.scale[2]));
+            node_data.local_transform.scale =
+                hlslpp::float3(static_cast<float>(gltf_node.scale[0]), static_cast<float>(gltf_node.scale[1]),
+                               static_cast<float>(gltf_node.scale[2]));
         }
         for (uint32_t c = 0; c < gltf_node.children_count; ++c) {
             node_data.children_indices.push_back(gltf_node.children[c]);
@@ -322,7 +378,7 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
                 const tg3_primitive& prim = gltf_mesh.primitives[0];
 
                 node_data.mesh_id = prim_guids.empty() ? 0 : prim_guids[0];
-                node_data.material_id = (prim.material >= 0 && prim.material < (int32_t)material_guids.size())
+                node_data.material_id = (prim.material >= 0 && prim.material < (int32_t) material_guids.size())
                                             ? material_guids[prim.material]
                                             : 0;  // 0 == движковый материал по умолчанию
 
@@ -333,15 +389,15 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
                     ModelNodeData virtual_child;
                     virtual_child.name = tryengine::fmt::format("{}_prim_{}", node_data.name, p);
                     virtual_child.mesh_id = (p < prim_guids.size()) ? prim_guids[p] : 0;
-                    virtual_child.material_id =
-                        (prim.material >= 0 && prim.material < (int32_t)material_guids.size())
-                            ? material_guids[prim.material]
-                            : 0;
+                    virtual_child.material_id = (prim.material >= 0 && prim.material < (int32_t) material_guids.size())
+                                                    ? material_guids[prim.material]
+                                                    : 0;
                     // Виртуальная нода наследует локальный трансформ ноды-владельца через
                     // идентичность (нулевой трансформ), т.к. её родитель уже несёт трансформ модели.
 
                     const auto virtual_index = static_cast<int32_t>(asset_map.nodes.size());
-                    asset_map.nodes.push_back(std::move(virtual_child));  // safe: no live reference into the vector right now
+                    asset_map.nodes.push_back(
+                        std::move(virtual_child));  // safe: no live reference into the vector right now
                     node_data.children_indices.push_back(virtual_index);
                 }
             }
@@ -351,7 +407,7 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
     }
 
     const int32_t scene_idx = m->default_scene >= 0 ? m->default_scene : 0;
-    if (scene_idx < (int32_t)m->scenes_count) {
+    if (scene_idx < (int32_t) m->scenes_count) {
         const tg3_scene& scene = m->scenes[scene_idx];
         for (uint32_t i = 0; i < scene.nodes_count; ++i) {
             asset_map.scene_roots.push_back(scene.nodes[i]);

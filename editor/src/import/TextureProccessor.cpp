@@ -19,39 +19,151 @@ namespace {
 
 bool ResolveCompressionFormat(TextureFormat requested, DXGI_FORMAT& outDxgiFormat, bool& outIsSrgb) {
     switch (requested) {
-        case TextureFormat::TEXTUREFORMAT_BC1_RGBA_UNORM:
+        // BC1 (DXT1)
+        case TextureFormat::VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC1_UNORM;
             outIsSrgb = false;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC1_RGBA_UNORM_SRGB:
+        case TextureFormat::VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC1_UNORM_SRGB;
             outIsSrgb = true;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC3_RGBA_UNORM:
+
+        // BC2 (DXT3)
+        case TextureFormat::VK_FORMAT_BC2_UNORM_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC2_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_BC2_SRGB_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC2_UNORM_SRGB;
+            outIsSrgb = true;
+            return true;
+
+        // BC3 (DXT5)
+        case TextureFormat::VK_FORMAT_BC3_UNORM_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC3_UNORM;
             outIsSrgb = false;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC3_RGBA_UNORM_SRGB:
+        case TextureFormat::VK_FORMAT_BC3_SRGB_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC3_UNORM_SRGB;
             outIsSrgb = true;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC4_R_UNORM:
+
+        // BC4 (ATI1 / Red Channel)
+        case TextureFormat::VK_FORMAT_BC4_UNORM_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC4_UNORM;
             outIsSrgb = false;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC5_RG_UNORM:
+        case TextureFormat::VK_FORMAT_BC4_SNORM_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC4_SNORM;
+            outIsSrgb = false;
+            return true;
+
+        // BC5 (ATI2 / RGTC2 / Normal Maps)
+        case TextureFormat::VK_FORMAT_BC5_UNORM_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC5_UNORM;
             outIsSrgb = false;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC7_RGBA_UNORM:
+        case TextureFormat::VK_FORMAT_BC5_SNORM_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC5_SNORM;
+            outIsSrgb = false;
+            return true;
+
+        // BC6H (HDR)
+        case TextureFormat::VK_FORMAT_BC6H_UFLOAT_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC6H_UF16;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_BC6H_SFLOAT_BLOCK:
+            outDxgiFormat = DXGI_FORMAT_BC6H_SF16;
+            outIsSrgb = false;
+            return true;
+
+        // BC7 (High Quality RGBA)
+        case TextureFormat::VK_FORMAT_BC7_UNORM_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC7_UNORM;
             outIsSrgb = false;
             return true;
-        case TextureFormat::TEXTUREFORMAT_BC7_RGBA_UNORM_SRGB:
+        case TextureFormat::VK_FORMAT_BC7_SRGB_BLOCK:
             outDxgiFormat = DXGI_FORMAT_BC7_UNORM_SRGB;
             outIsSrgb = true;
             return true;
+
+        // Standard 8-bit Uncompressed Formats
+        case TextureFormat::VK_FORMAT_R8_UNORM:
+            outDxgiFormat = DXGI_FORMAT_R8_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R8G8_UNORM:
+            outDxgiFormat = DXGI_FORMAT_R8G8_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R8G8B8A8_UNORM:
+            outDxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R8G8B8A8_SRGB:
+            outDxgiFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            outIsSrgb = true;
+            return true;
+        case TextureFormat::VK_FORMAT_B8G8R8A8_UNORM:
+            outDxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_B8G8R8A8_SRGB:
+            outDxgiFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+            outIsSrgb = true;
+            return true;
+
+        // 16-bit na 32-bit Float Formats
+        case TextureFormat::VK_FORMAT_R16_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R16_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R16G16_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R16G16_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R16G16B16A16_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R32_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R32_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R32G32_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R32G32_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R32G32B32_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_R32G32B32A32_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            outIsSrgb = false;
+            return true;
+
+        // Depth / Stencil Formats
+        case TextureFormat::VK_FORMAT_D16_UNORM:
+            outDxgiFormat = DXGI_FORMAT_D16_UNORM;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_D24_UNORM_S8_UINT:
+            outDxgiFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+            outIsSrgb = false;
+            return true;
+        case TextureFormat::VK_FORMAT_D32_SFLOAT:
+            outDxgiFormat = DXGI_FORMAT_D32_FLOAT;
+            outIsSrgb = false;
+            return true;
+
         default:
+            outDxgiFormat = DXGI_FORMAT_UNKNOWN;
+            outIsSrgb = false;
             return false;
     }
 }
@@ -77,6 +189,25 @@ uint64_t GetCompressedMipSize(uint32_t w, uint32_t h, DXGI_FORMAT format) {
     return static_cast<uint64_t>(blocks_x) * blocks_y * GetBytesPerBlock(format);
 }
 
+constexpr DXGI_FORMAT ToLinearDXGIFormat(DXGI_FORMAT format) noexcept
+{
+    switch (format)
+    {
+        // Compressed Block Formats
+        case DXGI_FORMAT_BC1_UNORM_SRGB: return DXGI_FORMAT_BC1_UNORM;
+        case DXGI_FORMAT_BC2_UNORM_SRGB: return DXGI_FORMAT_BC2_UNORM;
+        case DXGI_FORMAT_BC3_UNORM_SRGB: return DXGI_FORMAT_BC3_UNORM;
+        case DXGI_FORMAT_BC7_UNORM_SRGB: return DXGI_FORMAT_BC7_UNORM;
+
+            // Standard RGBA Formats (на случай поддержки несжатых текстур)
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:  return DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+        default: return format;
+    }
+}
+
 tryengine::Result<bool> CompressMipLevel(const uint8_t* rgba, uint32_t w, uint32_t h, DXGI_FORMAT dxgi_format, bool perceptual,
                       uint8_t* outBuffer, uint64_t expected_size) {
     utils::image_u8 src_image(w, h);
@@ -84,21 +215,23 @@ tryengine::Result<bool> CompressMipLevel(const uint8_t* rgba, uint32_t w, uint32
 
     rdo_bc::rdo_bc_params params;
     params.m_dxgi_format = dxgi_format;
-    params.m_perceptual = perceptual;  // корректная метрика ошибки для sRGB/цветовых данных
+    params.m_perceptual = perceptual;
     params.m_rdo_multithreading = true;
     params.m_status_output = false;
     params.m_bc7_uber_level = 4;  // компромисс скорость/качество для BC7
 
+    params.m_dxgi_format = ToLinearDXGIFormat(dxgi_format);
+
     rdo_bc::rdo_bc_encoder encoder;
     if (!encoder.init(src_image, params))
-        return tryengine::core::Error("rdo_bc_encoder::init failed");
+        return LogAndMakeError("rdo_bc_encoder::init failed (dxgi={}, {}x{})", static_cast<int>(dxgi_format), w, h);
 
     if (!encoder.encode())
-        return tryengine::core::Error("rdo_bc_encoder::encode failed");
-
+        return LogAndMakeError("rdo_bc_encoder::encode failed (dxgi={}, {}x{})", static_cast<int>(dxgi_format), w, h);
     const uint64_t actualSize = encoder.get_total_blocks_size_in_bytes();
+
     if (actualSize != expected_size)
-        return tryengine::core::Error("compressed mip size mismatch between prediction and encoder output");
+        return LogAndMakeError("mip size mismatch: predicted {}, encoder {}", expected_size, actualSize);
 
 
     std::memcpy(outBuffer, encoder.get_blocks(), actualSize);
@@ -184,8 +317,7 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromRawPixels
         eastl::string encode_error;
         auto res = CompressMipLevel(current_mip_rgba.data(), temp_w, temp_h, dxgi_format, is_srgb, write_ptr, expected_size);
         if (!res.has_value())
-            return LogAndMakeError("ProcessFromRawPixels: failed to compress mip {}:{}", i, encode_error);
-
+            return LogAndMakeError("ProcessFromRawPixels: failed to compress mip {}", i);
         write_ptr += expected_size;
 
         // Генерация следующего уровня
@@ -205,17 +337,20 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromRawPixels
     // 5. Формирование базового заголовка (без полей оффсетов)
     TextureHeader header;
     header.magic = 0x00584554;
-    header.version = 1;
+    header.version = 2;
     header.format = settings.format;
-    header.type = tryengine::resources::TextureType::TEXTURETYPE_2D;
+    header.type = tryengine::resources::TextureType::VK_IMAGE_TYPE_2D;
     header.width = width;
     header.height = height;
     header.depth = 1;
     header.array_size = 1;
     header.face_count = 1;
     header.mip_count = mip_count;
-    header.msaa_count = static_cast<uint32_t>(tryengine::resources::MSAACount::SDL_GPU_SAMPLECOUNT_1);
+    header.sample_count = tryengine::resources::TextureSampleCount::VK_SAMPLE_COUNT_1_BIT;
     header.flags = 0;
+
+    header.sampler = settings.sampler;
+
     // mip_table_offset и mip_table_size будут рассчитаны внутри TextureBinary::Pack
 
     // 6. Передача ответственности за упаковку в TextureBinary

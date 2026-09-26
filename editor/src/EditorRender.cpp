@@ -1,22 +1,32 @@
 #include "editor/EditorRender.hpp"
 
+#include <cstring>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
-#include <imgui_impl_sdlgpu3.h>
+#include <imgui_impl_vulkan.h>
 
 #include "editor/CollectDebug.hpp"
 #include "editor/PlayModeState.hpp"
+#include "engine/core/Assert.hpp"
 #include "engine/graphics/ForwardPipeline.hpp"
 #include "engine/graphics/OpaqueGeometryPass.hpp"
-#include "editor/CollectDebug.hpp"
+#include "engine/graphics/VulkanDevice.hpp"
+#include "engine/core/HlslppFormatter.hpp"
 
 namespace tryeditor {
 
+using tryengine::graphics::RenderGraphBuilder;
+using tryengine::graphics::RGBufferDesc;
+using tryengine::graphics::RGColorAttachment;
+using tryengine::graphics::RGDepthStencilAttachment;
+using tryengine::graphics::RGExecuteContext;
+using tryengine::graphics::RGResourceHandle;
 using tryengine::graphics::RGTextureDesc;
+using tryengine::graphics::RGUsageHint;
 
-EditorRender::EditorRender(tryengine::graphics::GraphicsContext& context,
-                           tryengine::graphics::RenderGraph& render_graph)
-    : rg_(render_graph), pm_(context.GetDevice()) {
+EditorRender::EditorRender(tryengine::graphics::VulkanDevice& device, tryengine::graphics::RenderGraph& render_graph,
+                           tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync)
+    : rg_(render_graph), swapchain_(swapchain), frame_sync_(frame_sync) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -24,24 +34,117 @@ EditorRender::EditorRender(tryengine::graphics::GraphicsContext& context,
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
 
     ImGui::StyleColorsDark();
-    ImGui_ImplSDL3_InitForSDLGPU(context.GetWindow());
+    ImGui_ImplSDL3_InitForVulkan(device.GetWindow());
 
-    ImGui_ImplSDLGPU3_InitInfo init_info = {};
-    init_info.Device = context.GetDevice();
-    init_info.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(context.GetDevice(), context.GetWindow());
-    init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
-    init_info.PresentMode = SDL_GPU_PRESENTMODE_VSYNC;
-    ImGui_ImplSDLGPU3_Init(&init_info);
+    // Отдельный дескриптор-пул под ImGui (шрифты + возможные ImGui::Image).
+    VkDescriptorPoolSize pool_sizes[] = {
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64},
+    };
+    VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    pool_info.maxSets = 64;
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = pool_sizes;
+    TRY_CHECK(vkCreateDescriptorPool(device.GetDevice(), &pool_info, nullptr, &imgui_descriptor_pool_) == VK_SUCCESS,
+              "Не удалось создать VkDescriptorPool для ImGui");
+
+    VkFormat swap_format = swapchain_.GetImageFormat();
+
+    ImGui_ImplVulkan_InitInfo init_info{};
+    init_info.ApiVersion = VK_API_VERSION_1_4;
+    init_info.Instance = device.GetInstance();
+    init_info.PhysicalDevice = device.GetPhysicalDevice();
+    init_info.Device = device.GetDevice();
+    init_info.QueueFamily = device.GetGraphicsQueueFamily();
+    init_info.Queue = device.GetGraphicsQueue();
+    init_info.DescriptorPool = imgui_descriptor_pool_;
+    init_info.MinImageCount = 2;
+    init_info.ImageCount = static_cast<uint32_t>(swapchain_.GetImages().size());
+    init_info.UseDynamicRendering = true;
+
+    VkPipelineRenderingCreateInfo rendering_info{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+    rendering_info.colorAttachmentCount = 1;
+    rendering_info.pColorAttachmentFormats = &swap_format;
+
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo = rendering_info;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // ВАЖНО: Загружаем табличные указатели Vulkan-функций для ImGui
+    ImGui_ImplVulkan_LoadFunctions(
+        VK_API_VERSION_1_4,
+        [](const char* function_name, void* user_data) {
+            return vkGetInstanceProcAddr(static_cast<VkInstance>(user_data), function_name);
+        },
+        device.GetInstance()
+    );
+
+    // Теперь вызов инициализации не упадет с SIGSEGV
+    ImGui_ImplVulkan_Init(&init_info);
+
+    VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sampler_info.magFilter = VK_FILTER_LINEAR;
+    sampler_info.minFilter = VK_FILTER_LINEAR;
+    sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+    vkCreateSampler(device.GetDevice(), &sampler_info, nullptr, &imgui_sampler_);
 }
 
 EditorRender::~EditorRender() {
-    ImGui_ImplSDLGPU3_Shutdown();
+    tryengine::graphics::VulkanDevice& device = rg_.GetDevice();
+    vkDeviceWaitIdle(device.GetDevice());
+
+    for (auto& frame_staging : pending_debug_staging_) {
+        for (auto& s : frame_staging) {
+            vmaDestroyBuffer(device.GetAllocator(), s.buffer, s.allocation);
+        }
+        frame_staging.clear();
+    }
+    if (imgui_sampler_) {
+        vkDestroySampler(device.GetDevice(), imgui_sampler_, nullptr);
+    }
+
+    ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+
+    if (imgui_descriptor_pool_) {
+        vkDestroyDescriptorPool(device.GetDevice(), imgui_descriptor_pool_, nullptr);
+        imgui_descriptor_pool_ = VK_NULL_HANDLE;
+    }
+}
+
+VkDescriptorSet EditorRender::GetOrCreateImguiTexture(VkImageView view) {
+    if (!view) return VK_NULL_HANDLE;
+
+    // 1. Если дескриптор для этого VkImageView уже есть — возвращаем его без вызова AddTexture
+    auto it = imgui_texture_cache_.find(view);
+    if (it != imgui_texture_cache_.end()) {
+        return it->second;
+    }
+
+    // 2. Создаем дескриптор ТОЛЬКО если это новый VkImageView
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
+        imgui_sampler_,
+        view,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+
+    imgui_texture_cache_[view] = ds;
+    return ds;
+}
+
+void EditorRender::ClearTextureCache() {
+    for (auto [view, ds] : imgui_texture_cache_) {
+        ImGui_ImplVulkan_RemoveTexture(ds);
+    }
+    imgui_texture_cache_.clear();
 }
 
 void EditorRender::RecordImguiFrame(tryengine::core::Engine& engine, PlayModeState& state) {
-    ImGui_ImplSDLGPU3_NewFrame();
+    ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
@@ -56,196 +159,141 @@ void EditorRender::RecordImguiFrame(tryengine::core::Engine& engine, PlayModeSta
     ImGui::Render();
 }
 
-void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& context,
+void EditorRender::DestroyPendingDebugStaging(uint32_t frame_index) {
+    tryengine::graphics::VulkanDevice& device = rg_.GetDevice();
+    auto& frame_staging = pending_debug_staging_[frame_index];
+    for (auto& s : frame_staging) {
+        vmaDestroyBuffer(device.GetAllocator(), s.buffer, s.allocation);
+    }
+    frame_staging.clear();
+}
+
+void EditorRender::RecreateSwapchain(int w, int h, tryengine::graphics::VulkanDevice& device) {
+    // 1. Ждем полной остановки GPU перед очисткой ресурсов
+    vkDeviceWaitIdle(device.GetDevice());
+
+    // 2. Безопасно очищаем кэш дескрипторов ImGui — GPU гарантированно ничего не рисует
+    ClearTextureCache();
+
+    if (w == 0 || h == 0) return;
+
+    swapchain_.Recreate(static_cast<uint32_t>(w), static_cast<uint32_t>(h), swapchain_.IsVsync());
+}
+
+void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device,
                           PlayModeState& state) {
-    RecordImguiFrame(engine, state);
+    int w = 0, h = 0;
+    SDL_GetWindowSizeInPixels(device.GetWindow(), &w, &h);
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(context.GetDevice());
-
-    SDL_GPUTexture* swap_tex = nullptr;
-    uint32_t w = 0, h = 0;
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, context.GetWindow(), &swap_tex, &w, &h)) {
-        SDL_SubmitGPUCommandBuffer(cmd);
+    // Если окно свернуто — пропуск кадра
+    if (w == 0 || h == 0) {
         return;
     }
 
+    VkExtent2D current_extent = swapchain_.GetExtent();
+    if (static_cast<uint32_t>(w) != current_extent.width || static_cast<uint32_t>(h) != current_extent.height) {
+        RecreateSwapchain(w, h, device);
+        return;
+    }
+
+    uint32_t image_index = 0;
+    if (!frame_sync_.BeginFrame(device, swapchain_, image_index)) {
+        RecreateSwapchain(w, h, device);
+        return;
+    }
+
+    const uint32_t frame_index = frame_sync_.GetCurrentFrameIndex();
+    DestroyPendingDebugStaging(frame_index);
+
+    VkCommandBuffer cmd = frame_sync_.GetCurrentFrame().command_buffer;
+
     auto& script_system = engine.Get<tryengine::core::ScriptSystem>();
-    auto camera_data = script_system.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("get_camera");
+
+
+    tryengine::graphics::FrameRenderData frame_render_data;
+    frame_render_data.point_lights = eastl::move(tryengine::graphics::CollectLight(engine));
+    frame_render_data.opaque_queue = eastl::move(tryengine::graphics::OpaqueGeometryPass::CollectDrawable(engine));
+
+    rg_.BeginFrame(frame_index);
+
+    VkExtent2D swap_extent = swapchain_.GetExtent();
+    RGTextureDesc swap_desc{swap_extent.width, swap_extent.height, 1, 1,
+                            swapchain_.GetImageFormat(),
+                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            "SwapchainTexture"};
+
+    RGResourceHandle swapchain_handle =
+        rg_.ImportExternalTexture("Swapchain", swapchain_.GetImages()[image_index],
+                                  swapchain_.GetImageViews()[image_index], swap_desc, VK_IMAGE_LAYOUT_UNDEFINED);
+
+    auto size_res = script_system.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
+    if (!size_res.has_value())
+        LogError("aaa");
+
+    auto size = *size_res;
+
+    auto camera_data = script_system.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("get_camera", size);
     if (!camera_data.has_value())
         LogCritical("Camera data not found");
 
     const auto camera = *camera_data;
 
-    tryengine::graphics::FrameRenderData frame_render_data;
-    frame_render_data.point_lights = eastl::move(tryengine::graphics::CollectLight(engine));
-    frame_render_data.opaque_queue = eastl::move(tryengine::graphics::OpaqueGeometryPass::CollectDrawable(engine, pm_));
-
-    rg_.Reset();
-
-    auto swapchain_format = SDL_GetGPUSwapchainTextureFormat(context.GetDevice(), context.GetWindow());
-    RGTextureDesc swap_desc{w, h, 1, 0, swapchain_format, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, "SwapchainTexture"};
-    RGResourceHandle swapchain_handle = rg_.ImportExternalTexture("Swapchain", swap_tex, swap_desc);
-
-    struct T {
-        hlslpp::float4 am_color;
-        hlslpp::float4 view_pos;
-    } t;
-    t.am_color = hlslpp::float4(0.1f, 0.1f, 0.1f, 0);
+    tryengine::graphics::GlobalLight t;
+    t.ambient_color = hlslpp::float4(0.1f, 0.1f, 0.1f, 0);
     t.view_pos = hlslpp::float4(camera->position, 0);
 
     rg_.PutCPUData(RGTag_v<"GlobalLightUBO">, t);
     rg_.PutCPUData(RGTag_v<"Camera">, *camera);
+    rg_.PutCPUData(RGTag_v<"LightCount">, static_cast<uint32_t>(frame_render_data.point_lights.size()));
 
     EditorFrame editor_frame;
     editor_frame.debug_lines = eastl::move(CollectDebug(engine));
 
-    auto size_res = script_system.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
-
-    if (!size_res.has_value())
-        LogError("aaa");
-
-    auto size = *size_res;
-    // LogTrace("x = {}, y = {}", size.x, size.y);
-
-    EnsureDebugPipeline();
-
-    BuildEditorRenderGraph(frame_render_data, editor_frame, swapchain_handle, size.x, size.y);
+    BuildEditorRenderGraph(frame_render_data, editor_frame, swapchain_handle, static_cast<uint32_t>(size.x),
+                           static_cast<uint32_t>(size.y));
 
     rg_.Compile();
-
+    RecordImguiFrame(engine, state);
     rg_.Execute(cmd);
 
-    SDL_SubmitGPUCommandBuffer(cmd);
+    if (!frame_sync_.EndFrameAndPresent(device, swapchain_, image_index)) {
+        RecreateSwapchain(w, h, device);
+    }
 }
+
 void EditorRender::BuildEditorRenderGraph(const tryengine::graphics::FrameRenderData& frame_render_data,
-                                          const EditorFrame& editor_frame, RGResourceHandle swapchain_handle, uint32_t width,
-                                          uint32_t height) const {
+                                          const EditorFrame& editor_frame, RGResourceHandle swapchain_handle,
+                                          uint32_t width, uint32_t height) const {
     auto forward_out = tryengine::graphics::BuildForwardPipeline(rg_, frame_render_data, width, height);
 
-    rg_.AddPass<ImGuiPassData>(
+    const VkExtent2D swap_extent = swapchain_.GetExtent();
+
+    auto& imgui = rg_.AddPass<ImGuiPassData>(
         "ImGuiPass",
-        [&](tryengine::graphics::RenderGraphBuilder& builder, ImGuiPassData& data) {
-            data.scene_tex_read = builder.Read(forward_out.color_target, SDL_GPU_TEXTUREUSAGE_SAMPLER);
-            data.swapchain_target = builder.Write(swapchain_handle, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+        [&](RenderGraphBuilder& builder, ImGuiPassData& data) {
+            data.scene_tex_read = builder.Read(forward_out.color_target, RGUsageHint::ShaderRead);
+            data.swapchain_target = builder.Write(swapchain_handle, RGUsageHint::ColorAttachment);
             builder.MarkSideEffect();
         },
-        [](tryengine::graphics::RGExecuteContext& ctx, const ImGuiPassData& data) {
+        [swap_extent](RGExecuteContext& ctx, const ImGuiPassData& data) {
             ImDrawData* draw_data = ImGui::GetDrawData();
             if (!draw_data || draw_data->CmdListsCount == 0)
                 return;
 
-            // LogTrace("ImGui");
+            RGColorAttachment color_att{};
+            color_att.handle = data.swapchain_target;
+            color_att.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            color_att.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+            color_att.clear_value = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
 
-            ImGui_ImplSDLGPU3_PrepareDrawData(draw_data, ctx.cmd_buffer);
+            VkRect2D render_area{{0, 0}, swap_extent};
 
-            SDL_GPUColorTargetInfo color_info{};
-            color_info.texture = ctx.GetTexture(data.swapchain_target);
-            color_info.clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
-            color_info.load_op = SDL_GPU_LOADOP_CLEAR;
-            color_info.store_op = SDL_GPU_STOREOP_STORE;
-
-            ctx.gpu_pass = SDL_BeginGPURenderPass(ctx.cmd_buffer, &color_info, 1, nullptr);
-            ImGui_ImplSDLGPU3_RenderDrawData(draw_data, ctx.cmd_buffer, ctx.gpu_pass);
-            SDL_EndGPURenderPass(ctx.gpu_pass);
-            ctx.gpu_pass = nullptr;
+            ctx.BeginRendering(eastl::span(&color_att, 1), nullptr, render_area, 1);
+            ImGui_ImplVulkan_RenderDrawData(draw_data, ctx.cmd_buffer);
+            ctx.EndRendering();
         });
-
-    rg_.AddPass<DebugDrawPass>(
-        "DebugPass",
-        [&](tryengine::graphics::RenderGraphBuilder& builder, DebugDrawPass& data) {
-            data.debug_lines = eastl::span(editor_frame.debug_lines.data(), editor_frame.debug_lines.size());
-            data.pipeline = debug_pipeline_;
-
-
-            if (!data.debug_lines.empty()) {
-                uint32_t buf_size = static_cast<uint32_t>(sizeof(DebugLine) * data.debug_lines.size());
-                tryengine::graphics::RGBufferDesc desc{buf_size, SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ, "DebugLines"};
-                data.lines_buffer = builder.CreateBuffer("DebugLines", desc);
-            }
-
-            data.color_target = builder.Write(forward_out.color_target);
-            data.depth_target = builder.Write(forward_out.depth_target);
-
-            builder.MarkSideEffect();
-        },
-        [](tryengine::graphics::RGExecuteContext& ctx, const DebugDrawPass& data) {
-            // Чистая лямбда []: проверяем доступность линий и готового пайплайна
-            // if (data.debug_lines.empty() || !data.pipeline) return;
-            if (data.debug_lines.empty()) {
-                LogError("Debug lines empty");
-                return;
-            }
-            if (!data.pipeline) {
-                LogError("Pipeline not initialize");
-                return;
-            }
-
-            // LogTrace("Debug?");
-
-            // 1. Копируем данные в Storage Buffer
-            uint32_t upload_size = static_cast<uint32_t>(sizeof(DebugLine) * data.debug_lines.size());
-            SDL_GPUTransferBufferCreateInfo xfer_info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, upload_size};
-            SDL_GPUTransferBuffer* xfer_buffer = SDL_CreateGPUTransferBuffer(ctx.device, &xfer_info);
-
-            void* mapped = SDL_MapGPUTransferBuffer(ctx.device, xfer_buffer, false);
-            std::memcpy(mapped, data.debug_lines.data(), upload_size);
-            SDL_UnmapGPUTransferBuffer(ctx.device, xfer_buffer);
-
-            SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(ctx.cmd_buffer);
-            SDL_GPUTransferBufferLocation src{xfer_buffer, 0};
-            SDL_GPUBufferRegion dst{ctx.GetBuffer(data.lines_buffer), 0, upload_size};
-            SDL_UploadToGPUBuffer(copy_pass, &src, &dst, true);
-            SDL_EndGPUCopyPass(copy_pass);
-            SDL_ReleaseGPUTransferBuffer(ctx.device, xfer_buffer);
-
-            // 2. Настраиваем Render Pass
-            SDL_GPUColorTargetInfo color_info{};
-            color_info.texture = ctx.GetTexture(data.color_target);
-            color_info.load_op = SDL_GPU_LOADOP_LOAD;
-            color_info.store_op = SDL_GPU_STOREOP_STORE;
-
-            SDL_GPUDepthStencilTargetInfo depth_info{};
-            depth_info.texture = ctx.GetTexture(data.depth_target);
-            depth_info.load_op = SDL_GPU_LOADOP_LOAD;
-            depth_info.store_op = SDL_GPU_STOREOP_STORE;
-
-            ctx.gpu_pass = SDL_BeginGPURenderPass(ctx.cmd_buffer, &color_info, 1, &depth_info);
-
-            // Используем пайплайн из data
-            SDL_BindGPUGraphicsPipeline(ctx.gpu_pass, data.pipeline);
-
-            SDL_GPUBuffer* storage_buf = ctx.GetBuffer(data.lines_buffer);
-            SDL_BindGPUVertexStorageBuffers(ctx.gpu_pass, 0, &storage_buf, 1);
-
-            auto camera_span = ctx.cpu_bb->GetSpan(tryengine::graphics::RGTag_v<"Camera">);
-            if (camera_span) {
-                SDL_PushGPUVertexUniformData(ctx.cmd_buffer, 0, camera_span->data(), static_cast<uint32_t>(camera_span->size_bytes()));
-            }
-
-            SDL_DrawGPUPrimitives(ctx.gpu_pass, static_cast<uint32_t>(data.debug_lines.size() * 6), 1, 0, 0);
-
-            SDL_EndGPURenderPass(ctx.gpu_pass);
-            ctx.gpu_pass = nullptr;
-        });
-}
-
-void EditorRender::EnsureDebugPipeline() {
-    // Если пайплайн уже создан или шейдер еще не загружен — ничего не делаем
-    if (debug_pipeline_ || !debug_shader_.IsReady()) return;
-
-    tryengine::graphics::PipelineDescriptor debug_pipeline_desc{};
-    debug_pipeline_desc.vertex_shader = debug_shader_->vertex_shader;
-    debug_pipeline_desc.fragment_shader = debug_shader_->fragment_shader;
-    debug_pipeline_desc.vertex_format = tryengine::resources::VertexFormat::None;
-    debug_pipeline_desc.cull_mode = SDL_GPU_CULLMODE_NONE;
-    // debug_pipeline_desc.enable_depth_test = true;
-    debug_pipeline_desc.enable_depth_test = false;
-    debug_pipeline_desc.enable_depth_write = false;
-    debug_pipeline_desc.depth_compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
-    debug_pipeline_desc.color_target_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    debug_pipeline_desc.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
-
-    debug_pipeline_ = pm_.GetOrCreatePipeline(debug_pipeline_desc);
+    tryengine::graphics::AddPresentPass(rg_, imgui.swapchain_target);
 }
 
 void EditorRender::DrawDockSpace() {
@@ -253,7 +301,6 @@ void EditorRender::DrawDockSpace() {
 
     float toolbar_height = 0.0f;  // 30.0f;
 
-    // Сдвигаем начало DockSpace на высоту тулбара и уменьшаем его общий размер
     ImVec2 dock_pos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + toolbar_height);
     ImVec2 dock_size = ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - toolbar_height);
 

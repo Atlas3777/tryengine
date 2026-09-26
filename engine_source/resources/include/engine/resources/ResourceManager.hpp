@@ -17,6 +17,10 @@ public:
     ResourceManager(AsyncFileManager& file_manager, AssetRegistry& registry)
         : file_manager_(file_manager), registry_(registry) {}
 
+    ~ResourceManager() {
+        LogInfo("Resource manager destructor");
+    };
+
     template <typename T, typename Loader>
     void RegisterType(Loader&& loader) {
         auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();

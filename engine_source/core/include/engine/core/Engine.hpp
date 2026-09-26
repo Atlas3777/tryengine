@@ -12,7 +12,13 @@ namespace tryengine::core {
 class Engine {
 public:
     Engine() = default;
-    ~Engine() = default;
+    ~Engine() {
+        LogInfo("Engine destructor start");
+        while (!systems_.empty()) {
+            systems_.pop_back();
+        }
+        LogInfo("Engine destructor end");
+    }
 
     template <typename T, typename... Args>
     T& RegisterSystem(Args&&... args) {

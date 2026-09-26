@@ -38,9 +38,9 @@ struct RawPrimitiveInput {
 
 struct MeshProcessSettings {
     bool generate_aabb = true;
+    bool generate_radius = true;
     bool generate_flat_normals_if_missing = true;
     bool auto_select_format = true; // Если true, выбирает подходящий формат на основе атрибутов
-    tryengine::resources::VertexFormat target_format = tryengine::resources::VertexFormat::StaticPacked;
 };
 
 class MeshProcessor {

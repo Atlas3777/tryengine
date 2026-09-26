@@ -7,20 +7,16 @@
 #include <cstdint>
 #include <cstring>
 
+#include "engine/core/Result.hpp"
+#include "engine/core/MakeError.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
 
 namespace tryengine::graphics {
 
-namespace reserved_names {
-constexpr const char* kFrameUBO = "FrameUBO";
-constexpr const char* kGlobalLightUBO = "GlobalLightUBO";
-constexpr const char* kPointLightBuffer = "PointLightBuffer";
-}  // namespace reserved_names
-
-enum class BindingScope : uint8_t {
-    PerObj,   // Ресурсы, меняющиеся каждый draw call
-    Material,  // Параметры материала
-    Pass       // Глобальные ресурсы кадра/прохода из RenderGraph Blackboard
+enum class BindingScope : uint32_t {
+    Pass = 0,      // set 0: Глобальные ресурсы кадра/прохода
+    Material = 1,  // set 1: Параметры материала
+    PerObj = 2     // set 2: Ресурсы/Push-константы объекта
 };
 
 enum class ShaderParamType : uint8_t { Float, Int, Vec2, Vec3, Vec4, Mat3, Mat4 };
@@ -46,7 +42,13 @@ enum class ShaderResourceKind : uint8_t {
     StorageTexture,
 };
 
-enum class ShaderStage : uint8_t { Vertex, Fragment };
+// Битовые флаги для стадий шейдера
+using ShaderStageFlags = uint32_t;
+namespace ShaderStageFlagBits {
+    constexpr ShaderStageFlags Vertex   = 1 << 0;
+    constexpr ShaderStageFlags Fragment = 1 << 1;
+    constexpr ShaderStageFlags Compute  = 1 << 2;
+}
 
 struct ShaderReflectedParam {
     eastl::string name;
@@ -60,29 +62,17 @@ struct ShaderReflectedBinding {
     eastl::string name;
     RGTag name_hash = 0;
     ShaderResourceKind kind = ShaderResourceKind::UniformBuffer;
-    ShaderStage stage = ShaderStage::Fragment;
-    BindingScope scope = BindingScope::Material;
+    ShaderStageFlags stage_flags = 0; // Битовые флаги стадий (VS | FS и т.д.)
     uint32_t set = 0;
-    uint32_t binding = 0;
-    uint32_t slot = 0; // Порядковый 0-based индекс для SDL3 GPU привязок
+    uint32_t binding = 0; // Чистый Vulkan binding (без legacy API slot)
     uint32_t size = 0;
     eastl::vector<ShaderReflectedParam> params;
 
-    [[nodiscard]] bool IsReserved() const {
-        return scope != BindingScope::Material;
-    }
-
-    [[nodiscard]] bool IsPerObj() const {
-        return scope == BindingScope::PerObj;
-    }
-
-    [[nodiscard]] bool IsMaterial() const {
-        return scope == BindingScope::Material;
-    }
-
-    [[nodiscard]] bool IsPass() const {
-        return scope == BindingScope::Pass;
-    }
+    [[nodiscard]] BindingScope Scope() const { return static_cast<BindingScope>(set); }
+    [[nodiscard]] bool IsReserved() const { return set != static_cast<uint32_t>(BindingScope::Material); }
+    [[nodiscard]] bool IsPerObj() const { return set == static_cast<uint32_t>(BindingScope::PerObj); }
+    [[nodiscard]] bool IsMaterial() const { return set == static_cast<uint32_t>(BindingScope::Material); }
+    [[nodiscard]] bool IsPass() const { return set == static_cast<uint32_t>(BindingScope::Pass); }
 
     [[nodiscard]] const ShaderReflectedParam* FindParamByTag(RGTag tag) const {
         for (const auto& p : params) {
@@ -114,6 +104,21 @@ struct ShaderReflectionData {
 
     [[nodiscard]] const ShaderReflectedBinding* FindBinding(eastl::string_view name) const {
         return FindBindingByTag(RGTagOf(name));
+    }
+
+    [[nodiscard]] bool HasPassBindings() const {
+        for (const auto& b : bindings) { if (b.IsPass()) return true; }
+        return false;
+    }
+
+    [[nodiscard]] bool HasMaterialBindings() const {
+        for (const auto& b : bindings) { if (b.IsMaterial()) return true; }
+        return false;
+    }
+
+    [[nodiscard]] bool HasPerObjBindings() const {
+        for (const auto& b : bindings) { if (b.IsPerObj()) return true; }
+        return false;
     }
 
     template <typename Fn>
@@ -164,11 +169,9 @@ inline void WriteReflection(eastl::vector<uint8_t>& out, const ShaderReflectionD
     for (const auto& b : refl.bindings) {
         WriteString(out, b.name);
         WriteU32(out, static_cast<uint32_t>(b.kind));
-        WriteU32(out, static_cast<uint32_t>(b.stage));
-        WriteU32(out, static_cast<uint32_t>(b.scope));
+        WriteU32(out, b.stage_flags);
         WriteU32(out, b.set);
         WriteU32(out, b.binding);
-        WriteU32(out, b.slot);
         WriteU32(out, b.size);
 
         WriteU32(out, static_cast<uint32_t>(b.params.size()));
@@ -181,51 +184,67 @@ inline void WriteReflection(eastl::vector<uint8_t>& out, const ShaderReflectionD
     }
 }
 
-inline bool ReadReflection(eastl::span<const uint8_t> bytes, size_t& cursor, ShaderReflectionData& out) {
+inline Result<void> ReadReflection(eastl::span<const uint8_t> bytes, size_t& cursor, ShaderReflectionData& out) {
     uint32_t vi_count = 0;
-    if (!ReadU32(bytes, cursor, vi_count)) return false;
+    if (!ReadU32(bytes, cursor, vi_count))
+        return LogAndMakeError("unexpected end of buffer reading vertex input count");
+
     out.vertex_inputs.resize(vi_count);
     for (auto& vi : out.vertex_inputs) {
-        if (!ReadString(bytes, cursor, vi.semantic)) return false;
-        if (!ReadU32(bytes, cursor, vi.location)) return false;
+        if (!ReadString(bytes, cursor, vi.semantic))
+            return LogAndMakeError("buffer overflow reading vertex input semantic");
+        if (!ReadU32(bytes, cursor, vi.location))
+            return LogAndMakeError("buffer overflow reading vertex input location");
     }
 
     uint32_t binding_count = 0;
-    if (!ReadU32(bytes, cursor, binding_count)) return false;
+    if (!ReadU32(bytes, cursor, binding_count))
+        return LogAndMakeError("buffer overflow reading binding count");
+
     out.bindings.resize(binding_count);
     for (auto& b : out.bindings) {
-        if (!ReadString(bytes, cursor, b.name)) return false;
+        if (!ReadString(bytes, cursor, b.name))
+            return LogAndMakeError("buffer overflow reading binding name");
         b.name_hash = RGTagOf(b.name);
 
-        uint32_t kind = 0, stage = 0, scope = 0;
-        if (!ReadU32(bytes, cursor, kind)) return false;
-        if (!ReadU32(bytes, cursor, stage)) return false;
-        if (!ReadU32(bytes, cursor, scope)) return false;
+        uint32_t kind = 0;
+        if (!ReadU32(bytes, cursor, kind))
+            return LogAndMakeError("buffer overflow reading binding kind");
+        if (!ReadU32(bytes, cursor, b.stage_flags))
+            return LogAndMakeError("buffer overflow reading binding stage_flags");
         b.kind = static_cast<ShaderResourceKind>(kind);
-        b.stage = static_cast<ShaderStage>(stage);
-        b.scope = static_cast<BindingScope>(scope);
 
-        if (!ReadU32(bytes, cursor, b.set)) return false;
-        if (!ReadU32(bytes, cursor, b.binding)) return false;
-        if (!ReadU32(bytes, cursor, b.slot)) return false;
-        if (!ReadU32(bytes, cursor, b.size)) return false;
+        if (!ReadU32(bytes, cursor, b.set))
+            return LogAndMakeError("buffer overflow reading binding set");
+        if (!ReadU32(bytes, cursor, b.binding))
+            return LogAndMakeError("buffer overflow reading binding index");
+        if (!ReadU32(bytes, cursor, b.size))
+            return LogAndMakeError("buffer overflow reading binding size");
 
         uint32_t param_count = 0;
-        if (!ReadU32(bytes, cursor, param_count)) return false;
+        if (!ReadU32(bytes, cursor, param_count))
+            return LogAndMakeError("buffer overflow reading param count");
+
         b.params.resize(param_count);
         for (auto& p : b.params) {
-            if (!ReadString(bytes, cursor, p.name)) return false;
+            if (!ReadString(bytes, cursor, p.name))
+                return LogAndMakeError("buffer overflow reading param name");
             p.name_hash = RGTagOf(p.name);
+
             uint32_t type = 0;
-            if (!ReadU32(bytes, cursor, type)) return false;
+            if (!ReadU32(bytes, cursor, type))
+                return LogAndMakeError("buffer overflow reading param type");
             p.type = static_cast<ShaderParamType>(type);
-            if (!ReadU32(bytes, cursor, p.offset)) return false;
-            if (!ReadU32(bytes, cursor, p.size)) return false;
+
+            if (!ReadU32(bytes, cursor, p.offset))
+                return LogAndMakeError("buffer overflow reading param offset");
+            if (!ReadU32(bytes, cursor, p.size))
+                return LogAndMakeError("buffer overflow reading param size");
         }
     }
-    return true;
+    return {};
 }
 
 }  // namespace detail
 
-}  // namespace tryengine::graphicss
+}  // namespace tryengine::graphics

@@ -23,8 +23,8 @@ require tryengine/Types
 require tryengine/Input
 
 
-let mesh_id = 7406961248628371591ul
-let mat_id = 17382367342812171849ul
+let mesh_id = 3081795527557720915ul
+let mat_id = 17036954862819815981ul
 
 [export]
 def EditorUpdate(){
@@ -37,13 +37,13 @@ def EditorUpdate(){
         start_task(LoadSceneAsync("TestScene"))
 
     if (pressed(Key.H)){
-        print("request mesh + mat \n")
+        print("request mesh \n")
         RequestLoadMesh(mesh_id)
         RequestLoadMaterial(mat_id)
     }
     if (pressed(Key.B))
         Spawn()
-    Move(0.08)
+    Move(0.03)
 }
 
 def Spawn(){
@@ -58,8 +58,8 @@ def Spawn(){
         cmp.inputState := float3(0, 0, 0)
         cmp.speed := float(3)
 
-        cmp.meshGuid := 7406961248628371591ul
-        cmp.materialGuid := 17382367342812171849ul
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
         apply_decs_template(cmp, Relationship())
     }
 

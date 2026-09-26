@@ -1,8 +1,10 @@
 #pragma once
 
-#include "Inline.hpp"
+#include <cstdint>
 
-namespace tryengine::core {
+#include "engine/core/Inline.hpp"
+
+namespace tryengine::platform {
 
 // Полностью совпадает с USB стандартом (и SDL_Scancode)
 enum class Key : uint16_t {

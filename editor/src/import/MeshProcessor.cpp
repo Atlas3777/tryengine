@@ -26,6 +26,7 @@ inline uint32_t PackNormal1010102(const float norm[3]) {
 
     return x | (y << 10) | (z << 20) | (w << 30);
 }
+
 inline void PackNormalByte4SNorm(const float norm[3], int8_t out_norm[4]) {
     auto clamp_snorm8 = [](float v) -> int8_t {
         float clamped = std::clamp(v, -1.0f, 1.0f);
@@ -34,7 +35,7 @@ inline void PackNormalByte4SNorm(const float norm[3], int8_t out_norm[4]) {
     out_norm[0] = clamp_snorm8(norm[0]);
     out_norm[1] = clamp_snorm8(norm[1]);
     out_norm[2] = clamp_snorm8(norm[2]);
-    out_norm[3] = 0; // Padding / Handedness (если понадобится в будущем)
+    out_norm[3] = 0; // Padding / Handedness
 }
 
 inline void PackUVHalf2(const float uv[2], uint16_t out_uv[2]) {
@@ -82,6 +83,20 @@ void ReadWeights4(const uint8_t* ptr, uint32_t component_type, uint32_t stride, 
     }
 }
 
+eastl::string AttributeFlagsToString(uint32_t attr_flags) {
+    eastl::string result = "Position"; // Позиция присутствуют всегда
+
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Normal))    result += ", Normal";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Tangent))   result += ", Tangent";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::TexCoord0)) result += ", TexCoord0";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::TexCoord1)) result += ", TexCoord1";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Color0))    result += ", Color0";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Joints0))   result += ", Joints0";
+    if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Weights0))  result += ", Weights0";
+
+    return result;
+}
+
 } // namespace
 
 tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(
@@ -94,152 +109,111 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(
 
     const uint32_t v_count = input.positions.count;
 
-    // Определяем формат вершин
-    VertexFormat format = settings.target_format;
-    if (settings.auto_select_format) {
-        if (input.joints.data && input.weights.data) {
-            format = VertexFormat::SkinnedPacked;
-        } else if (input.normals.data || input.uvs.data || input.colors.data) {
-            format = VertexFormat::StaticPacked;
-        } else {
-            format = VertexFormat::PositionOnly;
-        }
-    }
+    // 1. Формирование битовой маски атрибутов
+    uint32_t attr_flags = static_cast<uint32_t>(MeshAttributeFlags::None);
+    if (input.normals.data) attr_flags |= static_cast<uint32_t>(MeshAttributeFlags::Normal);
+    if (input.uvs.data)     attr_flags |= static_cast<uint32_t>(MeshAttributeFlags::TexCoord0);
+    if (input.colors.data)  attr_flags |= static_cast<uint32_t>(MeshAttributeFlags::Color0);
+    if (input.joints.data)  attr_flags |= static_cast<uint32_t>(MeshAttributeFlags::Joints0);
+    if (input.weights.data) attr_flags |= static_cast<uint32_t>(MeshAttributeFlags::Weights0);
 
-    const uint32_t stride = GetVertexStride(format);
-    eastl::vector<uint8_t> vertex_buffer(v_count * stride);
-    uint8_t* write_ptr = vertex_buffer.data();
+    const uint32_t attr_stride = CalculateAttributeBufferStride(static_cast<MeshAttributeFlags>(attr_flags));
+    eastl::vector<uint8_t> position_buffer(v_count * sizeof(float) * 3);
+    eastl::vector<uint8_t> attribute_buffer(v_count * attr_stride);
 
     float min_bounds[3] = { std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
     float max_bounds[3] = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
 
-    // Заполнение вертексного буфера в зависимости от целевого формата
     for (uint32_t v = 0; v < v_count; ++v) {
+        // --- Позиции ---
         const float* pos = reinterpret_cast<const float*>(input.positions.data + (v * input.positions.stride));
+        std::memcpy(position_buffer.data() + (v * GetPositionStride()), pos, GetPositionStride());
 
-        if (settings.generate_aabb) {
+        if (settings.generate_aabb || settings.generate_radius) {
             for (int i = 0; i < 3; ++i) {
-                if (pos[i] < min_bounds[i]) min_bounds[i] = pos[i];
-                if (pos[i] > max_bounds[i]) max_bounds[i] = pos[i];
+                min_bounds[i] = std::min(min_bounds[i], pos[i]);
+                max_bounds[i] = std::max(max_bounds[i], pos[i]);
             }
         }
 
-        const float* norm = input.normals.data ? reinterpret_cast<const float*>(input.normals.data + (v * input.normals.stride)) : nullptr;
-        const float* uv   = input.uvs.data     ? reinterpret_cast<const float*>(input.uvs.data + (v * input.uvs.stride)) : nullptr;
-        const float* col  = input.colors.data  ? reinterpret_cast<const float*>(input.colors.data + (v * input.colors.stride)) : nullptr;
+        // --- Интерливинг атрибутов ---
+        uint8_t* dst = attribute_buffer.data() + (v * attr_stride);
 
-        float dummy_norm[3] = { 0.0f, 1.0f, 0.0f };
-        float dummy_uv[2]   = { 0.0f, 0.0f };
-        float dummy_col[4]  = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-        const float* norm_ptr = norm ? norm : dummy_norm;
-        const float* uv_ptr   = uv   ? uv   : dummy_uv;
-
-        float color_rgba[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-        if (col) {
-            color_rgba[0] = col[0]; color_rgba[1] = col[1]; color_rgba[2] = col[2];
-            color_rgba[3] = (input.color_components == 4) ? col[3] : 1.0f;
+        if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Normal)) {
+            const float* norm = reinterpret_cast<const float*>(input.normals.data + (v * input.normals.stride));
+            PackNormalByte4SNorm(norm, reinterpret_cast<int8_t*>(dst));
+            dst += 4;
         }
 
-        switch (format) {
-            case VertexFormat::None: {
-                TRY_ASSERT(false, "VertexFormat::None");
-                break;
-            }
-            case VertexFormat::StaticPacked: {
-                auto* dst = reinterpret_cast<VertexStaticPacked*>(write_ptr);
-                std::memcpy(dst->position, pos, sizeof(float) * 3);
-
-                // Вместо dst->normal = PackNormal1010102(norm_ptr);
-                PackNormalByte4SNorm(norm_ptr, dst->normal);
-
-                dst->color[0] = PackUnorm8(color_rgba[0]);
-                dst->color[1] = PackUnorm8(color_rgba[1]);
-                dst->color[2] = PackUnorm8(color_rgba[2]);
-                dst->color[3] = PackUnorm8(color_rgba[3]);
-                PackUVHalf2(uv_ptr, dst->uv);
-                std::memset(dst->padding, 0, sizeof(dst->padding));
-                break;
-            }
-            case VertexFormat::SkinnedPacked: {
-                auto* dst = reinterpret_cast<VertexSkinnedPacked*>(write_ptr);
-                std::memcpy(dst->position, pos, sizeof(float) * 3);
-                dst->normal = PackNormal1010102(norm_ptr);
-                dst->color[0] = PackUnorm8(color_rgba[0]);
-                dst->color[1] = PackUnorm8(color_rgba[1]);
-                dst->color[2] = PackUnorm8(color_rgba[2]);
-                dst->color[3] = PackUnorm8(color_rgba[3]);
-                PackUVHalf2(uv_ptr, dst->uv);
-
-                uint32_t joints[4];
-                float weights[4];
-                const uint8_t* j_ptr = input.joints.data  ? input.joints.data + (v * input.joints.stride)   : nullptr;
-                const uint8_t* w_ptr = input.weights.data ? input.weights.data + (v * input.weights.stride) : nullptr;
-
-                ReadJoints4(j_ptr, input.joint_component_type, input.joints.stride, joints);
-                ReadWeights4(w_ptr, input.weight_component_type, input.weights.stride, weights);
-
-                for (int i = 0; i < 4; ++i) {
-                    dst->boneIndices[i] = static_cast<uint8_t>(joints[i] & 0xFF);
-                    dst->boneWeights[i] = PackUnorm8(weights[i]);
-                }
-                break;
-            }
-            // case VertexFormat::Standard: {
-            //     auto* dst = reinterpret_cast<Vertex*>(write_ptr);
-            //     dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];
-            //     dst->nx = norm_ptr[0]; dst->ny = norm_ptr[1]; dst->nz = norm_ptr[2];
-            //     dst->r = color_rgba[0]; dst->g = color_rgba[1]; dst->b = color_rgba[2]; dst->a = color_rgba[3];
-            //     dst->u = uv_ptr[0]; dst->v = uv_ptr[1];
-            //     break;
-            // }
-            case VertexFormat::SkinnedStandard: {
-                auto* dst = reinterpret_cast<VertexSkinned*>(write_ptr);
-                dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];
-                dst->nx = norm_ptr[0]; dst->ny = norm_ptr[1]; dst->nz = norm_ptr[2];
-                dst->r = color_rgba[0]; dst->g = color_rgba[1]; dst->b = color_rgba[2]; dst->a = color_rgba[3];
-                dst->u = uv_ptr[0]; dst->v = uv_ptr[1];
-
-                const uint8_t* j_ptr = input.joints.data  ? input.joints.data + (v * input.joints.stride)   : nullptr;
-                const uint8_t* w_ptr = input.weights.data ? input.weights.data + (v * input.weights.stride) : nullptr;
-
-                ReadJoints4(j_ptr, input.joint_component_type, input.joints.stride, dst->boneIndices);
-                ReadWeights4(w_ptr, input.weight_component_type, input.weights.stride, dst->boneWeights);
-                break;
-            }
-            case VertexFormat::PositionOnly: {
-                auto* dst = reinterpret_cast<VertexPositionOnly*>(write_ptr);
-                dst->x = pos[0]; dst->y = pos[1]; dst->z = pos[2];
-                break;
-            }
-            case VertexFormat::Ui2D: {
-                auto* dst = reinterpret_cast<Vertex2D*>(write_ptr);
-                dst->x = pos[0]; dst->y = pos[1];
-                dst->u = uv_ptr[0]; dst->v = uv_ptr[1];
-                dst->r = PackUnorm8(color_rgba[0]); dst->g = PackUnorm8(color_rgba[1]);
-                dst->b = PackUnorm8(color_rgba[2]); dst->a = PackUnorm8(color_rgba[3]);
-                break;
-            }
+        if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::TexCoord0)) {
+            const float* uv = reinterpret_cast<const float*>(input.uvs.data + (v * input.uvs.stride));
+            PackUVHalf2(uv, reinterpret_cast<uint16_t*>(dst));
+            dst += 4;
         }
 
-        write_ptr += stride;
+        if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Color0)) {
+            const float* col = reinterpret_cast<const float*>(input.colors.data + (v * input.colors.stride));
+            float color_rgba[4] = { col[0], col[1], col[2], (input.color_components == 4) ? col[3] : 1.0f };
+            dst[0] = PackUnorm8(color_rgba[0]);
+            dst[1] = PackUnorm8(color_rgba[1]);
+            dst[2] = PackUnorm8(color_rgba[2]);
+            dst[3] = PackUnorm8(color_rgba[3]);
+            dst += 4;
+        }
+
+        if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Joints0)) {
+            uint32_t joints[4];
+            const uint8_t* j_ptr = input.joints.data + (v * input.joints.stride);
+            ReadJoints4(j_ptr, input.joint_component_type, input.joints.stride, joints);
+            dst[0] = static_cast<uint8_t>(joints[0] & 0xFF);
+            dst[1] = static_cast<uint8_t>(joints[1] & 0xFF);
+            dst[2] = static_cast<uint8_t>(joints[2] & 0xFF);
+            dst[3] = static_cast<uint8_t>(joints[3] & 0xFF);
+            dst += 4;
+        }
+
+        if (attr_flags & static_cast<uint32_t>(MeshAttributeFlags::Weights0)) {
+            float weights[4];
+            const uint8_t* w_ptr = input.weights.data + (v * input.weights.stride);
+            ReadWeights4(w_ptr, input.weight_component_type, input.weights.stride, weights);
+            dst[0] = PackUnorm8(weights[0]);
+            dst[1] = PackUnorm8(weights[1]);
+            dst[2] = PackUnorm8(weights[2]);
+            dst[3] = PackUnorm8(weights[3]);
+            dst += 4;
+        }
     }
 
-    // --- Подготовка заголовка ---
-    MeshHeader header;
-    header.vertex_format = format;
-    if (settings.generate_aabb) {
-        std::memcpy(header.bbox_min, min_bounds, sizeof(min_bounds));
-        std::memcpy(header.bbox_max, max_bounds, sizeof(max_bounds));
+    // --- Расчет радиуса bounding sphere ---
+    float radius = 0.0f;
+    if (settings.generate_radius) {
+        const float center[3] = {
+            (min_bounds[0] + max_bounds[0]) * 0.5f,
+            (min_bounds[1] + max_bounds[1]) * 0.5f,
+            (min_bounds[2] + max_bounds[2]) * 0.5f
+        };
+
+        float max_dist_sq = 0.0f;
+        for (uint32_t v = 0; v < v_count; ++v) {
+            const float* pos = reinterpret_cast<const float*>(position_buffer.data() + (v * sizeof(float) * 3));
+            float dx = pos[0] - center[0];
+            float dy = pos[1] - center[1];
+            float dz = pos[2] - center[2];
+            float dist_sq = dx * dx + dy * dy + dz * dz;
+            if (dist_sq > max_dist_sq) {
+                max_dist_sq = dist_sq;
+            }
+        }
+        radius = std::sqrt(max_dist_sq);
     }
 
-    // --- Выбор формата индексов и упаковка ---
-    const uint32_t index_count = (input.indices.data && input.indices.format != IndexFormat::None)
-                                      ? input.indices.count
-                                      : v_count;
+    // --- Индексы ---
+    const uint32_t index_count = (input.indices.data && input.indices.format != IndexFormat::None) ? input.indices.count : v_count;
 
-    // Выбираем UInt16 для мешей <= 65535 вершин, иначе UInt32
-    const IndexFormat target_index_format = (v_count <= 65535) ? IndexFormat::UInt16 : IndexFormat::UInt32;
+    // Автоподбор формата индексов с поддержкой UInt8 (< 256 вершин)
+    const IndexFormat target_index_format = (v_count <= 255)   ? IndexFormat::UInt8
+                                          : (v_count <= 65535) ? IndexFormat::UInt16
+                                                               : IndexFormat::UInt32;
     const uint32_t index_stride = GetIndexStride(target_index_format);
 
     eastl::vector<uint8_t> index_buffer(index_count * index_stride);
@@ -248,37 +222,48 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(
         for (uint32_t id = 0; id < index_count; ++id) {
             const uint8_t* raw_idx = input.indices.data + (id * input.indices.stride);
             uint32_t val = 0;
-            switch (input.indices.format) {
-                case IndexFormat::UInt16: val = *reinterpret_cast<const uint16_t*>(raw_idx); break;
-                case IndexFormat::UInt32: val = *reinterpret_cast<const uint32_t*>(raw_idx); break;
-                case IndexFormat::UInt8:  val = *raw_idx; break;
-                default: break;
+            if (input.indices.format == IndexFormat::UInt16) {
+                val = *reinterpret_cast<const uint16_t*>(raw_idx);
+            } else if (input.indices.format == IndexFormat::UInt32) {
+                val = *reinterpret_cast<const uint32_t*>(raw_idx);
+            } else { // IndexFormat::UInt8
+                val = *raw_idx;
             }
 
-            if (target_index_format == IndexFormat::UInt16) {
+            if (target_index_format == IndexFormat::UInt8) {
+                index_buffer[id] = static_cast<uint8_t>(val);
+            } else if (target_index_format == IndexFormat::UInt16) {
                 reinterpret_cast<uint16_t*>(index_buffer.data())[id] = static_cast<uint16_t>(val);
             } else {
                 reinterpret_cast<uint32_t*>(index_buffer.data())[id] = val;
             }
         }
     } else {
-        if (target_index_format == IndexFormat::UInt16) {
+        if (target_index_format == IndexFormat::UInt8) {
+            for (uint32_t id = 0; id < index_count; ++id) index_buffer[id] = static_cast<uint8_t>(id);
+        } else if (target_index_format == IndexFormat::UInt16) {
             auto* dst = reinterpret_cast<uint16_t*>(index_buffer.data());
-            for (uint32_t id = 0; id < index_count; ++id) {
-                dst[id] = static_cast<uint16_t>(id);
-            }
+            for (uint32_t id = 0; id < index_count; ++id) dst[id] = static_cast<uint16_t>(id);
         } else {
             auto* dst = reinterpret_cast<uint32_t*>(index_buffer.data());
-            for (uint32_t id = 0; id < index_count; ++id) {
-                dst[id] = id;
-            }
+            for (uint32_t id = 0; id < index_count; ++id) dst[id] = id;
         }
     }
 
-    header.index_format = target_index_format;
-    header.index_count = index_count;
+    eastl::string attr_str = AttributeFlagsToString(attr_flags);
+    LogInfo("Mesh primitive processed successfully: {} vertices, {} indices, attributes: [{}]",
+            v_count, index_count, attr_str.c_str());
 
-    return MeshBinary::Pack(header, vertex_buffer, index_buffer);
+    MeshHeader header;
+    header.attribute_flags = static_cast<MeshAttributeFlags>(attr_flags);
+    header.index_format = target_index_format;
+    header.radius = radius;
+    if (settings.generate_aabb) {
+        std::memcpy(header.bbox_min, min_bounds, sizeof(min_bounds));
+        std::memcpy(header.bbox_max, max_bounds, sizeof(max_bounds));
+    }
+
+    return MeshBinary::Pack(header, position_buffer, attribute_buffer, index_buffer);
 }
 
 } // namespace tryeditor

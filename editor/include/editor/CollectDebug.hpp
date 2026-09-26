@@ -6,7 +6,9 @@
 
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
+#include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
+#include "engine/resources/ResourceHandle.hpp"
 
 namespace tryeditor {
 
@@ -14,6 +16,7 @@ struct DebugLine {
     das::float4 start;
     das::float4 end;
     uint8_t r,g,b,a;
+    uint32_t _padding[3];
 };
 
 struct EditorFrame {
@@ -25,7 +28,7 @@ struct DebugDrawPass {
     tryengine::graphics::RGResourceHandle lines_buffer;
     tryengine::graphics::RGResourceHandle color_target;
     tryengine::graphics::RGResourceHandle depth_target;
-    SDL_GPUGraphicsPipeline* pipeline = nullptr;
+    tryengine::resources::ResourceHandle<tryengine::graphics::Shader> shader;
 };
 
 inline eastl::vector<DebugLine> CollectDebug(tryengine::core::Engine& engine) {

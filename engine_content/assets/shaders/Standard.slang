@@ -1,135 +1,255 @@
-[__AttributeUsage(_AttributeTargets.Var)]
-struct PerObjAttribute {}
+// ============================================================================
+// MODULE: Geometry & Common Types
+// ============================================================================
 
-[__AttributeUsage(_AttributeTargets.Var)]
-struct PassAttribute {}
+static const uint ATTR_BIT_NORMAL    = 0; // SNorm8x4 (4 байта)
+static const uint ATTR_BIT_TANGENT   = 1; // SNorm8x4 (4 байта)
+static const uint ATTR_BIT_TEXCOORD0 = 2; // Half2    (4 байта)
+static const uint ATTR_BIT_TEXCOORD1 = 3; // Half2    (4 байта)
+static const uint ATTR_BIT_COLOR0    = 4; // UNorm8x4 (4 байта)
+static const uint ATTR_BIT_JOINTS0   = 5; // UInt8x4  (4 байта)
+static const uint ATTR_BIT_WEIGHTS0  = 6; // UNorm8x4 (4 байта)
 
-[__AttributeUsage(_AttributeTargets.Var)]
-struct MaterialAttribute {}
-
-
-struct VSInput {
-    float3 inPos      : POSITION;
-    float4 inNormal   : NORMAL;
-    float4 inColor    : COLOR;
-    float2 inTexCoord : TEXCOORD0;
+struct GeometryPointers
+{
+    float3*   positions;        // BDA: Позиции (12 байт / вершина)
+    uint32_t* attributes;       // BDA: Буфер 32-битных слов упакованных атрибутов
+    uint      attribute_flags;  // Битовая маска MeshAttributeFlags
+    uint      attribute_stride; // Размер атрибутов вершины в БАЙТАХ
 };
 
-struct VSOutput {
-    float3 outFragPos  : TEXCOORD1;
-    float3 outNormal   : NORMAL;
-    float4 outColor    : COLOR0;
-    float2 outTexCoord : TEXCOORD0;
-
-    float4 position : SV_Position;
+struct ObjectData
+{
+    float4x4 model;        // 64 байта
+    float4x4 normalMatrix; // 64 байта
+    GeometryPointers geometry; // 24 байта
+    uint2 _pad;
 };
 
-// Vertex Shader UBO 0 (Set 1, Binding 0)
-[PerObj]
-[[vk::binding(0, 1)]]
-cbuffer FrameUBO {
-    float4x4 model;
-    float4x4 normalMatrix;
-};
-
-// Vertex Shader UBO 1 (Set 1, Binding 1) -- перенесено из Set 2 в Set 1
-[Pass]
-[[vk::binding(1, 1)]]
-cbuffer Camera {
+struct Camera
+{
     float4x4 view;
     float4x4 proj;
 };
 
-[shader("vertex")]
-VSOutput vsMain(VSInput input) {
-    VSOutput output;
+// Обобщенная структура Push Constants (2 BDA указателя = 16 байт)
+struct DrawPushConstants<TFragmentData>
+{
+    ObjectData*    objects;  // Указатель на буфер объектов
+    TFragmentData* fragment; // Указатель на структуру с фрагментными данными
+};
 
-    float4 worldPos = mul(float4(input.inPos, 1.0), model);
-    output.outFragPos = worldPos.xyz;
+// --- Unpack Helpers (Совместимые с Slang / HLSL) ---
 
-    output.outNormal = normalize(mul(input.inNormal.xyz, (float3x3)normalMatrix));
-    output.outColor = input.inColor;
-    output.outTexCoord = input.inTexCoord;
-
-    float4 viewPos = mul(worldPos, view);
-    output.position = mul(viewPos, proj);
-
-    return output;
+float4 unpackSnorm4x8(uint val)
+{
+    int4 i = int4(
+        (int)(val << 24) >> 24,
+        (int)(val << 16) >> 24,
+        (int)(val << 8)  >> 24,
+        (int)val         >> 24
+    );
+    return max(float4(-1.0), float4(i) * (1.0 / 127.0));
 }
 
-// Fragment Shader Sampler 0 (Set 2, Binding 0)
-[Material]
-[[vk::binding(0, 2)]]
-Sampler2D albedo_map;
+float4 unpackUnorm4x8(uint val)
+{
+    uint4 u = uint4(
+        val & 0xFFu,
+        (val >> 8u) & 0xFFu,
+        (val >> 16u) & 0xFFu,
+        (val >> 24u) & 0xFFu
+    );
+    return float4(u) * (1.0 / 255.0);
+}
 
-struct PointLight {
+float2 unpackHalf2x16(uint val)
+{
+    return float2(
+        f16tof32(val),
+        f16tof32(val >> 16u)
+    );
+}
+
+uint getAttributeDwordOffset(uint attrFlags, uint bitIndex)
+{
+    uint mask = attrFlags & ((1u << bitIndex) - 1u);
+    return countbits(mask);
+}
+
+// --- Vertex Fetch Context ---
+
+struct VertexContext
+{
+    uint        vertexID;
+    ObjectData* object;
+    Camera*     camera;
+
+    uint baseDwordOffset;
+    uint flags;
+
+    static VertexContext create(uint vertexID, ObjectData* object, Camera* camera)
+    {
+        VertexContext ctx;
+        ctx.vertexID = vertexID;
+        ctx.object = object;
+        ctx.camera = camera;
+        ctx.baseDwordOffset = vertexID * (object->geometry.attribute_stride >> 2);
+        ctx.flags = object->geometry.attribute_flags;
+        return ctx;
+    }
+
+    float3 getLocalPosition() { return object->geometry.positions[vertexID]; }
+    float4 getWorldPosition() { return mul(float4(getLocalPosition(), 1.0), object->model); }
+    float4 getClipPosition(float4 worldPos) { return mul(mul(worldPos, camera->view), camera->proj); }
+
+    float3 getNormal(float3 defaultVal = float3(0.0, 1.0, 0.0))
+    {
+        if ((flags & (1u << ATTR_BIT_NORMAL)) == 0) return defaultVal;
+        uint dwordOffset = getAttributeDwordOffset(flags, ATTR_BIT_NORMAL);
+        uint rawVal = object->geometry.attributes[baseDwordOffset + dwordOffset];
+        float3 localNormal = unpackSnorm4x8(rawVal).xyz;
+        return normalize(mul(localNormal, (float3x3)object->normalMatrix));
+    }
+
+    // Сохранен для использования во внешнем модуле/других пайплайнах
+    float4 getColor(float4 defaultVal = float4(1.0))
+    {
+        if ((flags & (1u << ATTR_BIT_COLOR0)) == 0) return defaultVal;
+        uint dwordOffset = getAttributeDwordOffset(flags, ATTR_BIT_COLOR0);
+        uint rawVal = object->geometry.attributes[baseDwordOffset + dwordOffset];
+        return unpackUnorm4x8(rawVal);
+    }
+
+    float2 getTexCoord0(float2 defaultVal = float2(0.0))
+    {
+        if ((flags & (1u << ATTR_BIT_TEXCOORD0)) == 0) return defaultVal;
+        uint dwordOffset = getAttributeDwordOffset(flags, ATTR_BIT_TEXCOORD0);
+        uint rawVal = object->geometry.attributes[baseDwordOffset + dwordOffset];
+        return unpackHalf2x16(rawVal);
+    }
+};
+
+// --- Generic Interface ---
+
+interface IVertexOutput
+{
+    static This assemble(VertexContext ctx);
+};
+
+// Обобщенный вершинный хелпер
+TOutput vsMainGeneric<TOutput : IVertexOutput>(uint vertexID, uint drawID)
+{
+    ObjectData* obj = &pc.objects[drawID];
+    Camera* camera = pc.fragment->camera;
+
+    VertexContext ctx = VertexContext.create(vertexID, obj, camera);
+    return TOutput.assemble(ctx);
+}
+
+
+// ============================================================================
+// MATERIAL / FRAGMENT SHADER SECTION
+// ============================================================================
+
+struct PointLight
+{
     float4 position_radius;
     float4 color_intensity;
 };
 
-// Fragment Shader Storage Buffer 0 (Set 2, Binding 1)
-[Pass]
-[[vk::binding(1, 2)]]
-StructuredBuffer<PointLight> PointLightBuffer;
-
-// Fragment Shader UBO 0 (Set 3, Binding 0)
-[Pass]
-[[vk::binding(0, 3)]]
-cbuffer GlobalLightUBO {
-    float4 ambientColor;
-    float4 viewPos;
+// Фрагментная структура данных для этого конкретного шейдера
+struct FragmentData
+{
+    Camera*     camera;       // 8 байт (0..7)
+    PointLight* lights;       // 8 байт (8..15)
+    uint        lightCount;   // 4 байта (16..19)
+    uint3       _pad;         // 12 байт (20..31) -> выравнивает следующий float4 по 32 байтам
+    float4      ambientColor; // 16 байт (32..47)
+    float4      viewPos;      // 16 байт (48..63)
 };
 
-// Fragment Shader UBO 1 (Set 3, Binding 1)
-[Material]
-[[vk::binding(1, 3)]]
-cbuffer MaterialUBO {
+// Специализация Push Constants текущей фрагментной структурой
+[vk::push_constant] DrawPushConstants<FragmentData> pc;
+
+[[vk::binding(0, 1)]]
+cbuffer MaterialUBO
+{
     float4 albedo_color;
     float  roughness;
     float  metallic;
     float2 _padding;
 };
 
-[shader("fragment")]
-float4 fsMain(VSOutput input) : SV_Target {
-    float3 normal = normalize(input.outNormal);
-    float3 viewDir = normalize(viewPos.xyz - input.outFragPos);
+[[vk::binding(1, 1)]]
+Sampler2D albedo_map;
 
-    float3 ambient = ambientColor.rgb;
+struct PBRVSOutput : IVertexOutput
+{
+    float3 outFragPos  : TEXCOORD1;
+    float3 outNormal   : NORMAL;
+    float2 outTexCoord : TEXCOORD0;
+
+    float4 position    : SV_Position;
+
+    static PBRVSOutput assemble(VertexContext ctx)
+    {
+        PBRVSOutput output;
+
+        float4 worldPos = ctx.getWorldPosition();
+        output.outFragPos  = worldPos.xyz;
+        output.outNormal   = ctx.getNormal();
+        output.outTexCoord = ctx.getTexCoord0();
+        output.position    = ctx.getClipPosition(worldPos);
+
+        return output;
+    }
+};
+
+[shader("vertex")]
+PBRVSOutput mainVS(uint vertexID : SV_VertexID, uint drawID : SV_DrawIndex)
+{
+    return vsMainGeneric<PBRVSOutput>(vertexID, drawID);
+}
+
+[shader("fragment")]
+float4 fsMain(PBRVSOutput input) : SV_Target
+{
+    float3 normal = normalize(input.outNormal);
+    float3 viewDir = normalize(pc.fragment->viewPos.xyz - input.outFragPos);
+
+    float3 ambient = pc.fragment->ambientColor.rgb;
     float3 diffuseAccum = float3(0.0);
     float3 specularAccum = float3(0.0);
 
-    uint lightCount, stride;
-    PointLightBuffer.GetDimensions(lightCount, stride);
+    float specPower = exp2(10.0 * (1.0 - roughness) + 1.0);
 
-    for (uint i = 0; i < lightCount; i++) {
-        PointLight light = PointLightBuffer[i];
+    for (uint i = 0; i < pc.fragment->lightCount; i++)
+    {
+        PointLight light = pc.fragment->lights[i];
 
         float3 lightVec = light.position_radius.xyz - input.outFragPos;
         float dist = length(lightVec);
         float radius = light.position_radius.w;
 
-        if (dist > radius || radius <= 0.0) continue;
+        float safeDist = max(dist, 0.0001);
+        float3 lightDir = lightVec / safeDist;
 
-        float3 lightDir = lightVec / dist;
-
+        float attenuation = saturate(1.0 - (dist / max(radius, 0.0001)));
         float diff = max(dot(normal, lightDir), 0.0);
 
         float3 halfDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+        float spec = pow(max(dot(normal, halfDir), 0.0), specPower);
 
-        float attenuation = 1.0 - (dist / radius);
         float intensity = light.color_intensity.w;
+        float3 lightColor = light.color_intensity.rgb * intensity * attenuation;
 
-        diffuseAccum += light.color_intensity.rgb * diff * intensity * attenuation;
-        specularAccum += light.color_intensity.rgb * spec * intensity * attenuation * 0.5;
+        diffuseAccum += lightColor * diff;
+        specularAccum += lightColor * spec * (1.0 - metallic) * 0.5;
     }
 
     float4 texColor = albedo_map.Sample(input.outTexCoord);
-    if (length(texColor.rgb) == 0.0) {
-        texColor = (length(input.outColor.rgb) > 0.0) ? input.outColor : float4(1.0, 1.0, 1.0, 1.0);
-    }
-
     float3 finalLighting = ambient + diffuseAccum + specularAccum;
-    return float4(finalLighting, 1.0) * texColor * albedo_color;
+
+    return float4(finalLighting, 1.0) * texColor;
 }

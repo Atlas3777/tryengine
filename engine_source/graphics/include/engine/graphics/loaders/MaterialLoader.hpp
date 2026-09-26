@@ -11,7 +11,7 @@ namespace tryengine::graphics {
 
 class MaterialLoader {
 public:
-    explicit MaterialLoader(resources::ResourceManager& rm) : resource_manager_(rm) {}
+    explicit MaterialLoader(VulkanDevice& device, resources::ResourceManager& rm) : device_(device), resource_manager_(rm) {}
 
     async::Task<Material> Parse(const eastl::span<const uint8_t> data) const {
         auto asset_data_opt = tryeditor::Deserialize<MaterialAsset>(data);
@@ -59,10 +59,13 @@ public:
         if (material.textures.empty())
             LogWarn("Material '{}' loaded with 0 textures", asset_data.name.c_str());
 
-        co_return material;
+        material.InitGpuResources(device_.GetDevice(), device_.GetPhysicalDevice());
+
+        co_return eastl::move(material);
     }
 
 private:
+    VulkanDevice& device_;
     resources::ResourceManager& resource_manager_;
 };
 

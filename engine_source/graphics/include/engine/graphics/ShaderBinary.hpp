@@ -119,10 +119,11 @@ inline Result<ShaderBinaryContent> UnpackShaderBinary(eastl::span<const uint8_t>
     out_content.fragment_counts = header.fragment_counts;
 
     if (header.size_reflect_data > 0) {
-        eastl::span<const uint8_t> refl_span(bytes.data() + header.offset_reflect_data, header.size_reflect_data);
+        const eastl::span refl_span(bytes.data() + header.offset_reflect_data, header.size_reflect_data);
         size_t cursor = 0;
-        if (!detail::ReadReflection(refl_span, cursor, out_content.reflection)) {
-            return LogAndMakeError("Failed to deserialize shader reflection");
+        auto res = detail::ReadReflection(refl_span, cursor, out_content.reflection);
+        if (!res.has_value()){
+            return LogAndMakeError("Failed to deserialize shader reflection: {}", res.error());
         }
     }
 

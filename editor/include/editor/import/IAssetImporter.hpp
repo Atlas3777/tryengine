@@ -24,6 +24,7 @@ struct ImportResult {
 };
 
 struct ImportContext {
+    const eastl::string_view path;
     const eastl::span<const uint8_t> source_bytes;
     const eastl::span<const uint8_t> meta_bytes;
 };

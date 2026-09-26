@@ -4,35 +4,54 @@
 #include <EASTL/vector.h>
 
 #include "engine/core/Result.hpp"
+#include "engine/resources/TextureBinary.hpp"
 #include "engine/resources/TextureTypes.hpp"
 #include "tiny_gltf_v3.h"
 
 namespace tryeditor {
 
-inline tryengine::resources::TextureFilter MapGltfFilter(const int gltf_filter) {
+inline tryengine::resources::VkFilter MapGltfMagFilter(const int gltf_filter) {
+    if (gltf_filter == TG3_TEXTURE_FILTER_NEAREST) {
+        return tryengine::resources::VkFilter::VK_FILTER_NEAREST;
+    }
+    return tryengine::resources::VkFilter::VK_FILTER_LINEAR;
+}
+
+inline tryengine::resources::VkFilter MapGltfMinFilter(const int gltf_filter) {
     switch (gltf_filter) {
         case TG3_TEXTURE_FILTER_NEAREST:
-        case TG3_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
-        case TG3_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
-            return tryengine::resources::TextureFilter::FILTER_NEAREST;
+        case TG3_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+        case TG3_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+            return tryengine::resources::VkFilter::VK_FILTER_NEAREST;
         default:
-            return tryengine::resources::TextureFilter::FILTER_LINEAR;  // 9729, 9985, 9987
+            return tryengine::resources::VkFilter::VK_FILTER_LINEAR; // 9729, 9985, 9987
     }
 }
 
-inline tryengine::resources::SamplerAddressMode MapGltfWrap(const int gltf_wrap) {
+inline tryengine::resources::VkSamplerMipmapMode MapGltfMipmapMode(const int gltf_filter) {
+    switch (gltf_filter) {
+        case TG3_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+        case TG3_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+            return tryengine::resources::VkSamplerMipmapMode::VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        default:
+            return tryengine::resources::VkSamplerMipmapMode::VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    }
+}
+
+inline tryengine::resources::VkSamplerAddressMode MapGltfWrap(const int gltf_wrap) {
     switch (gltf_wrap) {
         case TG3_TEXTURE_WRAP_CLAMP_TO_EDGE:
-            return tryengine::resources::SamplerAddressMode::SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+            return tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         case TG3_TEXTURE_WRAP_MIRRORED_REPEAT:
-            return tryengine::resources::SamplerAddressMode::SAMPLERADDRESSMODE_MIRRORED_REPEAT;
+            return tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
         default:
-            return tryengine::resources::SamplerAddressMode::SAMPLERADDRESSMODE_REPEAT;  // 10497
+            return tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
     }
 }
 
 struct TextureProcessSettings {
-    tryengine::resources::TextureFormat format = tryengine::resources::TextureFormat::EXTUREFORMAT_R8G8B8A8_UINT;
+    tryengine::resources::TextureFormat format = tryengine::resources::TextureFormat::VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    tryengine::resources::SamplerDesc sampler;
 };
 
 struct ProcessedTextureResult {

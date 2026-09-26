@@ -5,7 +5,7 @@
 #include "PlayModeState.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
-#include "engine/graphics/RenderTarget.hpp"
+#include "engine/graphics/VulkanDevice.hpp"
 
 namespace tryeditor {
 
@@ -16,7 +16,7 @@ class ImportSystem;
 
 class Editor {
 public:
-    Editor(tryengine::core::Engine& engine, tryengine::graphics::GraphicsContext& graphics_context);
+    Editor(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& vulkan_device);
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
     Editor(Editor&&) noexcept = delete;
@@ -30,18 +30,15 @@ public:
     void RegisterAssetsInspector() const;
 
     bool running = false;
-    // bool play_mode = false;
     PlayModeState state;
 
     [[nodiscard]] AssetPipeline& GetAssetSourceDatabase() const { return *asset_pipeline_; }
 
 private:
     tryengine::core::Engine& engine_;
-    tryengine::graphics::GraphicsContext& graphics_context_;
+    tryengine::graphics::VulkanDevice& vulkan_device_;
 
     std::unique_ptr<AssetPipeline> asset_pipeline_;
-
-    // std::unique_ptr<ImportSystem> import_system_;
     std::unique_ptr<AssetsFactoryManager> assets_factory_;
     std::unique_ptr<AssetInspectorManager> asset_inspector_manager_;
 };

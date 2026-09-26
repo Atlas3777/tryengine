@@ -9,27 +9,8 @@
 
 namespace tryengine::graphics {
 
-struct ShaderAssetParam {
-    eastl::string name;
-    ShaderParamType type;
-    eastl::vector<float> default_values;
-};
-
-struct ShaderAssetTexture {
-    eastl::string name;
-    uint32_t slot;
-};
-
-struct ShaderAsset {
-    uint64_t vertex_shader_id = 0;
-    uint64_t fragment_shader_id = 0;
-    eastl::vector<ShaderAssetParam> params;
-    eastl::vector<ShaderAssetTexture> textures;
-};
-
 struct TextureBindingAssets {
     uint64_t texture_id = 0;
-    resources::Sampler sampler;
 };
 
 struct MaterialAsset {

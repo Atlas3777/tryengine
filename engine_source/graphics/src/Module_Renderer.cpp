@@ -1,16 +1,15 @@
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
-#include "engine/core/InputService.hpp"
-#include "engine/core/InputState.hpp"
+#include "engine/platform/InputService.hpp"
+#include "engine/platform/InputState.hpp"
 #include "engine/core/TryengineContext.hpp"
-#include "engine/graphics/OpaqueGeometryPass.hpp"
-#include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 using namespace tryengine::core;
+using namespace tryengine::platform;
 
 // Биндинг enum'ов — ДО using namespace das (иначе коллизии имён)
 DAS_BASE_BIND_ENUM(Key, Key, Unknown, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
@@ -29,8 +28,6 @@ MAKE_TYPE_FACTORY(InputState, InputState)
 
 struct InputStateAnnotation : ManagedStructureAnnotation<InputState, false /*canNew*/, false /*canDelete*/> {
     InputStateAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("InputState", ml) {
-        // Только сырые данные. IsDown/Pressed/Released НЕ биндим —
-        // они реализуются прямо в daslang через индексацию по массиву.
         addField<DAS_BIND_MANAGED_FIELD(is_down)>("isDown", "is_down");
         addField<DAS_BIND_MANAGED_FIELD(just_pressed)>("justPressed", "just_pressed");
         addField<DAS_BIND_MANAGED_FIELD(just_released)>("justReleased", "just_released");
@@ -54,7 +51,7 @@ InputState* get_input_state(das::Context* ctx) {
         return nullptr;
     }
     LogInfo("InputState found!");
-    return &input->GetInputState();
+    return &input->GetState();
 }
 
 class Module_Input : public Module {

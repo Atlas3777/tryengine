@@ -22,7 +22,7 @@ struct OpaquePass {
 
 class OpaqueGeometryPass {
 public:
-    static eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine, PipelineManager& pipeline_manager);
+    static eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine);
     static void ExecuteDrawCommands(const RGExecuteContext& ctx, eastl::span<const MeshDrawCall> queue);
 };
 
