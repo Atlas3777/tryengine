@@ -3,9 +3,10 @@ options gen2
 module DebugRender shared public
 
 struct DebugLine{
-    start, end : float4
+    start : float3
     color : uint8[4]
-    _padding : uint3
+    end : float3
+    _padding : uint
 }
 
 var DebugLines : array<DebugLine>
@@ -15,7 +16,8 @@ enum Color {
     Blue,
     Yellow,
     Black,
-    White
+    White,
+    Green
 }
 
 def GetColor(color : Color) : uint8[4]{
@@ -23,17 +25,18 @@ def GetColor(color : Color) : uint8[4]{
         return fixed_array(255u8, 0u8, 0u8, 255u8)
     elif (color == Color.Blue)
         return fixed_array(0u8, 0u8, 255u8, 255u8)
-    elif (color == Color.Yellow){
+    elif (color == Color.Yellow)
         return fixed_array(255u8, 255u8, 0u8, 255u8)
-    }
+    elif (color == Color.Green)
+        return fixed_array(0u8, 255u8, 0u8, 255u8)
 
     return fixed_array(255u8, 255u8, 255u8, 255u8);
 }
 
 def AddLine(start, end : float3; color : Color){
     var line : DebugLine
-    line.start = float4(start.x, start.y, start.z, 0)
-    line.end = float4(end.x, end.y, end.z, 0)
+    line.start = start
+    line.end = end
     line.color = GetColor(color)
 
     DebugLines |> emplace(line)

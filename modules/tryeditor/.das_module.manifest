@@ -1,0 +1,10 @@
+das_module_manifest	4
+stamp	380	d36e7c538017219b
+dll	1
+root	/home/artem/tryengine/modules/tryeditor
+dasroot	/opt/daslang
+target	
+dep	/opt/daslang/daslib/builtin.das	76322	d13e9ff23328838c
+dep	/opt/daslang/daslib/fio.das	22730	e7420fa56166e690
+dm	/home/artem/tryengine/modules/tryeditor/tryeditor.shared_module	Module_TryEditor	0	tryeditor
+end	1

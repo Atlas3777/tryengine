@@ -10,7 +10,7 @@ set(EASTL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
 set(EASTL_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(EASTL    GIT_REPOSITORY https://github.com/electronicarts/EASTL.git GIT_TAG master GIT_SHALLOW TRUE SYSTEM)
+FetchContent_Declare(EASTL GIT_REPOSITORY https://github.com/electronicarts/EASTL.git GIT_TAG master GIT_SHALLOW TRUE SYSTEM)
 
 FetchContent_MakeAvailable(EASTL)
 

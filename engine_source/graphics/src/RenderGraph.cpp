@@ -17,6 +17,10 @@ VkBuffer RGExecuteContext::GetBuffer(RGResourceHandle h) const {
     return graph_ ? graph_->GetPhysicalBuffer(h) : VK_NULL_HANDLE;
 }
 
+void* RGExecuteContext::GetBufferMappedPtr(RGResourceHandle h) const {
+    return graph_ ? graph_->GetBufferMappedPtr(h) : nullptr;
+}
+
 TransientAllocation RGExecuteContext::AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment) const {
     return graph_ ? graph_->AllocateTransient(data, size, alignment) : TransientAllocation{};
 }
@@ -72,6 +76,8 @@ void RGExecuteContext::EndRendering() {
     vkCmdEndRendering(cmd_buffer);
 }
 
+// ==================== RenderGraphBuilder ====================
+
 RGResourceHandle RenderGraphBuilder::CreateTexture(eastl::string_view dbg_name, const RGTextureDesc& desc) {
     return graph_.CreateTexture(pass_, dbg_name, desc);
 }
@@ -84,7 +90,17 @@ RGResourceHandle RenderGraphBuilder::Read(RGResourceHandle h, RGUsageHint usage)
     return graph_.RegisterRead(pass_, h, usage);
 }
 
+RGResourceHandle RenderGraphBuilder::Read(RGTag tag, RGUsageHint usage) {
+    RGResourceHandle h = graph_.ImportTag(pass_, tag);
+    return graph_.RegisterRead(pass_, h, usage);
+}
+
 RGResourceHandle RenderGraphBuilder::Write(RGResourceHandle h, RGUsageHint usage) {
+    return graph_.RegisterWrite(pass_, h, usage);
+}
+
+RGResourceHandle RenderGraphBuilder::Write(RGTag tag, RGUsageHint usage) {
+    RGResourceHandle h = graph_.ImportTag(pass_, tag);
     return graph_.RegisterWrite(pass_, h, usage);
 }
 
@@ -103,6 +119,8 @@ CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() {
 const CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() const {
     return graph_.GetCPUBlackboard();
 }
+
+// ==================== RGResourcePool ====================
 
 RGResourcePool::RGResourcePool(VulkanDevice& device) : device_(device) {}
 
@@ -193,16 +211,18 @@ RGResourcePool::PooledBuffer RGResourcePool::AcquireBuffer(const RGBufferDesc& d
     PooledBuffer new_entry{};
     new_entry.desc = desc;
 
+    VmaAllocationInfo alloc_result{};
     VkResult res = vmaCreateBuffer(
         device_.GetAllocator(),
         &buffer_info,
         &alloc_info,
         &new_entry.buffer,
         &new_entry.allocation,
-        nullptr
+        &alloc_result
     );
     TRY_CHECK(res == VK_SUCCESS, "Ошибка создания VkBuffer в RGResourcePool: {}", desc.debug_name.c_str());
 
+    new_entry.mapped_ptr = alloc_result.pMappedData;
     new_entry.in_use = true;
     buffer_pool_.push_back(new_entry);
     return new_entry;
@@ -229,10 +249,31 @@ void RGResourcePool::DestroyAll() {
     buffer_pool_.clear();
 }
 
+// ==================== RenderGraph ====================
+
 RenderGraph::RenderGraph(VulkanDevice& device) : device_(device), pool_(device) {}
 
 RenderGraph::~RenderGraph() {
     CleanupTransientAllocators();
+}
+
+uint32_t RenderGraph::ResolveHandleIndex(uint32_t index) const {
+    while (index < handle_redirects_.size() && handle_redirects_[index] != RGResourceHandle::kInvalid) {
+        index = handle_redirects_[index];
+    }
+    return index;
+}
+
+RGResourceHandle RenderGraph::ResolveHandle(RGResourceHandle h) const {
+    if (!h.IsValid()) return h;
+    return RGResourceHandle{ResolveHandleIndex(h.index), h.version};
+}
+
+[[nodiscard]] void* RenderGraph::GetBufferMappedPtr(RGResourceHandle h) const {
+    if (!h.IsValid()) return nullptr;
+    uint32_t idx = ResolveHandleIndex(h.index);
+    if (idx >= resources_.size()) return nullptr;
+    return resources_[idx].mapped_ptr;
 }
 
 void RenderGraph::BeginFrame(uint32_t frame_index) {
@@ -343,7 +384,24 @@ RGResourceHandle RenderGraph::ImportExternalTexture(
     const RGTextureDesc& desc,
     VkImageLayout initial_layout
 ) {
-    TRY_ASSERT(desc.width > 0 || desc.height > 0, "Texture need be > 0 size");
+    TRY_ASSERT(desc.width > 0 || desc.height > 0, "Texture size must be > 0");
+    RGTag tag = RGTagOf(name);
+
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        uint32_t idx = ResolveHandleIndex(it->second.index);
+        auto& res = resources_[idx];
+        TRY_ASSERT(!res.is_defined, "ImportExternalTexture - Texture с именем '{}' — ресурс уже определён другим пассом", name);
+        res.type = RGResourceType::ExternalTexture;
+        res.texture_desc = desc;
+        res.physical_image = image;
+        res.physical_image_view = image_view;
+        res.current_layout = initial_layout;
+        res.externally_exported = true;
+        res.is_defined = true;
+        return RGResourceHandle{idx, 0};
+    }
+
     RGVirtualResource res;
     res.name = name;
     res.type = RGResourceType::ExternalTexture;
@@ -352,82 +410,140 @@ RGResourceHandle RenderGraph::ImportExternalTexture(
     res.physical_image_view = image_view;
     res.current_layout = initial_layout;
     res.externally_exported = true;
+    res.is_defined = true;
 
     uint32_t idx = static_cast<uint32_t>(resources_.size());
     resources_.push_back(std::move(res));
-    return RGResourceHandle{idx, 0};
+    handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+    RGResourceHandle handle{idx, 0};
+    tag_to_handle_[tag] = handle;
+    frame_bb_.Put(tag, handle);
+    return handle;
 }
 
 RGResourceHandle RenderGraph::ImportExternalBuffer(
     eastl::string_view name,
     VkBuffer buffer,
-    const RGBufferDesc& desc
+    const RGBufferDesc& desc,
+    void* mapped_ptr
 ) {
+    RGTag tag = RGTagOf(name);
+
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        uint32_t idx = ResolveHandleIndex(it->second.index);
+        auto& res = resources_[idx];
+        TRY_ASSERT(!res.is_defined, "ImportExternalBuffer Buffer с именем '{}' — ресурс уже определён другим пассом", name);
+        res.type = RGResourceType::ExternalBuffer;
+        res.buffer_desc = desc;
+        res.physical_buffer = buffer;
+        res.externally_exported = true;
+        res.is_defined = true;
+        return RGResourceHandle{idx, 0};
+    }
+
     RGVirtualResource res;
     res.name = name;
     res.type = RGResourceType::ExternalBuffer;
     res.buffer_desc = desc;
     res.physical_buffer = buffer;
     res.externally_exported = true;
+    res.is_defined = true;
+    res.physical_buffer = buffer;
+    res.mapped_ptr = mapped_ptr;
 
     uint32_t idx = static_cast<uint32_t>(resources_.size());
     resources_.push_back(std::move(res));
-    return RGResourceHandle{idx, 0};
+    handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+    RGResourceHandle handle{idx, 0};
+    tag_to_handle_[tag] = handle;
+    frame_bb_.Put(tag, handle);
+    return handle;
 }
 
 RGResourceHandle RenderGraph::CreateTexture(PassNodeBase* pass, eastl::string_view dbg_name, const RGTextureDesc& desc) {
-    RGVirtualResource res;
-    res.name = dbg_name;
-    res.type = RGResourceType::Texture;
-    res.texture_desc = desc;
-    res.producer_pass = pass;
+    RGTag tag = RGTagOf(dbg_name);
+    uint32_t target_idx = RGResourceHandle::kInvalid;
 
-    uint32_t idx = static_cast<uint32_t>(resources_.size());
-    resources_.push_back(std::move(res));
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        target_idx = ResolveHandleIndex(it->second.index);
+        auto& res = resources_[target_idx];
+        TRY_ASSERT(!res.is_defined, "Повторное CreateTexture с именем '{}' — ресурс уже определён другим пассом", dbg_name);
+        res.type = RGResourceType::Texture;
+        res.texture_desc = desc;
+        res.producer_pass = pass;
+        res.is_defined = true;
+    } else {
+        RGVirtualResource res;
+        res.name = dbg_name;
+        res.type = RGResourceType::Texture;
+        res.texture_desc = desc;
+        res.producer_pass = pass;
+        res.is_defined = true;
 
-    RGResourceHandle handle{idx, 0};
+        target_idx = static_cast<uint32_t>(resources_.size());
+        resources_.push_back(std::move(res));
+        handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+        tag_to_handle_[tag] = RGResourceHandle{target_idx, 0};
+    }
+
+    RGResourceHandle handle{target_idx, 0};
 
     RGUsageHint initial_hint = RGUsageHint::ColorAttachment;
     if ((desc.aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0 || (desc.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
         initial_hint = RGUsageHint::DepthStencilAttachment;
 
-    pass->accesses.push_back({0, handle, RGAccessType::Create, initial_hint});
+    pass->accesses.push_back({tag, handle, RGAccessType::Create, initial_hint});
     return handle;
 }
 
 RGResourceHandle RenderGraph::CreateBuffer(PassNodeBase* pass, eastl::string_view dbg_name, const RGBufferDesc& desc) {
-    RGVirtualResource res;
-    res.name = dbg_name;
-    res.type = RGResourceType::Buffer;
-    res.buffer_desc = desc;
-    res.producer_pass = pass;
+    RGTag tag = RGTagOf(dbg_name);
+    uint32_t target_idx = RGResourceHandle::kInvalid;
 
-    uint32_t idx = static_cast<uint32_t>(resources_.size());
-    resources_.push_back(std::move(res));
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        target_idx = ResolveHandleIndex(it->second.index);
+        auto& res = resources_[target_idx];
+        TRY_ASSERT(!res.is_defined, "Повторное CreateBuffer с именем '{}' — ресурс уже определён другим пассом", dbg_name);
+        res.type = RGResourceType::Buffer;
+        res.buffer_desc = desc;
+        res.producer_pass = pass;
+        res.is_defined = true;
+    } else {
+        RGVirtualResource res;
+        res.name = dbg_name;
+        res.type = RGResourceType::Buffer;
+        res.buffer_desc = desc;
+        res.producer_pass = pass;
+        res.is_defined = true;
 
-    RGResourceHandle handle{idx, 0};
-    pass->accesses.push_back({0, handle, RGAccessType::Create, RGUsageHint::StorageWrite});
+        target_idx = static_cast<uint32_t>(resources_.size());
+        resources_.push_back(std::move(res));
+        handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+        tag_to_handle_[tag] = RGResourceHandle{target_idx, 0};
+    }
+
+    RGResourceHandle handle{target_idx, 0};
+    pass->accesses.push_back({tag, handle, RGAccessType::Create, RGUsageHint::StorageWrite});
     return handle;
 }
 
 RGResourceHandle RenderGraph::RegisterRead(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage) {
     if (!h.IsValid()) return h;
+    h = ResolveHandle(h);
     pass->accesses.push_back({0, h, RGAccessType::Read, usage});
-    if (resources_[h.index].producer_pass) {
-        uint32_t producer_idx = 0;
-        for (uint32_t i = 0; i < passes_.size(); ++i) {
-            if (passes_[i].get() == resources_[h.index].producer_pass) {
-                producer_idx = i;
-                break;
-            }
-        }
-        pass->deps.push_back(producer_idx);
-    }
     return h;
 }
 
 RGResourceHandle RenderGraph::RegisterWrite(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage) {
     if (!h.IsValid()) return h;
+    h = ResolveHandle(h);
     h.version++;
     resources_[h.index].producer_pass = pass;
     pass->accesses.push_back({0, h, RGAccessType::Write, usage});
@@ -436,24 +552,84 @@ RGResourceHandle RenderGraph::RegisterWrite(PassNodeBase* pass, RGResourceHandle
 
 void RenderGraph::ExportTag(RGTag tag, RGResourceHandle h) {
     if (!h.IsValid()) return;
+    h = ResolveHandle(h);
+
     frame_bb_.Put(tag, h);
     resources_[h.index].externally_exported = true;
+
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        uint32_t old_idx = ResolveHandleIndex(it->second.index);
+        if (old_idx != h.index) {
+            handle_redirects_[old_idx] = h.index;
+        }
+    }
+
+    tag_to_handle_[tag] = h;
 }
 
 RGResourceHandle RenderGraph::ImportTag(PassNodeBase* pass, RGTag tag) {
-    RGResourceHandle h = frame_bb_.Get(tag);
-    if (h.IsValid()) {
-        RegisterRead(pass, h, RGUsageHint::ShaderRead);
+    auto it = tag_to_handle_.find(tag);
+    if (it != tag_to_handle_.end()) {
+        return ResolveHandle(it->second);
     }
-    return h;
+
+    // Если ресурса еще нет — создаем отложенную заглушку (Placeholder)
+    RGVirtualResource res;
+    res.name = GetRGTagName(tag);
+    res.is_defined = false;
+
+    uint32_t idx = static_cast<uint32_t>(resources_.size());
+    resources_.push_back(std::move(res));
+    handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+    RGResourceHandle placeholder_handle{idx, 0};
+    tag_to_handle_[tag] = placeholder_handle;
+    return placeholder_handle;
+}
+
+void RenderGraph::ResolveTagBindings() {
+    // 1. Разрешаем все редиректы хэндлов в доступах пассов
+    for (auto& pass : passes_) {
+        if (pass->culled) continue;  // культ пока не считался на этом этапе, но можно и после CullPasses вызвать отдельным проходом
+        for (const auto& acc : pass->accesses) {
+            if (acc.handle.IsValid() && !resources_[acc.handle.index].is_defined) {
+                TRY_ASSERT(false, "Пасс '{}' использует неопределённый ресурс '{}'", pass->name, resources_[acc.handle.index].name);
+            }
+        }
+    }
+
+    // 2. Строим точные связи зависимостей (deps) на основе объявленных продуцентов
+    for (auto& pass : passes_) {
+        for (const auto& acc : pass->accesses) {
+            if (acc.access == RGAccessType::Read && acc.handle.IsValid()) {
+                uint32_t res_idx = acc.handle.index;
+                PassNodeBase* producer = resources_[res_idx].producer_pass;
+
+                if (producer && producer != pass.get()) {
+                    for (uint32_t i = 0; i < passes_.size(); ++i) {
+                        if (passes_[i].get() == producer) {
+                            if (eastl::find(pass->deps.begin(), pass->deps.end(), i) == pass->deps.end()) {
+                                pass->deps.push_back(i);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void RenderGraph::Compile() {
+    ResolveTagBindings();
     CullPasses();
     TopologicalSort();
 
     pool_.ReleaseAll();
     for (auto& res : resources_) {
+        if (!res.is_defined) continue;
+
         if (res.type == RGResourceType::Texture) {
             auto pooled = pool_.AcquireTexture(res.texture_desc);
             res.physical_image = pooled.image;
@@ -463,6 +639,7 @@ void RenderGraph::Compile() {
             auto pooled = pool_.AcquireBuffer(res.buffer_desc);
             res.physical_buffer = pooled.buffer;
             res.buffer_allocation = pooled.allocation;
+            res.mapped_ptr = pooled.mapped_ptr;
         }
     }
 
@@ -659,9 +836,12 @@ void RenderGraph::BuildBarriers() {
         pass->buffer_barriers.clear();
 
         for (const auto& acc : pass->accesses) {
-            if (!acc.handle.IsValid() || acc.handle.index >= resources_.size()) continue;
+            if (!acc.handle.IsValid()) continue;
+            uint32_t real_idx = ResolveHandleIndex(acc.handle.index);
+            if (real_idx >= resources_.size()) continue;
 
-            auto& res = resources_[acc.handle.index];
+            auto& res = resources_[real_idx];
+            if (!res.is_defined) continue;
 
             if (res.type == RGResourceType::Texture || res.type == RGResourceType::ExternalTexture) {
                 StateTransitionInfo target = MapTextureState(acc.access, acc.usage_hint);
@@ -767,24 +947,32 @@ void RenderGraph::Reset() {
 
     passes_.clear();
     resources_.clear();
+    tag_to_handle_.clear();
+    handle_redirects_.clear();
     frame_bb_.Clear();
     cpu_bb_.Clear();
     sorted_order_.clear();
 }
 
 VkImage RenderGraph::GetPhysicalImage(RGResourceHandle h) const {
-    if (!h.IsValid() || h.index >= resources_.size()) return VK_NULL_HANDLE;
-    return resources_[h.index].physical_image;
+    if (!h.IsValid()) return VK_NULL_HANDLE;
+    uint32_t idx = ResolveHandleIndex(h.index);
+    if (idx >= resources_.size()) return VK_NULL_HANDLE;
+    return resources_[idx].physical_image;
 }
 
 VkImageView RenderGraph::GetPhysicalImageView(RGResourceHandle h) const {
-    if (!h.IsValid() || h.index >= resources_.size()) return VK_NULL_HANDLE;
-    return resources_[h.index].physical_image_view;
+    if (!h.IsValid()) return VK_NULL_HANDLE;
+    uint32_t idx = ResolveHandleIndex(h.index);
+    if (idx >= resources_.size()) return VK_NULL_HANDLE;
+    return resources_[idx].physical_image_view;
 }
 
 VkBuffer RenderGraph::GetPhysicalBuffer(RGResourceHandle h) const {
-    if (!h.IsValid() || h.index >= resources_.size()) return VK_NULL_HANDLE;
-    return resources_[h.index].physical_buffer;
+    if (!h.IsValid()) return VK_NULL_HANDLE;
+    uint32_t idx = ResolveHandleIndex(h.index);
+    if (idx >= resources_.size()) return VK_NULL_HANDLE;
+    return resources_[idx].physical_buffer;
 }
 
 }  // namespace tryengine::graphics

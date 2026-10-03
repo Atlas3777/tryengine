@@ -46,8 +46,11 @@ add_library(imgui_lib STATIC
 )
 
 set_target_properties(imgui_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_compile_definitions(imgui_lib PUBLIC
         IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
+        IMGUI_USE_WCHAR32=1
+#        IMGUI_ENABLE_FREETYPE=1      # Для совпадения структуры шрифтов
         VK_NO_PROTOTYPES
         IMGUI_IMPL_VULKAN_USE_VOLK
 )

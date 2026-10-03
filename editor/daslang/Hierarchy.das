@@ -8,15 +8,20 @@ require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
-require imgui/imgui_boost_v2
 require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
 
-// Всего ОДНА переменная состояния вместо целой таблицы!
 var ENTITY_NODE : TreeNodeState
 
 var selected_eid : EntityId = INVALID_ENTITY_ID
+
+[export]
+def SetSelectedEntity(eid : uint64){
+    unsafe {
+        selected_eid = reinterpret<EntityId>(eid)
+    }
+}
 
 def DrawHierarchy() {
     window(BASICS_WIN, (text = "HierarchyDas", closable = false, flags = ImGuiWindowFlags.None)) {

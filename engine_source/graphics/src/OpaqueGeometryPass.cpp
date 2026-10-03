@@ -17,12 +17,14 @@
 #include "engine/resources/Vertex.hpp"
 
 namespace tryengine::graphics {
+
 struct DaslangDrawCall {
     hlslpp::float4x4 world_matrix;
     uint64_t mesh;
     uint64_t material;
+    uint64_t entity_id;
 };
-static_assert(sizeof(DaslangDrawCall) == 80);
+static_assert(sizeof(DaslangDrawCall) == 96);
 
 eastl::vector<MeshDrawCall> OpaqueGeometryPass::CollectDrawable(core::Engine& engine) {
     eastl::vector<MeshDrawCall> draw_calls;
@@ -45,6 +47,7 @@ eastl::vector<MeshDrawCall> OpaqueGeometryPass::CollectDrawable(core::Engine& en
         cmd.mesh = mesh;
         cmd.material = material;
         cmd.model_matrix = draw_call.world_matrix;
+        cmd.entity_id = draw_call.entity_id;
 
         const uint16_t shader_id = static_cast<uint16_t>(reinterpret_cast<uintptr_t>(&material->shader) & 0xFFFF);
         const uint16_t material_id = static_cast<uint16_t>(reinterpret_cast<uintptr_t>(material) & 0xFFFF);
@@ -72,12 +75,6 @@ struct alignas(16) GPUObjectData {
     GeometryPointers pointers;
 };
 
-// Структуры под Slang-лейаут (Standard.slang)
-struct alignas(16) CameraGPU {
-    hlslpp::float4x4 view;
-    hlslpp::float4x4 proj;
-};
-
 struct alignas(16) FragmentDataGPU {
     VkDeviceAddress camera;       // BDA на CameraGPU
     VkDeviceAddress lights;       // BDA на массив PointLightGPU
@@ -86,7 +83,6 @@ struct alignas(16) FragmentDataGPU {
     hlslpp::float4 ambient_color;
     hlslpp::float4 view_pos;
 };
-
 
 struct PushConstants {
     VkDeviceAddress objects;  // BDA массив объектов GPUObjectData
@@ -100,9 +96,6 @@ void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl:
         return;
     }
 
-    // =========================================================================
-    // 1. ПОДГОТОВКА ГЛОБАЛЬНЫХ ДАННЫХ ПАССА (ОДИН РАЗ НА ПАСС)
-    // =========================================================================
     const auto* camera_cpu = ctx.cpu_bb->GetAs<CameraData>(RGTag_v<"Camera">);
     const auto* light_ubo = ctx.cpu_bb->GetAs<GlobalLight>(RGTag_v<"GlobalLightUBO">);
     const uint32_t* light_count = ctx.cpu_bb->GetAs<uint32_t>(RGTag_v<"LightCount">);

@@ -49,6 +49,13 @@ var W_FILTER : TextFilterState
 // Переменная для отслеживания смены фокуса
 var last_selected_eid : EntityId = INVALID_ENTITY_ID
 
+[export]
+def SetSelectedEntity(eid : uint64){
+    unsafe {
+        last_selected_eid = reinterpret<EntityId>(eid)
+    }
+}
+
 def clear_inspector_states() {
     clear(W_BOOL)
     clear(W_STRING)
@@ -197,7 +204,9 @@ def DrawInspector() {
             return
         }
 
-        text("Entity [{uint(selected_eid.id)}]")
+        text("Entity [{uint(selected_eid.id):d}]")
+        let a = unsafe(reinterpret<uint64>(selected_eid));
+        text("Entity2 [{a:d}]")
 
         // ---- ПОИСК ПО КОМПОНЕНТАМ ----
         text("Search:")

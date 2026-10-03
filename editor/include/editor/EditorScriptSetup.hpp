@@ -31,7 +31,7 @@ inline tryengine::core::ScriptSystemConfig GetEditorScriptConfig(tryengine::core
     return {
         .register_modules = &::RegisterEditorScriptModules,
         .create_context   = [&engine, &editor](uint32_t stack_size) -> das::Context* {
-            return new tryeditor::TryEditorContext(engine, editor, stack_size);
+            return new TryEditorContext(engine, editor, stack_size);
         }
     };
 }

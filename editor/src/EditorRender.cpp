@@ -6,12 +6,14 @@
 #include <imgui_impl_vulkan.h>
 
 #include "editor/CollectDebug.hpp"
+#include "editor/DebugDrawPass.hpp"
+#include "editor/PickingPass.hpp"
 #include "editor/PlayModeState.hpp"
 #include "engine/core/Assert.hpp"
+#include "engine/core/HlslppFormatter.hpp"
 #include "engine/graphics/ForwardPipeline.hpp"
 #include "engine/graphics/OpaqueGeometryPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
-#include "engine/core/HlslppFormatter.hpp"
 
 namespace tryeditor {
 
@@ -75,10 +77,8 @@ EditorRender::EditorRender(tryengine::graphics::VulkanDevice& device, tryengine:
         [](const char* function_name, void* user_data) {
             return vkGetInstanceProcAddr(static_cast<VkInstance>(user_data), function_name);
         },
-        device.GetInstance()
-    );
+        device.GetInstance());
 
-    // Теперь вызов инициализации не упадет с SIGSEGV
     ImGui_ImplVulkan_Init(&init_info);
 
     VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -90,11 +90,46 @@ EditorRender::EditorRender(tryengine::graphics::VulkanDevice& device, tryengine:
     sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
     vkCreateSampler(device.GetDevice(), &sampler_info, nullptr, &imgui_sampler_);
+
+    // Инициализация долгоживущих маппнутых буферов считывания пикинга (по одному на кадр)
+    for (uint32_t i = 0; i < tryengine::graphics::MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkBufferCreateInfo buf_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        buf_info.size = sizeof(uint64_t); // 8 байт (entity_id)
+        buf_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        buf_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo alloc_info{};
+        alloc_info.usage = VMA_MEMORY_USAGE_GPU_TO_CPU;
+        alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT; // Персистентный маппинг
+
+        VmaAllocationInfo alloc_result{};
+        VkResult res = vmaCreateBuffer(
+            device.GetAllocator(),
+            &buf_info,
+            &alloc_info,
+            &picking_readback_[i].buffer,
+            &picking_readback_[i].allocation,
+            &alloc_result
+        );
+        TRY_CHECK(res == VK_SUCCESS, "Не удалось создать PickingReadbackBuffer для кадра {}", i);
+
+        picking_readback_[i].mapped_ptr = alloc_result.pMappedData;
+        picking_readback_[i].pending_read = false;
+    }
 }
 
 EditorRender::~EditorRender() {
     tryengine::graphics::VulkanDevice& device = rg_.GetDevice();
     vkDeviceWaitIdle(device.GetDevice());
+
+    // Очистка буферов считывания пикинга
+    for (uint32_t i = 0; i < tryengine::graphics::MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (picking_readback_[i].buffer != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(device.GetAllocator(), picking_readback_[i].buffer, picking_readback_[i].allocation);
+            picking_readback_[i].buffer = VK_NULL_HANDLE;
+            picking_readback_[i].mapped_ptr = nullptr;
+        }
+    }
 
     for (auto& frame_staging : pending_debug_staging_) {
         for (auto& s : frame_staging) {
@@ -117,7 +152,8 @@ EditorRender::~EditorRender() {
 }
 
 VkDescriptorSet EditorRender::GetOrCreateImguiTexture(VkImageView view) {
-    if (!view) return VK_NULL_HANDLE;
+    if (!view)
+        return VK_NULL_HANDLE;
 
     // 1. Если дескриптор для этого VkImageView уже есть — возвращаем его без вызова AddTexture
     auto it = imgui_texture_cache_.find(view);
@@ -126,11 +162,7 @@ VkDescriptorSet EditorRender::GetOrCreateImguiTexture(VkImageView view) {
     }
 
     // 2. Создаем дескриптор ТОЛЬКО если это новый VkImageView
-    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-        imgui_sampler_,
-        view,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(imgui_sampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     imgui_texture_cache_[view] = ds;
     return ds;
@@ -148,13 +180,7 @@ void EditorRender::RecordImguiFrame(tryengine::core::Engine& engine, PlayModeSta
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    // DrawMainMenu();
-    // DrawPlayToolbar(state);
-    DrawDockSpace();
-
-    engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("draw_editor");
-
-    // RenderProfilerPanel();
+    engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("DrawEditor");
 
     ImGui::Render();
 }
@@ -175,7 +201,8 @@ void EditorRender::RecreateSwapchain(int w, int h, tryengine::graphics::VulkanDe
     // 2. Безопасно очищаем кэш дескрипторов ImGui — GPU гарантированно ничего не рисует
     ClearTextureCache();
 
-    if (w == 0 || h == 0) return;
+    if (w == 0 || h == 0)
+        return;
 
     swapchain_.Recreate(static_cast<uint32_t>(w), static_cast<uint32_t>(h), swapchain_.IsVsync());
 }
@@ -185,7 +212,6 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(device.GetWindow(), &w, &h);
 
-    // Если окно свернуто — пропуск кадра
     if (w == 0 || h == 0) {
         return;
     }
@@ -205,10 +231,21 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     const uint32_t frame_index = frame_sync_.GetCurrentFrameIndex();
     DestroyPendingDebugStaging(frame_index);
 
+    // БЕЗОПАСНОЕ СЧИТЫВАНИЕ РЕЗУЛЬТАТА ПИКИРОВАНИЯ НА CPU
+    auto& readback = picking_readback_[frame_index];
+    if (readback.pending_read && readback.mapped_ptr != nullptr) {
+        uint64_t picked_entity_id = 0;
+        std::memcpy(&picked_entity_id, readback.mapped_ptr, sizeof(uint64_t));
+        readback.pending_read = false;
+
+        if (picked_entity_id != 0) {
+            LogInfo("Выбран объект с Entity ID: {}", picked_entity_id);
+            engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionFast("SetSelectedEntity", picked_entity_id);
+        }
+    }
+
     VkCommandBuffer cmd = frame_sync_.GetCurrentFrame().command_buffer;
-
     auto& script_system = engine.Get<tryengine::core::ScriptSystem>();
-
 
     tryengine::graphics::FrameRenderData frame_render_data;
     frame_render_data.point_lights = eastl::move(tryengine::graphics::CollectLight(engine));
@@ -217,7 +254,10 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     rg_.BeginFrame(frame_index);
 
     VkExtent2D swap_extent = swapchain_.GetExtent();
-    RGTextureDesc swap_desc{swap_extent.width, swap_extent.height, 1, 1,
+    RGTextureDesc swap_desc{swap_extent.width,
+                            swap_extent.height,
+                            1,
+                            1,
                             swapchain_.GetImageFormat(),
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT,
@@ -229,7 +269,7 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
 
     auto size_res = script_system.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
     if (!size_res.has_value())
-        LogError("aaa");
+        LogError("ViewportSize not found");
 
     auto size = *size_res;
 
@@ -247,8 +287,13 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     rg_.PutCPUData(RGTag_v<"Camera">, *camera);
     rg_.PutCPUData(RGTag_v<"LightCount">, static_cast<uint32_t>(frame_render_data.point_lights.size()));
 
+    auto mouse = script_system.SimpleReturnUnsafe<Mouse*>("GetEditorSceneViewportMouse", size);
+    if (!mouse.has_value())
+        LogCritical("Mouse data not found");
+
     EditorFrame editor_frame;
     editor_frame.debug_lines = eastl::move(CollectDebug(engine));
+    editor_frame.mouse = *mouse;
 
     BuildEditorRenderGraph(frame_render_data, editor_frame, swapchain_handle, static_cast<uint32_t>(size.x),
                            static_cast<uint32_t>(size.y));
@@ -264,8 +309,11 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
 
 void EditorRender::BuildEditorRenderGraph(const tryengine::graphics::FrameRenderData& frame_render_data,
                                           const EditorFrame& editor_frame, RGResourceHandle swapchain_handle,
-                                          uint32_t width, uint32_t height) const {
+                                          uint32_t width, uint32_t height) {
     auto forward_out = tryengine::graphics::BuildForwardPipeline(rg_, frame_render_data, width, height);
+
+    AddDebugDrawPass(rg_, forward_out.color_target, forward_out.depth_target, editor_frame.debug_lines, debug_shader_,
+                     width, height);
 
     const VkExtent2D swap_extent = swapchain_.GetExtent();
 
@@ -293,36 +341,33 @@ void EditorRender::BuildEditorRenderGraph(const tryengine::graphics::FrameRender
             ImGui_ImplVulkan_RenderDrawData(draw_data, ctx.cmd_buffer);
             ctx.EndRendering();
         });
+
+
+    if (editor_frame.mouse->pressed) {
+        const uint32_t frame_index = frame_sync_.GetCurrentFrameIndex();
+
+        // 1. Импортируем долгоживущий внешний буфер для ТЕКУЩЕГО кадра
+        RGBufferDesc readback_desc{
+            .size = sizeof(uint64_t),
+            .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .memory_usage = VMA_MEMORY_USAGE_GPU_TO_CPU,
+            .debug_name = "PickingReadbackBuffer"
+        };
+
+        RGResourceHandle readback_handle = rg_.ImportExternalBuffer(
+            "PickingReadbackBuffer",
+            picking_readback_[frame_index].buffer,
+            readback_desc
+        );
+
+        AddEditorPickingPass(rg_, forward_out.depth_target, readback_handle, frame_render_data.opaque_queue,
+                             pick_shader_, width, height, editor_frame.mouse->pos.x, editor_frame.mouse->pos.y);
+
+        // 3. Выставляем флаг ожидаемого чтения для этого кадра
+        picking_readback_[frame_index].pending_read = true;
+    }
+
     tryengine::graphics::AddPresentPass(rg_, imgui.swapchain_target);
-}
-
-void EditorRender::DrawDockSpace() {
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-
-    float toolbar_height = 0.0f;  // 30.0f;
-
-    ImVec2 dock_pos = ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + toolbar_height);
-    ImVec2 dock_size = ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - toolbar_height);
-
-    ImGui::SetNextWindowPos(dock_pos);
-    ImGui::SetNextWindowSize(dock_size);
-    ImGui::SetNextWindowViewport(viewport->ID);
-
-    ImGuiWindowFlags host_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-                                         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                                         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
-                                         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDocking;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-
-    ImGui::Begin("MainDockSpace", nullptr, host_window_flags);
-    ImGui::PopStyleVar(3);
-
-    ImGuiID dockspace_id = ImGui::GetID("MainDockSpaceDock");
-    ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
-    ImGui::End();
 }
 
 }  // namespace tryeditor

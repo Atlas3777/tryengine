@@ -31,6 +31,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Vulkan-Headers SDL3 hlsl volk vk-bootstrap vma)
 
+set_target_properties(vk-bootstrap PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(volk PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 add_library(hlsl_lib INTERFACE)
 target_include_directories(hlsl_lib SYSTEM INTERFACE ${hlsl_SOURCE_DIR}/include)
 

@@ -15,12 +15,9 @@
 ========================================================
 Resource: "pc" (Hash: 0x4E4E5564)
   - Scope: Pass (Set 0) | Kind: UniformBuffer
-  - Set: 0, Binding: 0, Size: 32 bytes
+  - Set: 0, Binding: 0, Size: 16 bytes
   - Members:
-      * "lines" | Offset: 0 | Size: 8 | Type: Float
+      * "objects" | Offset: 0 | Size: 8 | Type: Float
       * "camera" | Offset: 8 | Size: 8 | Type: Float
-      * "screenSize" | Offset: 16 | Size: 8 | Type: Vec2
-      * "thickness" | Offset: 24 | Size: 4 | Type: Float
-      * "_padding" | Offset: 28 | Size: 4 | Type: Int
 --------------------------------------------------------
 

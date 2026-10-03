@@ -1,0 +1,13 @@
+das_module_manifest	4
+stamp	664	fb4e1171f01f9119
+dll	1
+root	/home/artem/tryengine/modules/tryengine
+dasroot	/opt/daslang
+target	
+dep	/opt/daslang/daslib/builtin.das	76322	d13e9ff23328838c
+dep	/opt/daslang/daslib/fio.das	22730	e7420fa56166e690
+dm	/home/artem/tryengine/modules/tryengine/tryengine.shared_module	Module_Renderer	0	tryRenderer
+dm	/home/artem/tryengine/modules/tryengine/tryengine.shared_module	Module_Resources	0	tryResources
+dm	/home/artem/tryengine/modules/tryengine/tryengine.shared_module	Module_Input	0	tryInput
+dm	/home/artem/tryengine/modules/tryengine/tryengine.shared_module	Module_AsyncFileManager	0	tryAsyncFile
+end	4

@@ -12,6 +12,11 @@ struct CameraData {
     hlslpp::float3 position;
 };
 
+struct alignas(16) CameraGPU {
+    hlslpp::float4x4 view;
+    hlslpp::float4x4 proj;
+};
+
 struct AmbientSettings {
     hlslpp::float4 ambient_color{0.05f, 0.05f, 0.08f, 1.0f};
     hlslpp::float4 clear_color{0.1f, 0.1f, 0.12f, 1.0f};

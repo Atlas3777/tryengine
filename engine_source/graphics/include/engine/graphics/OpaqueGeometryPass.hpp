@@ -19,7 +19,6 @@ struct OpaquePass {
     eastl::span<const MeshDrawCall> opaque_pass_queue;
 };
 
-
 class OpaqueGeometryPass {
 public:
     static eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine);

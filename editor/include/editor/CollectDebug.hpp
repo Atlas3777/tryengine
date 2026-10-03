@@ -13,14 +13,21 @@
 namespace tryeditor {
 
 struct DebugLine {
-    das::float4 start;
-    das::float4 end;
+    das::float3 start;
     uint8_t r,g,b,a;
-    uint32_t _padding[3];
+    das::float3 end;
+    uint32_t _pad;
+};
+
+struct Mouse {
+    das::float2 pos = {0,0};
+    bool pressed = false;
+    bool is_down = false;
 };
 
 struct EditorFrame {
     eastl::vector<DebugLine> debug_lines;
+    Mouse* mouse;
 };
 
 struct DebugDrawPass {

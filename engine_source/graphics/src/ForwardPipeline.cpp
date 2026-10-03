@@ -101,8 +101,6 @@ ForwardPipelineOutput BuildForwardPipeline(
             builder.Export(RGTag_v<"SceneViewport">, data.color_target);
         },
         [width, height](RGExecuteContext& ctx, const OpaquePass& data) {
-            //vkCmdPushDescriptorSetKHR //TODO: создать в RenderGraph Frame buffer и пушить set 0
-
             RGColorAttachment color_attachment{};
             color_attachment.handle = data.color_target;
             color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;

@@ -59,8 +59,10 @@ public:
             return false;
 
         auto* function = das_ctx_->findFunction(f_name.data());
-        if (!function)
+        if (!function) {
+            LogError(LogCategory::Script, "function not found");
             return false;
+        }
 
         das::Func custom_func(function);
         das::das_invoke_function<void>::invoke(das_ctx_, nullptr, custom_func, std::forward<Args>(args)...);

@@ -33,18 +33,7 @@ def module_get(req, from : string) : module_info {
 
     if (starts_with(req, "imgui/")) {
         let sub = slice(req, 6, length(req))
-        var file_name = sub
-
-        if (sub == "imgui_boost_v2") {
-            file_name = "imgui_boost"
-        }
-
-        var gdr = get_das_root();
-
-        let path = "{gdr}/modules/dasImgui/widgets/{file_name}.das"
-
-        //print("[Project Resolver] Mapping '{req}' to file: {path}\n")
-
+        let path = "{get_das_root()}/modules/dasImgui/widgets/{sub}.das"
         return (sub, path, "")
     }
 

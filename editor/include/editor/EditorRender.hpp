@@ -15,7 +15,6 @@
 #include "engine/graphics/ForwardPipeline.hpp"
 #include "engine/graphics/FrameContext.hpp"
 #include "engine/graphics/PipelineManager.hpp"
-#include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/VulkanSwapchain.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 
@@ -29,6 +28,7 @@ struct ImGuiPassData {
     RGResourceHandle scene_tex_read;
     RGResourceHandle swapchain_target;
 };
+
 
 class EditorRender {
 public:
@@ -47,7 +47,9 @@ public:
     void SetDebugShader(const tryengine::resources::ResourceHandle<tryengine::graphics::Shader>& shader) {
         debug_shader_ = shader;
     }
-
+    void SetPickShader(const tryengine::resources::ResourceHandle<tryengine::graphics::Shader>& shader) {
+        pick_shader_ = shader;
+    }
 
     [[nodiscard]] VkDescriptorSet GetOrCreateImguiTexture(VkImageView view);
     void ClearTextureCache();
@@ -56,12 +58,20 @@ private:
 
     void BuildEditorRenderGraph(const tryengine::graphics::FrameRenderData& frame_render_data,
                                 const EditorFrame& editor_frame, RGResourceHandle swapchain_handle, uint32_t width,
-                                uint32_t height) const;
+                                uint32_t height);
 
     void RecordImguiFrame(tryengine::core::Engine& engine, PlayModeState& state);
-    void DrawDockSpace();
     void DestroyPendingDebugStaging(uint32_t frame_index);
     void RecreateSwapchain(int w, int h, tryengine::graphics::VulkanDevice& device);
+
+    struct PickingReadbackResource {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+        void* mapped_ptr = nullptr;
+        bool pending_read = false;
+    };
+
+    PickingReadbackResource picking_readback_[tryengine::graphics::MAX_FRAMES_IN_FLIGHT];
 
     VkSampler imgui_sampler_ = VK_NULL_HANDLE;
     eastl::hash_map<VkImageView, VkDescriptorSet> imgui_texture_cache_;
@@ -72,6 +82,7 @@ private:
     tryengine::graphics::FrameSync& frame_sync_;
 
     tryengine::resources::ResourceHandle<tryengine::graphics::Shader> debug_shader_;
+    tryengine::resources::ResourceHandle<tryengine::graphics::Shader> pick_shader_;
 
     VkDescriptorPool imgui_descriptor_pool_ = VK_NULL_HANDLE;
 

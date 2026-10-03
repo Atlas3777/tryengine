@@ -22,10 +22,10 @@ EditorApp::EditorApp() = default;
 EditorApp::~EditorApp() = default;
 
 using namespace tryengine::core;
-using namespace tryengine::graphics;
-using namespace tryengine::resources;
 using namespace tryengine::async;
+using namespace tryengine::graphics;
 using namespace tryengine::platform;
+using namespace tryengine::resources;
 
 struct EditorClock {};
 
@@ -66,6 +66,17 @@ void EditorApp::Init() {
         engine_->Get<AsyncFileManager>().Submit();
         std::this_thread::yield();
     }
+
+    auto deb_shader = engine_->Get<ResourceManager>().Get<Shader>(10245112668937909950ULL);
+    if (!deb_shader.has_value())
+        TRY_ASSERT(deb_shader.has_value(), "Нет шейдера debug");
+    engine_->Get<EditorRender>().SetDebugShader(*deb_shader);
+
+    auto pick_shader = engine_->Get<ResourceManager>().Get<Shader>(4250482409988402633ULL);
+    if (!pick_shader.has_value())
+        TRY_ASSERT(pick_shader.has_value(), "Нет шейдера picking");
+    engine_->Get<EditorRender>().SetPickShader(*pick_shader);
+
 
     engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
 

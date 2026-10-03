@@ -97,11 +97,10 @@ struct RGResourceAccess {
     RGUsageHint usage_hint = RGUsageHint::None;
 };
 
-/// Результат суб-аллокации транзиентной памяти для кадра
 struct TransientAllocation {
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceSize offset = 0;
-    VkDeviceAddress bda_address = 0; // Включает смещение (base_bda + offset)
+    VkDeviceAddress bda_address = 0;
     uint8_t* mapped_ptr = nullptr;
 
     [[nodiscard]] bool IsValid() const { return buffer != VK_NULL_HANDLE; }
@@ -116,9 +115,10 @@ public:
         if (it != entries_.end())
             return it->second;
 
-        TRY_ASSERT(false, "Ресурс {} не найден в Blackboard", GetRGTagName(tag));
         return RGResourceHandle{};
     }
+
+    [[nodiscard]] bool Has(RGTag tag) const { return entries_.find(tag) != entries_.end(); }
 
     void Clear() { entries_.clear(); }
 
@@ -149,7 +149,7 @@ public:
             return eastl::span(it->second.data(), it->second.size());
         }
 
-        LogError("CPUBlackboard: Запись для тега {} не найдена.", tag);
+        LogError("CPUBlackboard: Запись для тега {} не найдена.", GetRGTagName(tag));
         return eastl::nullopt;
     }
 
@@ -212,8 +212,8 @@ public:
     [[nodiscard]] VkImage GetTexture(RGResourceHandle h) const;
     [[nodiscard]] VkImageView GetImageView(RGResourceHandle h) const;
     [[nodiscard]] VkBuffer GetBuffer(RGResourceHandle h) const;
+    [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
 
-    /// Начинает Vulkan 1.3+ Dynamic Rendering проход (vkCmdBeginRendering)
     void BeginRendering(
         eastl::span<const RGColorAttachment> color_attachments,
         const RGDepthStencilAttachment* depth_attachment = nullptr,
@@ -221,10 +221,8 @@ public:
         uint32_t layer_count = 1
     );
 
-    /// Завершает Dynamic Rendering проход (vkCmdEndRendering)
     void EndRendering();
 
-    /// Выделяет память в транзиентном линейном буфере текущего кадра
     [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256) const;
 
     void SetGraph(RenderGraph* graph) { graph_ = graph; }
@@ -245,7 +243,6 @@ public:
 
     eastl::fixed_vector<uint32_t, 8> deps;
 
-    // Сгенерированные Synchronization 2 барьеры для вызова перед началом пасса
     eastl::vector<VkImageMemoryBarrier2> image_barriers;
     eastl::vector<VkBufferMemoryBarrier2> buffer_barriers;
 };
@@ -271,7 +268,10 @@ public:
     RGResourceHandle CreateBuffer(eastl::string_view dbg_name, const RGBufferDesc& desc);
 
     RGResourceHandle Read(RGResourceHandle h, RGUsageHint usage = RGUsageHint::ShaderRead);
+    RGResourceHandle Read(RGTag tag, RGUsageHint usage = RGUsageHint::ShaderRead);
+
     RGResourceHandle Write(RGResourceHandle h, RGUsageHint usage = RGUsageHint::StorageWrite);
+    RGResourceHandle Write(RGTag tag, RGUsageHint usage = RGUsageHint::StorageWrite);
 
     void Export(RGTag tag, RGResourceHandle h);
     RGResourceHandle Import(RGTag tag);
@@ -298,8 +298,8 @@ struct RGVirtualResource {
 
     VkBuffer physical_buffer = VK_NULL_HANDLE;
     VmaAllocation buffer_allocation = VK_NULL_HANDLE;
+    void* mapped_ptr = nullptr;
 
-    // Отслеживание текущего состояния ресурса в графе
     VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkPipelineStageFlags2 current_stage = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 current_access = VK_ACCESS_2_NONE;
@@ -307,6 +307,7 @@ struct RGVirtualResource {
     PassNodeBase* producer_pass = nullptr;
     uint32_t ref_count = 0;
     bool externally_exported = false;
+    bool is_defined = false; // Флаг: заданы ли реальные дескрипторы ресурса
 };
 
 class RGResourcePool {
@@ -325,6 +326,7 @@ public:
     struct PooledBuffer {
         VkBuffer buffer = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
+        void* mapped_ptr = nullptr;
         RGBufferDesc desc;
         bool in_use = false;
     };
@@ -341,7 +343,6 @@ private:
     eastl::vector<PooledBuffer> buffer_pool_;
 };
 
-// Внутренние структуры кадрового линейного аллокатора
 struct TransientPage {
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -359,21 +360,16 @@ struct FrameTransientAllocator {
 class RenderGraph {
 public:
     static constexpr uint32_t kMaxFramesInFlight = 2;
-    static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024; // 16 MB на страницу
+    static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024;
 
     explicit RenderGraph(VulkanDevice& device);
     ~RenderGraph();
 
-    /// Устанавливает текущий индекс кадра в полете (0..kMaxFramesInFlight-1)
     void BeginFrame(uint32_t frame_index);
-
-    /// Выделяет динамическую транзиентную память из текущего кадрового Bump Allocator
     TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256);
 
     template <typename T>
-    void PutCPUData(RGTag tag, const T& data) {
-        cpu_bb_.Put(tag, data);
-    }
+    void PutCPUData(RGTag tag, const T& data) { cpu_bb_.Put(tag, data); }
 
     void PutCPUData(RGTag tag, const void* data, size_t size_bytes) { cpu_bb_.Put(tag, data, size_bytes); }
 
@@ -403,7 +399,8 @@ public:
     RGResourceHandle ImportExternalBuffer(
         eastl::string_view name,
         VkBuffer buffer,
-        const RGBufferDesc& desc
+        const RGBufferDesc& desc,
+        void* mapped_ptr = nullptr
     );
 
     RGResourceHandle CreateTexture(PassNodeBase* pass, eastl::string_view dbg_name, const RGTextureDesc& desc);
@@ -429,9 +426,15 @@ public:
     VkImageView GetPhysicalImageView(RGResourceHandle h) const;
     VkBuffer GetPhysicalBuffer(RGResourceHandle h) const;
 
+    [[nodiscard]] uint32_t ResolveHandleIndex(uint32_t index) const;
+    [[nodiscard]] RGResourceHandle ResolveHandle(RGResourceHandle h) const;
+
+    [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
+
     VulkanDevice& GetDevice() const { return device_; }
 
 private:
+    void ResolveTagBindings();
     void CullPasses();
     void TopologicalSort();
     void BuildBarriers();
@@ -444,9 +447,12 @@ private:
     CPUBlackboard cpu_bb_;
     RGResourcePool pool_;
 
+    // Реестр тегов и таблица редиректов псевдонимов
+    eastl::hash_map<RGTag, RGResourceHandle> tag_to_handle_;
+    eastl::vector<uint32_t> handle_redirects_;
+
     eastl::fixed_vector<uint32_t, 128> sorted_order_;
 
-    // Аллокаторы для кадровой динамической памяти
     uint32_t frame_index_ = 0;
     FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];
 };

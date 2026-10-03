@@ -28,12 +28,13 @@ def get_lights() : array<PointLightGPU>? {
 
     return unsafe(addr(lights))
 }
-
 [cpp_layout]
 struct DrawCall{
     matrix : float4x4
     mesh_id : uint64
     material_id : uint64
+    entity_id : uint64
+    _pad : uint64
 }
 
 var dcs : array<DrawCall>
@@ -41,14 +42,15 @@ var dcs : array<DrawCall>
 [export]
 def get_render_obj() : array<DrawCall>? {
     start_load()
-
     dcs.clear()
 
-    query() <| $(let transform : Transform, let mesh : uint64, let material : uint64){
+    query() <| $(eid : EntityId, let transform : Transform, let mesh : uint64, let material : uint64){
+        let id = unsafe(reinterpret<uint64>(eid))
         dcs |> push(DrawCall(
             mesh_id = mesh,
             material_id = material,
-            matrix = compose(transform.position, transform.rotation, transform.scale)
+            matrix = compose(transform.position, transform.rotation, transform.scale),
+            entity_id = id
         ))
     }
 
@@ -78,8 +80,8 @@ def get_camera(viewport_size : float2) : CameraC? {
 
         let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)
-        cameraC.proj = perspective_rh(fov_rad, aspect, camera.near_plane, camera.far_plane)
-        cameraC.proj[3][3] = 0.0f
+        cameraC.proj = perspective_rh_0_to_1(fov_rad, aspect, camera.near_plane, camera.far_plane)
+        // cameraC.proj[3][3] = 0.0f
         // FIX: Инвертируем Y для Vulkan NDC (где +Y направлен вниз)
         cameraC.proj[1][1] *= -1.0f
     }
