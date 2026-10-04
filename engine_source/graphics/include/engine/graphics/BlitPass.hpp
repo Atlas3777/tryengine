@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rg/RenderGraph.hpp"
+//Ну хз... Думаем
 
 namespace tryengine::graphics {
 

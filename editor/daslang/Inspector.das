@@ -49,13 +49,6 @@ var W_FILTER : TextFilterState
 // Переменная для отслеживания смены фокуса
 var last_selected_eid : EntityId = INVALID_ENTITY_ID
 
-[export]
-def SetSelectedEntity(eid : uint64){
-    unsafe {
-        last_selected_eid = reinterpret<EntityId>(eid)
-    }
-}
-
 def clear_inspector_states() {
     clear(W_BOOL)
     clear(W_STRING)

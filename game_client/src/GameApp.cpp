@@ -5,7 +5,7 @@
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
 #include "engine/graphics/GraphicsContext.hpp"
-#include "engine/graphics/OpaqueGeometryPass.hpp"
+#include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
@@ -20,18 +20,18 @@ using namespace tryengine::async;
 using namespace tryengine::platform;
 
 void GameApp::Init() {
-    vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "trygaem");
+    vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "trygame");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
     swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720);
 
     engine_ = std::make_unique<Engine>();
-    engine_->RegisterSystem<RenderGraph>(vulkan_device_->GetDevice());
-    engine_->RegisterSystem<GameRender>(vulkan_device_, engine_->Get<RenderGraph>());
+    engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
+    engine_->RegisterSystem<GameRender>(*vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,*frame_sync_);
     engine_->RegisterSystem<InputService>();
 
     engine_->RegisterSystem<AsyncFileManager>();
     engine_->RegisterSystem<AssetRegistry>();
-    engine_->RegisterSystem<PakManager>();
+    // engine_->RegisterSystem<PakManager>();
     engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
     auto& time_manager = engine_->RegisterSystem<TimeManager>();
 
@@ -66,6 +66,8 @@ void GameApp::Run() {
     }
 }
 
-void GameApp::Shutdown() {}
+void GameApp::Shutdown() const {
+    vulkan_device_->WaitIdle();
+}
 
 }  // namespace trygame

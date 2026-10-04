@@ -77,7 +77,7 @@ public:
         auto header_res = AssetPakBinary::ReadHeader(header_handle.GetData());
         if (!header_res.has_value()) {
             file_manager_.CloseFDAsync(fd_slot);
-            co_return header_res.error();
+            co_return LogAndMakeError("Failed AssetPakBinary::ReadHeader {}",header_res.error().Message());
         }
 
         const auto header = *header_res;
@@ -97,7 +97,7 @@ public:
         auto meta_res = AssetPakBinary::UnpackManifest(manifest_handle.GetData());
         if (!meta_res.has_value()) {
             file_manager_.CloseFDAsync(fd_slot);
-            co_return meta_res.error();
+            co_return LogAndMakeError("{}",meta_res.error().Message());
         }
 
         const auto& manifest = *meta_res;

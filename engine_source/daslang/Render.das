@@ -44,11 +44,11 @@ def get_render_obj() : array<DrawCall>? {
     start_load()
     dcs.clear()
 
-    query() <| $(eid : EntityId, let transform : Transform, let mesh : uint64, let material : uint64){
+    query() <| $(eid : EntityId, let transform : Transform, let mesh : RuntimePtr, let material : RuntimePtr) {
         let id = unsafe(reinterpret<uint64>(eid))
         dcs |> push(DrawCall(
-            mesh_id = mesh,
-            material_id = material,
+            mesh_id = mesh.ptr,
+            material_id = material.ptr,
             matrix = compose(transform.position, transform.rotation, transform.scale),
             entity_id = id
         ))
@@ -81,7 +81,6 @@ def get_camera(viewport_size : float2) : CameraC? {
         let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)
         cameraC.proj = perspective_rh_0_to_1(fov_rad, aspect, camera.near_plane, camera.far_plane)
-        // cameraC.proj[3][3] = 0.0f
         // FIX: Инвертируем Y для Vulkan NDC (где +Y направлен вниз)
         cameraC.proj[1][1] *= -1.0f
     }
@@ -100,8 +99,8 @@ def start_load(){
             print("ура, загрузились, обновляемся.\n")
             print("кстати guid mat {materialGuid:d}, mesh - {meshGuid:d} \n")
             update_entity(eid) @(eid, cmp) {
-                cmp |> set("mesh", mesh_ptr)
-                cmp |> set("material", mat_ptr)
+                cmp |> set("mesh", RuntimePtr(ptr = mesh_ptr))
+                cmp |> set("material", RuntimePtr(ptr = mat_ptr))
             }
         }
         // print("пытаемся, guidMat {materialGuid:d} guidMesh {meshGuid:d}\n")

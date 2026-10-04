@@ -35,21 +35,19 @@ void EditorApp::Init() {
     swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720);
 
     engine_ = std::make_unique<Engine>();
-    engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
-    engine_->RegisterSystem<EditorRender>(*vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_, *frame_sync_);
-    engine_->RegisterSystem<InputService>();
-    engine_->Get<InputService>().CreateFilter<EditorSDLEventFilter>();
 
     engine_->RegisterSystem<AssetRegistry>();
     engine_->RegisterSystem<AsyncFileManager>();
-    engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
-    auto& time_manager = engine_->RegisterSystem<TimeManager>();
 
+    engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+
+    engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
+
+    auto& time_manager = engine_->RegisterSystem<TimeManager>();
+    time_manager.RegisterClock<EditorClock>();
     time_manager.RegisterClock<GameClock>();
     time_manager.RegisterClock<GameWorldClock, GameClock>();
     time_manager.RegisterClock<GameUIClock, GameClock>();
-
-    time_manager.RegisterClock<EditorClock>();
 
     editor_ = std::make_unique<Editor>(*engine_, *vulkan_device_);
 
@@ -58,7 +56,7 @@ void EditorApp::Init() {
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
 
     const auto task = RunPollable(
-        ThreadPool(), editor_->GetAssetSourceDatabase().InitEngineContentSync(engine_->Get<AsyncFileManager>()));
+        ThreadPool(), editor_->GetAssetSourceDatabase().InitEngineContent(engine_->Get<AsyncFileManager>()));
 
     while (!task.IsReady()) {
         engine_->Get<AsyncFileManager>().Pull();
@@ -67,16 +65,8 @@ void EditorApp::Init() {
         std::this_thread::yield();
     }
 
-    auto deb_shader = engine_->Get<ResourceManager>().Get<Shader>(10245112668937909950ULL);
-    if (!deb_shader.has_value())
-        TRY_ASSERT(deb_shader.has_value(), "Нет шейдера debug");
-    engine_->Get<EditorRender>().SetDebugShader(*deb_shader);
-
-    auto pick_shader = engine_->Get<ResourceManager>().Get<Shader>(4250482409988402633ULL);
-    if (!pick_shader.has_value())
-        TRY_ASSERT(pick_shader.has_value(), "Нет шейдера picking");
-    engine_->Get<EditorRender>().SetPickShader(*pick_shader);
-
+    engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
+    engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_, *frame_sync_);
 
     engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
 

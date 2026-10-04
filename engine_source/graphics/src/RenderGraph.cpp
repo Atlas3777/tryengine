@@ -2,6 +2,7 @@
 #include "engine/graphics/VulkanDevice.hpp"
 
 #include <algorithm>
+#include <EASTL/algorithm.h>
 
 namespace tryengine::graphics {
 
@@ -118,6 +119,10 @@ CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() {
 
 const CPUBlackboard& RenderGraphBuilder::GetCPUBlackboard() const {
     return graph_.GetCPUBlackboard();
+}
+
+void RenderGraphBuilder::MarkSideEffect() {
+    graph_.slots_[pass_].has_side_effect = true;
 }
 
 // ==================== RGResourcePool ====================
@@ -254,6 +259,8 @@ void RGResourcePool::DestroyAll() {
 RenderGraph::RenderGraph(VulkanDevice& device) : device_(device), pool_(device) {}
 
 RenderGraph::~RenderGraph() {
+    device_.WaitIdle();
+    slots_.clear();   // пассы освобождают свои GPU-ресурсы, пока устройство живо
     CleanupTransientAllocators();
 }
 
@@ -278,7 +285,13 @@ RGResourceHandle RenderGraph::ResolveHandle(RGResourceHandle h) const {
 
 void RenderGraph::BeginFrame(uint32_t frame_index) {
     frame_index_ = frame_index % kMaxFramesInFlight;
-    Reset();
+
+    // Сбрасываем только покадровое. Структура графа (пассы, ресурсы, барьеры) остаётся.
+    auto& allocator = transient_allocators_[frame_index_];
+    allocator.current_page_index = 0;
+    allocator.current_offset = 0;
+
+    cpu_bb_.Clear();
 }
 
 TransientAllocation RenderGraph::AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment) {
@@ -345,8 +358,13 @@ TransientAllocation RenderGraph::AllocateTransient(const void* data, VkDeviceSiz
         allocator.current_page_index++;
         if (allocator.current_page_index >= allocator.pages.size()) {
             allocator.pages.push_back(CreatePage(size));
+        } else if (allocator.pages[allocator.current_page_index].size < size) {
+            VmaAllocator vma_alloc = device_.GetAllocator();
+            if (allocator.pages[allocator.current_page_index].buffer) {
+                vmaDestroyBuffer(vma_alloc, allocator.pages[allocator.current_page_index].buffer, allocator.pages[allocator.current_page_index].allocation);
+            }
+            allocator.pages[allocator.current_page_index] = CreatePage(size);
         }
-        allocator.current_page_index = allocator.pages.size() - 1;
         page = &allocator.pages[allocator.current_page_index];
         aligned_offset = 0;
     }
@@ -377,93 +395,78 @@ void RenderGraph::CleanupTransientAllocators() {
     }
 }
 
-RGResourceHandle RenderGraph::ImportExternalTexture(
-    eastl::string_view name,
+void RenderGraph::ImportExternalTexture(
+    RGTag tag,
     VkImage image,
     VkImageView image_view,
     const RGTextureDesc& desc,
     VkImageLayout initial_layout
 ) {
-    TRY_ASSERT(desc.width > 0 || desc.height > 0, "Texture size must be > 0");
-    RGTag tag = RGTagOf(name);
+    TRY_ASSERT(desc.width > 0 && desc.height > 0, "Texture size must be > 0");
 
-    auto it = tag_to_handle_.find(tag);
-    if (it != tag_to_handle_.end()) {
-        uint32_t idx = ResolveHandleIndex(it->second.index);
-        auto& res = resources_[idx];
-        TRY_ASSERT(!res.is_defined, "ImportExternalTexture - Texture с именем '{}' — ресурс уже определён другим пассом", name);
-        res.type = RGResourceType::ExternalTexture;
-        res.texture_desc = desc;
-        res.physical_image = image;
-        res.physical_image_view = image_view;
-        res.current_layout = initial_layout;
-        res.externally_exported = true;
-        res.is_defined = true;
-        return RGResourceHandle{idx, 0};
-    }
+    const bool is_new = externals_.find(tag) == externals_.end();
+    RGExternalResource& ext = externals_[tag];
 
-    RGVirtualResource res;
-    res.name = name;
-    res.type = RGResourceType::ExternalTexture;
-    res.texture_desc = desc;
-    res.physical_image = image;
-    res.physical_image_view = image_view;
-    res.current_layout = initial_layout;
-    res.externally_exported = true;
-    res.is_defined = true;
+    // Меняется только то, что влияет на структуру/барьеры. VkImage/VkImageView меняются каждый кадр - это не повод пересобирать.
+    const bool changed = is_new ||
+                         ext.type != RGResourceType::ExternalTexture ||
+                         ext.texture_desc.width != desc.width ||
+                         ext.texture_desc.height != desc.height ||
+                         ext.texture_desc.layers != desc.layers ||
+                         ext.texture_desc.mips != desc.mips ||
+                         ext.texture_desc.format != desc.format ||
+                         ext.texture_desc.aspect_mask != desc.aspect_mask ||
+                         ext.initial_layout != initial_layout;
 
-    uint32_t idx = static_cast<uint32_t>(resources_.size());
-    resources_.push_back(std::move(res));
-    handle_redirects_.push_back(RGResourceHandle::kInvalid);
+    ext.type = RGResourceType::ExternalTexture;
+    ext.texture_desc = desc;
+    ext.image = image;
+    ext.view = image_view;
+    ext.initial_layout = initial_layout;
 
-    RGResourceHandle handle{idx, 0};
-    tag_to_handle_[tag] = handle;
-    frame_bb_.Put(tag, handle);
-    return handle;
+    if (changed) dirty_ = true;
 }
 
-RGResourceHandle RenderGraph::ImportExternalBuffer(
-    eastl::string_view name,
+void RenderGraph::ImportExternalBuffer(
+    RGTag tag,
     VkBuffer buffer,
     const RGBufferDesc& desc,
     void* mapped_ptr
 ) {
-    RGTag tag = RGTagOf(name);
+    const bool is_new = externals_.find(tag) == externals_.end();
+    RGExternalResource& ext = externals_[tag];
 
-    auto it = tag_to_handle_.find(tag);
-    if (it != tag_to_handle_.end()) {
-        uint32_t idx = ResolveHandleIndex(it->second.index);
-        auto& res = resources_[idx];
-        TRY_ASSERT(!res.is_defined, "ImportExternalBuffer Buffer с именем '{}' — ресурс уже определён другим пассом", name);
-        res.type = RGResourceType::ExternalBuffer;
-        res.buffer_desc = desc;
-        res.physical_buffer = buffer;
-        res.externally_exported = true;
-        res.is_defined = true;
-        return RGResourceHandle{idx, 0};
-    }
+    const bool changed = is_new ||
+                         ext.type != RGResourceType::ExternalBuffer ||
+                         ext.buffer_desc.size != desc.size ||
+                         ext.buffer_desc.usage != desc.usage;
 
-    RGVirtualResource res;
-    res.name = name;
-    res.type = RGResourceType::ExternalBuffer;
-    res.buffer_desc = desc;
-    res.physical_buffer = buffer;
-    res.externally_exported = true;
-    res.is_defined = true;
-    res.physical_buffer = buffer;
-    res.mapped_ptr = mapped_ptr;
+    ext.type = RGResourceType::ExternalBuffer;
+    ext.buffer_desc = desc;
+    ext.buffer = buffer;
+    ext.mapped_ptr = mapped_ptr;
 
-    uint32_t idx = static_cast<uint32_t>(resources_.size());
-    resources_.push_back(std::move(res));
-    handle_redirects_.push_back(RGResourceHandle::kInvalid);
-
-    RGResourceHandle handle{idx, 0};
-    tag_to_handle_[tag] = handle;
-    frame_bb_.Put(tag, handle);
-    return handle;
+    if (changed) dirty_ = true;
 }
 
-RGResourceHandle RenderGraph::CreateTexture(PassNodeBase* pass, eastl::string_view dbg_name, const RGTextureDesc& desc) {
+// Переносит актуальные физические объекты из реестра в собранный граф.
+void RenderGraph::BindExternals() {
+    for (auto& kv : externals_) {
+        RGExternalResource& ext = kv.second;
+        if (ext.resource >= resources_.size()) continue;
+
+        RGVirtualResource& res = resources_[ext.resource];
+        if (ext.type == RGResourceType::ExternalTexture) {
+            res.physical_image = ext.image;
+            res.physical_image_view = ext.view;
+        } else {
+            res.physical_buffer = ext.buffer;
+            res.mapped_ptr = ext.mapped_ptr;
+        }
+    }
+}
+
+RGResourceHandle RenderGraph::CreateTexture(uint32_t pass, eastl::string_view dbg_name, const RGTextureDesc& desc) {
     RGTag tag = RGTagOf(dbg_name);
     uint32_t target_idx = RGResourceHandle::kInvalid;
 
@@ -474,14 +477,14 @@ RGResourceHandle RenderGraph::CreateTexture(PassNodeBase* pass, eastl::string_vi
         TRY_ASSERT(!res.is_defined, "Повторное CreateTexture с именем '{}' — ресурс уже определён другим пассом", dbg_name);
         res.type = RGResourceType::Texture;
         res.texture_desc = desc;
-        res.producer_pass = pass;
+        res.producer = pass;
         res.is_defined = true;
     } else {
         RGVirtualResource res;
         res.name = dbg_name;
         res.type = RGResourceType::Texture;
         res.texture_desc = desc;
-        res.producer_pass = pass;
+        res.producer = pass;
         res.is_defined = true;
 
         target_idx = static_cast<uint32_t>(resources_.size());
@@ -497,11 +500,11 @@ RGResourceHandle RenderGraph::CreateTexture(PassNodeBase* pass, eastl::string_vi
     if ((desc.aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0 || (desc.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
         initial_hint = RGUsageHint::DepthStencilAttachment;
 
-    pass->accesses.push_back({tag, handle, RGAccessType::Create, initial_hint});
+    slots_[pass].accesses.push_back({tag, handle, RGAccessType::Create, initial_hint});
     return handle;
 }
 
-RGResourceHandle RenderGraph::CreateBuffer(PassNodeBase* pass, eastl::string_view dbg_name, const RGBufferDesc& desc) {
+RGResourceHandle RenderGraph::CreateBuffer(uint32_t pass, eastl::string_view dbg_name, const RGBufferDesc& desc) {
     RGTag tag = RGTagOf(dbg_name);
     uint32_t target_idx = RGResourceHandle::kInvalid;
 
@@ -512,14 +515,14 @@ RGResourceHandle RenderGraph::CreateBuffer(PassNodeBase* pass, eastl::string_vie
         TRY_ASSERT(!res.is_defined, "Повторное CreateBuffer с именем '{}' — ресурс уже определён другим пассом", dbg_name);
         res.type = RGResourceType::Buffer;
         res.buffer_desc = desc;
-        res.producer_pass = pass;
+        res.producer = pass;
         res.is_defined = true;
     } else {
         RGVirtualResource res;
         res.name = dbg_name;
         res.type = RGResourceType::Buffer;
         res.buffer_desc = desc;
-        res.producer_pass = pass;
+        res.producer = pass;
         res.is_defined = true;
 
         target_idx = static_cast<uint32_t>(resources_.size());
@@ -530,23 +533,23 @@ RGResourceHandle RenderGraph::CreateBuffer(PassNodeBase* pass, eastl::string_vie
     }
 
     RGResourceHandle handle{target_idx, 0};
-    pass->accesses.push_back({tag, handle, RGAccessType::Create, RGUsageHint::StorageWrite});
+    slots_[pass].accesses.push_back({tag, handle, RGAccessType::Create, RGUsageHint::StorageWrite});
     return handle;
 }
 
-RGResourceHandle RenderGraph::RegisterRead(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage) {
+RGResourceHandle RenderGraph::RegisterRead(uint32_t pass, RGResourceHandle h, RGUsageHint usage) {
     if (!h.IsValid()) return h;
     h = ResolveHandle(h);
-    pass->accesses.push_back({0, h, RGAccessType::Read, usage});
+    slots_[pass].accesses.push_back({0, h, RGAccessType::Read, usage});
     return h;
 }
 
-RGResourceHandle RenderGraph::RegisterWrite(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage) {
+RGResourceHandle RenderGraph::RegisterWrite(uint32_t pass, RGResourceHandle h, RGUsageHint usage) {
     if (!h.IsValid()) return h;
     h = ResolveHandle(h);
     h.version++;
-    resources_[h.index].producer_pass = pass;
-    pass->accesses.push_back({0, h, RGAccessType::Write, usage});
+    resources_[h.index].producer = pass;
+    slots_[pass].accesses.push_back({0, h, RGAccessType::Write, usage});
     return h;
 }
 
@@ -568,7 +571,7 @@ void RenderGraph::ExportTag(RGTag tag, RGResourceHandle h) {
     tag_to_handle_[tag] = h;
 }
 
-RGResourceHandle RenderGraph::ImportTag(PassNodeBase* pass, RGTag tag) {
+RGResourceHandle RenderGraph::ImportTag(uint32_t pass, RGTag tag) {
     auto it = tag_to_handle_.find(tag);
     if (it != tag_to_handle_.end()) {
         return ResolveHandle(it->second);
@@ -588,45 +591,150 @@ RGResourceHandle RenderGraph::ImportTag(PassNodeBase* pass, RGTag tag) {
     return placeholder_handle;
 }
 
+// ==================== Пассы и компиляция ====================
+
+void RenderGraph::DestroyPass(uint32_t type_id) {
+    vkDeviceWaitIdle(device_.GetDevice());
+
+    for (uint32_t i = 0; i < slots_.size(); ++i) {
+        if (slots_[i].type_id == type_id) {
+            slots_.erase(slots_.begin() + i);
+            break;
+        }
+    }
+    by_type_[type_id] = nullptr;
+    dirty_ = true;
+}
+
+void RenderGraph::RefreshActive() {
+    for (auto& slot : slots_) {
+        const bool active = slot.pass->IsActive();
+        if (active != slot.active) {
+            slot.active = active;
+            dirty_ = true;
+        }
+    }
+}
+
+void RenderGraph::Collect(core::Engine& engine) {
+    RefreshActive();
+
+    CollectContext ctx{engine, *this, cpu_bb_, frame_index_};
+    // Индексный цикл: Collect не должен добавлять/удалять пассы, но так хотя бы нет висячих ссылок.
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        if (slots_[i].active) slots_[i].pass->Collect(ctx);
+    }
+}
+
 void RenderGraph::ResolveTagBindings() {
-    // 1. Разрешаем все редиректы хэндлов в доступах пассов
-    for (auto& pass : passes_) {
-        if (pass->culled) continue;  // культ пока не считался на этом этапе, но можно и после CullPasses вызвать отдельным проходом
-        for (const auto& acc : pass->accesses) {
-            if (acc.handle.IsValid() && !resources_[acc.handle.index].is_defined) {
-                TRY_ASSERT(false, "Пасс '{}' использует неопределённый ресурс '{}'", pass->name, resources_[acc.handle.index].name);
-            }
+    // 1. Раскрываем редиректы Export (Read мог попасть на заглушку ДО Export), проверяем
+    //    определённость и пересобираем продюсеров: последний писатель в порядке Setup.
+    for (auto& res : resources_) res.producer = kRGNoPass;
+
+    for (uint32_t p = 0; p < slots_.size(); ++p) {
+        auto& slot = slots_[p];
+        for (auto& acc : slot.accesses) {
+            if (!acc.handle.IsValid()) continue;
+
+            acc.handle.index = ResolveHandleIndex(acc.handle.index);
+            auto& res = resources_[acc.handle.index];
+            TRY_ASSERT(res.is_defined, "Пасс '{}' использует неопределённый ресурс '{}'", slot.pass->Name(), res.name);
+
+            if (acc.access != RGAccessType::Read) res.producer = p;
         }
     }
 
-    // 2. Строим точные связи зависимостей (deps) на основе объявленных продуцентов
-    for (auto& pass : passes_) {
-        for (const auto& acc : pass->accesses) {
-            if (acc.access == RGAccessType::Read && acc.handle.IsValid()) {
-                uint32_t res_idx = acc.handle.index;
-                PassNodeBase* producer = resources_[res_idx].producer_pass;
+    // 2. Зависимости: читатель зависит от продюсера ресурса (как и раньше).
+    for (uint32_t p = 0; p < slots_.size(); ++p) {
+        auto& slot = slots_[p];
+        for (const auto& acc : slot.accesses) {
+            if (acc.access != RGAccessType::Read || !acc.handle.IsValid()) continue;
 
-                if (producer && producer != pass.get()) {
-                    for (uint32_t i = 0; i < passes_.size(); ++i) {
-                        if (passes_[i].get() == producer) {
-                            if (eastl::find(pass->deps.begin(), pass->deps.end(), i) == pass->deps.end()) {
-                                pass->deps.push_back(i);
-                            }
-                            break;
-                        }
-                    }
-                }
+            const uint32_t producer = resources_[acc.handle.index].producer;
+            if (producer != kRGNoPass && producer != p &&
+                eastl::find(slot.deps.begin(), slot.deps.end(), producer) == slot.deps.end()) {
+                slot.deps.push_back(producer);
             }
         }
     }
 }
 
 void RenderGraph::Compile() {
+    RefreshActive();
+    if (dirty_) {
+        Rebuild();
+        LogInfo("Render Graph Rebuid");
+    }
+
+    BindExternals();
+}
+
+void RenderGraph::Rebuild() {
+    pool_.ReleaseAll();
+    resources_.clear();
+    tag_to_handle_.clear();
+    handle_redirects_.clear();
+    frame_bb_.Clear();
+    sorted_order_.clear();
+
+    for (auto& slot : slots_) {
+        slot.accesses.clear();
+        slot.deps.clear();
+        slot.image_barriers.clear();
+        slot.buffer_barriers.clear();
+        slot.has_side_effect = false;
+        slot.culled = false;
+    }
+
+    // 1. Внешние ресурсы из реестра - до Setup, чтобы Read/Write(tag) находили их как определённые.
+    for (auto& kv : externals_) {
+        const RGTag tag = kv.first;
+        RGExternalResource& ext = kv.second;
+
+        RGVirtualResource res;
+        res.name = GetRGTagName(tag);
+        res.type = ext.type;
+        res.externally_exported = true;
+        res.is_defined = true;
+
+        if (ext.type == RGResourceType::ExternalTexture) {
+            res.texture_desc = ext.texture_desc;
+            res.physical_image = ext.image;
+            res.physical_image_view = ext.view;
+            res.current_layout = ext.initial_layout;
+        } else {
+            res.buffer_desc = ext.buffer_desc;
+            res.physical_buffer = ext.buffer;
+            res.mapped_ptr = ext.mapped_ptr;
+        }
+
+        const uint32_t idx = static_cast<uint32_t>(resources_.size());
+        resources_.push_back(std::move(res));
+        handle_redirects_.push_back(RGResourceHandle::kInvalid);
+
+        const RGResourceHandle handle{idx, 0};
+        tag_to_handle_[tag] = handle;
+        frame_bb_.Put(tag, handle);
+        ext.resource = idx;
+    }
+
+    // 2. Setup активных пассов
+    for (uint32_t i = 0; i < slots_.size(); ++i) {
+        if (!slots_[i].active) continue;
+        RenderGraphBuilder builder(*this, i);
+        slots_[i].pass->Setup(builder);
+    }
+
     ResolveTagBindings();
     CullPasses();
     TopologicalSort();
+    AllocatePhysical();
+    BuildBarriers();
 
-    pool_.ReleaseAll();
+    dirty_ = false;
+}
+
+void RenderGraph::AllocatePhysical() {
     for (auto& res : resources_) {
         if (!res.is_defined) continue;
 
@@ -642,15 +750,13 @@ void RenderGraph::Compile() {
             res.mapped_ptr = pooled.mapped_ptr;
         }
     }
-
-    BuildBarriers();
 }
 
 void RenderGraph::CullPasses() {
     for (auto& res : resources_) res.ref_count = 0;
-    for (auto& pass : passes_) {
-        pass->culled = false;
-        for (auto& acc : pass->accesses) {
+    for (auto& slot : slots_) {
+        slot.culled = !slot.active;   // неактивные пассы в граф не попадают
+        for (auto& acc : slot.accesses) {
             if (acc.access == RGAccessType::Read && acc.handle.IsValid()) {
                 resources_[acc.handle.index].ref_count++;
             }
@@ -665,14 +771,18 @@ void RenderGraph::CullPasses() {
     }
 
     while (!zero_ref_stack.empty()) {
-        uint32_t res_idx = zero_ref_stack.back();
+        const uint32_t res_idx = zero_ref_stack.back();
         zero_ref_stack.pop_back();
 
-        PassNodeBase* producer = resources_[res_idx].producer_pass;
-        if (!producer || producer->has_side_effect) continue;
+        const uint32_t producer_idx = resources_[res_idx].producer;
+        if (producer_idx == kRGNoPass) continue;
+
+        PassSlot& producer = slots_[producer_idx];
+        // culled: пасс с двумя мёртвыми выходами иначе вырезался бы дважды (двойной декремент ref_count)
+        if (producer.has_side_effect || producer.culled) continue;
 
         bool any_output_alive = false;
-        for (const auto& a : producer->accesses) {
+        for (const auto& a : producer.accesses) {
             if (a.access != RGAccessType::Read && a.handle.IsValid() && resources_[a.handle.index].ref_count > 0) {
                 any_output_alive = true;
                 break;
@@ -680,8 +790,8 @@ void RenderGraph::CullPasses() {
         }
         if (any_output_alive) continue;
 
-        producer->culled = true;
-        for (auto& a : producer->accesses) {
+        producer.culled = true;
+        for (auto& a : producer.accesses) {
             if (a.access == RGAccessType::Read && a.handle.IsValid()) {
                 if (--resources_[a.handle.index].ref_count == 0) {
                     zero_ref_stack.push_back(a.handle.index);
@@ -693,37 +803,38 @@ void RenderGraph::CullPasses() {
 
 void RenderGraph::TopologicalSort() {
     sorted_order_.clear();
-    eastl::fixed_vector<uint32_t, 128> in_degree(passes_.size(), 0);
 
-    for (uint32_t i = 0; i < passes_.size(); ++i) {
-        if (passes_[i]->culled) continue;
-        for (uint32_t dep : passes_[i]->deps) {
-            if (!passes_[dep]->culled) {
-                in_degree[i]++;
+    const uint32_t n = static_cast<uint32_t>(slots_.size());
+    eastl::vector<uint32_t> in_degree(n, 0u);
+    eastl::vector<uint8_t> done(n, uint8_t(0));
+
+    uint32_t alive = 0;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (slots_[i].culled) continue;
+        ++alive;
+        for (uint32_t dep : slots_[i].deps) {
+            if (!slots_[dep].culled) in_degree[i]++;
+        }
+    }
+
+    // Kahn: из готовых берём пасс с наименьшим индексом - независимые пассы идут в порядке регистрации.
+    for (uint32_t emitted = 0; emitted < alive; ++emitted) {
+        uint32_t u = n;
+        for (uint32_t i = 0; i < n; ++i) {
+            if (!slots_[i].culled && !done[i] && in_degree[i] == 0) {
+                u = i;
+                break;
             }
         }
-    }
+        TRY_ASSERT(u != n, "RenderGraph: циклическая зависимость между пассами");
 
-    eastl::fixed_vector<uint32_t, 64> ready;
-    for (uint32_t i = 0; i < passes_.size(); ++i) {
-        if (!passes_[i]->culled && in_degree[i] == 0) {
-            ready.push_back(i);
-        }
-    }
-
-    while (!ready.empty()) {
-        uint32_t u = ready.back();
-        ready.pop_back();
+        done[u] = 1;
         sorted_order_.push_back(u);
 
-        for (uint32_t v = 0; v < passes_.size(); ++v) {
-            if (passes_[v]->culled) continue;
-            for (uint32_t dep : passes_[v]->deps) {
-                if (dep == u) {
-                    if (--in_degree[v] == 0) {
-                        ready.push_back(v);
-                    }
-                }
+        for (uint32_t v = 0; v < n; ++v) {
+            if (slots_[v].culled || done[v]) continue;
+            for (uint32_t dep : slots_[v].deps) {
+                if (dep == u) in_degree[v]--;
             }
         }
     }
@@ -829,13 +940,13 @@ static StateTransitionInfo MapBufferState(RGAccessType access, RGUsageHint usage
 
 void RenderGraph::BuildBarriers() {
     for (uint32_t pass_idx : sorted_order_) {
-        auto& pass = passes_[pass_idx];
-        if (pass->culled) continue;
+        auto& pass = slots_[pass_idx];
+        if (pass.culled) continue;
 
-        pass->image_barriers.clear();
-        pass->buffer_barriers.clear();
+        pass.image_barriers.clear();
+        pass.buffer_barriers.clear();
 
-        for (const auto& acc : pass->accesses) {
+        for (const auto& acc : pass.accesses) {
             if (!acc.handle.IsValid()) continue;
             uint32_t real_idx = ResolveHandleIndex(acc.handle.index);
             if (real_idx >= resources_.size()) continue;
@@ -874,7 +985,7 @@ void RenderGraph::BuildBarriers() {
                     barrier.subresourceRange.baseArrayLayer = 0;
                     barrier.subresourceRange.layerCount = res.texture_desc.layers;
 
-                    pass->image_barriers.push_back(barrier);
+                    pass.image_barriers.push_back(RGImageBarrier{barrier, real_idx});
 
                     res.current_layout = target.layout;
                     res.current_stage = target.stage;
@@ -903,7 +1014,7 @@ void RenderGraph::BuildBarriers() {
                     barrier.offset = 0;
                     barrier.size = VK_WHOLE_SIZE;
 
-                    pass->buffer_barriers.push_back(barrier);
+                    pass.buffer_barriers.push_back(RGBufferBarrier{barrier, real_idx});
 
                     res.current_stage = target.stage;
                     res.current_access = target.access;
@@ -914,6 +1025,8 @@ void RenderGraph::BuildBarriers() {
 }
 
 void RenderGraph::Execute(VkCommandBuffer cmd) {
+    TRY_ASSERT(!dirty_, "RenderGraph::Execute вызван без Compile");
+
     RGExecuteContext ctx;
     ctx.device = device_.GetDevice();
     ctx.cmd_buffer = cmd;
@@ -921,37 +1034,37 @@ void RenderGraph::Execute(VkCommandBuffer cmd) {
     ctx.cpu_bb = &cpu_bb_;
     ctx.SetGraph(this);
 
-    for (uint32_t pass_idx : sorted_order_) {
-        auto& pass = passes_[pass_idx];
-        if (pass->culled) continue;
+    eastl::fixed_vector<VkImageMemoryBarrier2, 16> image_barriers;
+    eastl::fixed_vector<VkBufferMemoryBarrier2, 8> buffer_barriers;
 
-        if (!pass->image_barriers.empty() || !pass->buffer_barriers.empty()) {
+    for (uint32_t pass_idx : sorted_order_) {
+        auto& slot = slots_[pass_idx];
+
+        // Барьеры закэшированы вместе с индексом ресурса; физический объект подставляем сейчас.
+        image_barriers.clear();
+        buffer_barriers.clear();
+        for (const auto& rec : slot.image_barriers) {
+            image_barriers.push_back(rec.barrier);
+            image_barriers.back().image = resources_[rec.resource].physical_image;
+        }
+        for (const auto& rec : slot.buffer_barriers) {
+            buffer_barriers.push_back(rec.barrier);
+            buffer_barriers.back().buffer = resources_[rec.resource].physical_buffer;
+        }
+
+        if (!image_barriers.empty() || !buffer_barriers.empty()) {
             VkDependencyInfo dep_info{};
             dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dep_info.imageMemoryBarrierCount = static_cast<uint32_t>(pass->image_barriers.size());
-            dep_info.pImageMemoryBarriers = pass->image_barriers.data();
-            dep_info.bufferMemoryBarrierCount = static_cast<uint32_t>(pass->buffer_barriers.size());
-            dep_info.pBufferMemoryBarriers = pass->buffer_barriers.data();
+            dep_info.imageMemoryBarrierCount = static_cast<uint32_t>(image_barriers.size());
+            dep_info.pImageMemoryBarriers = image_barriers.data();
+            dep_info.bufferMemoryBarrierCount = static_cast<uint32_t>(buffer_barriers.size());
+            dep_info.pBufferMemoryBarriers = buffer_barriers.data();
 
             vkCmdPipelineBarrier2(cmd, &dep_info);
         }
 
-        pass->Execute(ctx);
+        slot.pass->Execute(ctx);
     }
-}
-
-void RenderGraph::Reset() {
-    auto& allocator = transient_allocators_[frame_index_];
-    allocator.current_page_index = 0;
-    allocator.current_offset = 0;
-
-    passes_.clear();
-    resources_.clear();
-    tag_to_handle_.clear();
-    handle_redirects_.clear();
-    frame_bb_.Clear();
-    cpu_bb_.Clear();
-    sorted_order_.clear();
 }
 
 VkImage RenderGraph::GetPhysicalImage(RGResourceHandle h) const {

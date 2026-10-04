@@ -15,7 +15,7 @@ public:
     GameApp() = default;
     void Init();
     void Run();
-    void Shutdown();
+    void Shutdown() const;
 private:
     bool running_;
 

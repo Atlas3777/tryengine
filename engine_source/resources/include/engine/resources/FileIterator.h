@@ -39,10 +39,16 @@ void IterateDirectoryRecursive(eastl::string& current_path, Context parent_ctx, 
         const bool is_dir = (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
         // Колбэк обрабатывает элемент и возвращает новый контекст для его детей
-        Context child_ctx = callback(current_path, name, is_dir, parent_ctx);
-
-        if (is_dir) {
-            IterateDirectoryRecursive(current_path, child_ctx, callback);
+        if constexpr (std::is_same_v<decltype(callback(current_path, name, is_dir, parent_ctx)), void>) {
+            callback(current_path, name, is_dir, parent_ctx);
+            if (is_dir) {
+                IterateDirectoryRecursive(current_path, parent_ctx, callback);
+            }
+        } else {
+            Context child_ctx = callback(current_path, name, is_dir, parent_ctx);
+            if (is_dir) {
+                IterateDirectoryRecursive(current_path, child_ctx, callback);
+            }
         }
 
         current_path.resize(base_len);
@@ -67,10 +73,16 @@ void IterateDirectoryRecursive(eastl::string& current_path, Context parent_ctx, 
 
         const bool is_dir = (entry->d_type == DT_DIR);
 
-        Context child_ctx = callback(current_path, name, is_dir, parent_ctx);
-
-        if (is_dir) {
-            IterateDirectoryRecursive(current_path, child_ctx, callback);
+        if constexpr (std::is_same_v<decltype(callback(current_path, name, is_dir, parent_ctx)), void>) {
+            callback(current_path, name, is_dir, parent_ctx);
+            if (is_dir) {
+                IterateDirectoryRecursive(current_path, parent_ctx, callback);
+            }
+        } else {
+            Context child_ctx = callback(current_path, name, is_dir, parent_ctx);
+            if (is_dir) {
+                IterateDirectoryRecursive(current_path, child_ctx, callback);
+            }
         }
 
         current_path.resize(base_len);

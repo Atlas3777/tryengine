@@ -103,6 +103,7 @@ eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header,
                                            eastl::span<const uint8_t> full_data) {
     uint32_t mip_count = header.mip_count;
 
+    // Смещение ровно 96 байт (кратно 8)
     uint64_t mip_table_offset = sizeof(TextureHeader);
     uint64_t mip_table_size = static_cast<uint64_t>(mip_count) * sizeof(MipInfo);
     uint64_t data_offset = mip_table_offset + mip_table_size;
@@ -114,8 +115,11 @@ eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header,
     uint32_t temp_h = header.height;
     uint32_t temp_d = header.depth;
 
+    // Учитываем слои массива и грани кубкарты
+    uint64_t slices = static_cast<uint64_t>(header.array_size) * header.face_count;
+
     for (uint32_t i = 0; i < mip_count; ++i) {
-        uint64_t mip_size = GetMipSize(temp_w, temp_h, temp_d, header.format);
+        uint64_t mip_size = GetMipSize(temp_w, temp_h, temp_d, header.format) * slices;
 
         mip_table[i].offset = current_data_offset;
         mip_table[i].size = mip_size;
@@ -126,24 +130,24 @@ eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header,
         temp_d = (temp_d > 1) ? (temp_d >> 1) : 1;
     }
 
+    uint64_t expected_data_size = current_data_offset - data_offset;
+    TRY_ASSERT(full_data.size() == expected_data_size, "full_data size mismatch in TextureBinary::Pack");
+
     uint64_t total_file_size = current_data_offset;
     eastl::vector<uint8_t> file_buffer(total_file_size);
-    uint8_t* write_ptr = file_buffer.data();
 
     TextureHeader final_header = header;
     final_header.mip_table_offset = mip_table_offset;
     final_header.mip_table_size = mip_table_size;
 
-    // 1. Заголовок
-    std::memcpy(write_ptr, &final_header, sizeof(TextureHeader));
-    write_ptr += sizeof(TextureHeader);
+    // 1. Заголовок (96 байт)
+    std::memcpy(file_buffer.data(), &final_header, sizeof(TextureHeader));
 
     // 2. Таблица мипов
-    std::memcpy(write_ptr, mip_table.data(), mip_table_size);
-    write_ptr += mip_table_size;
+    std::memcpy(file_buffer.data() + mip_table_offset, mip_table.data(), mip_table_size);
 
     // 3. Данные текстуры
-    std::memcpy(write_ptr, full_data.data(), full_data.size());
+    std::memcpy(file_buffer.data() + data_offset, full_data.data(), full_data.size());
 
     return file_buffer;
 }
@@ -165,24 +169,28 @@ Result<UnpackedTextureView> TextureBinary::UnpackFull(eastl::span<const uint8_t>
     uint64_t mip_table_offset = view.header.mip_table_offset;
     uint64_t mip_table_size = view.header.mip_table_size;
 
-    if (raw_bytes.size() < mip_table_offset + mip_table_size)
+    // Защита от переполнения uint64 при проверке границ
+    if (mip_table_offset > raw_bytes.size() || mip_table_size > raw_bytes.size() - mip_table_offset)
         return LogAndMakeError("Raw bytes truncated at MipTable");
 
     uint32_t mip_count = view.header.mip_count;
-    view.mips.reserve(mip_count);
+    if (mip_table_size < static_cast<uint64_t>(mip_count) * sizeof(MipInfo))
+        return LogAndMakeError("Mip table size does not match mip_count");
 
-    const MipInfo* file_mip_table = reinterpret_cast<const MipInfo*>(
-        raw_bytes.data() + mip_table_offset
-    );
+    view.mips.reserve(mip_count);
 
     uint32_t curr_w = view.header.width;
     uint32_t curr_h = view.header.height;
     uint32_t curr_d = view.header.depth;
 
     for (uint32_t i = 0; i < mip_count; ++i) {
-        const MipInfo& info = file_mip_table[i];
+        MipInfo info{};
+        size_t info_offset = static_cast<size_t>(mip_table_offset) + i * sizeof(MipInfo);
 
-        if (info.offset + info.size > raw_bytes.size())
+        // Безопасное чтение MipInfo через memcpy исключает UB даже если входной raw_bytes.data() не выровнен
+        std::memcpy(&info, raw_bytes.data() + info_offset, sizeof(MipInfo));
+
+        if (info.offset > raw_bytes.size() || info.size > raw_bytes.size() - info.offset)
             return LogAndMakeError("Mip data out of bounds");
 
         MipView mip;

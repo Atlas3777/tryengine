@@ -50,7 +50,7 @@ void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t
     }
 }
 
-Task<void> AssetPipeline::InitEngineContentSync(AsyncFileManager& file_manager) {
+Task<void> AssetPipeline::InitEngineContent(AsyncFileManager& file_manager) {
     AssetMountPoint engine_mount{
         .name = "engine", .assets_dir = "engine_content/assets", .artifacts_dir = "engine_content/artifacts"};
 

@@ -1,0 +1,179 @@
+requireMeshs: u64[] = [
+	3081795527557720915
+]
+requireMaterials: u64[] = [
+	17036954862819815981
+]
+entities: Entity[] = [
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Camera_far_plane: f32 = 100
+		eid: EntityId = {
+			id: u32 = 0
+			generation: i32 = 1
+		}
+		tag: string = "Camera"
+		Transform_rotation: f32x4 = [-0.14340037 0.018964058 -0.12972555 0.9809424]
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-3.8434725 -6.22495 5.647744]
+		Transform_scale: f32x3 = [1 1 1]
+		Camera_near_plane: f32 = 0.01
+		Camera_fov: f32 = 60
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 17036954862819815981
+		eid: EntityId = {
+			id: u32 = 1
+			generation: i32 = 1
+		}
+		tag: string = "teest"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		inputState: f32x3 = [0 0 0]
+		meshGuid: u64 = 3081795527557720915
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		speed: f32 = 3
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [0 0 0]
+		Transform_scale: f32x3 = [1 1 1]
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 17036954862819815981
+		eid: EntityId = {
+			id: u32 = 2
+			generation: i32 = 1
+		}
+		tag: string = "Right 1"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		meshGuid: u64 = 3081795527557720915
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-1.42 5 0]
+		Transform_scale: f32x3 = [1 1 1]
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 17036954862819815981
+		eid: EntityId = {
+			id: u32 = 3
+			generation: i32 = 1
+		}
+		tag: string = "Right 2"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		meshGuid: u64 = 3081795527557720915
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [5 10 0]
+		Transform_scale: f32x3 = [1 1 1]
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 17036954862819815981
+		eid: EntityId = {
+			id: u32 = 4
+			generation: i32 = 1
+		}
+		tag: string = "Left 1"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		meshGuid: u64 = 3081795527557720915
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-5 5 0]
+		Transform_scale: f32x3 = [1 1 1]
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+	{
+		Relationship_first_child: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		materialGuid: u64 = 17036954862819815981
+		eid: EntityId = {
+			id: u32 = 5
+			generation: i32 = 1
+		}
+		tag: string = "Left 2"
+		Transform_rotation: f32x4 = [0 0 0 1]
+		meshGuid: u64 = 3081795527557720915
+		Relationship_parent: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Relationship_next: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+		Transform_position: f32x3 = [-5 10 0]
+		Transform_scale: f32x3 = [1 1 1]
+		Relationship_prev: EntityId = {
+			id: u32 = 0
+			generation: i32 = 0
+		}
+	}
+]

@@ -4,9 +4,6 @@
 #define VK_NO_PROTOTYPES
 #endif
 
-#include <volk.h>
-#include <vk_mem_alloc.h>
-
 #include <EASTL/fixed_vector.h>
 #include <EASTL/functional.h>
 #include <EASTL/hash_map.h>
@@ -15,13 +12,23 @@
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
 #include <EASTL/vector.h>
+#include <algorithm>
 #include <cstring>
 #include <memory>
-#include <algorithm>
+#include <type_traits>
+#include <utility>
+#include <vk_mem_alloc.h>
+#include <volk.h>
 
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/TypeRegistry.hpp"
+#include "engine/graphics/rg/IRenderPass.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
+
+namespace tryengine::core {
+class Engine;
+}
 
 namespace tryengine::graphics {
 
@@ -36,12 +43,7 @@ struct RGResourceHandle {
     friend bool operator==(const RGResourceHandle&, const RGResourceHandle&) = default;
 };
 
-enum class RGResourceType : uint8_t {
-    Texture,
-    Buffer,
-    ExternalTexture,
-    ExternalBuffer
-};
+enum class RGResourceType : uint8_t { Texture, Buffer, ExternalTexture, ExternalBuffer };
 
 struct RGTextureDesc {
     uint32_t width = 0;
@@ -62,24 +64,20 @@ struct RGBufferDesc {
     eastl::string debug_name;
 };
 
-enum class RGAccessType : uint8_t {
-    Read,
-    Write,
-    Create
-};
+enum class RGAccessType : uint8_t { Read, Write, Create };
 
 enum class RGUsageHint : uint32_t {
-    None                   = 0,
-    ColorAttachment        = 1 << 0,
+    None = 0,
+    ColorAttachment = 1 << 0,
     DepthStencilAttachment = 1 << 1,
-    DepthStencilReadOnly   = 1 << 2,
-    ShaderRead             = 1 << 3,
-    StorageRead            = 1 << 4,
-    StorageWrite           = 1 << 5,
-    StorageReadWrite       = StorageRead | StorageWrite,
-    TransferSrc            = 1 << 6,
-    TransferDst            = 1 << 7,
-    Present                = 1 << 8
+    DepthStencilReadOnly = 1 << 2,
+    ShaderRead = 1 << 3,
+    StorageRead = 1 << 4,
+    StorageWrite = 1 << 5,
+    StorageReadWrite = StorageRead | StorageWrite,
+    TransferSrc = 1 << 6,
+    TransferDst = 1 << 7,
+    Present = 1 << 8
 };
 
 inline constexpr RGUsageHint operator|(RGUsageHint a, RGUsageHint b) {
@@ -214,16 +212,14 @@ public:
     [[nodiscard]] VkBuffer GetBuffer(RGResourceHandle h) const;
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
 
-    void BeginRendering(
-        eastl::span<const RGColorAttachment> color_attachments,
-        const RGDepthStencilAttachment* depth_attachment = nullptr,
-        VkRect2D render_area = {},
-        uint32_t layer_count = 1
-    );
+    void BeginRendering(eastl::span<const RGColorAttachment> color_attachments,
+                        const RGDepthStencilAttachment* depth_attachment = nullptr, VkRect2D render_area = {},
+                        uint32_t layer_count = 1);
 
     void EndRendering();
 
-    [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256) const;
+    [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size,
+                                                        VkDeviceSize alignment = 256) const;
 
     void SetGraph(RenderGraph* graph) { graph_ = graph; }
 
@@ -231,38 +227,46 @@ private:
     RenderGraph* graph_ = nullptr;
 };
 
-class PassNodeBase {
-public:
-    virtual ~PassNodeBase() = default;
-    virtual void Execute(RGExecuteContext& ctx) = 0;
-
-    eastl::string name;
-    eastl::fixed_vector<RGResourceAccess, 16> accesses;
-    bool has_side_effect = false;
-    bool culled = false;
-
-    eastl::fixed_vector<uint32_t, 8> deps;
-
-    eastl::vector<VkImageMemoryBarrier2> image_barriers;
-    eastl::vector<VkBufferMemoryBarrier2> buffer_barriers;
+// Контекст сбора данных: передаётся в IRenderPass::Collect каждый кадр.
+struct CollectContext {
+    core::Engine& engine;
+    RenderGraph& graph;  // чтобы пасс мог сам импортировать свои внешние ресурсы
+    CPUBlackboard& cpu_bb;
+    uint32_t frame_index;
 };
 
-template <typename PassData>
-class PassNode final : public PassNodeBase {
-public:
-    PassData data{};
-    eastl::function<void(RGExecuteContext&, const PassData&)> execute_fn;
+inline constexpr uint32_t kRGNoPass = 0xFFFFFFFFu;
 
-    void Execute(RGExecuteContext& ctx) override {
-        if (execute_fn) {
-            execute_fn(ctx, data);
-        }
-    }
+// Барьер хранится вместе с индексом ресурса: физический VkImage/VkBuffer подставляется
+// в Execute (swapchain-image и readback-буфер меняются каждый кадр, а граф закэширован).
+struct RGImageBarrier {
+    VkImageMemoryBarrier2 barrier{};
+    uint32_t resource = 0;
+};
+
+struct RGBufferBarrier {
+    VkBufferMemoryBarrier2 barrier{};
+    uint32_t resource = 0;
+};
+
+// Служебное состояние пасса внутри графа (раньше лежало в PassNodeBase).
+struct PassSlot {
+    std::unique_ptr<IRenderPass> pass;
+    uint32_t type_id = 0;
+    bool active = true;
+    bool culled = false;
+    bool has_side_effect = false;
+
+    eastl::fixed_vector<RGResourceAccess, 16> accesses;
+    eastl::fixed_vector<uint32_t, 8> deps;
+
+    eastl::vector<RGImageBarrier> image_barriers;
+    eastl::vector<RGBufferBarrier> buffer_barriers;
 };
 
 class RenderGraphBuilder {
 public:
-    explicit RenderGraphBuilder(RenderGraph& graph, PassNodeBase* pass) : graph_(graph), pass_(pass) {}
+    RenderGraphBuilder(RenderGraph& graph, uint32_t pass) : graph_(graph), pass_(pass) {}
 
     RGResourceHandle CreateTexture(eastl::string_view dbg_name, const RGTextureDesc& desc);
     RGResourceHandle CreateBuffer(eastl::string_view dbg_name, const RGBufferDesc& desc);
@@ -279,11 +283,11 @@ public:
     CPUBlackboard& GetCPUBlackboard();
     const CPUBlackboard& GetCPUBlackboard() const;
 
-    void MarkSideEffect() { pass_->has_side_effect = true; }
+    void MarkSideEffect();
 
 private:
     RenderGraph& graph_;
-    PassNodeBase* pass_;
+    uint32_t pass_;  // индекс слота
 };
 
 struct RGVirtualResource {
@@ -304,10 +308,26 @@ struct RGVirtualResource {
     VkPipelineStageFlags2 current_stage = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 current_access = VK_ACCESS_2_NONE;
 
-    PassNodeBase* producer_pass = nullptr;
+    uint32_t producer = kRGNoPass;  // было: PassNodeBase* producer_pass
     uint32_t ref_count = 0;
     bool externally_exported = false;
-    bool is_defined = false; // Флаг: заданы ли реальные дескрипторы ресурса
+    bool is_defined = false;
+};
+
+// Реестр внешних ресурсов: переживает пересборку графа, физические объекты обновляются каждый кадр.
+struct RGExternalResource {
+    RGResourceType type = RGResourceType::ExternalTexture;
+    RGTextureDesc texture_desc;
+    RGBufferDesc buffer_desc;
+
+    VkImage image = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkBuffer buffer = VK_NULL_HANDLE;
+    void* mapped_ptr = nullptr;
+
+    uint32_t resource = RGResourceHandle::kInvalid;  // индекс в resources_ после последней сборки
 };
 
 class RGResourcePool {
@@ -365,56 +385,61 @@ public:
     explicit RenderGraph(VulkanDevice& device);
     ~RenderGraph();
 
+    // ---------- Пассы (НОВОЕ) ----------
+    template <typename T, typename... Args>
+    T& AddPass(Args&&... args) {
+        static_assert(std::is_base_of_v<IRenderPass, T>, "T должен наследоваться от IRenderPass");
+
+        const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
+        if (id >= by_type_.size())
+            by_type_.resize(id + 1, nullptr);
+        TRY_ASSERT(by_type_[id] == nullptr, "AddPass: пасс этого типа уже добавлен");
+
+        auto& slot = slots_.emplace_back();
+        slot.pass = std::make_unique<T>(std::forward<Args>(args)...);
+        slot.type_id = id;
+        by_type_[id] = slot.pass.get();
+
+        dirty_ = true;
+        return static_cast<T&>(*slot.pass);
+    }
+
+    template <typename T>
+    [[nodiscard]] T* Get() const {
+        const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
+        return id < by_type_.size() ? static_cast<T*>(by_type_[id]) : nullptr;
+    }
+
+    // Ждёт GPU (удаление редкое), уничтожает пасс и помечает граф на пересборку.
+    template <typename T>
+    void RemovePass() {
+        const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
+        if (id < by_type_.size() && by_type_[id])
+            DestroyPass(id);
+    }
+
+    // Resize вьюпорта, смена настроек графики и т.п.
+    void Invalidate() { dirty_ = true; }
+
+    // ---------- Кадр: BeginFrame -> ImportExternal* -> Collect -> Compile -> Execute ----------
     void BeginFrame(uint32_t frame_index);
+    void Collect(core::Engine& engine);
+    void Compile();  // no-op, если структура не менялась
+    void Execute(VkCommandBuffer cmd);
+
+    // Вызывать каждый кадр (сам или из IRenderPass::Collect). Смена desc => пересборка.
+    void ImportExternalTexture(RGTag tag, VkImage image, VkImageView image_view, const RGTextureDesc& desc,
+                               VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED);
+    void ImportExternalBuffer(RGTag tag, VkBuffer buffer, const RGBufferDesc& desc, void* mapped_ptr = nullptr);
+
     TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256);
 
     template <typename T>
-    void PutCPUData(RGTag tag, const T& data) { cpu_bb_.Put(tag, data); }
-
-    void PutCPUData(RGTag tag, const void* data, size_t size_bytes) { cpu_bb_.Put(tag, data, size_bytes); }
-
-    template <typename PassData, typename SetupFn, typename ExecFn>
-    PassData& AddPass(eastl::string_view name, SetupFn&& setup, ExecFn&& exec) {
-        auto pass = std::make_unique<PassNode<PassData>>();
-        pass->name = name;
-        pass->execute_fn = exec;
-
-        PassNodeBase* raw_pass = pass.get();
-        passes_.push_back(std::move(pass));
-
-        RenderGraphBuilder builder(*this, raw_pass);
-        setup(builder, static_cast<PassNode<PassData>*>(raw_pass)->data);
-
-        return static_cast<PassNode<PassData>*>(raw_pass)->data;
+    void PutCPUData(RGTag tag, const T& data) {
+        cpu_bb_.Put(tag, data);
     }
 
-    RGResourceHandle ImportExternalTexture(
-        eastl::string_view name,
-        VkImage image,
-        VkImageView image_view,
-        const RGTextureDesc& desc,
-        VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED
-    );
-
-    RGResourceHandle ImportExternalBuffer(
-        eastl::string_view name,
-        VkBuffer buffer,
-        const RGBufferDesc& desc,
-        void* mapped_ptr = nullptr
-    );
-
-    RGResourceHandle CreateTexture(PassNodeBase* pass, eastl::string_view dbg_name, const RGTextureDesc& desc);
-    RGResourceHandle CreateBuffer(PassNodeBase* pass, eastl::string_view dbg_name, const RGBufferDesc& desc);
-
-    RGResourceHandle RegisterRead(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage);
-    RGResourceHandle RegisterWrite(PassNodeBase* pass, RGResourceHandle h, RGUsageHint usage);
-
-    void ExportTag(RGTag tag, RGResourceHandle h);
-    RGResourceHandle ImportTag(PassNodeBase* pass, RGTag tag);
-
-    void Compile();
-    void Execute(VkCommandBuffer cmd);
-    void Reset();
+    void PutCPUData(RGTag tag, const void* data, size_t size_bytes) { cpu_bb_.Put(tag, data, size_bytes); }
 
     Blackboard& GetBlackboard() { return frame_bb_; }
     const Blackboard& GetBlackboard() const { return frame_bb_; }
@@ -432,27 +457,50 @@ public:
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
 
     VulkanDevice& GetDevice() const { return device_; }
+    bool IsDirty() const {return dirty_;};
 
 private:
+    friend class RenderGraphBuilder;
+
+    // API билдера (pass - индекс слота)
+    RGResourceHandle CreateTexture(uint32_t pass, eastl::string_view dbg_name, const RGTextureDesc& desc);
+    RGResourceHandle CreateBuffer(uint32_t pass, eastl::string_view dbg_name, const RGBufferDesc& desc);
+    RGResourceHandle RegisterRead(uint32_t pass, RGResourceHandle h, RGUsageHint usage);
+    RGResourceHandle RegisterWrite(uint32_t pass, RGResourceHandle h, RGUsageHint usage);
+    void ExportTag(RGTag tag, RGResourceHandle h);
+    RGResourceHandle ImportTag(uint32_t pass, RGTag tag);
+
+    void DestroyPass(uint32_t type_id);
+    void RefreshActive();
+    void Rebuild();
+    void BindExternals();
     void ResolveTagBindings();
     void CullPasses();
     void TopologicalSort();
+    void AllocatePhysical();
     void BuildBarriers();
     void CleanupTransientAllocators();
 
     VulkanDevice& device_;
-    eastl::vector<std::unique_ptr<PassNodeBase>> passes_;
-    eastl::vector<RGVirtualResource> resources_;
-    Blackboard frame_bb_;
-    CPUBlackboard cpu_bb_;
-    RGResourcePool pool_;
 
-    // Реестр тегов и таблица редиректов псевдонимов
+    // Пассы: владение внутри графа
+    eastl::vector<PassSlot> slots_;
+    eastl::vector<IRenderPass*> by_type_;  // индекс = ScopedTypeId<RenderGraph, T>
+    bool dirty_ = true;
+
+    // Результат сборки (живёт, пока dirty_ == false)
+    eastl::vector<RGVirtualResource> resources_;
     eastl::hash_map<RGTag, RGResourceHandle> tag_to_handle_;
     eastl::vector<uint32_t> handle_redirects_;
-
     eastl::fixed_vector<uint32_t, 128> sorted_order_;
+    Blackboard frame_bb_;
+    RGResourcePool pool_;
 
+    // Внешние ресурсы переживают пересборку
+    eastl::hash_map<RGTag, RGExternalResource> externals_;
+
+    // Покадровое
+    CPUBlackboard cpu_bb_;
     uint32_t frame_index_ = 0;
     FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];
 };

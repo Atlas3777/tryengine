@@ -53,8 +53,8 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
     das::ModuleGroup dummy_lib_group;
     das::CodeOfPolicies policies{};
 
-    // policies.jit_enabled = true;
-    // policies.jit_jit_all_functions = true;
+    policies.jit_enabled = true;
+    policies.jit_jit_all_functions = true;
 
     auto program = das::compileDaScript(path.data(), file_access_, tout, dummy_lib_group, policies);
 

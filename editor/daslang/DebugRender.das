@@ -17,7 +17,8 @@ enum Color {
     Yellow,
     Black,
     White,
-    Green
+    Green,
+    Grey
 }
 
 def GetColor(color : Color) : uint8[4]{
@@ -29,6 +30,8 @@ def GetColor(color : Color) : uint8[4]{
         return fixed_array(255u8, 255u8, 0u8, 255u8)
     elif (color == Color.Green)
         return fixed_array(0u8, 255u8, 0u8, 255u8)
+    elif (color == Color.Grey)
+        return fixed_array(100u8, 100u8, 100u8, 255u8)
 
     return fixed_array(255u8, 255u8, 255u8, 255u8);
 }

@@ -3,6 +3,10 @@
 #include <cstdlib>
 #include <new>
 
+extern "C" const char* __asan_default_options() {
+    return "alloc_dealloc_mismatch=0";
+}
+
 // 1. Исправляем Vsnprintf: объявляем внутри пространства eastl, чтобы компилятор не ругался
 namespace eastl {
 int Vsnprintf(char* pDestination, size_t n, const char* pFormat, va_list arguments) {

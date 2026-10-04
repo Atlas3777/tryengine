@@ -47,7 +47,7 @@ public:
         auto* function = das_ctx_->findFunction(f_name.data());
 
         if (!function)
-            return LogAndMakeError("Function not found: {}", f_name.data());
+            return LogAndMakeError("Function not found: {}", f_name);
 
         das::Func custom_func(function);
         return das::das_invoke_function<T>::invoke(das_ctx_, nullptr, custom_func, std::forward<Args>(args)...);
@@ -60,7 +60,7 @@ public:
 
         auto* function = das_ctx_->findFunction(f_name.data());
         if (!function) {
-            LogError(LogCategory::Script, "function not found");
+            LogError(LogCategory::Script, "Function not found: {}", f_name);
             return false;
         }
 
@@ -82,7 +82,7 @@ private:
         }
 
         if (auto ex = das_ctx_->getException()) {
-            LogInfo(LogCategory::Script, "Скрипт упал в функции '{}': {}", f_name.data(), ex);
+            LogError(LogCategory::Script, "Скрипт упал в функции '{}': {}", f_name.data(), ex);
             return false;
         }
 

@@ -1,22 +1,18 @@
-#include "engine/graphics/OpaqueGeometryPass.hpp"
-
-#include <EASTL/span.h>
 #include <algorithm>
 #include <hlsl++.h>
 
 #include "engine/core/Engine.hpp"
 #include "engine/core/HlslppFormatter.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/graphics/MeshDrawCall.hpp"
-#include "engine/graphics/PipelineDescriptor.hpp"
-#include "engine/graphics/PipelineManager.hpp"
+#include "engine/graphics/OpaquePass.hpp"
+#include "engine/graphics/RasterState.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/ShaderReflection.hpp"
-#include "engine/graphics/loaders/LightPass.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
-#include "engine/resources/Vertex.hpp"
 
 namespace tryengine::graphics {
+
+namespace {
 
 struct DaslangDrawCall {
     hlslpp::float4x4 world_matrix;
@@ -26,7 +22,35 @@ struct DaslangDrawCall {
 };
 static_assert(sizeof(DaslangDrawCall) == 96);
 
-eastl::vector<MeshDrawCall> OpaqueGeometryPass::CollectDrawable(core::Engine& engine) {
+struct GeometryPointers {
+    VkDeviceAddress positions;   // BDA: Массив позиций (12 байт / вершина)
+    VkDeviceAddress attributes;  // BDA: Сырой байтовый буфер упакованных атрибутов
+    uint32_t attribute_flags;    // Битовая маска MeshAttributeFlags
+    uint32_t attribute_stride;   // Полный размер атрибутов вершины (в байтах)
+};
+
+struct alignas(16) GPUObjectData {
+    hlslpp::float4x4 model;
+    hlslpp::float4x4 normalMatrix;
+    GeometryPointers pointers;
+};
+static_assert(sizeof(GPUObjectData) == 160, "GPUObjectData size must match Standard.slang layout");
+
+struct alignas(16) FragmentDataGPU {
+    VkDeviceAddress camera;  // BDA на CameraGPU
+    VkDeviceAddress lights;  // BDA на массив PointLightGPU
+    uint32_t light_count;
+    uint32_t _pad[3];
+    hlslpp::float4 ambient_color;
+    hlslpp::float4 view_pos;
+};
+
+struct PushConstants {
+    VkDeviceAddress objects;   // BDA массив объектов GPUObjectData
+    VkDeviceAddress fragment;  // BDA указатель на FragmentData (Camera, Lights)
+};
+
+eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine) {
     eastl::vector<MeshDrawCall> draw_calls;
 
     auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("get_render_obj");
@@ -62,130 +86,140 @@ eastl::vector<MeshDrawCall> OpaqueGeometryPass::CollectDrawable(core::Engine& en
     return draw_calls;
 }
 
-struct GeometryPointers {
-    VkDeviceAddress positions;   // BDA: Массив позиций (12 байт / вершина)
-    VkDeviceAddress attributes;  // BDA: Сырой байтовый буфер упакованных атрибутов
-    uint32_t attribute_flags;    // Битовая маска MeshAttributeFlags
-    uint32_t attribute_stride;   // Полный размер атрибутов вершины (в байтах)
-};
+}  // namespace
 
-struct alignas(16) GPUObjectData {
-    hlslpp::float4x4 model;
-    hlslpp::float4x4 normalMatrix;
-    GeometryPointers pointers;
-};
+void OpaquePass::Collect(CollectContext& ctx) {
+    auto& script = ctx.engine.Get<core::ScriptSystem>();
 
-struct alignas(16) FragmentDataGPU {
-    VkDeviceAddress camera;       // BDA на CameraGPU
-    VkDeviceAddress lights;       // BDA на массив PointLightGPU
-    uint32_t light_count;
-    uint32_t _pad[3];
-    hlslpp::float4 ambient_color;
-    hlslpp::float4 view_pos;
-};
+    auto size_res = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
+    if (!size_res.has_value()) {
+        LogError("ViewportSize not found");
+        return;
+    }
+    const auto size = *size_res;
 
-struct PushConstants {
-    VkDeviceAddress objects;  // BDA массив объектов GPUObjectData
-    VkDeviceAddress fragment; // BDA указатель на FragmentData (Camera, Lights)
-};
+    // Размер вьюпорта определяет размеры SceneColor/SceneDepth, то есть структуру графа.
+    const VkExtent2D extent{std::max(1u, static_cast<uint32_t>(size.x)), std::max(1u, static_cast<uint32_t>(size.y))};
+    if (extent.width != viewport_.width || extent.height != viewport_.height) {
+        viewport_ = extent;
+        ctx.graph.Invalidate();
+    }
+    ctx.cpu_bb.Put(RGTag_v<"ViewportSize">, viewport_);
 
-static_assert(sizeof(GPUObjectData) == 160, "GPUObjectData size must match Standard.slang layout");
+    auto camera_res = script.SimpleReturnUnsafe<CameraData*>("get_camera", size);
+    if (!camera_res.has_value()) LogCritical("Camera data not found");
+    const CameraData* camera = *camera_res;
 
-void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl::span<const MeshDrawCall> queue) {
-    if (queue.empty()) {
+    GlobalLight light;
+    light.ambient_color = hlslpp::float4(0.1f, 0.1f, 0.1f, 0);
+    light.view_pos = hlslpp::float4(camera->position, 0);
+
+    ctx.cpu_bb.Put(RGTag_v<"GlobalLightUBO">, light);
+    ctx.cpu_bb.Put(RGTag_v<"Camera">, *camera);
+
+    point_lights_ = CollectLight(ctx.engine);
+
+    // НОВОЕ: сортируем один раз здесь, Execute больше не копирует и не сортирует очередь.
+    draw_queue_ = CollectDrawable(ctx.engine);
+    std::sort(draw_queue_.begin(), draw_queue_.end(),
+              [](const MeshDrawCall& a, const MeshDrawCall& b) { return a.sorting_key < b.sorting_key; });
+}
+
+void OpaquePass::Setup(RenderGraphBuilder& builder) {
+    RGTextureDesc scene_color_desc{
+        .width = viewport_.width,
+        .height = viewport_.height,
+        .layers = 1,
+        .mips = 1,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .debug_name = "SceneColor"
+    };
+
+    RGTextureDesc scene_depth_desc{
+        .width = viewport_.width,
+        .height = viewport_.height,
+        .layers = 1,
+        .mips = 1,
+        .format = VK_FORMAT_D32_SFLOAT,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT,
+        .debug_name = "SceneDepth"
+    };
+
+    RGResourceHandle color_rt = builder.CreateTexture("SceneColor", scene_color_desc);
+    RGResourceHandle depth_rt = builder.CreateTexture("SceneDepth", scene_depth_desc);
+
+    color_ = builder.Write(color_rt, RGUsageHint::ColorAttachment);
+    depth_ = builder.Write(depth_rt, RGUsageHint::DepthStencilAttachment);
+
+    builder.Export(RGTag_v<"ForwardColor">, color_);
+}
+
+// ==================== Execute ====================
+
+void OpaquePass::Execute(RGExecuteContext& ctx) {
+    RGColorAttachment color_attachment{};
+    color_attachment.handle = color_;
+    color_attachment.load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.store_op = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.clear_value.color = {{0.1f, 0.1f, 0.12f, 1.0f}};
+
+    RGDepthStencilAttachment depth_attachment{};
+    depth_attachment.handle = depth_;
+    depth_attachment.depth_load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth_attachment.depth_store_op = VK_ATTACHMENT_STORE_OP_STORE;
+    depth_attachment.clear_value.depthStencil = {1.0f, 0};
+
+    const VkRect2D render_area{{0, 0}, viewport_};
+    ctx.BeginRendering({&color_attachment, 1}, &depth_attachment, render_area);
+
+    SetViewportScissor(ctx.cmd_buffer, viewport_);
+    ApplyRasterState(ctx.cmd_buffer);
+
+    RecordDraws(ctx);
+
+    ctx.EndRendering();
+}
+
+// БЫЛО: OpaqueGeometryPass::ExecuteDrawCommands. Изменения помечены НОВОЕ.
+void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
+    if (draw_queue_.empty()) {
         return;
     }
 
     const auto* camera_cpu = ctx.cpu_bb->GetAs<CameraData>(RGTag_v<"Camera">);
     const auto* light_ubo = ctx.cpu_bb->GetAs<GlobalLight>(RGTag_v<"GlobalLightUBO">);
-    const uint32_t* light_count = ctx.cpu_bb->GetAs<uint32_t>(RGTag_v<"LightCount">);
     TRY_ASSERT(camera_cpu && light_ubo, "Camera or LightUBO missing in CPUBlackboard!");
 
-    // Выделяем память под Камеру
     CameraGPU camera_gpu{
         .view = camera_cpu->view,
         .proj = camera_cpu->proj
     };
     TransientAllocation camera_alloc = ctx.AllocateTransient(&camera_gpu, sizeof(CameraGPU), alignof(CameraGPU));
 
-    // Получаем BDA буфера источников света из RenderGraph / Blackboard
-    RGResourceHandle light_buf_handle = ctx.frame_bb->Get(RGTag_v<"PointLightBuffer">);
-    VkBuffer light_buffer = ctx.GetBuffer(light_buf_handle);
+    // НОВОЕ: свет живёт в transient-памяти (BDA) - LightPass, его буфер и ресурс "PointLightBuffer" не нужны.
+    // Размер буфера зависел от числа ламп, то есть менял бы структуру графа при каждом добавлении лампы.
+    TransientAllocation lights_alloc = ctx.AllocateTransient(
+        point_lights_.data(), sizeof(PointLightGPU) * point_lights_.size(), alignof(PointLightGPU));
 
-    VkBufferDeviceAddressInfo light_bda_info{VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
-    light_bda_info.buffer = light_buffer;
-    VkDeviceAddress light_buffer_bda = light_buffer ? vkGetBufferDeviceAddress(ctx.device, &light_bda_info) : 0;
-
-    // Формируем и загружаем FragmentData
     FragmentDataGPU frag_data{
         .camera = camera_alloc.bda_address,
-        .lights = light_buffer_bda,
-        .light_count = *light_count,
+        .lights = lights_alloc.bda_address,
+        .light_count = static_cast<uint32_t>(point_lights_.size()),
         .ambient_color = light_ubo->ambient_color,
         .view_pos = light_ubo->view_pos
     };
     TransientAllocation frag_alloc = ctx.AllocateTransient(&frag_data, sizeof(FragmentDataGPU), alignof(FragmentDataGPU));
 
-    // =========================================================================
-    // 2. СОРТИРОВКА И ПРЕДВАРИТЕЛЬНОЕ ВЫДЕЛЕНИЕ ПАМЯТИ ПОД ОБЪЕКТЫ
-    // =========================================================================
-    eastl::vector<MeshDrawCall> draw_queue(queue.begin(), queue.end());
-    std::sort(draw_queue.begin(), draw_queue.end(),
-              [](const MeshDrawCall& a, const MeshDrawCall& b) { return a.sorting_key < b.sorting_key; });
+    // НОВОЕ: очередь уже отсортирована в Collect.
+    const auto& draw_queue = draw_queue_;
 
     // Выделяем транзиентную память СРАЗУ ПОД ВСЕ ОБЪЕКТЫ кадра
     TransientAllocation objects_alloc = ctx.AllocateTransient(
         nullptr, sizeof(GPUObjectData) * draw_queue.size(), alignof(GPUObjectData));
     GPUObjectData* mapped_objects = reinterpret_cast<GPUObjectData*>(objects_alloc.mapped_ptr);
-
-    // --- 1. Полный набор динамических состояний для Shader Objects ---
-    vkCmdSetRasterizerDiscardEnableEXT(ctx.cmd_buffer, VK_FALSE);
-    vkCmdSetCullModeEXT(ctx.cmd_buffer, VK_CULL_MODE_BACK_BIT);
-    vkCmdSetFrontFaceEXT(ctx.cmd_buffer, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-    vkCmdSetPrimitiveTopologyEXT(ctx.cmd_buffer, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    vkCmdSetPolygonModeEXT(ctx.cmd_buffer, VK_POLYGON_MODE_FILL);
-    vkCmdSetPrimitiveRestartEnableEXT(ctx.cmd_buffer, VK_FALSE);
-
-    // BDA без стандартных Vertex Buffers
-    vkCmdSetVertexInputEXT(ctx.cmd_buffer, 0, nullptr, 0, nullptr);
-
-    // Depth & Stencil
-    vkCmdSetDepthTestEnableEXT(ctx.cmd_buffer, VK_TRUE);
-    vkCmdSetDepthWriteEnableEXT(ctx.cmd_buffer, VK_TRUE);
-    vkCmdSetDepthCompareOpEXT(ctx.cmd_buffer, VK_COMPARE_OP_LESS);
-    vkCmdSetDepthBiasEnableEXT(ctx.cmd_buffer, VK_FALSE);
-    vkCmdSetStencilTestEnableEXT(ctx.cmd_buffer, VK_FALSE);
-
-    // Multisampling
-    VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-    vkCmdSetRasterizationSamplesEXT(ctx.cmd_buffer, samples);
-    VkSampleMask sample_mask = 0xFFFFFFFF;
-    vkCmdSetSampleMaskEXT(ctx.cmd_buffer, samples, &sample_mask);
-    vkCmdSetAlphaToCoverageEnableEXT(ctx.cmd_buffer, VK_FALSE);
-
-    // Color Blending & Write Masks
-    constexpr VkBool32 blend_enables[] = {VK_FALSE};
-    vkCmdSetColorBlendEnableEXT(ctx.cmd_buffer, 0, 1, blend_enables);
-
-    constexpr VkColorComponentFlags color_write_masks[] = {
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    vkCmdSetColorWriteMaskEXT(ctx.cmd_buffer, 0, 1, color_write_masks);
-
-    constexpr VkColorBlendEquationEXT blend_equations[] = {
-        {
-            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-        }
-    };
-    vkCmdSetColorBlendEquationEXT(ctx.cmd_buffer, 0, 1, blend_equations);
-
-    constexpr VkBool32 color_write_enables[] = {VK_TRUE};
-    vkCmdSetColorWriteEnableEXT(ctx.cmd_buffer, 1, color_write_enables);
 
     Shader* current_shader = nullptr;
     const Material* current_material = nullptr;
@@ -197,7 +231,7 @@ void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl:
             !first_cmd.mesh->index_buffer || !first_cmd.material) {
             i++;
             continue;
-            }
+        }
 
         Shader& shader = *first_cmd.material->shader;
         const Material& material = *first_cmd.material;
@@ -234,12 +268,11 @@ void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl:
             if (cmd.material->shader.Get() != current_shader || cmd.material != current_material ||
                 cmd.mesh->index_buffer != index_buf) {
                 break;
-                }
+            }
 
             // Записываем данные объекта прямо в маппленный транзиентный буфер!
             GPUObjectData& obj = mapped_objects[batch_end];
             obj.model = cmd.model_matrix;
-            // obj.normalMatrix = hlslpp::inverse(cmd.model_matrix);
             obj.normalMatrix = hlslpp::transpose(hlslpp::inverse(cmd.model_matrix));
             obj.pointers = {mesh.position_buffer_addr, mesh.attribute_buffer_addr, (uint32_t)mesh.attribute_flags,
                             mesh.attribute_stride};
@@ -257,28 +290,18 @@ void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl:
 
         uint32_t draw_count = static_cast<uint32_t>(indirect_commands.size());
 
-        // Загружаем только Indirect Команды для текущего батча
         TransientAllocation indirect_alloc =
             ctx.AllocateTransient(indirect_commands.data(),
                                   sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size(), sizeof(uint32_t));
 
         vkCmdBindIndexBuffer(ctx.cmd_buffer, index_buf, 0, first_cmd.mesh->index_type);
 
-        // Расчёт BDA адреса массива объектов конкретно для данного батча
-        VkDeviceAddress batch_objects_bda = objects_alloc.bda_address + (batch_start * sizeof(GPUObjectData));
-
         PushConstants pc{};
-        pc.objects = batch_objects_bda;      // BDA смещённого массива объектов
-        pc.fragment = frag_alloc.bda_address; // BDA общего FragmentData для пасса
+        pc.objects = objects_alloc.bda_address + (batch_start * sizeof(GPUObjectData));
+        pc.fragment = frag_alloc.bda_address;
 
-        vkCmdPushConstants(
-            ctx.cmd_buffer,
-            shader.layout,
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0,
-            sizeof(PushConstants),
-            &pc
-        );
+        vkCmdPushConstants(ctx.cmd_buffer, shader.layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(PushConstants), &pc);
 
         vkCmdDrawIndexedIndirect(ctx.cmd_buffer, indirect_alloc.buffer, indirect_alloc.offset, draw_count,
                                  sizeof(VkDrawIndexedIndirectCommand));
@@ -286,4 +309,5 @@ void OpaqueGeometryPass::ExecuteDrawCommands(const RGExecuteContext& ctx, eastl:
         i = batch_end;
     }
 }
-}
+
+}  // namespace tryengine::graphics

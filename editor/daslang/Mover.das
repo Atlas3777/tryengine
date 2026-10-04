@@ -9,7 +9,7 @@ require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
 
-let sens = 0.33f
+let sens = 0.26f
 let cam_speed = 3f
 
 def Move(dt : float) {

@@ -41,7 +41,7 @@ public:
 
     eastl::vector<UiFolder>& GetFoldersMutable(StorageDomain domain);
 
-    tryengine::async::Task<void> InitEngineContentSync(tryengine::resources::AsyncFileManager& file_manager);
+    tryengine::async::Task<void> InitEngineContent(tryengine::resources::AsyncFileManager& file_manager);
     tryengine::async::Task<void> AsyncLoadGameContent(tryengine::resources::AsyncFileManager& file_manager);
 
     void OnFileCreatedOrModified(const char* path);

@@ -3,12 +3,16 @@
 
 #include "editor/AssetPipeline.hpp"
 #include "editor/EditorRender.hpp"
+#include "editor/ImGuiPass.hpp"
 #include "editor/TryEditorContext.hpp"
 #include "editor/gui/EditorGUI.hpp"
 #include "editor/gui/UiFile.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 
+namespace tryeditor {
+class ImGuiPass;
+}
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
 using Uint32Vector = eastl::vector<uint32_t>;
@@ -46,15 +50,15 @@ void* GetImage(das::Context* ctx) {
     }
 
     // 1. Извлекаем RGResourceHandle из Blackboard RenderGraph
-    tryeditor::RGResourceHandle viewport_handle = rg->GetBlackboard().Get(tryengine::graphics::RGTag_v<"SceneViewport">);
+    auto viewport_handle = rg->GetBlackboard().Get(tryengine::graphics::RGTag_v<"ForwardColor">);
 
     // 2. Получаем чистый VkImageView из RenderGraph (без зависимости от ImGui)
     VkImageView view = rg->GetPhysicalImageView(viewport_handle);
     if (!view)
         return nullptr;
 
-    // 3. Слой редактора (EditorRender) возвращает кэшированный VkDescriptorSet для ImGui
-    VkDescriptorSet ds = try_ctx->engine.Get<tryeditor::EditorRender>().GetOrCreateImguiTexture(view);
+    // 3. Слой редактора возвращает кэшированный VkDescriptorSet для imgui
+    VkDescriptorSet ds = try_ctx->engine.Get<tryengine::graphics::RenderGraph>().Get<tryeditor::ImGuiPass>()->GetOrCreateTexture(view);
 
     return ds;
 }

@@ -28,7 +28,13 @@ struct SamplerDesc {
     float max_anisotropy{1.0f};
     float min_lod{0.0f};
     float max_lod{0.0f};
+    uint8_t _pad[7];
 };
+
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+
 
 struct TextureHeader {
     uint32_t magic{TextureMagic};
@@ -53,9 +59,13 @@ struct TextureHeader {
 
     uint64_t mip_table_offset{0};
     uint64_t mip_table_size{0};
+    uint8_t _pad[5];
 };
 
 #pragma pack(pop)
+
+static_assert(sizeof(TextureHeader) == 96);
+static_assert(sizeof(SamplerDesc) == 32);
 
 struct MipInfo {
     uint64_t offset;
