@@ -1,9 +1,11 @@
 #pragma once
+
 #include <EASTL/span.h>
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
 #include <cstdint>
 
+#include "AssetPak.hpp"
 #include "engine/core/Result.hpp"
 
 namespace tryengine::resources {
@@ -13,7 +15,7 @@ constexpr uint32_t PAK_VERSION = 1;
 
 struct ResourceLayout {
     uint64_t guid = 0;
-    uint64_t offset = 0; // Смещение относительно data_offset
+    uint64_t offset = 0;
     uint64_t size = 0;
 };
 
@@ -29,9 +31,9 @@ struct AssetPakHeader {
     uint8_t _padding[8];
 };
 
-static_assert(sizeof(AssetPakHeader) == 64, "AssetPakHeader change size");
+static_assert(sizeof(AssetPakHeader) == 64, "AssetPakHeader changed size");
 
-struct AssetPakMetadata {
+struct AssetPakManifest {
     AssetPakHeader header;
     eastl::vector<eastl::string> dependencies;
     eastl::vector<ResourceLayout> layout;
@@ -40,8 +42,8 @@ struct AssetPakMetadata {
 class AssetPakBinary {
 public:
     static Result<AssetPakHeader> ReadHeader(eastl::span<const uint8_t> buffer);
-    static Result<AssetPakMetadata> UnpackManifest(eastl::span<const uint8_t> buffer);
-    static eastl::vector<uint8_t> Pack(const AssetPakMetadata& meta, eastl::span<const uint8_t> data_buffer);
+    static Result<AssetPakManifest> UnpackManifest(eastl::span<const uint8_t> buffer);
+    static eastl::vector<uint8_t> Pack(AssetPak& pak);
 };
 
 } // namespace tryengine::resources

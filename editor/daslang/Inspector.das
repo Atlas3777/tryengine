@@ -30,11 +30,11 @@ def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index :
     if (!key_exists(decsState.archetypeLookup, rec.archetype)) {
         return false
     }
-    let afound = decsState.archetypeLookup[rec.archetype]
-    if (afound == 0) {
+    let found = decsState.archetypeLookup[rec.archetype]
+    if (found == 0) {
         return false
     }
-    out_arch_idx = afound - 1
+    out_arch_idx = found - 1
     out_index = rec.index
     return true
 }
@@ -44,6 +44,7 @@ def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index :
 // ---------------------------------------------------------------------
 var W_BOOL   : table<string; ToggleState>
 var W_STRING : table<string; InputTextState>
+
 var W_FILTER : TextFilterState
 
 // Переменная для отслеживания смены фокуса
@@ -55,70 +56,22 @@ def clear_inspector_states() {
 }
 
 // ---------------------------------------------------------------------
-// Отрисовка дефолтных типов через Drag Edit
+// Отрисовка значения компонента. Если это структура — рекурсивно
+// обходим её поля. Иначе — рисуем скаляр/вектор/чекбокс/строку.
 // ---------------------------------------------------------------------
 def draw_component_value(comp : Component; index : int64; display_name : string) {
     let offset = int(index) * comp.stride
-    let i = "{selected_eid.id}_{comp.name}"
+    let id_key = "{selected_eid.id}_{comp.name}"
 
     unsafe {
         let ptr = addr(comp.data[offset])
 
-        // Скаляры (float, double, int, uint, int64, uint64)
-        if (comp.info.basicType == Type.tFloat) {
-            edit_drag_scalar(reinterpret<float?>(ptr), (id = "drag_float", text = display_name, speed = 0.01f))
-
-        } elif (comp.info.basicType == Type.tInt) {
-            edit_drag_scalar(reinterpret<int?>(ptr), (id = "drag_int", text = display_name, speed = 1.0f))
-
-        } elif (comp.info.basicType == Type.tUInt) {
-            edit_drag_scalar(reinterpret<uint?>(ptr), (id = "drag_uint", text = display_name, speed = 1.0f))
-
-        } elif (comp.info.basicType == Type.tInt64) {
-            edit_drag_scalar(reinterpret<int64?>(ptr), (id = "drag_int64", text = display_name, speed = 1.0f))
-
-        } elif (comp.info.basicType == Type.tUInt64) {
-            edit_drag_scalar(reinterpret<uint64?>(ptr), (id = "drag_uint64", text = display_name, speed = 1.0f))
-
-        // Векторы Float
-        } elif (comp.info.basicType == Type.tFloat2) {
-            edit_drag_float2(reinterpret<float2?>(ptr), (id = "drag_float2", text = display_name, speed = 0.01f))
-
-        } elif (comp.info.basicType == Type.tFloat3) {
-            edit_drag_float3(reinterpret<float3?>(ptr), (id = "drag_float3", text = display_name, speed = 0.01f))
-
-        } elif (comp.info.basicType == Type.tFloat4) {
-            edit_drag_float4(reinterpret<float4?>(ptr), (id = "drag_float4", text = display_name, speed = 0.01f))
-
-        // Векторы Int
-        } elif (comp.info.basicType == Type.tInt2) {
-            edit_drag_int2(reinterpret<int2?>(ptr), (id = "drag_int2", text = display_name, speed = 1.0f))
-
-        } elif (comp.info.basicType == Type.tInt3) {
-            edit_drag_int3(reinterpret<int3?>(ptr), (id = "drag_int3", text = display_name, speed = 1.0f))
-
-        } elif (comp.info.basicType == Type.tInt4) {
-            edit_drag_int4(reinterpret<int4?>(ptr), (id = "drag_int4", text = display_name, speed = 1.0f))
-
-        // Чекбокс
-        } elif (comp.info.basicType == Type.tBool) {
-            W_BOOL[i].value = *reinterpret<bool?>(ptr)
-            if (checkbox(W_BOOL[i], (text = display_name))) {
-                *reinterpret<bool?>(ptr) = W_BOOL[i].value
-            }
-
-        // Текст
-        } elif (comp.info.basicType == Type.tString) {
-            let current_val = *reinterpret<string?>(ptr)
-            if (!key_exists(W_STRING, i) || W_STRING[i].value != current_val) {
-                init_input_text(W_STRING[i], current_val)
-            }
-            if (input_text(W_STRING[i], (text = display_name, flags = ImGuiInputTextFlags.None))) {
-                *reinterpret<string?>(ptr) = W_STRING[i].value
-            }
-
+        if (comp.info.basicType == Type.tStructure) {
+            // info.basicType == tStructure — как в ComponentToCF
+            let ti = comp.info.mkTypeInfo()
+            draw_struct_fields(reinterpret<void?>(ptr), ti.firstType.structType, id_key)
         } else {
-            text("{display_name}: not found drawer for this type")
+            draw_value_at_ptr(reinterpret<void?>(ptr), comp.info.basicType, display_name, id_key)
         }
     }
 }
@@ -254,6 +207,131 @@ def DrawInspector() {
                         } else {
                             draw_component_value(comp, rec_index, comp.name)
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Отрисовка значения по "сырому" указателю (без привязки к Component).
+// Аналог SerializeBase из сохранения.
+// ---------------------------------------------------------------------
+def private draw_value_at_ptr(ptr : void?; t : Type; display_name : string; id_key : string) {
+    unsafe {
+        // Скаляры (float, double, int, uint, int64, uint64)
+        if (t == Type.tFloat) {
+            edit_drag_scalar(reinterpret<float?>(ptr), (id = "drag_float", text = display_name, speed = 0.01f))
+
+        } elif (t == Type.tInt) {
+            edit_drag_scalar(reinterpret<int?>(ptr), (id = "drag_int", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tUInt) {
+            edit_drag_scalar(reinterpret<uint?>(ptr), (id = "drag_uint", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tInt64) {
+            edit_drag_scalar(reinterpret<int64?>(ptr), (id = "drag_int64", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tUInt64) {
+            edit_drag_scalar(reinterpret<uint64?>(ptr), (id = "drag_uint64", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tDouble) {
+            edit_drag_scalar(reinterpret<double?>(ptr), (id = "drag_double", text = display_name, speed = 0.01f))
+
+        // Векторы Float
+        } elif (t == Type.tFloat2) {
+            edit_drag_float2(reinterpret<float2?>(ptr), (id = "drag_float2", text = display_name, speed = 0.01f))
+
+        } elif (t == Type.tFloat3) {
+            edit_drag_float3(reinterpret<float3?>(ptr), (id = "drag_float3", text = display_name, speed = 0.01f))
+
+        } elif (t == Type.tFloat4) {
+            edit_drag_float4(reinterpret<float4?>(ptr), (id = "drag_float4", text = display_name, speed = 0.01f))
+
+        // Векторы Int
+        } elif (t == Type.tInt2) {
+            edit_drag_int2(reinterpret<int2?>(ptr), (id = "drag_int2", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tInt3) {
+            edit_drag_int3(reinterpret<int3?>(ptr), (id = "drag_int3", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tInt4) {
+            edit_drag_int4(reinterpret<int4?>(ptr), (id = "drag_int4", text = display_name, speed = 1.0f))
+
+        // Векторы UInt
+        } elif (t == Type.tUInt2) {
+            edit_drag_int2(reinterpret<int2?>(ptr), (id = "drag_uint2", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tUInt3) {
+            edit_drag_int3(reinterpret<int3?>(ptr), (id = "drag_uint3", text = display_name, speed = 1.0f))
+
+        } elif (t == Type.tUInt4) {
+            edit_drag_int4(reinterpret<int4?>(ptr), (id = "drag_uint4", text = display_name, speed = 1.0f))
+
+        // Чекбокс
+        } elif (t == Type.tBool) {
+            W_BOOL[id_key].value = *reinterpret<bool?>(ptr)
+            if (checkbox(W_BOOL[id_key], (text = display_name))) {
+                *reinterpret<bool?>(ptr) = W_BOOL[id_key].value
+            }
+
+        // Текст
+        } elif (t == Type.tString) {
+            let current_val = *reinterpret<string?>(ptr)
+            if (!key_exists(W_STRING, id_key) || W_STRING[id_key].value != current_val) {
+                init_input_text(W_STRING[id_key], current_val)
+            }
+            if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
+                *reinterpret<string?>(ptr) = W_STRING[id_key].value
+            }
+
+        } elif (t == Type.none) {
+            text("{display_name}: none type")
+
+        } else {
+            text("{display_name}: not found drawer for this type ({t})")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Рекурсивная отрисовка полей структуры (аналог SerializeStruct).
+// Обходит VarInfo?? внутри StructInfo, вычисляет offset каждого поля
+// и либо рекурсивно спускается в tStructure, либо рисует скаляр/вектор.
+// ---------------------------------------------------------------------
+def private draw_struct_fields(ptr : void?; si : StructInfo const?; id_prefix : string) {
+    if (ptr == null) {
+        return
+    }
+    if (si == null) {
+        return
+    }
+
+    unsafe {
+        if (si.fields != null) {
+            var pp = si.fields   // VarInfo??
+            for (c in range(si.count)) {
+                let current = *pp
+                pp++
+                if (current == null) {
+                    continue
+                }
+
+                let fieldPtr = reinterpret<void?>(reinterpret<uint64>(ptr) + uint64(current.offset))
+                let field_key = "{id_prefix}_{current.name}"
+
+                with_id(current.name) {
+                    if (current.basicType == Type.tStructure) {
+                        // Вложенная структура — tree_node даёт TreePop + отступ тела.
+                        // DefaultOpen — чтобы структура сразу была развёрнута;
+                        // убери флаг, если хочешь свёрнутое состояние по умолчанию.
+                        tree_node(BASIC_TREE, (text = current.name,
+                                               flags = ImGuiTreeNodeFlags.DefaultOpen)) {
+                            draw_struct_fields(fieldPtr, current.structType, field_key)
+                        }
+                    } else {
+                        draw_value_at_ptr(fieldPtr, current.basicType, current.name, field_key)
                     }
                 }
             }

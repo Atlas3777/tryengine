@@ -377,7 +377,8 @@ struct FrameTransientAllocator {
     VkDeviceSize current_offset = 0;
 };
 
-class RenderGraph {
+class
+RenderGraph {
 public:
     static constexpr uint32_t kMaxFramesInFlight = 2;
     static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024;

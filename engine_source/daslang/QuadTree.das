@@ -10,7 +10,6 @@ require tryengine/Types
 // ===========================================================================
 // Конфигурация дерева
 // ===========================================================================
-[safe_when_uninitialized]
 struct public QuadTreeConfig {
     rootSize : float = 4000.0f
     rootCenter : float2 = float2(2000.0f, 2000.0f)
@@ -50,7 +49,7 @@ struct public QuadNode {
 }
 
 struct public QuadTree {
-    config : QuadTreeConfig
+    config : QuadTreeConfig = QuadTreeConfig()
     nodes : array<QuadNode>
 }
 
@@ -125,7 +124,7 @@ def public is_node_in_frustum(center : float2; halfSize : float; eye : float2; a
 def public create_quadtree(var config : QuadTreeConfig&) : QuadTree {
     init_config(config)
 
-    var tree : QuadTree
+    var tree : QuadTree = QuadTree()
 
     // Корень всегда создан и загружен по умолчанию
     tree.nodes |> emplace(QuadNode(

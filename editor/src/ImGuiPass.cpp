@@ -158,7 +158,7 @@ void ImGuiPass::ClearTextureCache() {
     for (auto [view, ds] : texture_cache_) {
         ImGui_ImplVulkan_RemoveTexture(ds);
     }
-    LogInfo("ClearTextureCache");
+    LogInfo("ImGuiPass: ClearTextureCache");
     texture_cache_.clear();
 }
 

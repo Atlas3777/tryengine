@@ -7,13 +7,26 @@ module ConfigFormat shared public
 
 //! Parser, serialization, and AST value manipulation for custom typed config format.
 //! Format syntax rule: `name: TYPE = VALUE`
+//!
+//! For Array:
+//! name: TYPE[] = 
+//! {
+//!   obj_field_name: TYPE = VALUE  
+//! }
+//! {...}
+//!
+//! For struct:
+//! name : TYPE = 
+//! {
+//!    field_name: TYPE = VALUE
+//! }
 
 require daslib/strings_boost
 require math
 
 variant ConfigValue {
     //! Single config element supporting native daScript types for decs compatibility.
-    _object   : table<string; StructField?>   //! Object / Struct instance
+    _object   : table<string; StructField?>   //! Object / Struct instances
     _array    : array<StructField?>          //! Homogeneous array
     _string   : string                       //! string
     _double   : double                       //! f64
@@ -249,8 +262,13 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
             var element = parse_value_by_type(reader, elemType, error)
             if (element == null) return null
             push(arr, element)
+
+            skip_whitespace_and_comments(reader)
+            if (peek_char(reader) == ',') {
+                get_char(reader)
+            }
         }
-        return new StructField(value <- ConfigValue(_array <- arr))
+        return new StructField(typeName = typeName, value <- ConfigValue(_array <- arr))
     }
 
     // 2. Векторы
@@ -265,9 +283,9 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
         }
         if (!expect_symbol(reader, ']', error)) return null
 
-        if (typeName == "f32x2") return new StructField(value <- ConfigValue(_float2 = v.xy))
-        if (typeName == "f32x3") return new StructField(value <- ConfigValue(_float3 = v.xyz))
-        return new StructField(value <- ConfigValue(_float4 = v))
+        if (typeName == "f32x2") return new StructField(typeName = typeName, value <- ConfigValue(_float2 = v.xy))
+        if (typeName == "f32x3") return new StructField(typeName = typeName, value <- ConfigValue(_float3 = v.xyz))
+        return new StructField(typeName = typeName, value <- ConfigValue(_float4 = v))
     }
 
     if (typeName == "i32x2" || typeName == "i32x3" || typeName == "i32x4") {
@@ -281,9 +299,9 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
         }
         if (!expect_symbol(reader, ']', error)) return null
 
-        if (typeName == "i32x2") return new StructField(value <- ConfigValue(_int2 = v.xy))
-        if (typeName == "i32x3") return new StructField(value <- ConfigValue(_int3 = v.xyz))
-        return new StructField(value <- ConfigValue(_int4 = v))
+        if (typeName == "i32x2") return new StructField(typeName = typeName, value <- ConfigValue(_int2 = v.xy))
+        if (typeName == "i32x3") return new StructField(typeName = typeName, value <- ConfigValue(_int3 = v.xyz))
+        return new StructField(typeName = typeName, value <- ConfigValue(_int4 = v))
     }
 
     if (typeName == "u32x2" || typeName == "u32x3" || typeName == "u32x4") {
@@ -297,9 +315,9 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
         }
         if (!expect_symbol(reader, ']', error)) return null
 
-        if (typeName == "u32x2") return new StructField(value <- ConfigValue(_uint2 = v.xy))
-        if (typeName == "u32x3") return new StructField(value <- ConfigValue(_uint3 = v.xyz))
-        return new StructField(value <- ConfigValue(_uint4 = v))
+        if (typeName == "u32x2") return new StructField(typeName = typeName, value <- ConfigValue(_uint2 = v.xy))
+        if (typeName == "u32x3") return new StructField(typeName = typeName, value <- ConfigValue(_uint3 = v.xyz))
+        return new StructField(typeName = typeName, value <- ConfigValue(_uint4 = v))
     }
 
     // 3. Матрицы
@@ -314,7 +332,7 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
             }
         }
         if (!expect_symbol(reader, ']', error)) return null
-        return new StructField(value <- ConfigValue(_float3x3 = mat))
+        return new StructField(typeName = typeName, value <- ConfigValue(_float3x3 = mat))
     }
 
     if (typeName == "f32m3x4") {
@@ -328,7 +346,7 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
             }
         }
         if (!expect_symbol(reader, ']', error)) return null
-        return new StructField(value <- ConfigValue(_float3x4 = mat))
+        return new StructField(typeName = typeName, value <- ConfigValue(_float3x4 = mat))
     }
 
     if (typeName == "f32m4x4") {
@@ -342,7 +360,7 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
             }
         }
         if (!expect_symbol(reader, ']', error)) return null
-        return new StructField(value <- ConfigValue(_float4x4 = mat))
+        return new StructField(typeName = typeName, value <- ConfigValue(_float4x4 = mat))
     }
 
     // 4. Объекты / Структуры
@@ -363,22 +381,27 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
             if (fld == null) return null
             let fldName = fld.name
             tab |> insert(fldName, fld)
+
+            skip_whitespace_and_comments(reader)
+            if (peek_char(reader) == ',') {
+                get_char(reader)
+            }
         }
-        return new StructField(value <- ConfigValue(_object <- tab))
+        return new StructField(typeName = typeName, value <- ConfigValue(_object <- tab))
     }
 
     // 5. Скаляры
     if (typeName == "string") {
         let s = read_quoted_string(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_string = s))
+        return new StructField(typeName = typeName, value <- ConfigValue(_string = s))
     }
 
     if (typeName == "bool") {
         let bname = read_identifier(reader, error)
         if (!empty(error)) return null
-        if (bname == "true") return new StructField(value <- ConfigValue(_bool = true))
-        if (bname == "false") return new StructField(value <- ConfigValue(_bool = false))
+        if (bname == "true") return new StructField(typeName = typeName, value <- ConfigValue(_bool = true))
+        if (bname == "false") return new StructField(typeName = typeName, value <- ConfigValue(_bool = false))
         error = "invalid bool value `{bname}` at {reader.line}:{reader.row}"
         return null
     }
@@ -386,54 +409,54 @@ def private parse_value_by_type(var reader : ConfigReader; typeName : string; va
     if (typeName == "u64" || typeName == "uint64") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_uint64 = uint64(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_uint64 = uint64(num_str)))
     }
     if (typeName == "u32" || typeName == "uint") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_uint = uint(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_uint = uint(num_str)))
     }
     if (typeName == "u16" || typeName == "uint16") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_uint16 = uint16(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_uint16 = uint16(num_str)))
     }
     if (typeName == "u8" || typeName == "uint8") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_uint8 = uint8(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_uint8 = uint8(num_str)))
     }
 
     if (typeName == "i64" || typeName == "int64") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_int64 = int64(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_int64 = int64(num_str)))
     }
     if (typeName == "i32" || typeName == "int") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_int = int(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_int = int(num_str)))
     }
     if (typeName == "i16" || typeName == "int16") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_int16 = int16(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_int16 = int16(num_str)))
     }
     if (typeName == "i8" || typeName == "int8") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_int8 = int8(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_int8 = int8(num_str)))
     }
 
     if (typeName == "f32" || typeName == "float") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_float = float(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_float = float(num_str)))
     }
     if (typeName == "f64" || typeName == "double") {
         let num_str = read_number_token(reader, error)
         if (!empty(error)) return null
-        return new StructField(value <- ConfigValue(_double = double(num_str)))
+        return new StructField(typeName = typeName, value <- ConfigValue(_double = double(num_str)))
     }
 
     error = "unknown type or unexpected value for type `{typeName}` at {reader.line}:{reader.row}"
@@ -464,7 +487,8 @@ def private parse_field(var reader : ConfigReader; var error : string&) : Struct
     if (!expect_symbol(reader, '=', error)) return null
 
     var fieldVal = parse_value_by_type(reader, typeName, error)
-    if (fieldVal == null) return null
+    if (fieldVal == null)
+        return null
 
     return new StructField(name = fieldName, typeName = typeName, value <- fieldVal.value)
 }
@@ -520,101 +544,97 @@ def private write_field(var writer : StringBuilderWriter; field : StructField?; 
         write(writer, " = ")
     }
 
-    unsafe {
-        let val & = field.value
-        if (val is _string) {
-            write(writer, "\"")
-            write(writer, val as _string)
-            write(writer, "\"")
-        } elif (val is _double) {
-            write(writer, val as _double)
-        } elif (val is _float) {
-            write(writer, val as _float)
-        } elif (val is _int) {
-            write(writer, val as _int)
-        } elif (val is _int64) {
-            write(writer, val as _int64)
-        } elif (val is _int16) {
-            write(writer, val as _int16)
-        } elif (val is _int8) {
-            write(writer, int(val as _int8))
-        } elif (val is _uint) {
-            write(writer, "{val as _uint:d}")
-        } elif (val is _uint64) {
-            write(writer, "{val as _uint64:d}")
-        } elif (val is _uint16) {
-            write(writer, "{val as _uint16:d}")
-        } elif (val is _uint8) {
-            write(writer, "{val as _uint8:d}")
-        } elif (val is _bool) {
-            write(writer, (val as _bool) ? "true" : "false")
-        } elif (val is _float2) {
-            let v = val as _float2
-            write(writer, "[{v.x} {v.y}]")
-        } elif (val is _float3) {
-            let v = val as _float3
-            write(writer, "[{v.x} {v.y} {v.z}]")
-        } elif (val is _float4) {
-            let v = val as _float4
-            write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
-        } elif (val is _int2) {
-            let v = val as _int2
-            write(writer, "[{v.x} {v.y}]")
-        } elif (val is _int3) {
-            let v = val as _int3
-            write(writer, "[{v.x} {v.y} {v.z}]")
-        } elif (val is _int4) {
-            let v = val as _int4
-            write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
-        } elif (val is _uint2) {
-            let v = val as _uint2
-            write(writer, "[{v.x} {v.y}]")
-        } elif (val is _uint3) {
-            let v = val as _uint3
-            write(writer, "[{v.x} {v.y} {v.z}]")
-        } elif (val is _uint4) {
-            let v = val as _uint4
-            write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
-        } elif (val is _float3x3) {
-            let m = val as _float3x3
-            write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[1].x} {m[1].y} {m[1].z} {m[2].x} {m[2].y} {m[2].z}]")
-        } elif (val is _float3x4) {
-            let m = val as _float3x4
-            write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[1].x} {m[1].y} {m[1].z} {m[2].x} {m[2].y} {m[2].z} {m[3].x} {m[3].y} {m[3].z}]")
-        } elif (val is _float4x4) {
-            let m = val as _float4x4
-            write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[0].w} {m[1].x} {m[1].y} {m[1].z} {m[1].w} {m[2].x} {m[2].y} {m[2].z} {m[2].w} {m[3].x} {m[3].y} {m[3].z} {m[3].w}]")
-        } elif (val is _array) {
-            let arr & = val as _array
-            write(writer, "[\n")
-            for (elem in arr) {
-                write_field(writer, elem, depth + 1)
-                write(writer, "\n")
-            }
-            write_chars(writer, '\t', depth)
-            write(writer, "]")
-        } elif (val is _object) {
-            let obj & = val as _object
-            write(writer, "\{\n")
-            for (fldV in values(obj)) {
-                write_field(writer, fldV, depth + 1)
-                write(writer, "\n")
-            }
-            write_chars(writer, '\t', depth)
-            write(writer, "}")
+    assume val = field.value
+    if (val is _string) {
+        write(writer, "\"")
+        write(writer, val as _string)
+        write(writer, "\"")
+    } elif (val is _double) {
+        write(writer, val as _double)
+    } elif (val is _float) {
+        write(writer, val as _float)
+    } elif (val is _int) {
+        write(writer, val as _int)
+    } elif (val is _int64) {
+        write(writer, val as _int64)
+    } elif (val is _int16) {
+        write(writer, val as _int16)
+    } elif (val is _int8) {
+        write(writer, int(val as _int8))
+    } elif (val is _uint) {
+        write(writer, "{val as _uint:d}")
+    } elif (val is _uint64) {
+        write(writer, "{val as _uint64:d}")
+    } elif (val is _uint16) {
+        write(writer, "{val as _uint16:d}")
+    } elif (val is _uint8) {
+        write(writer, "{val as _uint8:d}")
+    } elif (val is _bool) {
+        write(writer, (val as _bool) ? "true" : "false")
+    } elif (val is _float2) {
+        let v = val as _float2
+        write(writer, "[{v.x} {v.y}]")
+    } elif (val is _float3) {
+        let v = val as _float3
+        write(writer, "[{v.x} {v.y} {v.z}]")
+    } elif (val is _float4) {
+        let v = val as _float4
+        write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
+    } elif (val is _int2) {
+        let v = val as _int2
+        write(writer, "[{v.x} {v.y}]")
+    } elif (val is _int3) {
+        let v = val as _int3
+        write(writer, "[{v.x} {v.y} {v.z}]")
+    } elif (val is _int4) {
+        let v = val as _int4
+        write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
+    } elif (val is _uint2) {
+        let v = val as _uint2
+        write(writer, "[{v.x} {v.y}]")
+    } elif (val is _uint3) {
+        let v = val as _uint3
+        write(writer, "[{v.x} {v.y} {v.z}]")
+    } elif (val is _uint4) {
+        let v = val as _uint4
+        write(writer, "[{v.x} {v.y} {v.z} {v.w}]")
+    } elif (val is _float3x3) {
+        let m = val as _float3x3
+        write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[1].x} {m[1].y} {m[1].z} {m[2].x} {m[2].y} {m[2].z}]")
+    } elif (val is _float3x4) {
+        let m = val as _float3x4
+        write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[1].x} {m[1].y} {m[1].z} {m[2].x} {m[2].y} {m[2].z} {m[3].x} {m[3].y} {m[3].z}]")
+    } elif (val is _float4x4) {
+        let m = val as _float4x4
+        write(writer, "[{m[0].x} {m[0].y} {m[0].z} {m[0].w} {m[1].x} {m[1].y} {m[1].z} {m[1].w} {m[2].x} {m[2].y} {m[2].z} {m[2].w} {m[3].x} {m[3].y} {m[3].z} {m[3].w}]")
+    } elif (val is _array) {
+        assume arr = val as _array
+        write(writer, "[\n")
+        for (elem in arr) {
+            write_field(writer, elem, depth + 1)
+            write(writer, "\n")
         }
+        write_chars(writer, '\t', depth)
+        write(writer, "]")
+    } elif (val is _object) {
+        assume obj = val as _object
+        write(writer, "\{\n")
+        for (fldV in values(obj)) {
+            write_field(writer, fldV, depth + 1)
+            write(writer, "\n")
+        }
+        write_chars(writer, '\t', depth)
+        write(writer, "}")
     }
 }
 
 def write_config(val : StructField?) : string {
     return build_string() $(var writer) {
         if (val != null && val.value is _object) {
-            unsafe {
-                let obj & = val.value as _object
-                for (fldV in values(obj)) {
-                    write_field(writer, fldV, 0)
-                    write(writer, "\n")
-                }
+            assume obj = val.value as _object
+            for (fldV in values(obj)) {
+                write_field(writer, fldV, 0)
+                write(writer, "\n")
             }
         }
     }

@@ -1,6 +1,7 @@
 options gen2
 options indenting = 4
 options strict_smart_pointers = true
+options relaxed_assign = false
 
 module ConfigFormatBoost shared public
 
@@ -181,7 +182,7 @@ class private ConfigReader : AstReaderMacro {
 [expect_any_enum(ent), template(ent), unused_argument(ent)]
 def from_CF(v : StructField const explicit?; ent : auto(EnumT); defV : EnumT = default<EnumT>) : EnumT {
     if (v == null) return defV
-    let val & = v.value
+    assume val = v.value
     if (val is _string) {
         let name = val as _string
         let ti = typeinfo rtti_typeinfo(type<EnumT>)
@@ -310,58 +311,54 @@ def from_CF(v : StructField const explicit?; ent : auto(VecT); defV : VecT = Vec
     if (v == null){
         return defV
     }
-    unsafe {
-        let val & = v.value
-        static_if (typeinfo stripped_typename(type<VecT>) == "float2") {
-            if (val is _float2) return val as _float2
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "float3") {
-            if (val is _float3) return val as _float3
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "float4") {
-            if (val is _float4) return val as _float4
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "int2") {
-            if (val is _int2) return val as _int2
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "int3") {
-            if (val is _int3) return val as _int3
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "int4") {
-            if (val is _int4) return val as _int4
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "uint2") {
-            if (val is _uint2) return val as _uint2
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "uint3") {
-            if (val is _uint3) return val as _uint3
-        } static_elif (typeinfo stripped_typename(type<VecT>) == "uint4") {
-            if (val is _uint4) return val as _uint4
-        }
+    assume val = v.value
+    static_if (typeinfo stripped_typename(type<VecT>) == "float2") {
+        if (val is _float2) return val as _float2
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "float3") {
+        if (val is _float3) return val as _float3
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "float4") {
+        if (val is _float4) return val as _float4
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "int2") {
+        if (val is _int2) return val as _int2
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "int3") {
+        if (val is _int3) return val as _int3
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "int4") {
+        if (val is _int4) return val as _int4
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "uint2") {
+        if (val is _uint2) return val as _uint2
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "uint3") {
+        if (val is _uint3) return val as _uint3
+    } static_elif (typeinfo stripped_typename(type<VecT>) == "uint4") {
+        if (val is _uint4) return val as _uint4
+    }
 
-        if (val is _array) {
-            unsafe {
-                let arr & = val as _array
-                let n = length(arr)
-                static_if (typeinfo vector_dim(defV) == 2) {
-                    return VecT(
-                        n > 0 ? (arr[0] ?? defV.x) : defV.x,
-                        n > 1 ? (arr[1] ?? defV.y) : defV.y)
-                } static_elif (typeinfo vector_dim(defV) == 3) {
-                    return VecT(
-                        n > 0 ? (arr[0] ?? defV.x) : defV.x,
-                        n > 1 ? (arr[1] ?? defV.y) : defV.y,
-                        n > 2 ? (arr[2] ?? defV.z) : defV.z)
-                } static_elif (typeinfo vector_dim(defV) == 4) {
-                    return VecT(
-                        n > 0 ? (arr[0] ?? defV.x) : defV.x,
-                        n > 1 ? (arr[1] ?? defV.y) : defV.y,
-                        n > 2 ? (arr[2] ?? defV.z) : defV.z,
-                        n > 3 ? (arr[3] ?? defV.w) : defV.w)
-                }
-            }
-        }
-        assume vo = v
+    if (val is _array) {
+        assume arr = val as _array
+        let n = length(arr)
         static_if (typeinfo vector_dim(defV) == 2) {
-            return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y)
+            return VecT(
+                n > 0 ? (arr[0] ?? defV.x) : defV.x,
+                n > 1 ? (arr[1] ?? defV.y) : defV.y)
         } static_elif (typeinfo vector_dim(defV) == 3) {
-            return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y, vo?["z"] ?? defV.z)
+            return VecT(
+                n > 0 ? (arr[0] ?? defV.x) : defV.x,
+                n > 1 ? (arr[1] ?? defV.y) : defV.y,
+                n > 2 ? (arr[2] ?? defV.z) : defV.z)
         } static_elif (typeinfo vector_dim(defV) == 4) {
-            return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y, vo?["z"] ?? defV.z, vo?["w"] ?? defV.w)
+            return VecT(
+                n > 0 ? (arr[0] ?? defV.x) : defV.x,
+                n > 1 ? (arr[1] ?? defV.y) : defV.y,
+                n > 2 ? (arr[2] ?? defV.z) : defV.z,
+                n > 3 ? (arr[3] ?? defV.w) : defV.w)
         }
+    }
+    assume vo = v
+    static_if (typeinfo vector_dim(defV) == 2) {
+        return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y)
+    } static_elif (typeinfo vector_dim(defV) == 3) {
+        return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y, vo?["z"] ?? defV.z)
+    } static_elif (typeinfo vector_dim(defV) == 4) {
+        return VecT(vo?["x"] ?? defV.x, vo?["y"] ?? defV.y, vo?["z"] ?? defV.z, vo?["w"] ?? defV.w)
     }
 }
 
@@ -369,11 +366,9 @@ def from_CF(v : StructField const explicit?; ent : auto(VecT); defV : VecT = Vec
 def from_CF(v : StructField const explicit?; anything : table< auto(KT); auto(VT) >) {
     var ret : table<KT; VT>
     if (v == null || !(v.value is _object)) return <- ret
-    unsafe {
-        let tab & = v.value as _object
+        assume tab = v.value as _object
         for (k, vv in keys(tab), values(tab)) {
             move_to_ref(ret[k], _::from_CF(vv, type<VT -&>))
-        }
     }
     return <- ret
 }
@@ -516,7 +511,9 @@ def CF(v : bool) : StructField? => new StructField(typeName = "bool", value <- C
 def CF(v : float3x3) : StructField? => new StructField(typeName = "f32m3x3", value <- ConfigValue(_float3x3 = v))
 def CF(v : float3x4) : StructField? => new StructField(typeName = "f32m3x4", value <- ConfigValue(_float3x4 = v))
 def CF(v : float4x4) : StructField? => new StructField(typeName = "f32m4x4", value <- ConfigValue(_float4x4 = v))
-def CF(var v : table<string; StructField?>) : StructField? => new StructField(typeName = "Object", value <- ConfigValue(_object <- v))
+def CF(var v : table<string; StructField?>, name : string) : StructField? => new StructField(typeName = name, value <- ConfigValue(_object <- v))
+def CF(var v : table<string; StructField?>) : StructField? => new StructField(typeName = "OBJ_DEPRECATED", value <- ConfigValue(_object <- v))
+
 
 def CF(var v : array<StructField?>) : StructField? {
     var tName = "void[]"

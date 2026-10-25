@@ -1,10 +1,10 @@
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
-#include "engine/platform/InputService.hpp"
-#include "engine/platform/InputState.hpp"
 #include "engine/core/TryengineContext.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/platform/InputService.hpp"
+#include "engine/platform/InputState.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
@@ -75,6 +75,9 @@ public:
 REGISTER_DYN_MODULE(Module_Input, Module_Input);
 REGISTER_MODULE(Module_Input);
 
+MAKE_TYPE_FACTORY(TryMesh, tryengine::graphics::Mesh)
+MAKE_TYPE_FACTORY(TryMat, tryengine::graphics::Material)
+
 void RequestLoadMesh(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
@@ -115,24 +118,24 @@ bool ResourceIsReadyMaterial(uint64_t guid, das::Context* ctx) {
     return res_manager->IsReady<tryengine::graphics::Material>(guid);
 }
 
-uint64_t GetMeshPointer(uint64_t guid, das::Context* ctx) {
+tryengine::graphics::Mesh* GetMeshPointer(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
 
     if (!res_manager)
         LogError("Resource Manager not found");
 
-    return res_manager->GetPointer<tryengine::graphics::Mesh>(guid);
+    return res_manager->GetPointerExplicit<tryengine::graphics::Mesh>(guid);
 }
 
-uint64_t GetMaterialPointer(uint64_t guid, das::Context* ctx) {
+tryengine::graphics::Material* GetMaterialPointer(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
 
     if (!res_manager)
         LogError("Resource Manager not found");
 
-    return res_manager->GetPointer<tryengine::graphics::Material>(guid);
+    return res_manager->GetPointerExplicit<tryengine::graphics::Material>(guid);
 }
 
 void ReleaseMeshResource(uint64_t guid, das::Context* ctx) {
@@ -161,30 +164,35 @@ public:
         das::ModuleLibrary lib(this);
         lib.addBuiltInModule();
 
+        addAnnotation(new DummyTypeAnnotation("TryMesh", "tryengine::graphics::Mesh", sizeof(tryengine::graphics::Mesh),
+                                              alignof(tryengine::graphics::Mesh)));
+
+        addAnnotation(new DummyTypeAnnotation("TryMat", "tryengine::graphics::Material", sizeof(tryengine::graphics::Material),
+                                              alignof(tryengine::graphics::Material)));
 
         das::addExtern<DAS_BIND_FUN(RequestLoadMaterial)>(*this, lib, "RequestLoadMaterial",
                                                           das::SideEffects::accessGlobal, "RequestLoadMaterial");
 
-        das::addExtern<DAS_BIND_FUN(RequestLoadMesh)>(*this, lib, "RequestLoadMesh",
-                                                  das::SideEffects::accessGlobal, "RequestLoadMesh");
+        das::addExtern<DAS_BIND_FUN(RequestLoadMesh)>(*this, lib, "RequestLoadMesh", das::SideEffects::accessGlobal,
+                                                      "RequestLoadMesh");
 
-        das::addExtern<DAS_BIND_FUN(ResourceIsReadyMaterial)>(*this, lib, "ResourceIsReadyMaterial",
-                                          das::SideEffects::accessGlobal, "ResourceIsReadyMaterial");
+        das::addExtern<DAS_BIND_FUN(ResourceIsReadyMaterial)>(
+            *this, lib, "ResourceIsReadyMaterial", das::SideEffects::accessGlobal, "ResourceIsReadyMaterial");
 
         das::addExtern<DAS_BIND_FUN(ResourceIsReadyMesh)>(*this, lib, "ResourceIsReadyMesh",
-                                  das::SideEffects::accessGlobal, "ResourceIsReadyMesh");
+                                                          das::SideEffects::accessGlobal, "ResourceIsReadyMesh");
 
-        das::addExtern<DAS_BIND_FUN(ReleaseMaterialResource)>(*this, lib, "ReleaseMaterialResource",
-                          das::SideEffects::accessGlobal, "ReleaseMaterialResource");
+        das::addExtern<DAS_BIND_FUN(ReleaseMaterialResource)>(
+            *this, lib, "ReleaseMaterialResource", das::SideEffects::accessGlobal, "ReleaseMaterialResource");
 
         das::addExtern<DAS_BIND_FUN(ReleaseMeshResource)>(*this, lib, "ReleaseMeshResource",
-                  das::SideEffects::accessGlobal, "ReleaseMeshResource");
+                                                          das::SideEffects::accessGlobal, "ReleaseMeshResource");
 
-        das::addExtern<DAS_BIND_FUN(GetMeshPointer)>(*this, lib, "GetMeshPointer",
-                                                          das::SideEffects::accessGlobal, "GetMeshPointer");
+        das::addExtern<DAS_BIND_FUN(GetMeshPointer)>(*this, lib, "GetMeshPointer", das::SideEffects::accessGlobal,
+                                                     "GetMeshPointer");
 
-        das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(
-            *this, lib, "GetMaterialPointer", das::SideEffects::accessGlobal, "GetMaterialPointer");
+        das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(*this, lib, "GetMaterialPointer",
+                                                         das::SideEffects::accessGlobal, "GetMaterialPointer");
 
         verifyAotReady();
     }  // das::SimNode_ExtFuncCallAndCopyOrMove
@@ -224,7 +232,6 @@ struct FileHandleAnnotation : ManagedStructureAnnotation<FileHandle, false, true
         addProperty<DAS_BIND_MANAGED_PROP(IsPending)>("IsPending", "IsPending");
         addProperty<DAS_BIND_MANAGED_PROP(GetFileSize)>("GetFileSize", "GetFileSize");
     }
-
 
     bool isLocal() const override { return true; }
     bool canMove() const override { return true; }
@@ -270,7 +277,7 @@ das::Array GetDataSpan(tryengine::resources::FileHandle& self) {
 
     auto* data = self.GetData().data();
 
-    arr.data = (char*)(data);
+    arr.data = (char*) (data);
     arr.size = static_cast<uint32_t>(self.GetData().size());
     arr.capacity = static_cast<uint32_t>(self.GetData().size());
     return arr;
@@ -292,8 +299,8 @@ public:
         addEnumeration(new EnumerationTaskStatus());
 
         // Вспомогательные функции
-        addExtern<DAS_BIND_FUN(finalize_file_handle)>(
-            *this, lib, "finalize_file_handle", SideEffects::modifyArgument, "finalize_file_handle");
+        addExtern<DAS_BIND_FUN(finalize_file_handle)>(*this, lib, "finalize_file_handle", SideEffects::modifyArgument,
+                                                      "finalize_file_handle");
 
         addExtern<DAS_BIND_FUN(ReadChunkAsync), das::SimNode_ExtFuncCallAndCopyOrMove>(
             *this, lib, "ReadChunkAsync", SideEffects::accessGlobal, "ReadChunkAsync");

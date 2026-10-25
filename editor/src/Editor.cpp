@@ -8,16 +8,15 @@
 #include "editor/asset_inspector/MaterialAssetInspector.hpp"
 #include "editor/asset_inspector/ShaderAssetInspector.hpp"
 #include "editor/asset_inspector/TextureAssetInspector.hpp"
-#include "editor/gui/EditorGUI.hpp"
 #include "editor/import/GlslImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/import/SlangImporter.hpp"
+#include "engine/graphics/loaders/JsonLoader.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderLoader.hpp"
 #include "engine/graphics/loaders/TextureLoader.hpp"
-#include "engine/platform/InputService.hpp"
 #include "engine/resources/AssetRegistry.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
@@ -52,6 +51,7 @@ void Editor::RegisterResourceLoaders() const {
     //     JsonLoader<ModelAssetMap>(),
     //     EditorArtifactLocator{"game/artifacts", static_cast<uint32_t>(tryengine::EditorArtifactGuid::AssetMap)});
 
+    res_manager.RegisterType<tryengine::graphics::MaterialAsset>(JsonLoader<tryengine::graphics::MaterialAsset>());
     res_manager.RegisterType<tryengine::graphics::Material>(tryengine::graphics::MaterialLoader(vulkan_device_, res_manager));
     res_manager.RegisterType<tryengine::graphics::Mesh>(tryengine::graphics::MeshLoader(vulkan_device_));
     res_manager.RegisterType<tryengine::graphics::Shader>(

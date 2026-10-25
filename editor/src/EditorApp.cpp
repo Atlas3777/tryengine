@@ -1,11 +1,11 @@
 #include "editor/EditorApp.hpp"
 
 #include "editor/AssetPipeline.hpp"
+#include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"
 #include "editor/EditorInputFilter.hpp"
 #include "editor/EditorRender.hpp"
 #include "editor/EditorScriptSetup.hpp"
-#include "editor/gui/EditorGUI.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/PollHandle.hpp"
 #include "engine/core/Engine.hpp"
@@ -41,6 +41,8 @@ void EditorApp::Init() {
 
     engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
 
+    engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), engine_->Get<AsyncFileManager>());
+
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
 
     auto& time_manager = engine_->RegisterSystem<TimeManager>();
@@ -56,7 +58,7 @@ void EditorApp::Init() {
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
 
     const auto task = RunPollable(
-        ThreadPool(), editor_->GetAssetSourceDatabase().InitEngineContent(engine_->Get<AsyncFileManager>()));
+        ThreadPool(), editor_->GetAssetSourceDatabase().ImportEngineContent(engine_->Get<AsyncFileManager>()));
 
     while (!task.IsReady()) {
         engine_->Get<AsyncFileManager>().Pull();
@@ -66,12 +68,12 @@ void EditorApp::Init() {
     }
 
     engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
-    engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_, *frame_sync_);
+    engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,
+                                          *frame_sync_);
 
     engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
 
-    RunAndForget(ThreadPool(),
-                 editor_->GetAssetSourceDatabase().AsyncLoadGameContent(engine_->Get<AsyncFileManager>()));
+    RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
 
 void EditorApp::Run() const {

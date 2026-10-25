@@ -19,7 +19,7 @@ public:
         if (!asset_data_opt.has_value())
             co_return core::Error("Deserialize MaterialAsset failed");
 
-        MaterialAsset asset_data = *asset_data_opt;
+        MaterialAsset asset_data = eastl::move(*asset_data_opt);
 
         // 1. Асинхронно загружаем шейдер
         const auto shader_res = co_await resource_manager_.GetAsync<Shader>(asset_data.shader_asset_id);
@@ -51,7 +51,7 @@ public:
             const auto texture_res = co_await resource_manager_.GetAsync<TextureSampler>(tex_bind.texture_id);
 
             if (!texture_res.has_value())
-                co_return LogAndMakeError("Texture resource loading error {}", tex_bind.texture_id); // Исправлен ID в логе
+                co_return LogAndMakeError("Texture resource loading error {}", tex_bind.texture_id);
 
             material.SetTexture(name, *texture_res);
         }

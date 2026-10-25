@@ -10,71 +10,13 @@ entities: Entity[] = [
 			id: u32 = 0
 			generation: i32 = 0
 		}
-		eid: EntityId = {
-			id: u32 = 0
-			generation: i32 = 1
-		}
-		tag: string = "Sun"
-		PointLight_intensity: f32 = 1
-		Transform_rotation: f32x4 = [0 0 0 1]
-		PointLight_color: f32x3 = [2 1 1]
-		Relationship_parent: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Relationship_next: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Transform_position: f32x3 = [0 100 0]
-		Transform_scale: f32x3 = [1 1 1]
-		PointLight_radius: f32 = 150
-		Relationship_prev: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-	}
-	{
-		Relationship_first_child: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		eid: EntityId = {
-			id: u32 = 1
-			generation: i32 = 1
-		}
-		tag: string = "PointLight"
-		PointLight_intensity: f32 = 1
-		Transform_rotation: f32x4 = [0 0 0 1]
-		PointLight_color: f32x3 = [0 0 1]
-		Relationship_parent: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Relationship_next: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Transform_position: f32x3 = [10 0 0]
-		Transform_scale: f32x3 = [1 1 1]
-		PointLight_radius: f32 = 30
-		Relationship_prev: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-	}
-	{
-		Relationship_first_child: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
 		Camera_far_plane: f32 = 100
 		eid: EntityId = {
-			id: u32 = 2
+			id: u32 = 0
 			generation: i32 = 1
 		}
 		tag: string = "Camera"
-		Transform_rotation: f32x4 = [-0.048162106 -0.016915914 0.33095104 0.9422662]
+		Transform_rotation: f32x4 = [-0.08366456 -0.20791103 0.9041072 0.36381775]
 		Relationship_parent: EntityId = {
 			id: u32 = 0
 			generation: i32 = 0
@@ -83,9 +25,14 @@ entities: Entity[] = [
 			id: u32 = 0
 			generation: i32 = 0
 		}
-		Transform_position: f32x3 = [4.928126 -3.5558996 2.2565267]
+		Transform_position: f32x3 = [9.651797 15.833638 7.205178]
 		Transform_scale: f32x3 = [1 1 1]
 		Camera_near_plane: f32 = 0.01
+		TestSerRRR: TestSer = {
+			name: string = "tet"
+			somee: u64 = 324
+			name2: string = "HAHHA2"
+		}
 		Camera_fov: f32 = 60
 		Relationship_prev: EntityId = {
 			id: u32 = 0
@@ -99,7 +46,7 @@ entities: Entity[] = [
 		}
 		materialGuid: u64 = 17036954862819815981
 		eid: EntityId = {
-			id: u32 = 3
+			id: u32 = 1
 			generation: i32 = 1
 		}
 		tag: string = "teest"
@@ -129,7 +76,7 @@ entities: Entity[] = [
 		}
 		materialGuid: u64 = 17036954862819815981
 		eid: EntityId = {
-			id: u32 = 4
+			id: u32 = 2
 			generation: i32 = 1
 		}
 		tag: string = "Right 1"
@@ -157,7 +104,7 @@ entities: Entity[] = [
 		}
 		materialGuid: u64 = 17036954862819815981
 		eid: EntityId = {
-			id: u32 = 5
+			id: u32 = 3
 			generation: i32 = 1
 		}
 		tag: string = "Right 2"
@@ -185,7 +132,7 @@ entities: Entity[] = [
 		}
 		materialGuid: u64 = 17036954862819815981
 		eid: EntityId = {
-			id: u32 = 6
+			id: u32 = 4
 			generation: i32 = 1
 		}
 		tag: string = "Left 1"
@@ -213,7 +160,7 @@ entities: Entity[] = [
 		}
 		materialGuid: u64 = 17036954862819815981
 		eid: EntityId = {
-			id: u32 = 7
+			id: u32 = 5
 			generation: i32 = 1
 		}
 		tag: string = "Left 2"

@@ -5,8 +5,9 @@
 #include <EASTL/vector.h>
 #include <mutex>
 
+#include "UiTreeBuilder.hpp"
+#include "editor/AssetScanner.hpp"
 #include "editor/FileWatcher.hpp"
-#include "editor/gui/UiFile.hpp"
 #include "engine/async/Task.hpp"
 #include "import/ImportSystem.hpp"
 
@@ -23,15 +24,6 @@ struct AssetMountPoint {
     eastl::string artifacts_dir;
 };
 
-struct DomainScanResult {
-    AssetMountPoint mount;
-    eastl::vector<eastl::string> assets;
-    eastl::vector<eastl::string> metas;
-    eastl::vector<eastl::string> orphan_assets;
-    eastl::vector<eastl::string> orphan_metas;
-    eastl::vector<UiFolder> folders;
-};
-
 class AssetPipeline {
 public:
     enum class StorageDomain : uint8_t { Engine = 0, Game = 1 };
@@ -39,28 +31,27 @@ public:
     AssetPipeline(tryengine::resources::AssetRegistry& registry);
     ~AssetPipeline() = default;
 
+    const eastl::vector<UiFolder>& GetFolders(StorageDomain domain) const;
     eastl::vector<UiFolder>& GetFoldersMutable(StorageDomain domain);
 
-    tryengine::async::Task<void> InitEngineContent(tryengine::resources::AsyncFileManager& file_manager);
-    tryengine::async::Task<void> AsyncLoadGameContent(tryengine::resources::AsyncFileManager& file_manager);
+    tryengine::async::Task<void> ImportEngineContent(tryengine::resources::AsyncFileManager& file_manager);
+    tryengine::async::Task<void> ImportGameContent(tryengine::resources::AsyncFileManager& file_manager);
 
     void OnFileCreatedOrModified(const char* path);
     void OnFileDeleted(const char* path);
 
-    eastl::vector<UiFolder> engine_folders_;
-    eastl::vector<UiFolder> game_folders_;
-
-    ImportSystem& GetImportSystem(){return import_system_;}
+    ImportSystem& GetImportSystem() { return import_system_; }
 
 private:
-    tryengine::async::Task<void> ProcessDomain(DomainScanResult& scan_data,
+    tryengine::async::Task<void> ProcessDomain(const AssetMountPoint& mount,
+                                               ScanResult scan_data,
                                                tryengine::resources::AsyncFileManager& file_manager,
                                                StorageDomain domain);
 
     tryengine::async::Task<void> ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
                                                    tryengine::resources::AsyncFileManager& file_manager);
 
-    tryengine::async::Task<void> ProcessExistingAsset(eastl::string asset_path, eastl::string meta_path,
+    tryengine::async::Task<void> ProcessExistingAsset(DiscoveredAssetPair asset_pair,
                                                       AssetMountPoint mount,
                                                       tryengine::resources::AsyncFileManager& file_manager);
 
@@ -70,6 +61,9 @@ private:
     mutable std::mutex db_mutex_;
     eastl::hash_map<uint64_t, eastl::string> guid_to_path_;
     eastl::hash_map<eastl::string, uint64_t> path_to_guid_;
+
+    eastl::vector<UiFolder> engine_folders_;
+    eastl::vector<UiFolder> game_folders_;
 
     FileWatcher file_watcher_;
     ImportSystem import_system_;

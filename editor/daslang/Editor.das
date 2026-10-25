@@ -21,11 +21,11 @@ let mat_id = 17036954862819815981ul
 def EditorUpdate(){
     tick_async_tasks()
 
-    if (pressed(Key.Y))
-        StartTask(SaveSceneAsync("TestScene"))
+    // if (pressed(Key.Y))
+    //     StartTask(SaveSceneAsync("TestScene"))
 
-    if (pressed(Key.P))
-        StartTask(LoadSceneAsync("TestScene"))
+    // if (pressed(Key.P))
+    //     StartTask(LoadSceneAsync("TestScene"))
 
     if (pressed(Key.H)){
         print("request mesh \n")

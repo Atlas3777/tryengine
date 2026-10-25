@@ -50,18 +50,16 @@ public:
         {
             std::lock_guard lock(mutex_);
             auto it = mounted_paks_by_path_.find(pak_path);
-            if (it != mounted_paks_by_path_.end()) {
+            if (it != mounted_paks_by_path_.end())
                 co_return it->second;
-            }
         }
 
         // 2. Асинхронно открываем дескриптор файла в io_uring
         FileHandle open_handle = file_manager_.OpenAsyncCopy(pak_path, O_RDONLY);
         co_await open_handle;
 
-        if (open_handle.IsFailed() || !open_handle.IsValid()) {
+        if (open_handle.IsFailed() || !open_handle.IsValid())
             co_return LogAndMakeError("Failed to open PAK file: {}", pak_path.c_str());
-        }
 
         const uint32_t fd_slot = open_handle.GetSlotIndex();
 

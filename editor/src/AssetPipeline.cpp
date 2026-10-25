@@ -1,8 +1,7 @@
 #include "editor/AssetPipeline.hpp"
 
-#include "EASTL/hash_map.h"
 #include "editor/JsonParser.hpp"
-#include "editor/gui/LoadResourcesAndBuildUi.h"
+#include "editor/UiTreeBuilder.hpp"
 #include "editor/import/IAssetImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
@@ -22,6 +21,16 @@ using tryengine::core::Error;
 
 const char* meta_ext = ".meta";
 
+const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) const {
+    switch (domain) {
+        case StorageDomain::Engine:
+            return engine_folders_;
+        case StorageDomain::Game:
+            return game_folders_;
+    }
+    return engine_folders_;
+}
+
 eastl::vector<UiFolder>& AssetPipeline::GetFoldersMutable(StorageDomain domain) {
     switch (domain) {
         case StorageDomain::Engine:
@@ -32,15 +41,14 @@ eastl::vector<UiFolder>& AssetPipeline::GetFoldersMutable(StorageDomain domain) 
     return engine_folders_;
 }
 
-AssetPipeline::AssetPipeline(AssetRegistry& registry)
-    : registry_(registry) {}
+AssetPipeline::AssetPipeline(AssetRegistry& registry) : registry_(registry) {}
 
 void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,
-                                                const eastl::vector<uint64_t>& sub_assets) const {
+                                           const eastl::vector<uint64_t>& sub_assets) const {
     LogInfo(LogCategory::Importer, "add to registry: main guid - {}", main_guid);
     if (sub_assets.empty()) {
         registry_.RegisterLooseArtifact(main_guid,
-                                   tryengine::fmt::format("{}/runtime/{}/0", mount.artifacts_dir.c_str(), main_guid));
+                                         tryengine::fmt::format("{}/runtime/{}/0", mount.artifacts_dir.c_str(), main_guid));
         return;
     }
 
@@ -50,32 +58,28 @@ void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t
     }
 }
 
-Task<void> AssetPipeline::InitEngineContent(AsyncFileManager& file_manager) {
+Task<void> AssetPipeline::ImportEngineContent(AsyncFileManager& file_manager) {
     AssetMountPoint engine_mount{
         .name = "engine", .assets_dir = "engine_content/assets", .artifacts_dir = "engine_content/artifacts"};
 
-    DomainScanResult scan_data{.mount = engine_mount};
-    LoadResourcesAndBuildUi(engine_mount.assets_dir.c_str(), scan_data.assets, scan_data.metas, scan_data.orphan_assets,
-                            scan_data.orphan_metas, scan_data.folders);
+    LogInfo(LogCategory::Importer, "EngineContent scanning...");
+    ScanResult scan_data = AssetScanner::ScanDirectory(engine_mount.assets_dir.c_str());
 
     LogInfo(LogCategory::Importer, "EngineContent processing...");
-
-    co_await ProcessDomain(scan_data, file_manager, StorageDomain::Engine);
+    co_await ProcessDomain(engine_mount, eastl::move(scan_data), file_manager, StorageDomain::Engine);
 
     LogInfo(LogCategory::Importer, "EngineContent Ready!");
     co_return {};
 }
 
-Task<void> AssetPipeline::AsyncLoadGameContent(AsyncFileManager& file_manager) {
+Task<void> AssetPipeline::ImportGameContent(AsyncFileManager& file_manager) {
     AssetMountPoint game_mount{.name = "game", .assets_dir = "game/assets", .artifacts_dir = "game/artifacts"};
 
-    DomainScanResult scan_data{.mount = game_mount};
-    LoadResourcesAndBuildUi(game_mount.assets_dir.c_str(), scan_data.assets, scan_data.metas, scan_data.orphan_assets,
-                            scan_data.orphan_metas, scan_data.folders);
+    LogInfo(LogCategory::Importer, "GameContent scanning...");
+    ScanResult scan_data = AssetScanner::ScanDirectory(game_mount.assets_dir.c_str());
 
     LogInfo(LogCategory::Importer, "GameContent processing...");
-
-    co_await ProcessDomain(scan_data, file_manager, StorageDomain::Game);
+    co_await ProcessDomain(game_mount, eastl::move(scan_data), file_manager, StorageDomain::Game);
 
     file_watcher_.WatchDirrectory(game_mount.assets_dir.c_str());
 
@@ -83,31 +87,52 @@ Task<void> AssetPipeline::AsyncLoadGameContent(AsyncFileManager& file_manager) {
     co_return {};
 }
 
-Task<void> AssetPipeline::ProcessDomain(DomainScanResult& scan_data, AsyncFileManager& file_manager,
-                                              StorageDomain domain) {
+Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult scan_data,
+                                         AsyncFileManager& file_manager, StorageDomain domain) {
     eastl::vector<Task<void>> tasks;
+    tasks.reserve(scan_data.matched_assets.size() + scan_data.orphan_assets.size());
 
-    for (size_t i = 0; i < scan_data.assets.size(); ++i) {
-        tasks.push_back(ProcessExistingAsset(scan_data.assets[i], scan_data.metas[i], scan_data.mount, file_manager));
+    // 1. Фаза чтения метафайлов и проверки актуальности существующих ассетов
+    for (auto& pair : scan_data.matched_assets) {
+        tasks.push_back(ProcessExistingAsset(eastl::move(pair), mount, file_manager));
     }
 
-    for (const auto& orphan : scan_data.orphan_assets) {
-        tasks.push_back(ImportOrphanAsset(orphan, scan_data.mount, file_manager));
+    // 2. Фаза импорта ассетов-сирот (создаются .meta и генерируются валидные GUID)
+    for (auto& orphan : scan_data.orphan_assets) {
+        tasks.push_back(ImportOrphanAsset(eastl::move(orphan), mount, file_manager));
     }
 
     auto expecteds = co_await WhenAll(ThreadPool(), eastl::move(tasks));
 
     if (!expecteds.has_value())
-        co_return LogAndMakeError("С ожиданием что-то");
+        co_return LogAndMakeError("Ошибка при асинхронной обработке ассетов");
 
-    auto& target_folders = GetFoldersMutable(domain);
-    target_folders = eastl::move(scan_data.folders);
+
+    // 3. Фаза построения UI-дерева (все GUID 100% гарантированно зарегистрированы)
+    eastl::hash_map<eastl::string, uint64_t> path_to_guid_copy;
+    {
+        std::lock_guard lock(db_mutex_);
+        path_to_guid_copy = path_to_guid_;
+    }
+
+    auto ui_folders = UiTreeBuilder::BuildUiTree(scan_data.raw_folders, path_to_guid_copy);
+
+    switch(domain) {
+        default:
+            TRY_ASSERT(false, "Unhandled StorageDomain Type");
+        case StorageDomain::Engine:
+            engine_folders_ = eastl::move(ui_folders);
+            break;
+        case StorageDomain::Game:
+            game_folders_ = eastl::move(ui_folders);
+            break;
+    }
 
     co_return {};
 }
 
 Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
-                                                 AsyncFileManager& file_manager) {
+                                             AsyncFileManager& file_manager) {
     // 1. Получение размера файла
     FileHandle stat_handle = file_manager.GetStatAsyncCopy(asset_path);
     co_await stat_handle;
@@ -127,12 +152,10 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     if (dot_pos == eastl::string::npos)
         co_return LogAndMakeError("Файл не имеет расширения: {}", asset_path.c_str());
 
-
     const auto ext = asset_path.substr(dot_pos);
     IAssetImporter* importer = import_system_.GetImporterByExtension(ext.c_str());
     if (!importer)
         co_return LogAndMakeError("Не найден импортер для расширения: {}", asset_path.c_str());
-
 
     // 4. Импорт
     ImportContext ctx(asset_path, read_handle.GetData());
@@ -159,7 +182,6 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
 
         if (artifact.target == ArtifactTarget::Runtime)
             runtime_sub_guids.push_back(artifact.sub_guid);
-
     }
 
     if (!res.meta_bytes.empty()) {
@@ -172,7 +194,6 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     for (const auto& write_handle : write_handles) {
         if (write_handle.IsFailed())
             co_return LogAndMakeError("Не удалось записать артефакт: {}", write_handle.GetPath().data());
-
     }
 
     // 6. Регистрация артефактов и обновление карт под мьютексом
@@ -204,12 +225,10 @@ static Task<FileHandle> GetOldestFileTime(AsyncFileManager& file_manager, eastl:
         if (handle.IsFailed())
             co_return std::move(handle);
 
-
     uint32_t oldest_index = 0;
     for (uint32_t i = 1; i < stat_handles.size(); ++i)
         if (stat_handles[i].GetMtime() < stat_handles[oldest_index].GetMtime())
             oldest_index = i;
-
 
     co_return std::move(stat_handles[oldest_index]);
 }
@@ -230,8 +249,12 @@ static eastl::vector<eastl::string> FindAllArtifacts(const AssetMountPoint& moun
     return paths;
 }
 
-Task<void> AssetPipeline::ProcessExistingAsset(eastl::string asset_path, eastl::string meta_path,
-                                                   AssetMountPoint mount, AsyncFileManager& file_manager) {
+Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
+                                                AssetMountPoint mount,
+                                                AsyncFileManager& file_manager) {
+    const eastl::string& asset_path = asset_pair.asset_path;
+    const eastl::string& meta_path = asset_pair.meta_path;
+
     // 1. Stat ассета и мета-файла
     FileHandle asset_stat = file_manager.GetStatAsyncCopy(asset_path);
     FileHandle meta_stat = file_manager.GetStatAsyncCopy(meta_path);
@@ -264,14 +287,13 @@ Task<void> AssetPipeline::ProcessExistingAsset(eastl::string asset_path, eastl::
 
     // 3. Проверка времени модификации артефактов
     auto artifact_paths = FindAllArtifacts(mount, header);
-
     auto oldest_artifact_stat_res = co_await GetOldestFileTime(file_manager, eastl::move(artifact_paths));
-
     auto& oldest_artifact_stat = *oldest_artifact_stat_res;
 
     bool need_reimport = false;
     if (oldest_artifact_stat.IsFailed()) {
-        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}, {}", asset_path.c_str(), oldest_artifact_stat.GetPath());
+        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}, {}", asset_path.c_str(),
+                oldest_artifact_stat.GetPath());
         need_reimport = true;
     } else {
         const FileTime meta_mtime = meta_stat.GetMtime();
@@ -289,9 +311,8 @@ Task<void> AssetPipeline::ProcessExistingAsset(eastl::string asset_path, eastl::
     if (!need_reimport)
         co_return {};
 
-
     // 4. Повторный импорт устаревшего ассета
-    IAssetImporter* importer = import_system_.GetImporterByName(header.importer_type.c_str());
+    IAssetImporter* importer = import_system_.GetImporterByName(header.importer_type);
     if (!importer)
         co_return LogAndMakeError("Не найден импортер для типа: {}, путь {}", header.importer_type.c_str(), asset_path);
 

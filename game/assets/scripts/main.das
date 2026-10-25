@@ -1,4 +1,7 @@
 options gen2
+options rtti = true
+
+require daslib/rtti
 
 require daslib/decs
 
@@ -8,44 +11,33 @@ require tryengine/Input
 require tryengine/Render
 require tryeditor/QuadTreeDebugWindow
 require tryResources
+require tryengine/Serializable
+require tryengine/ConfigFormat
+require tryengine/ConfigFormatBoost
+
+// [Serializable]
+// struct TestSer {
+//     name : string
+//     somee : uint64
+//     pp : CastPlayer
+// }
+
+// struct CastPlayer{
+//     hp : int
+//     speed : float
+// }
 
 [export]
 def Start(){
+    //var test = TestSer(name = "", somee = 43ul, pp = CastPlayer(hp = 3, speed = 3f))
+
+    //let a = write_config(CF(test))
+    //print("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTt : {a}")
+
     update_input()
-    // init_quadtree_debug()
-
-    // create_entity() @(eid, cmp) {
-    //     cmp.tag := "Sun"
-    //     apply_decs_template(cmp, Relationship())
-    //     apply_decs_template(cmp, Transform(
-    //         position = float3(0.0f, 100.0f, 0.0f),
-    //         rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-    //         scale = float3(1.0f, 1.0f, 1.0f)
-    //     ))
-    //     apply_decs_template(cmp, PointLight(
-    //         intensity = 1.0f,
-    //         color = float3(2f, 1f, 1f),
-    //         radius = 150.0f
-    //     ))
-    // }
-
-    // create_entity() @(eid, cmp) {
-    //     cmp.tag := "PointLight"
-    //     apply_decs_template(cmp, Relationship())
-    //     apply_decs_template(cmp, Transform(
-    //         position = float3(10.0f, 0.0f, 0.0f),
-    //         rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-    //         scale = float3(1.0f, 1.0f, 1.0f)
-    //     ))
-    //     apply_decs_template(cmp, PointLight(
-    //         intensity = 1.0f,
-    //         color = float3(0f, 0f, 1f),
-    //         radius = 30.0f
-    //     ))
-    // }
 
     create_entity() @(eid, cmp){
-        cmp.tag := "Camera"
+        cmp.tag := "EditorCamera"
         apply_decs_template(cmp, Transform(
             position = float3(0.0f, 0.0f, 2.0f),
             rotation = float4(0f, 0f, 0f, 1f),
@@ -59,7 +51,7 @@ def Start(){
         apply_decs_template(cmp, Relationship())
     }
 
-    // commit()
+    commit()
 }
 
 [export]

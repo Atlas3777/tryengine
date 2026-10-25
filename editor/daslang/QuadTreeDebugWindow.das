@@ -17,10 +17,10 @@ require tryengine/QuadTree
 
 var public g_observerPos : float2 = float2(2000.0f, 2000.0f)
 var public g_observerAngle : float = 0.0f
-var public g_tree : QuadTree
+var public g_tree : QuadTree = QuadTree()
 
 def public init_quadtree_debug() {
-    var cfg : QuadTreeConfig
+    var cfg : QuadTreeConfig = QuadTreeConfig()
     cfg.rootSize = 4000.0f
     cfg.rootCenter = float2(2000.0f, 2000.0f)
     cfg.minChunkSize = 250.0f

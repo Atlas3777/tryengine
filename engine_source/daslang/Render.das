@@ -31,8 +31,8 @@ def get_lights() : array<PointLightGPU>? {
 [cpp_layout]
 struct DrawCall{
     matrix : float4x4
-    mesh_id : uint64
-    material_id : uint64
+    mesh_id : TryMesh const?
+    material_id : TryMat const?
     entity_id : uint64
     _pad : uint64
 }
@@ -44,11 +44,11 @@ def get_render_obj() : array<DrawCall>? {
     start_load()
     dcs.clear()
 
-    query() <| $(eid : EntityId, let transform : Transform, let mesh : RuntimePtr, let material : RuntimePtr) {
+    query() <| $(eid : EntityId, transform : Transform, mesh : TryMesh?, material : TryMat?) {
         let id = unsafe(reinterpret<uint64>(eid))
-        dcs |> push(DrawCall(
-            mesh_id = mesh.ptr,
-            material_id = material.ptr,
+        dcs.push(DrawCall(
+            mesh_id = mesh,
+            material_id = material,
             matrix = compose(transform.position, transform.rotation, transform.scale),
             entity_id = id
         ))
@@ -99,8 +99,8 @@ def start_load(){
             print("ура, загрузились, обновляемся.\n")
             print("кстати guid mat {materialGuid:d}, mesh - {meshGuid:d} \n")
             update_entity(eid) @(eid, cmp) {
-                cmp |> set("mesh", RuntimePtr(ptr = mesh_ptr))
-                cmp |> set("material", RuntimePtr(ptr = mat_ptr))
+                cmp |> set("mesh", mesh_ptr)
+                cmp |> set("material", mat_ptr)
             }
         }
         // print("пытаемся, guidMat {materialGuid:d} guidMesh {meshGuid:d}\n")

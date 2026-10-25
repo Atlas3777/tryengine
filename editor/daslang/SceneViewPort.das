@@ -7,13 +7,14 @@ require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 
-require tryeditor/AssetBrowser
 require tryeditor
+require tryeditor/FileSystemUtils
 
 var a : AssetItem
 var scene_viewport_size : float2 = float2(600, 600)
 var scene_viewport_mouse : Mouse
 
+[cpp_layout]
 struct Mouse{
     pos : float2
     pressed : bool

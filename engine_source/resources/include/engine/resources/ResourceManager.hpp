@@ -68,12 +68,21 @@ public:
     }
 
     template <typename T>
-    uint64_t GetPointer(uint64_t guid) {
+    void* GetPointer(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
         TRY_ASSERT(cache, "Cache for type not registered");
 
         void* raw_ptr = cache->GetRawPointer(guid);
-        return reinterpret_cast<uint64_t>(raw_ptr);
+        return raw_ptr;
+    }
+
+    template <typename T>
+    T* GetPointerExplicit(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        TRY_ASSERT(cache, "Cache for type not registered");
+
+        void* raw_ptr = cache->GetRawPointer(guid);
+        return static_cast<T*>(raw_ptr);
     }
 
     template <typename T>

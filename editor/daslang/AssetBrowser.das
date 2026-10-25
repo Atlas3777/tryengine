@@ -1,6 +1,6 @@
 options gen2
 
-module AssetBrowser shared private
+module AssetBrowser shared public
 
 require imgui
 require imgui/imgui_widgets_builtin
@@ -12,6 +12,8 @@ require imgui/imgui_boost_v2
 require imgui/imgui_style_builtin
 require tryengine/Types
 require tryeditor
+require tryeditor/FileSystemUtils
+require tryeditor/PakManager
 require strings
 require math
 
@@ -22,9 +24,9 @@ let AB_ITEM_SPACING   = float2(4.0f, 2.0f)
 let AB_INDENT         = 10.0f
 
 // Универсальная стилизация элементов ресурсов (папки и файлы)
-def AssetStyle(selected, is_dir : bool; blk : block) {
-    let bg = is_dir ? ImVec4(0.18f, 0.32f, 0.52f, 1.0f) : (selected ? ImVec4(0.20f, 0.48f, 0.32f, 1.0f) : ImVec4(0.22f, 0.24f, 0.28f, 1.0f))
-    let hover = is_dir ? ImVec4(0.28f, 0.50f, 0.78f, 1.0f) : (selected ? ImVec4(0.28f, 0.58f, 0.40f, 1.0f) : ImVec4(0.30f, 0.34f, 0.38f, 1.0f))
+def AssetStyle(selected : bool; is_dir : bool; blk : block) {
+    let bg = selected ? ImVec4(0.20f, 0.48f, 0.32f, 1.0f) : (is_dir ? ImVec4(0.18f, 0.32f, 0.52f, 1.0f) : ImVec4(0.22f, 0.24f, 0.28f, 1.0f))
+    let hover = selected ? ImVec4(0.28f, 0.58f, 0.40f, 1.0f) : (is_dir ? ImVec4(0.28f, 0.50f, 0.78f, 1.0f) : ImVec4(0.30f, 0.34f, 0.38f, 1.0f))
     let align = is_list_view ? float2(0.0f, 0.5f) : float2(0.5f, 0.5f)
 
     with_style(
@@ -51,12 +53,6 @@ var is_list_view : bool = true
 var tile_icon_size : float = 70.0f
 let MIN_TILE_SIZE : float = 35.0f
 let MAX_TILE_SIZE : float = 200.0f
-
-struct public AssetItem {
-    guid : uint64
-    index : uint
-    name : string
-}
 
 var public PAYLOAD_VALUE : AssetItem
 
@@ -149,6 +145,13 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
             current_folder_idx = folder_idx
         }
 
+        // Контекстное меню по ПКМ в дереве папок
+        popup_context_item(PO_CTX_ITEM, (str_id = "ctx_item", flags = ImGuiPopupFlags.MouseButtonRight))  {
+            if (menu_item(PO_REG_PAK, (text = "RegisterPak", shortcut = "F232"))) {
+                register_folder_as_pak(folders[folder_idx])
+            }
+        }
+
         if (opened) {
             if (has_children) {
                 for (sub_idx in folders[folder_idx].subfolders) {
@@ -157,6 +160,69 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
             }
             tree_pop()
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Поиск по всему проекту
+// ---------------------------------------------------------------------
+def DrawSearchResults(let folders) {
+    text("Search results across project:")
+    separator(WI_SEP_1)
+
+    let avail_w = GetContentRegionAvail().x
+    let items_per_row = max(1, int(avail_w / (tile_icon_size + 8.0f)))
+    let item_size = is_list_view ? float2(avail_w, 22.0f) : float2(tile_icon_size, tile_icon_size)
+    var visible_count = 0
+
+    for (f_idx in range(length(folders))) {
+        assume folder = folders[f_idx]
+        let file_count = length(folder.files)
+
+        for (i in range(file_count)) {
+            assume file = folder.files[i]
+            if (!passes_filter(W_SEARCH_FILTER, file.name)) {
+                continue
+            }
+
+            if (!is_list_view && visible_count > 0 && (visible_count % items_per_row != 0)) {
+                same_line()
+            }
+
+            let is_selected = (selected_file_folder_idx == f_idx && selected_file_idx == i)
+
+            with_id("file_{f_idx}_{i}") {
+                group(FILE_GRP) {
+                    AssetStyle(is_selected, false) {
+                        let btn_text = is_list_view ? "  [FILE] {file.name}  ({folder.name})" : "FILE"
+                        if (button(BT_GO, (text = btn_text, size = item_size))) {
+                            selected_file_folder_idx = f_idx
+                            selected_file_idx = i
+                        }
+
+                        drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
+                            PAYLOAD_VALUE.name = file.name
+                            PAYLOAD_VALUE.path = file.path
+                            PAYLOAD_VALUE.guid = file.guid
+                            unsafe {
+                                SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
+                                    uint64(typeinfo sizeof(PAYLOAD_VALUE)),
+                                    ImGuiCond.Once)
+                            }
+                            text("Dragging asset: {PAYLOAD_VALUE.name}\nGUID: {PAYLOAD_VALUE.guid}\nPath: {PAYLOAD_VALUE.path}")
+                        }
+                    }
+                    if (!is_list_view) {
+                        text("{file.name}")
+                    }
+                }
+            }
+            visible_count++
+        }
+    }
+
+    if (visible_count == 0) {
+        text("No matching files found.")
     }
 }
 
@@ -182,6 +248,13 @@ def DrawFolderContent(folder_idx : int; let folders) {
         selected_file_idx = -1
     }
 
+    // --- РЕЖИМ ГЛОБАЛЬНОГО ПОИСКА ПО ВСЕМУ ПРОЕКТУ ---
+    if (is_active(W_SEARCH_FILTER)) {
+        DrawSearchResults(folders)
+        return
+    }
+
+    // --- ОБЫЧНЫЙ РЕЖИМ (ОТОБРАЖЕНИЕ ТОЛЬКО ТЕКУЩЕЙ ПАПКИ) ---
     text("Directory: {folders[folder_idx].name}")
     separator(WI_SEP_1)
 
@@ -198,13 +271,11 @@ def DrawFolderContent(folder_idx : int; let folders) {
     let item_size = is_list_view ? float2(avail_w, 22.0f) : float2(tile_icon_size, tile_icon_size)
     var visible_count = 0
 
-    // 1. Подпапки
+    // 1. Подпапки текущей директории
     for (i in range(sub_count)) {
         let child_idx = int(folders[folder_idx].subfolders[i])
         let child_name = folders[child_idx].name
-        if (!passes_filter(W_SEARCH_FILTER, child_name)) {
-            continue
-        }
+        let is_selected = (selected_file_folder_idx == child_idx && selected_file_idx == -1)
 
         if (!is_list_view && visible_count > 0 && (visible_count % items_per_row != 0)) {
             same_line()
@@ -212,10 +283,25 @@ def DrawFolderContent(folder_idx : int; let folders) {
 
         with_id("dir_{child_idx}") {
             group(DIR_GRP) {
-                AssetStyle(false, true) {
+                AssetStyle(is_selected, true) {
                     let btn_text = is_list_view ? "  [DIR] {child_name}" : "DIR"
+
+                    // Однократный клик выделяет папку
                     if (button(BT_GO, (text = btn_text, size = item_size))) {
+                        selected_file_folder_idx = child_idx
+                        selected_file_idx = -1
+                    }
+
+                    // Двойной клик переходит внутрь папки
+                    if (IsItemHovered() && IsMouseDoubleClicked(ImGuiMouseButton.Left)) {
                         current_folder_idx = child_idx
+                    }
+
+                    // Контекстное меню по ПКМ для маркировки PAK
+                    popup_context_item(PO_CTX_ITEM, (str_id = "ctx_item", flags = ImGuiPopupFlags.MouseButtonRight))  {
+                        if (menu_item(PO_REG_PAK, (text = "RegisterPak", shortcut = "F232"))) {
+                            register_folder_as_pak(folders[folder_idx])
+                        }
                     }
                 }
                 if (!is_list_view) {
@@ -226,12 +312,9 @@ def DrawFolderContent(folder_idx : int; let folders) {
         visible_count++
     }
 
-    // 2. Файлы
+    // 2. Файлы текущей директории
     for (i in range(file_count)) {
         assume file = folders[folder_idx].files[i]
-        if (!passes_filter(W_SEARCH_FILTER, file.name)) {
-            continue
-        }
 
         if (!is_list_view && visible_count > 0 && (visible_count % items_per_row != 0)) {
             same_line()
@@ -249,15 +332,15 @@ def DrawFolderContent(folder_idx : int; let folders) {
                     }
 
                     drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
-                        PAYLOAD_VALUE.index = file.asset_idx
                         PAYLOAD_VALUE.name = file.name
+                        PAYLOAD_VALUE.path = file.path
                         PAYLOAD_VALUE.guid = file.guid
                         unsafe {
                             SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
                                 uint64(typeinfo sizeof(PAYLOAD_VALUE)),
                                 ImGuiCond.Once)
                         }
-                        text("Dragging asset: {PAYLOAD_VALUE.name}\nGUID: {PAYLOAD_VALUE.guid}\nIndex: {PAYLOAD_VALUE.index}")
+                        text("Dragging asset: {PAYLOAD_VALUE.name}\nGUID: {PAYLOAD_VALUE.guid}\nPath: {PAYLOAD_VALUE.path}")
                     }
                 }
                 if (!is_list_view) {

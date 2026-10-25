@@ -6,12 +6,6 @@ require math
 require daslib/decs_boost
 require tryResources
 
-struct TransientComponent {}
-
-struct RuntimePtr{
-    ptr : uint64
-}
-
 [decs_template]
 struct PointLight{
     color : float3

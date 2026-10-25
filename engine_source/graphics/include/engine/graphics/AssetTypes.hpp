@@ -4,9 +4,6 @@
 #include <EASTL/unordered_map.h>
 #include <EASTL/vector.h>
 
-#include "engine/graphics/RuntimeTypes.hpp"
-#include "engine/resources/TextureBinary.hpp"
-
 namespace tryengine::graphics {
 
 struct TextureBindingAssets {
