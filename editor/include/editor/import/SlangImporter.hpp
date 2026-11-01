@@ -8,7 +8,7 @@
 #include <slang-com-ptr.h>
 #include <slang.h>
 
-#include "editor/JsonParser.hpp"
+#include "../../../../engine_source/resources/include/engine/resources/Json.hpp"
 #include "editor/import/BaseTypedImporter.hpp"
 #include "editor/import/IAssetImporter.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
@@ -32,7 +32,7 @@ public:
 
         AssetMeta<SlangImportSettings> meta;
         if (!ctx.meta_bytes.empty()) {
-            auto parsed_meta = Deserialize<AssetMeta<SlangImportSettings>>(ctx.meta_bytes);
+            auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<SlangImportSettings>>(ctx.meta_bytes);
             meta = parsed_meta.value_or(GenerateDefaultMeta());
         } else {
             meta = GenerateDefaultMeta();
@@ -189,7 +189,7 @@ public:
         result.artifacts.push_back(std::move(artifact));
         result.main_guid = meta.header.guid;
 
-        auto meta_bytes = Serialize<AssetMeta<SlangImportSettings>>(meta);
+        auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<SlangImportSettings>>(meta);
         if (meta_bytes.has_value()) {
             result.meta_bytes = eastl::move(meta_bytes.value());
         } else {
@@ -201,55 +201,60 @@ public:
 
 private:
     static const char* KindToString(tryengine::graphics::ShaderResourceKind kind) {
-        using namespace tryengine::graphics;
         switch (kind) {
-            case ShaderResourceKind::UniformBuffer:
+            default:
+                TRY_ASSERT(false, "Unhandled ShaderResourceKind");
+                return "Unhandled ShaderResourceKind";
+                break;
+            case tryengine::graphics::ShaderResourceKind::UniformBuffer:
                 return "UniformBuffer";
-            case ShaderResourceKind::SampledTexture:
+            case tryengine::graphics::ShaderResourceKind::SampledTexture:
                 return "SampledTexture";
-            case ShaderResourceKind::StorageBufferRead:
+            case tryengine::graphics::ShaderResourceKind::StorageBufferRead:
                 return "StorageBufferRead";
-            case ShaderResourceKind::StorageBufferWrite:
+            case tryengine::graphics::ShaderResourceKind::StorageBufferWrite:
                 return "StorageBufferWrite";
-            case ShaderResourceKind::StorageTexture:
+            case tryengine::graphics::ShaderResourceKind::StorageTexture:
                 return "StorageTexture";
         }
-        return "Unknown";
     }
 
     static const char* SetToString(uint32_t set) {
-        using namespace tryengine::graphics;
-        switch (static_cast<BindingScope>(set)) {
-            case BindingScope::Pass:
-                return "Pass (Set 0)";
-            case BindingScope::Material:
-                return "Material (Set 1)";
-            case BindingScope::PerObj:
-                return "PerObj (Set 2)";
+        switch (static_cast<tryengine::graphics::BindingScope>(set)) {
             default:
-                return "Custom";
+                TRY_ASSERT(false, "Unhandled BindingScope");
+                return "Unhandled BindingScope";
+                break;
+            case tryengine::graphics::BindingScope::Pass:
+                return "Pass (Set 0)";
+            case tryengine::graphics::BindingScope::Material:
+                return "Material (Set 1)";
+            case tryengine::graphics::BindingScope::PerObj:
+                return "PerObj (Set 2)";
         }
     }
 
     static const char* ParamTypeToString(tryengine::graphics::ShaderParamType type) {
-        using namespace tryengine::graphics;
         switch (type) {
-            case ShaderParamType::Float:
+            default:
+                TRY_ASSERT(false, "Unhandled ShaderParamType");
+                return "Unhandled ShaderParamType";
+                break;
+            case tryengine::graphics::ShaderParamType::Float:
                 return "Float";
-            case ShaderParamType::Int:
+            case tryengine::graphics::ShaderParamType::Int:
                 return "Int";
-            case ShaderParamType::Vec2:
+            case tryengine::graphics::ShaderParamType::Vec2:
                 return "Vec2";
-            case ShaderParamType::Vec3:
+            case tryengine::graphics::ShaderParamType::Vec3:
                 return "Vec3";
-            case ShaderParamType::Vec4:
+            case tryengine::graphics::ShaderParamType::Vec4:
                 return "Vec4";
-            case ShaderParamType::Mat3:
+            case tryengine::graphics::ShaderParamType::Mat3:
                 return "Mat3";
-            case ShaderParamType::Mat4:
+            case tryengine::graphics::ShaderParamType::Mat4:
                 return "Mat4";
         }
-        return "Unknown";
     }
 
     static constexpr uint64_t MakeSlotKey(uint32_t set, uint32_t binding) {

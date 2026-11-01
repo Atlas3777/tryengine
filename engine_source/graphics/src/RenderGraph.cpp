@@ -26,6 +26,11 @@ TransientAllocation RGExecuteContext::AllocateTransient(const void* data, VkDevi
     return graph_ ? graph_->AllocateTransient(data, size, alignment) : TransientAllocation{};
 }
 
+const RGTextureDesc& RGExecuteContext::GetTextureDesc(RGResourceHandle h) const{
+    return graph_->GetTextureDesc(h);
+}
+
+
 void RGExecuteContext::BeginRendering(
     eastl::span<const RGColorAttachment> color_attachments,
     const RGDepthStencilAttachment* depth_attachment,
@@ -281,6 +286,20 @@ RGResourceHandle RenderGraph::ResolveHandle(RGResourceHandle h) const {
     uint32_t idx = ResolveHandleIndex(h.index);
     if (idx >= resources_.size()) return nullptr;
     return resources_[idx].mapped_ptr;
+}
+
+const RGTextureDesc& RenderGraph::GetTextureDesc(RGResourceHandle h) const {
+    static const RGTextureDesc kEmptyDesc{};
+    if (!h.IsValid())
+        return kEmptyDesc;
+    uint32_t idx = ResolveHandleIndex(h.index);
+    if (idx >= resources_.size())
+        return kEmptyDesc;
+    const auto& res = resources_[idx];
+    if (res.type == RGResourceType::Texture || res.type == RGResourceType::ExternalTexture) {
+        return res.texture_desc;
+    }
+    return kEmptyDesc;
 }
 
 void RenderGraph::BeginFrame(uint32_t frame_index) {

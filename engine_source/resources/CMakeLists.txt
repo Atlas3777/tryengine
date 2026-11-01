@@ -1,7 +1,8 @@
-#engine_source/resources/CMakeLists.txt
-
-FetchContent_Declare(glaze GIT_REPOSITORY https://github.com/stephenberry/glaze.git GIT_TAG v7.8.4)
-FetchContent_MakeAvailable(glaze)
+CPMAddPackage(
+        NAME glaze
+        GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+        GIT_TAG v7.8.4
+)
 
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/resources/*.hpp")

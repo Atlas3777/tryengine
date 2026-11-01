@@ -5,8 +5,8 @@
 #include <cstring>
 #include <limits>
 
+#include "../../../engine_source/resources/include/engine/resources/binary/MeshBinary.hpp"
 #include "engine/core/MakeError.hpp"
-#include "engine/resources/MeshBinary.hpp"
 #include "hlsl++/data_packing.h"
 
 namespace tryeditor {

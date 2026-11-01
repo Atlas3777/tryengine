@@ -12,9 +12,17 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+cmake_policy(SET CMP0168 NEW)
+
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")
+
+# Общий кэш исходников для всех профилей. Можно переопределить через -DCPM_SOURCE_CACHE=... или переменную окружения.
+if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
+    set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}")
+endif()
+set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/third_party_src" CACHE PATH "Shared third-party sources")
+include(cmake/get_cpm.cmake)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -47,9 +55,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options("-fno-rtti" "-fno-exceptions")
     message(STATUS "RTTI and Exceptions are DISABLED (-fno-rtti, -fno-exceptions)")
 elseif(MSVC)
-    # /EHs- /EHc- отключают обработку исключений C++
     add_compile_options("/GR-" "/EHs-" "/EHc-")
-    # Отключает поддержку исключений в стандартной библиотеке MSVC (STL)
     add_compile_definitions(_HAS_EXCEPTIONS=0)
     message(STATUS "RTTI and Exceptions are DISABLED (/GR-, /EHs-, /EHc-, _HAS_EXCEPTIONS=0)")
 endif()

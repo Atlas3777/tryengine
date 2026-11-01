@@ -1,6 +1,6 @@
 #include "editor/AssetPipeline.hpp"
 
-#include "editor/JsonParser.hpp"
+#include "../../engine_source/resources/include/engine/resources/Json.hpp"
 #include "editor/UiTreeBuilder.hpp"
 #include "editor/import/IAssetImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
@@ -271,7 +271,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
     if (meta_read.IsFailed())
         co_return LogAndMakeError("Не удалось прочитать мета-файл: {}", meta_path.c_str());
 
-    auto header_res = DeserializePartial<HeaderOnly>(meta_read.GetData());
+    auto header_res = tryengine::resources::Json::DeserializePartial<HeaderOnly>(meta_read.GetData());
     if (!header_res.has_value())
         co_return LogAndMakeError("Ошибка парсинга заголовка мета-файла: {}", meta_path.c_str());
 
@@ -301,10 +301,10 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
         const FileTime artifact_mtime = oldest_artifact_stat.GetMtime();
 
         if ((meta_mtime > artifact_mtime) || (asset_mtime > artifact_mtime)) {
-            LogInfo(LogCategory::Importer, "NEED reimport: {}", asset_path.c_str());
+            // LogInfo(LogCategory::Importer, "NEED reimport: {}", asset_path.c_str());
             need_reimport = true;
         } else {
-            LogInfo(LogCategory::Importer, "NOT need reimport: {}", asset_path.c_str());
+            // LogInfo(LogCategory::Importer, "NOT need reimport: {}", asset_path.c_str());
         }
     }
 

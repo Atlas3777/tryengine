@@ -70,7 +70,7 @@ public:
         return header.guid;
     }
 
-    // // Реализация компиляции: загружаем исходник (JSON) -> сохраняем артефакт (Binary)
+    // // Реализация компиляции: загружаем исходник (JSON) -> сохраняем артефакт (binary)
     // bool Cook(const std::filesystem::path& asset_path, const std::filesystem::path& artifact_path) override {
     //     TAsset asset;
     //     if (!LoadSource(asset_path, asset))

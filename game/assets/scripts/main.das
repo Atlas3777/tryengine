@@ -1,43 +1,17 @@
 options gen2
 options rtti = true
 
-require daslib/rtti
-
 require daslib/decs
-
 require tryengine/Types
-require tryengine/Scene
 require tryengine/Input
-require tryengine/Render
-require tryeditor/QuadTreeDebugWindow
 require tryResources
-require tryengine/Serializable
-require tryengine/ConfigFormat
-require tryengine/ConfigFormatBoost
-
-// [Serializable]
-// struct TestSer {
-//     name : string
-//     somee : uint64
-//     pp : CastPlayer
-// }
-
-// struct CastPlayer{
-//     hp : int
-//     speed : float
-// }
+require tryengine/Engine
+require tryengine/Render
 
 [export]
-def Start(){
-    //var test = TestSer(name = "", somee = 43ul, pp = CastPlayer(hp = 3, speed = 3f))
-
-    //let a = write_config(CF(test))
-    //print("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTt : {a}")
-
-    update_input()
-
+def GameStart(){
     create_entity() @(eid, cmp){
-        cmp.tag := "EditorCamera"
+        cmp.tag := "Camera"
         apply_decs_template(cmp, Transform(
             position = float3(0.0f, 0.0f, 2.0f),
             rotation = float4(0f, 0f, 0f, 1f),
@@ -55,10 +29,10 @@ def Start(){
 }
 
 [export]
-def Update() {
+def GameUpdate() {
 
     query()$(camera : Camera, var t : Transform) {
-        t.position.z += 0.01
+        // t.position.z += 0.01
     }
 
     query()$(var t : Transform, var inputState : float3){
@@ -69,7 +43,59 @@ def Update() {
         if (is_down(Key.L)) { inputState.x =  1.0f }
     }
 
-    query()$(var t : Transform, let inputState : float3, let speed : float){
+    query()$(var t : Transform, inputState : float3, speed : float){
         t.position += inputState * 0.08 * speed;
+    }
+
+    if (pressed(Key.H)){
+        print("request mesh \n")
+        RequestLoadMesh(mesh_id)
+        RequestLoadMaterial(mat_id)
+    }
+
+    if (pressed(Key.B))
+        Spawn()
+}
+
+let mesh_id = 3081795527557720915ul
+let mat_id = 17036954862819815981ul
+
+def Spawn() {
+    print("Spawn \n")
+
+    let test_eid = create_entity() @(eid, cmp) {
+        cmp.tag := "teeest"
+        apply_decs_template(cmp, Transform(
+            position = float3(0.0f, 0.0f, 0.0f),
+            rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
+            scale = float3(1.0f, 1.0f, 1.0f)
+        ))
+        cmp.inputState := float3(0, 0, 0)
+        cmp.speed := float(3)
+
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
+        apply_decs_template(cmp, Relationship())
+    }
+
+    create_mesh_entity("Right 1", float3(5.0f, 5.0f, 0.0f))
+    create_mesh_entity("Right 2", float3(5.0f, 10.0f, 0.0f))
+    create_mesh_entity("Left 1",  float3(-5.0f, 5.0f, 0.0f))
+    create_mesh_entity("Left 2",  float3(-5.0f, 10.0f, 0.0f))
+
+    commit()
+}
+
+def create_mesh_entity(tag : string, pos : float3) {
+    return create_entity() @(eid, cmp) {
+        cmp.tag := tag
+        apply_decs_template(cmp, Transform(
+            position = pos,
+            rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
+            scale = float3(1.0f, 1.0f, 1.0f)
+        ))
+        cmp.meshGuid := mesh_id
+        cmp.materialGuid := mat_id
+        apply_decs_template(cmp, Relationship())
     }
 }

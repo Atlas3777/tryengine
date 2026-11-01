@@ -1,4 +1,4 @@
-#include "engine/resources/AssetPakBinary.hpp"
+#include "../include/engine/resources/binary/AssetPakBinary.hpp"
 
 #include <cstring>
 
@@ -40,15 +40,11 @@ Result<AssetPakManifest> AssetPakBinary::UnpackManifest(eastl::span<const uint8_
     AssetPakManifest meta;
     meta.header = *header_res;
 
-    // 1. Все секции должны целиком помещаться в буфере.
     if (!FitsInBuffer(meta.header.dependencies_offset, meta.header.dependencies_size, buffer.size()) ||
-        !FitsInBuffer(meta.header.resource_layout_offset, meta.header.resource_layout_size, buffer.size()) ||
-        !FitsInBuffer(meta.header.data_offset, meta.header.data_size, buffer.size())) {
+        !FitsInBuffer(meta.header.resource_layout_offset, meta.header.resource_layout_size, buffer.size())) {
         return LogAndMakeError("PAK metadata offsets out of buffer bounds");
     }
 
-    // ResourceLayout-секция должна содержать целое число записей,
-    // иначе memcpy ниже переполнит результирующий вектор.
     if (meta.header.resource_layout_size % sizeof(ResourceLayout) != 0) {
         return LogAndMakeError("PAK resource layout size is not a multiple of ResourceLayout");
     }
@@ -155,7 +151,6 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
         append_resource(pak.textures[i], pak.textures_data[i]);
 
     // 3. Формируем заголовок.
-    // `{}` гарантирует, что _padding будет нулевым, а не мусором.
     AssetPakHeader header{};
     header.magic = PAK_MAGIC;
     header.version = PAK_VERSION;

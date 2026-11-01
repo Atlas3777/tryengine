@@ -4,9 +4,12 @@
 #include "GameScriptSetup.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
-#include "engine/graphics/GraphicsContext.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
+#include "engine/graphics/loaders/MaterialLoader.hpp"
+#include "engine/graphics/loaders/MeshLoader.hpp"
+#include "engine/graphics/loaders/ShaderLoader.hpp"
+#include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
@@ -26,13 +29,21 @@ void GameApp::Init() {
 
     engine_ = std::make_unique<Engine>();
     engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
-    engine_->RegisterSystem<GameRender>(*vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,*frame_sync_);
+    engine_->RegisterSystem<GameRender>(*vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_, *frame_sync_);
     engine_->RegisterSystem<InputService>();
 
-    engine_->RegisterSystem<AsyncFileManager>();
-    engine_->RegisterSystem<AssetRegistry>();
-    // engine_->RegisterSystem<PakManager>();
-    engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+    auto& fm = engine_->RegisterSystem<AsyncFileManager>();
+    auto& registry = engine_->RegisterSystem<AssetRegistry>();
+
+    engine_->RegisterSystem<PakManager>(fm, registry).StartLoadAll();
+
+    auto& rm = engine_->RegisterSystem<ResourceManager>(fm, registry);
+
+    rm.RegisterType<Material>(MaterialLoader(*vulkan_device_, rm));
+    rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
+    rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
+    rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
+
     auto& time_manager = engine_->RegisterSystem<TimeManager>();
 
     time_manager.RegisterClock<GameClock>();
@@ -41,7 +52,8 @@ void GameApp::Init() {
 
     engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_));
     engine_->Get<ScriptSystem>().LoadMainScript("./game/assets/scripts/main.das");
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 }
 
 void GameApp::Run() {
@@ -52,14 +64,16 @@ void GameApp::Run() {
     auto& input = engine_->Get<InputService>();
     auto& async_file_manager = engine_->Get<AsyncFileManager>();
 
-    while (running_&& !input.IsQuitRequested()) {
+    while (running_ && !input.IsQuitRequested()) {
         input.PollEvents();
 
         tm.NewFrame();
         async_file_manager.Pull();
         MainThread().Pull();
 
-        script_system.InvokeFunctionSafe("Update");
+        script_system.InvokeFunctionSafe("EngineUpdate");
+        script_system.InvokeFunctionSafe("GameUpdate");
+
         async_file_manager.Submit();
 
         render.Render(*engine_, *vulkan_device_);

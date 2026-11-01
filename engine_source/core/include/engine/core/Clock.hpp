@@ -25,7 +25,7 @@ public:
 private:
     friend class TimeManager;
 
-    uint32_t parent_id_ = kInvalidId; // Индекс родителя в ПЛОТНОМ массиве clocks_
+    uint32_t parent_id_ = kInvalidId; // Индекс родителя в плотном массиве clocks_
     float scale_ = 1.0f;
     float dt_ = 0.0f;
     double total_time_ = 0.0;

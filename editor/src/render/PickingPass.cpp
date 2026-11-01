@@ -1,4 +1,4 @@
-#include "editor/PickingPass.hpp"
+#include "../../include/editor/render/PickingPass.hpp"
 
 #include <algorithm>
 #include <cstring>

@@ -5,7 +5,8 @@
 #include <hlsl++/quaternion.h>
 #include <hlsl++/quaternion_type.h>
 
-#include "editor/JsonParser.hpp"
+#include "../../../engine_source/resources/include/engine/resources/Json.hpp"
+#include "../../../engine_source/resources/include/engine/resources/binary/TextureBinary.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/import/MeshProcessor.hpp"
 #include "editor/import/TextureImporter.hpp"
@@ -16,7 +17,6 @@
 #include "engine/graphics/AssetTypes.hpp"
 #include "engine/resources/AssetTypes.hpp"
 #include "engine/resources/Content.hpp"
-#include "engine/resources/TextureBinary.hpp"
 #include "engine/resources/TextureTypes.hpp"
 #include "tiny_gltf_v3.h"
 
@@ -94,7 +94,7 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
             }
         }
 
-        auto serialized_mat = Serialize(mat_data);
+        auto serialized_mat = tryengine::resources::Json::Serialize(mat_data);
         if (!serialized_mat.has_value()) {
             LogCritical("Failed to serialize material {}", mat_name.c_str());
             continue;
@@ -432,7 +432,7 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     AssetMeta<GltfImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        auto parsed_meta = Deserialize<AssetMeta<GltfImportSettings>>(ctx.meta_bytes);
+        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<GltfImportSettings>>(ctx.meta_bytes);
         meta = parsed_meta.has_value() ? parsed_meta.value() : GenerateDefaultMeta();
     } else {
         meta = GenerateDefaultMeta();
@@ -456,7 +456,7 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
     ProcessNodes(m, asset_map, mesh_primitive_guids, material_guids);
 
     ProducedArtifact map_artifact;
-    auto asset_map_bytes = Serialize(asset_map);
+    auto asset_map_bytes = tryengine::resources::Json::Serialize(asset_map);
     if (!asset_map_bytes.has_value()) {
         co_return tryengine::core::Error("Failed to serialize ModelAssetMap");
     }
@@ -470,7 +470,7 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
         meta.header.sub_assets.push_back(key);
     }
 
-    auto meta_bytes = Serialize(meta);
+    auto meta_bytes = tryengine::resources::Json::Serialize(meta);
     if (meta_bytes.has_value()) {
         result.meta_bytes = *meta_bytes;
     } else {

@@ -3,7 +3,7 @@
 #include <EASTL/span.h>
 #include <EASTL/vector.h>
 
-#include "LightPass.hpp"
+#include "engine/graphics/LightPass.hpp"
 #include "engine/graphics/MeshDrawCall.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 

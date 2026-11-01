@@ -211,6 +211,7 @@ public:
     [[nodiscard]] VkImageView GetImageView(RGResourceHandle h) const;
     [[nodiscard]] VkBuffer GetBuffer(RGResourceHandle h) const;
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
+    [[nodiscard]] const RGTextureDesc& GetTextureDesc(RGResourceHandle h) const;
 
     void BeginRendering(eastl::span<const RGColorAttachment> color_attachments,
                         const RGDepthStencilAttachment* depth_attachment = nullptr, VkRect2D render_area = {},
@@ -287,7 +288,7 @@ public:
 
 private:
     RenderGraph& graph_;
-    uint32_t pass_;  // индекс слота
+    uint32_t pass_;
 };
 
 struct RGVirtualResource {
@@ -377,8 +378,7 @@ struct FrameTransientAllocator {
     VkDeviceSize current_offset = 0;
 };
 
-class
-RenderGraph {
+class RenderGraph {
 public:
     static constexpr uint32_t kMaxFramesInFlight = 2;
     static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024;
@@ -418,6 +418,8 @@ public:
         if (id < by_type_.size() && by_type_[id])
             DestroyPass(id);
     }
+
+    const RGTextureDesc& GetTextureDesc(RGResourceHandle h) const;
 
     // Resize вьюпорта, смена настроек графики и т.п.
     void Invalidate() { dirty_ = true; }

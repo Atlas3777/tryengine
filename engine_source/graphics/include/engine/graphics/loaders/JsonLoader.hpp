@@ -2,7 +2,7 @@
 
 #include <EASTL/span.h>
 
-#include "editor/JsonParser.hpp"
+#include "../../../../../resources/include/engine/resources/Json.hpp"
 #include "engine/async/Task.hpp"
 
 namespace tryeditor {
@@ -15,7 +15,7 @@ public:
             co_return tryengine::core::Error("Buffer empty");
         }
 
-        auto result = Deserialize<T>(bytes);
+        auto result = tryengine::resources::Json::Deserialize<T>(bytes);
         if (!result.has_value()) {
             co_return tryengine::core::Error("Error deserializing");
         }

@@ -19,17 +19,10 @@ let mat_id = 17036954862819815981ul
 
 [export]
 def EditorUpdate(){
-    tick_async_tasks()
-
-    // if (pressed(Key.Y))
-    //     StartTask(SaveSceneAsync("TestScene"))
-
-    // if (pressed(Key.P))
-    //     StartTask(LoadSceneAsync("TestScene"))
-
     if (pressed(Key.H)){
         print("request mesh \n")
         RequestLoadMesh(mesh_id)
+        print("request mat \n")
         RequestLoadMaterial(mat_id)
     }
 

@@ -33,6 +33,22 @@ def module_get(req, from : string) : module_info {
         return (sub, path, "")
     }
 
+    if (starts_with(req, "llvm/")) {
+        let sub = slice(req, 5, length(req))           // "daslib/llvm_jit_link" или "bindings/llvm_host"
+        let parts <- split(sub, "/")
+        let mod_name = parts[length(parts) - 1]        // "llvm_jit_link" / "llvm_host"
+        let path = "{get_das_root()}/modules/dasLLVM/{sub}.das"
+        return (mod_name, path, "")
+    }
+
+    if (starts_with(req, "dasllama/")) {
+        let sub = slice(req, 9, length(req))              // "dasllama_gemm_register"
+        let rs <- split(sub, "/")
+        let mod_name = rs[length(rs) - 1]                 // имя модуля — последний сегмент
+        let path = "{get_das_root()}/modules/dasLLAMA/dasllama/{sub}.das"
+        return (mod_name, path, "")
+    }
+
     if (starts_with(req, "daslib/")) {
         let sub = slice(req, 7, length(req))
         let path = "{get_das_root()}/daslib/{sub}.das"
@@ -44,30 +60,6 @@ def module_get(req, from : string) : module_info {
         let das_root = get_das_root()
         let path = "{das_root}/modules/dasLiveHost/live/{sub}.das"
         //print("[Project Resolver] Глобальный модуль live/. Маппинг '{req}' в: {path}\n")
-        return (sub, path, "")
-    }
-
-    if (starts_with(req, "glfw/")) {
-        let sub = slice(req, 5, length(req))
-        let das_root = get_das_root()
-        let path = "{das_root}/modules/dasGlfw/dasglfw/{sub}.das"
-        //print("[Project Resolver] Глобальный модуль glfw/. Маппинг '{req}' в: {path}\n")
-        return (sub, path, "")
-    }
-
-    // Обработка модулей OpenGL из dasOpenGL
-    if (starts_with(req, "opengl/")) {
-        let sub = slice(req, 7, length(req))
-
-        // Если это драйвер имгуя — это нативный C++ модуль, у него нет .das файла
-        if (sub == "opengl_imgui_driver") {
-            //print("[Project Resolver] Нативный C++ модуль: {req} (перенаправляем в C++ регистр)\n")
-            return (sub, "", "")
-        }
-
-        let das_root = get_das_root()
-        let path = "{das_root}/modules/dasOpenGL/opengl/{sub}.das"
-        //print("[Project Resolver] Глобальный модуль opengl/. Маппинг '{req}' в: {path}\n")
         return (sub, path, "")
     }
 

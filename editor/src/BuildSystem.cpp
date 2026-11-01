@@ -2,13 +2,13 @@
 
 #include <EASTL/algorithm.h>
 #include <EASTL/sort.h>
-#include <EASTL/unordered_map.h>
 #include <EASTL/unique_ptr.h>
+#include <EASTL/unordered_map.h>
 #include <type_traits>
 
-#include "engine/resources/AssetPak.hpp"
-#include "engine/resources/AssetPakBinary.hpp"
+#include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
 #include "engine/graphics/AssetTypes.hpp"
+#include "engine/resources/AssetPak.hpp"
 
 namespace tryeditor {
 
@@ -144,7 +144,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         co_return LogAndMakeError("Create Pak Is Failed");
     asset_paks.emplace_back(eastl::move(*a));
 
-    LogInfo("Начали писать в папку");
+    LogInfo("Начали писать в папку {}", build_directory);
     for (auto& asset_pak : asset_paks) {
         auto pak_binary = tryengine::resources::AssetPakBinary::Pack(asset_pak);
         auto path = tryengine::fmt::format("{}/content/{}.pak", build_directory, asset_pak.name);
@@ -158,7 +158,6 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     tryengine::resources::FileHandle h = file_m_.WriteChunkAsync(path, view);
     co_await h;
 
-    // Здесь active_handles уничтожается, вызывая делитеры и отпуская кэш ResourceManager
     LogInfo("Закончили писать в папку");
     co_return {};
 }

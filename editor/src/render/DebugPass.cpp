@@ -1,4 +1,5 @@
-#include "editor/DebugPass.hpp"
+#include "../../include/editor/render/DebugPass.hpp"
+
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/RasterState.hpp"

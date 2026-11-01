@@ -1,5 +1,7 @@
 options gen2
 
+module Render shared public
+
 require math
 require tryengine/Types
 require tryRenderer
@@ -103,11 +105,14 @@ def start_load(){
                 cmp |> set("material", mat_ptr)
             }
         }
-        // print("пытаемся, guidMat {materialGuid:d} guidMesh {meshGuid:d}\n")
     }
     if (counter > 0){
         print("пытаемся загрузиться для {counter} объектов\n")
     }
 
     commit()
+}
+
+def Tetsss{
+    print("TESTSTSTSS\n")
 }

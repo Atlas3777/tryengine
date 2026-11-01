@@ -2,10 +2,10 @@
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
 
+#include "engine/resources/binary/TextureBinary.hpp"
 #include "editor/BinaryParser.hpp"
 #include "editor/import/TextureProcessor.hpp"
 #include "engine/core/MakeError.hpp"
-#include "engine/resources/TextureBinary.hpp"
 #include "rdo_bc_encoder.h"
 #include "stb_image.h"
 #include "stb_image_resize2.h"

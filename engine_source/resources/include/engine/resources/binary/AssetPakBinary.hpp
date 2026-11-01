@@ -5,7 +5,7 @@
 #include <EASTL/vector.h>
 #include <cstdint>
 
-#include "AssetPak.hpp"
+#include "../AssetPak.hpp"
 #include "engine/core/Result.hpp"
 
 namespace tryengine::resources {

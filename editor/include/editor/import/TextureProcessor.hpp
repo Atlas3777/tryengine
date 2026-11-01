@@ -3,8 +3,8 @@
 #include <EASTL/span.h>
 #include <EASTL/vector.h>
 
+#include "../../../../engine_source/resources/include/engine/resources/binary/TextureBinary.hpp"
 #include "engine/core/Result.hpp"
-#include "engine/resources/TextureBinary.hpp"
 #include "engine/resources/TextureTypes.hpp"
 #include "tiny_gltf_v3.h"
 

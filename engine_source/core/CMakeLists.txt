@@ -1,18 +1,28 @@
-# engine_source/core/CMakeLists.txt
-
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
 set(BUILD_DOC OFF CACHE BOOL "" FORCE)
 
-# Отключаем сборку тестов и бенчмарков для EASTL
+set(EABASE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(EASTL_BUILD_BENCHMARK OFF CACHE BOOL "" FORCE)
 set(EASTL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-
 set(EASTL_EXCEPTIONS_ENABLED OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(EASTL GIT_REPOSITORY https://github.com/electronicarts/EASTL.git GIT_TAG master GIT_SHALLOW TRUE SYSTEM)
+CPMAddPackage(
+        NAME EABase
+        URL https://github.com/electronicarts/EABase/archive/0699a15efdfd20b6cecf02153bfa5663decb653c.zip
+        DOWNLOAD_ONLY YES
+)
 
-FetchContent_MakeAvailable(EASTL)
+CPMAddPackage(
+        NAME EASTL
+        GIT_REPOSITORY https://github.com/electronicarts/EASTL.git
+        GIT_TAG e323f67e5d93fdadcd44f7998069d804697b1945
+        GIT_SHALLOW TRUE
+        SYSTEM YES
+)
+
+add_library(EABase INTERFACE)
+target_include_directories(EABase SYSTEM INTERFACE "${EABase_SOURCE_DIR}/include/Common")
 
 find_package(DAS REQUIRED)
 find_package(Threads REQUIRED)

@@ -1,5 +1,3 @@
-include(FetchContent)
-
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_SANDBOX OFF CACHE BOOL "" FORCE)
 set(BUILD_DOC OFF CACHE BOOL "" FORCE)
@@ -7,18 +5,52 @@ set(BUILD_DOC OFF CACHE BOOL "" FORCE)
 set(TINYGLTF3_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(TINYGLTF3_INSTALL OFF CACHE BOOL "" FORCE)
 
-FetchContent_Declare(imgui        GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.92.6-docking GIT_SHALLOW TRUE)
-FetchContent_Declare(stb          GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG master GIT_SHALLOW TRUE)
-FetchContent_Declare(tinygltf     GIT_REPOSITORY https://github.com/syoyo/tinygltf.git  GIT_TAG v3.0.1 GIT_SHALLOW TRUE)
-FetchContent_Declare(bc7enc       GIT_REPOSITORY https://github.com/richgel999/bc7enc_rdo.git GIT_TAG master GIT_SHALLOW TRUE SOURCE_SUBDIR "DO_NOT_BUILD")
-
-FetchContent_Declare(slang
-        DOWNLOAD_ONLY
-        URL "https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-linux-x86_64-glibc-2.28.tar.gz"
-        URL_HASH SHA256=07cf4274f5f1f976d75554cc5c1cc4bd993a9a92442a7726fa701aa457183a26
+# DOWNLOAD_ONLY: только скачать, add_subdirectory не вызывать (задает переменную <name>_SOURCE_DIR)
+CPMAddPackage(
+        NAME imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.92.6-docking
+        GIT_SHALLOW TRUE
+        DOWNLOAD_ONLY YES
 )
 
-FetchContent_MakeAvailable(imgui stb tinygltf bc7enc slang)
+CPMAddPackage(
+        NAME stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG 003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5
+        GIT_SHALLOW TRUE
+        DOWNLOAD_ONLY YES
+)
+
+CPMAddPackage(
+        NAME tinygltf
+        GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+        GIT_TAG v3.0.1
+        GIT_SHALLOW TRUE
+)
+
+CPMAddPackage(
+        NAME bc7enc
+        GIT_REPOSITORY https://github.com/richgel999/bc7enc_rdo.git
+        GIT_TAG b9438627eef73a1157e84201b6fa6eb2ffd6d9f0
+        GIT_SHALLOW TRUE
+        DOWNLOAD_ONLY YES
+)
+
+CPMAddPackage(
+        NAME stb_image_resize
+        GIT_REPOSITORY https://github.com/nothings/stb_image_resize.git
+        GIT_TAG 2768987dbd7119eb840104b7a3f96ff09d21a7b4
+        GIT_SHALLOW TRUE
+        DOWNLOAD_ONLY YES
+)
+
+CPMAddPackage(
+        NAME slang
+        URL "https://github.com/shader-slang/slang/releases/download/v2026.14.1/slang-2026.14.1-linux-x86_64-glibc-2.28.tar.gz"
+        URL_HASH SHA256=07cf4274f5f1f976d75554cc5c1cc4bd993a9a92442a7726fa701aa457183a26
+        DOWNLOAD_ONLY YES
+)
 
 add_library(slang_lib SHARED IMPORTED GLOBAL)
 set_target_properties(slang_lib PROPERTIES
@@ -32,15 +64,13 @@ add_library(tinygltf STATIC
 target_include_directories(tinygltf PUBLIC "${tinygltf_SOURCE_DIR}")
 
 add_library(stb_image INTERFACE)
-target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR})
+target_include_directories(stb_image SYSTEM INTERFACE ${stb_SOURCE_DIR} ${stb_image_resize_SOURCE_DIR})
 
 add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
@@ -50,7 +80,6 @@ set_target_properties(imgui_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(imgui_lib PUBLIC
         IMGUI_DISABLE_OBSOLETE_FUNCTIONS=1
         IMGUI_USE_WCHAR32=1
-#        IMGUI_ENABLE_FREETYPE=1      # Для совпадения структуры шрифтов
         VK_NO_PROTOTYPES
         IMGUI_IMPL_VULKAN_USE_VOLK
 )
@@ -88,9 +117,6 @@ list(REMOVE_ITEM SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
 )
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
-
 add_library(editor_core STATIC ${SOURCES} ${HEADERS})
 
 set_target_properties(editor_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -108,7 +134,6 @@ target_link_libraries(editor_core PUBLIC
         stb_image
         bc7enc_lib
         slang_lib
-        PkgConfig::SHADERC
 )
 
 add_executable(editor src/main.cpp)
@@ -124,7 +149,6 @@ set_target_properties(tryeditor_shared PROPERTIES
         OUTPUT_NAME "tryeditor"
 )
 
-# Указываем линкеру, где искать libslang.so при запуске бинарника и подгрузке .shared_module
 set_target_properties(editor tryeditor_shared PROPERTIES
         BUILD_RPATH "${slang_SOURCE_DIR}/lib"
 )

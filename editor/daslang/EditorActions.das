@@ -2,48 +2,36 @@ options gen2
 
 module EditorActions shared public
 
-require math
 require imgui/imgui_file_dialog
 require strings
 
-enum public PendingAction {
-    none
-    open_scene
-    save_scene
-    select_pak_output
-}
+typedef FileDialogCallback = lambda<(path : string; context : string) : void>
 
-var private g_pending_action = PendingAction.none
-var private g_context_data = ""
+var private g_on_confirmed : FileDialogCallback
+// var private g_on_cancelled : FileDialogCallback? = null
 
-def public open_editor_file_dialog(action : PendingAction; cfg : FileDialogConfig; context_data : string = "") {
-    g_pending_action = action
-    g_context_data = context_data
+def public open_editor_file_dialog(cfg : FileDialogConfig;
+                                   var on_confirmed : FileDialogCallback)
+                                //    var context : string = "";
+                                //    var on_cancelled : FileDialogCallback? = null)
+{
+    g_on_confirmed = on_confirmed
+    // g_on_cancelled = on_cancelled
+    // g_context      = context
     file_dialog_open(cfg)
 }
 
-def public get_pending_action() : PendingAction {
-    return g_pending_action
-}
-
-def public get_pending_context_data() : string {
-    return g_context_data
-}
-
-def public reset_pending_action() {
-    g_pending_action = PendingAction.none
-    g_context_data = ""
-}
-
-def public get_file_name_without_extension(path : string) : string {
-    var name = path
-    let last_slash = max(rfind(name, "/"), rfind(name, "\\"))
-    if (last_slash >= 0) {
-        name = slice(name, last_slash + 1)
+def public ProcessFileDialog() {
+    let res = file_dialog_draw()
+    if (res == FileDialogResult.confirmed) {
+        let path = file_dialog_selected_path()
+        invoke(g_on_confirmed, path, "some_ctx")
+        // g_on_confirmed = null
+        // g_on_cancelled = null
     }
-    let last_dot = rfind(name, ".")
-    if (last_dot > 0) {
-        name = slice(name, 0, last_dot)
-    }
-    return name
+    // elif (res == FileDialogResult.cancelled) {
+    //     invoke(g_on_confirmed ?? @(path : string; context : string) {}, "", g_context)
+    //     // g_on_confirmed = null
+    //     g_on_cancelled = null
+    // }
 }

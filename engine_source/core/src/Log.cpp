@@ -1,24 +1,30 @@
 // engine/core/Log.cpp
 #include "engine/core/Log.hpp"
 
-#include <iostream>
 #include <EASTL/algorithm.h>
+#include <iostream>
+
+#include "engine/core/Assert.hpp"
 
 namespace tryengine::core {
 
 eastl::string_view to_string(LogLevel level) {
     switch (level) {
+        default:
+            TRY_ASSERT(false, "Unhandled LogLevel");
+            break;
         case LogLevel::Trace:    return "TRACE";
         case LogLevel::Info:     return "INFO";
         case LogLevel::Warning:  return "WARN";
         case LogLevel::Error:    return "ERROR";
         case LogLevel::Critical: return "CRIT";
     }
-    return "?????";
 }
 
 eastl::string_view to_string(LogCategory category) {
     switch (category) {
+        default:
+            TRY_ASSERT(false, "Unhandled Log Category");
         case LogCategory::General:  return "General";
         case LogCategory::Core:     return "Core";
         case LogCategory::Graphics: return "Graphics";
@@ -29,8 +35,8 @@ eastl::string_view to_string(LogCategory category) {
         case LogCategory::Assert:   return "Assert";
         case LogCategory::Importer:   return "Importer";
         case LogCategory::Script:   return "Script";
+        case LogCategory::FileSystem:   return "FileSystem";
     }
-    return "Unknown";
 }
 
 Logger& Logger::instance() {

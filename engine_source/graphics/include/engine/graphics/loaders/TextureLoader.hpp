@@ -1,11 +1,11 @@
 #pragma once
 
+#include <EASTL/span.h>
+#include <EASTL/vector.h>
 #include <vk_mem_alloc.h>
 #include <volk.h>
 
-#include <EASTL/span.h>
-#include <EASTL/vector.h>
-
+#include "engine/resources/binary/TextureBinary.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
@@ -13,7 +13,6 @@
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/VulkanTypesConverter.hpp"
-#include "engine/resources/TextureBinary.hpp"
 #include "engine/resources/TextureTypes.hpp"
 
 namespace tryengine::graphics {

@@ -8,7 +8,6 @@
 #include "editor/asset_inspector/MaterialAssetInspector.hpp"
 #include "editor/asset_inspector/ShaderAssetInspector.hpp"
 #include "editor/asset_inspector/TextureAssetInspector.hpp"
-#include "editor/import/GlslImporter.hpp"
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/import/SlangImporter.hpp"
@@ -27,7 +26,6 @@ Editor::~Editor() = default;
 Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& vulkan_device)
     : engine_(engine), vulkan_device_(vulkan_device) {
     asset_inspector_manager_ = std::make_unique<AssetInspectorManager>();
-
     assets_factory_ = std::make_unique<AssetsFactoryManager>();
     asset_pipeline_ = std::make_unique<AssetPipeline>(engine_.Get<tryengine::resources::AssetRegistry>());
 
@@ -39,25 +37,18 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevic
 
 void Editor::RegisterAssetsImporters() const {
     auto& import_system_ = asset_pipeline_->GetImportSystem();
-    import_system_.RegisterImporter<GlslImporter, GlslShaderImportSettings>({".vert", ".frag"});
     import_system_.RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"});
     import_system_.RegisterImporter<SlangImporter, SlangImportSettings>({".slang"});
 }
 
 void Editor::RegisterResourceLoaders() const {
-    auto& res_manager = engine_.Get<tryengine::resources::ResourceManager>();
+    auto& rm = engine_.Get<tryengine::resources::ResourceManager>();
 
     // res_manager.RegisterTypeWithLocator<ModelAssetMap>(
     //     JsonLoader<ModelAssetMap>(),
     //     EditorArtifactLocator{"game/artifacts", static_cast<uint32_t>(tryengine::EditorArtifactGuid::AssetMap)});
 
-    res_manager.RegisterType<tryengine::graphics::MaterialAsset>(JsonLoader<tryengine::graphics::MaterialAsset>());
-    res_manager.RegisterType<tryengine::graphics::Material>(tryengine::graphics::MaterialLoader(vulkan_device_, res_manager));
-    res_manager.RegisterType<tryengine::graphics::Mesh>(tryengine::graphics::MeshLoader(vulkan_device_));
-    res_manager.RegisterType<tryengine::graphics::Shader>(
-        tryengine::graphics::ShaderLoader(vulkan_device_.GetDevice()));
-    res_manager.RegisterType<tryengine::graphics::TextureSampler>(
-        tryengine::graphics::TextureLoader(vulkan_device_));
+    rm.RegisterType<tryengine::graphics::MaterialAsset>(JsonLoader<tryengine::graphics::MaterialAsset>());
 }
 
 void Editor::RegisterAssetsFactories() const {

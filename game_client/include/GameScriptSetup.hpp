@@ -10,13 +10,15 @@
 DECLARE_MODULE(Module_Renderer);
 DECLARE_MODULE(Module_Resources);
 DECLARE_MODULE(Module_Input);
+DECLARE_MODULE(Module_AsyncFileManager);
 
 // Функция регистрации ДОЛЖНА БЫТЬ в глобальном namespace ::
 inline void RegisterGameScriptModules() {
     NEED_ALL_DEFAULT_MODULES;
-    NEED_MODULE(Module_Renderer);
-    NEED_MODULE(Module_Resources);
-    NEED_MODULE(Module_Input);
+    PULL_MODULE(Module_Renderer);
+    PULL_MODULE(Module_Resources);
+    PULL_MODULE(Module_Input);
+    PULL_MODULE(Module_AsyncFileManager);
 }
 
 namespace trygame {

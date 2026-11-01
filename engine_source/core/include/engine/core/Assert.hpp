@@ -19,9 +19,6 @@
 
 namespace tryengine::core::detail {
 
-// Раньше file:line форматировались вручную прямо в текст сообщения.
-// Теперь location — структурное поле LogRecord (см. Log.hpp), поэтому
-// report_failure просто передаёт его дальше, а не печатает сам.
 inline void report_failure(const char* kind,  // "Assertion" / "Verify" / "Check"
                            const char* condition_text, LogLevel level, const eastl::string& message,
                            const std::source_location& location) {

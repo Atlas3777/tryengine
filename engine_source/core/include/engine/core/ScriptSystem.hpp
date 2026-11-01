@@ -29,6 +29,8 @@ public:
 
     template <typename... Args>
     bool InvokeFunctionSafe(eastl::string_view f_name, Args&&... args) {
+        TRY_ASSERT(das_ctx_, "Script context is null");
+
         if (!das_ctx_)
             return false;
 
@@ -55,8 +57,7 @@ public:
 
     template <typename... Args>
     bool InvokeFunctionFast(eastl::string_view f_name, Args&&... args) {
-        if (!das_ctx_)
-            return false;
+        TRY_ASSERT(das_ctx_, "Script context is null");
 
         auto* function = das_ctx_->findFunction(f_name.data());
         if (!function) {
@@ -72,6 +73,8 @@ public:
     das::Context* GetContext() const { return das_ctx_; }
 
 private:
+    das::CodeOfPolicies CreateHeavyJitPolicies() const;
+
     template <typename... Args>
     bool InvokeSimFunctionSafe(das::SimFunction* function, eastl::string_view f_name, Args&&... args) {
         if constexpr (sizeof...(Args) == 0) {
@@ -89,6 +92,7 @@ private:
         return true;
     }
 
+    das::CodeOfPolicies policies_;
     ScriptSystemConfig config_;
     das::smart_ptr<das::FsFileAccess> file_access_;
     das::Context* das_ctx_ = nullptr;

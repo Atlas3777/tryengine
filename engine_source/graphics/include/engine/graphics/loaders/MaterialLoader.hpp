@@ -6,6 +6,7 @@
 #include "engine/graphics/AssetTypes.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/ResourceManager.hpp"
+#include "engine/resources/Json.hpp"
 
 namespace tryengine::graphics {
 
@@ -14,7 +15,7 @@ public:
     explicit MaterialLoader(VulkanDevice& device, resources::ResourceManager& rm) : device_(device), resource_manager_(rm) {}
 
     async::Task<Material> Parse(const eastl::span<const uint8_t> data) const {
-        auto asset_data_opt = tryeditor::Deserialize<MaterialAsset>(data);
+        auto asset_data_opt = resources::Json::Deserialize<MaterialAsset>(data);
 
         if (!asset_data_opt.has_value())
             co_return core::Error("Deserialize MaterialAsset failed");

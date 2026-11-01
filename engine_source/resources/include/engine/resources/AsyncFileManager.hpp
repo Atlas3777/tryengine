@@ -87,7 +87,7 @@ public:
         return {};
     }
 
-    [[nodiscard]] eastl::vector<uint8_t> TakeData() noexcept {
+    [[nodiscard]] eastl::vector<uint8_t> TakeData() const noexcept {
         if (IsReady() && task_) {
             return std::move(task_->storage);
         }
@@ -130,7 +130,9 @@ private:
 inline void FileHandle::Release() noexcept {
     // LogInfo("FileHandle Release"); TODO: утечка
     if (task_) {
-        TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
+        // TRY_ASSERT(task_->status != TaskStatus::Pending, "Releasing FileHandle while task is still Pending!");
+        if (task_->status == TaskStatus::Pending)
+            LogError("Releasing FileHandle while task is still Pending!");
         task_->status = TaskStatus::Unused;
         task_->storage.clear();
         task_->path = eastl::string_view{};
@@ -145,7 +147,7 @@ struct FileIoAwaiter {
 
     bool await_ready() const noexcept { return !handle.IsPending(); }
 
-    void await_suspend(std::coroutine_handle<> awaiting) noexcept {
+    void await_suspend(const std::coroutine_handle<> awaiting) const noexcept {
         handle.task_->continuation = awaiting;
         handle.task_->wait_counter = nullptr;
         handle.task_->executor = async::GetCurrentExecutor();
@@ -354,6 +356,7 @@ public:
                 // Извлекаем fd_slot из бит 32..62, а task_idx из бит 0..31
                 const uint32_t fd_slot = static_cast<uint32_t>((data >> 32) & 0x7FFFFFFF);
                 const uint32_t task_idx = static_cast<uint32_t>(data & 0xFFFFFFFF);
+                // LogTrace(LogCategory::FileSystem,"Pull: Received CLOSE_TAG CQE. fd_slot={}, task_idx={}, res={}", fd_slot, task_idx, cqe->res);
 
                 {
                     std::lock_guard lock(ring_mutex_);

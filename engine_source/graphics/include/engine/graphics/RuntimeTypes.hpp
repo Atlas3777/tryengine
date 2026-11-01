@@ -2,7 +2,7 @@
 
 #include <vk_mem_alloc.h>
 
-#include "engine/resources/MeshBinary.hpp"
+#include "../../../../resources/include/engine/resources/binary/MeshBinary.hpp"
 
 #ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
@@ -13,7 +13,7 @@
 #include <EASTL/fixed_vector.h>
 #include <EASTL/string_view.h>
 #include <cstring>
-#include <utility> // std::exchange, std::move
+#include <utility>
 
 #include "engine/core/Assert.hpp"
 #include "engine/resources/Vertex.hpp"
@@ -389,7 +389,7 @@ struct Material {
             buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
             buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-            TRY_ASSERT(vkCreateBuffer(device, &buffer_info, nullptr, &uniform_buffer) == VK_SUCCESS,
+            TRY_CHECK(vkCreateBuffer(device, &buffer_info, nullptr, &uniform_buffer) == VK_SUCCESS,
                        "Failed to create Material Uniform buffer!");
 
             VkMemoryRequirements mem_reqs;
@@ -401,7 +401,7 @@ struct Material {
                 phys_device, mem_reqs.memoryTypeBits,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-            TRY_ASSERT(vkAllocateMemory(device, &alloc_info, nullptr, &uniform_memory) == VK_SUCCESS,
+            TRY_CHECK(vkAllocateMemory(device, &alloc_info, nullptr, &uniform_memory) == VK_SUCCESS,
                        "Failed to allocate Material Uniform memory!");
 
             vkBindBufferMemory(device, uniform_buffer, uniform_memory, 0);
@@ -424,7 +424,7 @@ struct Material {
             alloc_info.descriptorSetCount = 1;
             alloc_info.pSetLayouts = &shader->descriptor_set_layouts[kMaterialSetIndex];
 
-            TRY_ASSERT(vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) == VK_SUCCESS,
+            TRY_CHECK(vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) == VK_SUCCESS,
                        "Failed to allocate Material DescriptorSet!");
 
             UpdateDescriptors();

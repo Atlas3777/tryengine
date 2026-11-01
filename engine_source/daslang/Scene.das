@@ -326,79 +326,6 @@ def private SerializeBase(p : void?; t : Type) : StructField? {
     }
 }
 
-// rtti_core::TypeInfo ?
-
-// struct rtti_core::TypeInfo
-//  basicType : rtti_core::Type
-//  flags : bitfield<ref, refType, canCopy, isPod, isRawPod, isConst, isTemp, isImplicit, refValue, hasInitValue, isSmartPtr, isSmartPtrNative, isHandled, heapGC, stringHeapGC, isPrivate, classMethod>
-//  dimSize : uint
-//  argTypes : rtti_core::TypeInfo ??
-//  size : uint
-//  hash : uint64
-//  argNames : string const?
-//  _type : rtti_core::Type
-//  firstType : rtti_core::TypeInfo?
-//  dim : uint?
-//  secondType : rtti_core::TypeInfo?
-//  argCount : uint
-//  enumType : rtti_core::EnumInfo? [r / o]
-//  isRef : bool [r / o]
-//  isRefType : bool [r / o]
-//  isRefValue : bool [r / o]
-//  canCopy : bool [r / o]
-//  isPod : bool [r / o]
-//  isRawPod : bool [r / o]
-//  isConst : bool [r / o]
-//  isTemp : bool [r / o]
-//  isImplicit : bool [r / o]
-//  annotation : rtti_core::TypeAnnotation? [r / o]
-//  annotation_or_name : rtti_core::TypeAnnotation? [r / o]
-//  structType : rtti_core::StructInfo? [r / o]
-
-// sizeOf : 8, alignOf : 8
-
-
-// rtti_core::VarInfo?
-
-// struct rtti_core::VarInfo
-//  basicType: rtti_core::Type
-//  flags: bitfield<ref,refType,canCopy,isPod,isRawPod,isConst,isTemp,isImplicit,refValue,hasInitValue,isSmartPtr,isSmartPtrNative,isHandled,heapGC,stringHeapGC,isPrivate,classMethod>
-//  dimSize: uint
-//  sValue: string
-//  nextGcField: uint
-//  size: uint
-//  argTypes: rtti_core::TypeInfo??
-//  hash: uint64
-//  annotation_argument_count: uint
-//  value: any
-//  argNames: string const?
-//  name: string
-//  firstType: rtti_core::TypeInfo?
-//  offset: uint
-//  secondType: rtti_core::TypeInfo?
-//  argCount: uint
-
-// sizeOf: 8, alignOf: 8
-
-
-// rtti_core::StructInfo?
-
-// struct rtti_core::StructInfo
-//  flags: bitfield<_class,_lambda,heapGC,stringHeapGC>
-//  init_mnh: uint64
-//  count: uint
-//  annotation_count: uint
-//  size: uint
-//  hash: uint64
-//  fields: rtti_core::VarInfo??
-//  firstGcField: uint
-//  name: string
-//  module_name: string
-
-// sizeOf: 8, alignOf: 8
-
-
-
 def private parse_and_apply_field(var cmp : ComponentMap;
                                   entity_tag : string;
                                   field_name : string;
@@ -522,8 +449,6 @@ def private parse_and_apply_field(var cmp : ComponentMap;
     out_warnings++
     return false
 }
-
-
 
 def load_scene_from_config(config_text : string; renames : table<string; string>) : bool {
     var error : string

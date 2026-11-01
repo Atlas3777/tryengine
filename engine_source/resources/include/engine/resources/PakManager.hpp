@@ -6,9 +6,9 @@
 #include <mutex>
 
 #include "AssetLocation.hpp"
-#include "AssetPakBinary.hpp"
 #include "AssetRegistry.hpp"
 #include "FileIterator.h"
+#include "binary/AssetPakBinary.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/RunAndForget.hpp"
 #include "engine/async/Task.hpp"
@@ -36,16 +36,18 @@ public:
     PakManager(const PakManager&) = delete;
     PakManager& operator=(const PakManager&) = delete;
 
-    async::Task<void> LoadAll() {
-        eastl::vector<async::Task<PakHandle>> vector;
-        filesystem::Iterate("content/", 0,
-            [&](const eastl::string& path, const char* name, bool is_dir, int idx) {
+    void StartLoadAll() {
+        filesystem::Iterate("content/", 0, [&](const eastl::string& path, const char* name, bool is_dir, int idx) {
+            if (!name || !strstr(name, ".pak")) {
+                LogTrace(LogCategory::Importer, "Unsupported type in content");
+                return;
+            }
+
             async::RunAndForget(async::ThreadPool(), LoadPakAsync(path));
         });
-        co_return {};
     }
 
-    async::Task<PakHandle> LoadPakAsync(const eastl::string& pak_path) {
+    async::Task<PakHandle> LoadPakAsync(const eastl::string pak_path) {
         // 1. Проверка на уже смонтированный PAK
         {
             std::lock_guard lock(mutex_);
@@ -68,13 +70,15 @@ public:
         co_await header_handle;
 
         if (header_handle.IsFailed()) {
-            file_manager_.CloseFDAsync(fd_slot);
+            auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+            co_await close_handle;
             co_return LogAndMakeError("Failed to read header for PAK: {}", pak_path.c_str());
         }
 
         auto header_res = AssetPakBinary::ReadHeader(header_handle.GetData());
         if (!header_res.has_value()) {
-            file_manager_.CloseFDAsync(fd_slot);
+            auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+            co_await close_handle;
             co_return LogAndMakeError("Failed AssetPakBinary::ReadHeader {}",header_res.error().Message());
         }
 
@@ -82,20 +86,20 @@ public:
 
         // 4. Чтение манифеста по открытому fd_slot
         uint64_t manifest_body_size = header.data_offset - sizeof(AssetPakHeader);
-        FileHandle manifest_handle = file_manager_.ReadChunkFDAsync(
-            fd_slot, sizeof(AssetPakHeader), manifest_body_size
-        );
+        FileHandle manifest_handle = file_manager_.ReadChunkFDAsync(fd_slot, 0, header.data_offset);
         co_await manifest_handle;
 
         if (manifest_handle.IsFailed()) {
-            file_manager_.CloseFDAsync(fd_slot);
+            auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+            co_await close_handle;
             co_return LogAndMakeError("Failed to read manifest block for PAK: {}", pak_path.c_str());
         }
 
         auto meta_res = AssetPakBinary::UnpackManifest(manifest_handle.GetData());
         if (!meta_res.has_value()) {
-            file_manager_.CloseFDAsync(fd_slot);
-            co_return LogAndMakeError("{}",meta_res.error().Message());
+            auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+            co_await close_handle;
+            co_return LogAndMakeError("Error AssetPakBinary::UnpackManifest - {}", meta_res.error().Message());
         }
 
         const auto& manifest = *meta_res;
@@ -117,11 +121,11 @@ public:
                 auto& results = *results_r;
                 for (size_t i = 0; i < results.size(); ++i) {
                     if (!results[i].has_value()) {
-                        file_manager_.CloseFDAsync(fd_slot);
+                        auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+                        co_await close_handle;
                         co_return LogAndMakeError("Failed dependency '{}' for PAK '{}': {}",
-                                                 manifest.dependencies[i].c_str(),
-                                                 pak_path.c_str(),
-                                                 results[i].error().Message());
+                                                  manifest.dependencies[i].c_str(), pak_path.c_str(),
+                                                  results[i].error().Message());
                     }
                 }
             }
@@ -134,7 +138,8 @@ public:
             auto it = mounted_paks_by_path_.find(pak_path);
             if (it != mounted_paks_by_path_.end()) {
                 // Если за время co_await файл параллельно уже смонтировали
-                file_manager_.CloseFDAsync(fd_slot);
+                auto close_handle = file_manager_.CloseFDAsync(fd_slot);
+                co_await close_handle;
                 co_return it->second;
             }
 
@@ -145,15 +150,10 @@ public:
 
         // 7. Регистрация артефактов с сохранением fd_slot в PakChunkLocation
         for (const auto& entry : manifest.layout) {
-            registry_.RegisterPakArtifact(
-                entry.guid,
-                PakChunkLocation{
-                    .pak_handle = new_handle,
-                    .fd_slot = fd_slot,
-                    .offset = header.data_offset + entry.offset,
-                    .size = entry.size
-                }
-            );
+            registry_.RegisterPakArtifact(entry.guid, PakChunkLocation{.pak_handle = new_handle,
+                                                                       .fd_slot = fd_slot,
+                                                                       .offset = header.data_offset + entry.offset,
+                                                                       .size = entry.size});
         }
 
         co_return new_handle;
@@ -179,4 +179,4 @@ private:
     eastl::hash_map<eastl::string, PakHandle> mounted_paks_by_path_;
 };
 
-} // namespace tryengine::resources
+}  // namespace tryengine::resources

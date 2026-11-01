@@ -1,5 +1,7 @@
-#include "engine/resources/MeshBinary.hpp"
+#include "../include/engine/resources/binary/MeshBinary.hpp"
+
 #include <cstring>
+
 #include "engine/core/MakeError.hpp"
 
 namespace tryengine::resources {

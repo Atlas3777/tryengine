@@ -1,10 +1,10 @@
 #include "editor/EditorApp.hpp"
 
+#include "../include/editor/render/EditorRender.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"
 #include "editor/EditorInputFilter.hpp"
-#include "editor/EditorRender.hpp"
 #include "editor/EditorScriptSetup.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/PollHandle.hpp"
@@ -13,7 +13,12 @@
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
+#include "engine/graphics/loaders/MaterialLoader.hpp"
+#include "engine/graphics/loaders/MeshLoader.hpp"
+#include "engine/graphics/loaders/ShaderLoader.hpp"
+#include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
+#include "engine/resources/PakManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
@@ -39,7 +44,12 @@ void EditorApp::Init() {
     engine_->RegisterSystem<AssetRegistry>();
     engine_->RegisterSystem<AsyncFileManager>();
 
-    engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+    auto& rm = engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+
+    rm.RegisterType<Material>(MaterialLoader(*vulkan_device_, rm));
+    rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
+    rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
+    rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
 
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), engine_->Get<AsyncFileManager>());
 
@@ -71,10 +81,12 @@ void EditorApp::Init() {
     engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,
                                           *frame_sync_);
 
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("Start");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
+
 
 void EditorApp::Run() const {
     editor_->running = true;
@@ -85,6 +97,7 @@ void EditorApp::Run() const {
     auto& render = engine_->Get<EditorRender>();
     auto& input = engine_->Get<InputService>();
 
+
     while (editor_->running && !input.IsQuitRequested()) {
         TRY_PROFILE_SCOPE("Main Loop Frame");
 
@@ -94,10 +107,11 @@ void EditorApp::Run() const {
         engine_->Get<AsyncFileManager>().Pull();
         MainThread().Pull();
 
+        script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
 
         if (editor_->state == PlayModeState::Play)
-            script_system.InvokeFunctionSafe("Update");
+            script_system.InvokeFunctionSafe("GameUpdate");
 
         engine_->Get<AsyncFileManager>().Submit();
 

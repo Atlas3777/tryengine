@@ -1,4 +1,3 @@
-// engine_source/core/include/engine/core/Expected.hpp
 #pragma once
 
 #include <expected>

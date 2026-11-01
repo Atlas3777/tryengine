@@ -12,13 +12,13 @@ namespace tryengine::resources {
 class AssetRegistry {
 public:
     void RegisterLooseArtifact(uint64_t guid, eastl::string path) {
-        LogTrace("Loose asset {} registred, {}", guid, path);
+        // LogTrace("Loose asset {} registred, {}", guid, path);
         std::lock_guard lock(mutex_);
         locations_[guid] = LooseFileLocation{std::move(path)};
     }
 
     void RegisterPakArtifact(uint64_t guid, const PakChunkLocation& location) {
-        LogTrace("Pak asset {} registred", guid);
+        // LogTrace("Pak asset {} registred", guid);
         std::lock_guard lock(mutex_);
         locations_[guid] = location;
     }

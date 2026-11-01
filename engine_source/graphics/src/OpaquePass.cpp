@@ -89,41 +89,23 @@ eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine) {
 }  // namespace
 
 void OpaquePass::Collect(CollectContext& ctx) {
-    auto& script = ctx.engine.Get<core::ScriptSystem>();
-
-    auto size_res = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
-    if (!size_res.has_value()) {
-        LogError("ViewportSize not found");
-        return;
-    }
-    const auto size = *size_res;
-
-    // Размер вьюпорта определяет размеры SceneColor/SceneDepth, то есть структуру графа.
-    const VkExtent2D extent{std::max(1u, static_cast<uint32_t>(size.x)), std::max(1u, static_cast<uint32_t>(size.y))};
-    if (extent.width != viewport_.width || extent.height != viewport_.height) {
-        viewport_ = extent;
-        ctx.graph.Invalidate();
-    }
-    ctx.cpu_bb.Put(RGTag_v<"ViewportSize">, viewport_);
-
-    auto camera_res = script.SimpleReturnUnsafe<CameraData*>("get_camera", size);
-    if (!camera_res.has_value()) LogCritical("Camera data not found");
-    const CameraData* camera = *camera_res;
+    auto camera = ctx.cpu_bb.GetAs<CameraData>(RGTag_v<"Camera">);
+    const auto viewport_size = ctx.cpu_bb.GetAs<VkExtent2D>(RGTag_v<"ViewportSize">);
+    viewport_ = *viewport_size;
 
     GlobalLight light;
     light.ambient_color = hlslpp::float4(0.1f, 0.1f, 0.1f, 0);
     light.view_pos = hlslpp::float4(camera->position, 0);
 
     ctx.cpu_bb.Put(RGTag_v<"GlobalLightUBO">, light);
-    ctx.cpu_bb.Put(RGTag_v<"Camera">, *camera);
 
     point_lights_ = CollectLight(ctx.engine);
 
-    // НОВОЕ: сортируем один раз здесь, Execute больше не копирует и не сортирует очередь.
     draw_queue_ = CollectDrawable(ctx.engine);
     std::sort(draw_queue_.begin(), draw_queue_.end(),
               [](const MeshDrawCall& a, const MeshDrawCall& b) { return a.sorting_key < b.sorting_key; });
 }
+
 
 void OpaquePass::Setup(RenderGraphBuilder& builder) {
     RGTextureDesc scene_color_desc{
@@ -157,7 +139,6 @@ void OpaquePass::Setup(RenderGraphBuilder& builder) {
     builder.Export(RGTag_v<"ForwardColor">, color_);
 }
 
-// ==================== Execute ====================
 
 void OpaquePass::Execute(RGExecuteContext& ctx) {
     RGColorAttachment color_attachment{};
@@ -183,7 +164,6 @@ void OpaquePass::Execute(RGExecuteContext& ctx) {
     ctx.EndRendering();
 }
 
-// БЫЛО: OpaqueGeometryPass::ExecuteDrawCommands. Изменения помечены НОВОЕ.
 void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
     if (draw_queue_.empty()) {
         return;
@@ -199,8 +179,6 @@ void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
     };
     TransientAllocation camera_alloc = ctx.AllocateTransient(&camera_gpu, sizeof(CameraGPU), alignof(CameraGPU));
 
-    // НОВОЕ: свет живёт в transient-памяти (BDA) - LightPass, его буфер и ресурс "PointLightBuffer" не нужны.
-    // Размер буфера зависел от числа ламп, то есть менял бы структуру графа при каждом добавлении лампы.
     TransientAllocation lights_alloc = ctx.AllocateTransient(
         point_lights_.data(), sizeof(PointLightGPU) * point_lights_.size(), alignof(PointLightGPU));
 
@@ -213,10 +191,8 @@ void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
     };
     TransientAllocation frag_alloc = ctx.AllocateTransient(&frag_data, sizeof(FragmentDataGPU), alignof(FragmentDataGPU));
 
-    // НОВОЕ: очередь уже отсортирована в Collect.
     const auto& draw_queue = draw_queue_;
 
-    // Выделяем транзиентную память СРАЗУ ПОД ВСЕ ОБЪЕКТЫ кадра
     TransientAllocation objects_alloc = ctx.AllocateTransient(
         nullptr, sizeof(GPUObjectData) * draw_queue.size(), alignof(GPUObjectData));
     GPUObjectData* mapped_objects = reinterpret_cast<GPUObjectData*>(objects_alloc.mapped_ptr);

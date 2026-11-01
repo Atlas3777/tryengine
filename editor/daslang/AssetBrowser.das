@@ -13,7 +13,6 @@ require imgui/imgui_style_builtin
 require tryengine/Types
 require tryeditor
 require tryeditor/FileSystemUtils
-require tryeditor/PakManager
 require strings
 require math
 
@@ -65,28 +64,27 @@ def public DrawAssetBrowser() {
         window(ASSET_BROWSER_WIN, (text = "Asset Browser", closable = false, flags = ImGuiWindowFlags.None)) {
             checkbox(FOLDER_IDENT, (text = "EngineContent"))
 
+            same_line()
+            let view_label = is_list_view ? "View: List (Ctrl+L)" : "View: Grid (Ctrl+L)"
+            if (button(BT_VIEW_MODE, (text = view_label))){
+                is_list_view = !is_list_view
+            }
+
+            assume io = GetIO()
+            if (IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) && io.KeyCtrl && IsKeyPressed(ImGuiKey.L)){
+                is_list_view = !is_list_view
+            }
+
             assume folders = FOLDER_IDENT.value ? get_engine_folders() : get_game_folders()
             if (length(folders) == 0) {
                 text("No asset folders loaded.")
                 return
             }
 
-            // Горячие клавиши (Ctrl + L)
-            let io & = unsafe(GetIO())
-            if (IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows) && io.KeyCtrl && IsKeyPressed(ImGuiKey.L)) {
-                is_list_view = !is_list_view
-            }
-
             // Верхняя панель
             text("Search:")
             same_line()
             text_filter(W_SEARCH_FILTER)
-
-            same_line()
-            let view_label = is_list_view ? "View: List (Ctrl+L)" : "View: Grid (Ctrl+L)"
-            if (button(BT_VIEW_MODE, (text = view_label))) {
-                is_list_view = !is_list_view
-            }
 
             separator(WI_SEP_0)
 
@@ -143,13 +141,6 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
         let opened = tree_node_ex(FOLDER_TREE_NODE, (text = folder_name, flags = flags))
         if (IsItemClicked()) {
             current_folder_idx = folder_idx
-        }
-
-        // Контекстное меню по ПКМ в дереве папок
-        popup_context_item(PO_CTX_ITEM, (str_id = "ctx_item", flags = ImGuiPopupFlags.MouseButtonRight))  {
-            if (menu_item(PO_REG_PAK, (text = "RegisterPak", shortcut = "F232"))) {
-                register_folder_as_pak(folders[folder_idx])
-            }
         }
 
         if (opened) {
@@ -295,13 +286,6 @@ def DrawFolderContent(folder_idx : int; let folders) {
                     // Двойной клик переходит внутрь папки
                     if (IsItemHovered() && IsMouseDoubleClicked(ImGuiMouseButton.Left)) {
                         current_folder_idx = child_idx
-                    }
-
-                    // Контекстное меню по ПКМ для маркировки PAK
-                    popup_context_item(PO_CTX_ITEM, (str_id = "ctx_item", flags = ImGuiPopupFlags.MouseButtonRight))  {
-                        if (menu_item(PO_REG_PAK, (text = "RegisterPak", shortcut = "F232"))) {
-                            register_folder_as_pak(folders[folder_idx])
-                        }
                     }
                 }
                 if (!is_list_view) {

@@ -4,7 +4,7 @@
 #include <EASTL/vector.h>
 #include <cstdint>
 
-#include "Vertex.hpp"
+#include "../Vertex.hpp"
 #include "engine/core/Result.hpp"
 
 namespace tryengine::resources {

@@ -28,13 +28,14 @@ public:
     EditorRender(EditorRender&&) = delete;
     EditorRender& operator=(EditorRender&&) = delete;
 
-    void Render(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device, PlayModeState& state) const;
+    void Render(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device, PlayModeState& state);
 
     void RecreateSwapchain(int w, int h, const tryengine::graphics::VulkanDevice& device) const;
 
 private:
     void ImportSwapchain(uint32_t image_index) const;
 
+    VkExtent2D last_viewport_size_{0, 0};
     tryengine::graphics::RenderGraph& rg_;
     tryengine::graphics::VulkanSwapchain& swapchain_;
     tryengine::graphics::FrameSync& frame_sync_;

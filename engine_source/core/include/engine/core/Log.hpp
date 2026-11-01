@@ -54,6 +54,7 @@ enum class LogCategory : uint8_t {
     Assert,
     Importer,
     Script,
+    FileSystem
 };
 
 eastl::string_view to_string(LogLevel level);

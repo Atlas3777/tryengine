@@ -10,8 +10,10 @@ require strings
 require daslib/async_boost
 require daslib/coroutines
 
-require tryeditor/PakManager
 require tryengine/AsyncTaskManager
+require imgui/imgui_file_dialog
+require tryeditor/EditorActions
+require imgui/imgui_boost_v2
 require tryengine/Scene
 // require imgui/imgui_containers_builtin
 // require imgui/imgui_layout_builtin
@@ -29,18 +31,32 @@ struct BuildDependent {
 var private build : BuildDependent
 
 var private cache_scenes = array<AssetItem>()
+var private build_dir : string
 
-var private RADIO_BUTTON : table<int; ToggleState -const>
+var private CHECKBOX_STATE : table<int; ToggleState -const>
 
 def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
         if (button(UPDATE_SCENE, (text = "Update Scene List"))){
             cache_scenes <- FindFilesByExt(".scene")
         }
+        if (!build_dir.empty()){
+            text("{build_dir}");
+        }
+        if (button(SELECT_BUILD_DIR, (text = "SELECT BUILD DIR"))){
+            open_editor_file_dialog(
+                FileDialogConfig(
+                    title = "SELECT BUILD DIR",
+                    mode = FileDialogMode.pick_dir
+                ),
+                @(path : string, ctx : string) : void {
+                    build_dir = path
+                })
+        }
 
         for (i in range(length(cache_scenes))) {
             assume scene = cache_scenes[i]
-            checkbox(RADIO_BUTTON[i], (text = "{scene.name}"))
+            checkbox(CHECKBOX_STATE[i], (text = "{scene.name}"))
         }
 
         if (button(BUILD_PREVIEW, (text = "Build preview"))){
@@ -49,7 +65,7 @@ def DrawBuildManager(){
             let str = build_string()$(var writer){
                 for (i in range(length(cache_scenes))){
                     assume scene = cache_scenes[i]
-                    if (RADIO_BUTTON[i].value){
+                    if (CHECKBOX_STATE[i].value){
                         writer.write(scene.name)
                         writer.write(" ")
                         writer.write(scene.guid)
@@ -61,35 +77,20 @@ def DrawBuildManager(){
 
             StartTask(FindPaks(arr))
         }
-        DrawBuildPreview()
 
         if (button(BUILD_FINAL, (text = "Create Build"))){
-            CreateBuild("/home/artem/trybuild", build.scenes)
+            if (build_dir.empty()){
+                print("select build_dir! \n");
+                return
+            }
+            CreateBuild(build_dir, build.scenes)
         }
     }
-}
-
-def DrawBuildPreview() {
-    // text("included paks")
-    // for (pak in build.need_pak){
-    //     text("{pak.name}")
-    // }
-    // text("standalone_meshs:")
-    // for (mesh in build.standalone_meshs){
-    //     text("- {mesh:d}")
-    // }
-    // text("standalone_mat:")
-    // for (mat in build.standalone_mat){
-    //     text("- {mat:d}")
-    // }
 }
 
 
 def CrearBuildSettigs() {
     build.scenes.clear()
-    // build.need_pak.clear()
-    // build.standalone_mat.clear()
-    // build.standalone_meshs.clear()
 }
 
 
