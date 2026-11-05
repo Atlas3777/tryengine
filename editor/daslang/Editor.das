@@ -2,10 +2,6 @@ options gen2
 
 module Editor shared public
 
-require tryResources
-
-require daslib/decs
-
 require tryeditor/Mover
 require tryeditor/DebugRender
 
@@ -13,9 +9,27 @@ require tryengine/Scene
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
+require tryeditor/QuadTreeDebugWindow
+
+require tryResources
+
+require imgui
+require daslib/decs
 
 let mesh_id = 3081795527557720915ul
 let mat_id = 17036954862819815981ul
+
+struct EditorState {
+   play : bool
+}
+
+var private editor_state : EditorState
+
+
+[export]
+def EditorStart(){
+    init_quadtree_debug()
+}
 
 [export]
 def EditorUpdate(){

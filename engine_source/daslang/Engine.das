@@ -4,6 +4,7 @@ module Engine shared public
 
 require tryengine/AsyncTaskManager
 require tryengine/Input
+require daslib/just_in_time
 
 [export]
 def EngineUpdate() {
@@ -12,5 +13,5 @@ def EngineUpdate() {
 
 [export]
 def EngineStart() {
-    update_input()
+    SetInputSource()
 }

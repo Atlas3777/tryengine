@@ -139,7 +139,7 @@ target_link_libraries(editor_core PUBLIC
 add_executable(editor src/main.cpp)
 target_link_libraries(editor PRIVATE editor_core)
 
-add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp src/Module_Resources.cpp)
+add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp)
 target_link_libraries(tryeditor_shared PRIVATE editor_core)
 
 set_target_properties(tryeditor_shared PROPERTIES

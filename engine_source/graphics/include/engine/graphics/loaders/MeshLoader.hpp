@@ -12,7 +12,7 @@
 
 namespace tryengine::graphics {
 
-__forceinline VkIndexType IndexFormat(const resources::IndexFormat format) {
+TRY_INLINE VkIndexType IndexFormat(const resources::IndexFormat format) {
     if (format == resources::IndexFormat::UInt16)
         return VK_INDEX_TYPE_UINT16;
     if (format == resources::IndexFormat::UInt32)

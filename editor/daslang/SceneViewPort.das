@@ -7,7 +7,7 @@ require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 
-require tryeditor
+require TryEditor
 require tryeditor/FileSystemUtils
 
 var a : AssetItem

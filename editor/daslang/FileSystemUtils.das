@@ -2,9 +2,9 @@ options gen2
 
 module FileSystemUtils shared public
 
+require TryEditor
 require tryengine/Types
 require strings
-require tryeditor
 
 // DTO для описания ассета
 struct public AssetItem {

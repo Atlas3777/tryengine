@@ -14,7 +14,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 cmake_policy(SET CMP0168 NEW)
 
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # Общий кэш исходников для всех профилей. Можно переопределить через -DCPM_SOURCE_CACHE=... или переменную окружения.

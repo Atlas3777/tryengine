@@ -1,6 +1,6 @@
 options gen2
 
-module QuadTree shared
+module QuadTree shared public
 
 require daslib/decs
 require daslib/decs_boost
@@ -11,15 +11,15 @@ require tryengine/Types
 // Конфигурация дерева
 // ===========================================================================
 struct public QuadTreeConfig {
-    rootSize : float = 4000.0f
-    rootCenter : float2 = float2(2000.0f, 2000.0f)
-    minChunkSize : float = 250.0f
+    rootSize : float
+    rootCenter : float2
+    minChunkSize : float
 
-    splitMultiplier : float = 1.3f
-    mergeMultiplier : float = 1.5f
+    splitMultiplier : float
+    mergeMultiplier : float
 
-    fovAngle : float = PI / 3
-    viewDistance : float = 2200.0f
+    fovAngle : float
+    viewDistance : float
 
     maxDepth : int
 }
@@ -49,7 +49,7 @@ struct public QuadNode {
 }
 
 struct public QuadTree {
-    config : QuadTreeConfig = QuadTreeConfig()
+    config : QuadTreeConfig
     nodes : array<QuadNode>
 }
 
@@ -81,6 +81,8 @@ def public unload_node_entity(var tree : QuadTree&; nodeIdx : int) {
         delete_entity(eid)
     }
     tree.nodes[nodeIdx].ownedEntities |> clear()
+
+    var a = NodeState.Loaded
 }
 
 // ---------------------------------------------------------------------------

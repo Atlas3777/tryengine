@@ -1,7 +1,6 @@
 #pragma once
 
-#include <EASTL/shared_ptr.h>
-#include <EASTL/vector.h>
+#include <utility>
 
 #include "engine/core/Inline.hpp"
 #include "engine/core/Assert.hpp"
@@ -11,51 +10,63 @@ namespace tryengine::core {
 
 class Engine {
 public:
+    static constexpr uint32_t MAX_SYSTEMS = 32;
+
     Engine() = default;
-    ~Engine() {
-        LogInfo("Engine destructor start");
-        while (!systems_.empty()) {
-            systems_.pop_back();
-        }
-        LogInfo("Engine destructor end");
-    }
+    ~Engine() { Shutdown(); }
+
+    Engine(const Engine&)            = delete;
+    Engine& operator=(const Engine&) = delete;
+    Engine(Engine&&)                 = delete;
+    Engine& operator=(Engine&&)      = delete;
 
     template <typename T, typename... Args>
     T& RegisterSystem(Args&&... args) {
-        auto type_id = ScopedTypeId<Engine, T>::Value();
+        const uint32_t id = ScopedTypeId<EngineSystemCounter, T>::Value();
+        TRY_ASSERT(id < MAX_SYSTEMS, "Too many systems registered with Engine!");
+        TRY_ASSERT(instances_[id] == nullptr, "Double registration");
 
-        if (type_id >= systems_.size())
-            systems_.resize(type_id + 1);
+        T* system = new T(std::forward<Args>(args)...);
 
-        auto system = eastl::make_shared<T>(std::forward<Args>(args)...);
-        systems_[type_id] = system;
-
+        instances_[id]  = system;
+        destroyers_[id] = [](void* p) { delete static_cast<T*>(p); };
         return *system;
     }
 
     template <typename T>
-    __forceinline [[nodiscard]] T& Get() const noexcept {
-        auto* system = FindInternal<T>();
-        TRY_ASSERT(system, "System not found!");
-        return *system;
+    [[nodiscard]] TRY_INLINE T* TryGet() const noexcept {
+        const uint32_t id = ScopedTypeId<EngineSystemCounter, T>::Value();
+        TRY_ASSERT(id < MAX_SYSTEMS, "Max system count limit above");
+        return (id < MAX_SYSTEMS) ? static_cast<T*>(instances_[id]) : nullptr;
     }
 
     template <typename T>
-    __forceinline [[nodiscard]] T* TryGet() const noexcept {
-        return FindInternal<T>();
+    [[nodiscard]] TRY_INLINE T& Get() const noexcept {
+        const uint32_t id = ScopedTypeId<EngineSystemCounter, T>::Value();
+        TRY_ASSERT(id < MAX_SYSTEMS, "Max system count limit above");
+        TRY_ASSERT(static_cast<T*>(instances_[id]), "System not registered");
+        return *static_cast<T*>(instances_[id]);
     }
-
 private:
-    template <typename T>
-    T* FindInternal() const noexcept {
-        auto type_id = ScopedTypeId<Engine, T>::Value();
-        if (type_id < systems_.size())
-            return static_cast<T*>(systems_[type_id].get());
-
-        return nullptr;
+    void DestroyAt(uint32_t id) noexcept {
+        if (instances_[id] == nullptr)
+            return;
+        TRY_ASSERT(destroyers_[id] != nullptr, "Instance without destructor!");
+        destroyers_[id](instances_[id]);
+        instances_[id]  = nullptr;
+        destroyers_[id] = nullptr;
     }
 
-    eastl::vector<eastl::shared_ptr<void>> systems_;
+    void Shutdown() noexcept {
+        for (uint32_t i = ScopedTypeCounter<EngineSystemCounter>::counter; i > 0; --i) {
+            DestroyAt(i - 1);
+        }
+    }
+
+    struct EngineSystemCounter; // Чтобы никто из вне не мог сломать индексацию
+
+    void* instances_[MAX_SYSTEMS] = {};
+    void (*destroyers_[MAX_SYSTEMS])(void*) = {};
 };
 
-}  // namespace tryengine::core
+} // namespace tryengine::core

@@ -22,7 +22,7 @@ require imgui/imgui_docking_builtin
 require imgui/imgui_boost_v2
 require imgui/imgui_file_dialog
 
-require tryeditor
+require TryEditor
 
 def DrawMainMenu() {
     main_menu_bar(MAIN_MENU_BAR) {
@@ -139,7 +139,7 @@ def DrawEditor() {
     DrawAssetBrowser()
     DrawSceneViewPort()
     DrawBuildManager()
-    // DrawPakManager()
+    // DrawQuadTreeDebug()
 
     ProcessFileDialog()
 

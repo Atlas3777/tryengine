@@ -6,4 +6,4 @@ require tryeditor/Editor
 
 require tryengine/Scene
 require tryengine/Input
-require trygame
+require trygame/Game

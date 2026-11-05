@@ -5,7 +5,7 @@ require daslib/strings_boost
 
 typedef module_info = tuple<string; string; string> const
 
-var DAS_PAK_ROOT = "/home/artem/tryengine/"
+var DAS_PAK_ROOT = "/home/artem/tryengine/" // Это нужно использовать в редакторе, чтобы расширении VS Code нашло
 
 [export]
 def module_get(req, from : string) : module_info {
@@ -22,9 +22,10 @@ def module_get(req, from : string) : module_info {
     }
 
 
-    if (starts_with(req, "trygame")){
-        let path = "{DAS_PAK_ROOT}/game/assets/scripts/main.das"
-        return ("trygame", path, "")
+    if (starts_with(req, "trygame/")){
+        let sub = slice(req, 8, length(req))
+        let path = "{DAS_PAK_ROOT}/game/scripts/{sub}.das"
+        return (sub, path, "")
     }
 
     if (starts_with(req, "imgui/")) {

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <EASTL/hash_map.h>
-#include <mutex>
 #include <memory>
+#include <mutex>
 
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/RunAndForget.hpp"
@@ -116,7 +116,8 @@ public:
 
     bool HasGuid(uint64_t guid) const override {
         std::lock_guard lock(cache_mutex_);
-        if (cache_.find(guid) != cache_.end()) return true;
+        if (cache_.find(guid) != cache_.end())
+            return true;
         return registry_.GetAssetLocation(guid).has_value();
     }
 
@@ -178,6 +179,9 @@ private:
         const auto asset_location_res = registry_.GetAssetLocation(guid);
 
         if (!asset_location_res.has_value()) {
+            if (registry_.TryDefer(guid,
+                                   [this, guid, cb] { async::RunAndForget(async::ThreadPool(), LoadAsync(guid, cb)); }))
+                co_return {};  // cb остаётся Loading, waiters ждут, Purge Loading не трогает
             NotifyFailed(cb);
             co_return LogAndMakeError("Path for guid {} not found", guid);
         }

@@ -3,24 +3,24 @@ options _allow_imgui_legacy = true
 
 module QuadTreeDebugWindow shared
 
+require daslib/decs
+require daslib/decs_boost
+require tryengine/QuadTree public
 require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
-require daslib/decs
-require daslib/decs_boost
-require math
 
-require tryengine/QuadTree
+require math
 
 var public g_observerPos : float2 = float2(2000.0f, 2000.0f)
 var public g_observerAngle : float = 0.0f
-var public g_tree : QuadTree = QuadTree()
+var public g_tree : QuadTree
 
 def public init_quadtree_debug() {
-    var cfg : QuadTreeConfig = QuadTreeConfig()
+    var cfg : QuadTreeConfig
     cfg.rootSize = 4000.0f
     cfg.rootCenter = float2(2000.0f, 2000.0f)
     cfg.minChunkSize = 250.0f
@@ -45,7 +45,7 @@ def private draw_node_recursive(
 
     assume node = tree.nodes[nodeIdx]
 
-    if (node.state == NodeState.Split) {
+    if (node.state == NodeState.Split){
         for (childIdx in node.children) {
             draw_node_recursive(tree, childIdx, canvasPos, viewSize, worldMin, worldSize, observerPos, observerAngle)
         }
@@ -86,90 +86,98 @@ def private draw_node_recursive(
         fillCol = (strokeCol & 0x00FFFFFF) | 0x20000000
     }
 
-        if (fillCol != 0u) {
-            *GetWindowDrawList() |> AddRectFilled(rectMin, rectMax, fillCol, 0.0f, ImDrawFlags.None)
-        }
-        *GetWindowDrawList() |> AddRect(rectMin, rectMax, strokeCol, 0.0f, ImDrawFlags.None, inFrustum ? 1.5f : 1.0f)
+    if (fillCol != 0u) {
+        *GetWindowDrawList() |> AddRectFilled(rectMin, rectMax, fillCol, 0.0f, ImDrawFlags.None)
+    }
+    *GetWindowDrawList() |> AddRect(rectMin, rectMax, strokeCol, 0.0f, ImDrawFlags.None, inFrustum ? 1.5f : 1.0f)
 
-        // Отображаем тег сущности из DECS для активных узлов
+        // // Отображаем тег сущности из DECS для активных узлов
         if (inFrustum && (rectMax.x - rectMin.x) > 30.0f) {
             let textPos = rectMin + float2(4.0f, 4.0f)
             var labell = "D{node.depth}"
 
-            if (length(node.ownedEntities) > 0) {
-                let firstEid = node.ownedEntities[0]
-                query(firstEid) $(tag : string) {
-                    labell = "{tag}"
-                }
-            }
+            // if (length(node.ownedEntities) > 0) {
+            //     var firstEid = node.ownedEntities[0]
+            //     // query(firstEid) $(var tag : string) {
+            //     //     labell = tag
+            //     // }
+            // }
 
             *GetWindowDrawList() |> AddText(textPos, uint(0xEEFFFFFF), labell)
         }
 }
-
 def public DrawQuadTreeDebug() {
     window(QUAD, (text = "QuadTree Visualizer", closable = false, flags = ImGuiWindowFlags.None)) {
-        // Управление: WASD — Перемещение, Q/E — Поворот
-        if (IsWindowFocused()) {
-            let speed = 20.0f
-            let rotSpeed = 0.05f
 
-            if (IsKeyDown(ImGuiKey.W)) { g_observerPos.y += speed }
-            if (IsKeyDown(ImGuiKey.S)) { g_observerPos.y -= speed }
-            if (IsKeyDown(ImGuiKey.A)) { g_observerPos.x -= speed }
-            if (IsKeyDown(ImGuiKey.D)) { g_observerPos.x += speed }
-            if (IsKeyDown(ImGuiKey.Q)) { g_observerAngle += rotSpeed }
-            if (IsKeyDown(ImGuiKey.E)) { g_observerAngle -= rotSpeed }
+        // Дополнительная защита: если дерево не создано, просто рисуем текст и выходим из блока (без return!)
+        if (length(g_tree.nodes) == 0) {
+            text("QuadTree не инициализирован. Вызовите init_quadtree_debug()")
+        } else {
+            // Управление: WASD — Перемещение, Q/E — Поворот
+            if (IsWindowFocused()) {
+                let speed = 20.0f
+                let rotSpeed = 0.05f
+
+                if (IsKeyDown(ImGuiKey.W)) { g_observerPos.y += speed }
+                if (IsKeyDown(ImGuiKey.S)) { g_observerPos.y -= speed }
+                if (IsKeyDown(ImGuiKey.A)) { g_observerPos.x -= speed }
+                if (IsKeyDown(ImGuiKey.D)) { g_observerPos.x += speed }
+                if (IsKeyDown(ImGuiKey.Q)) { g_observerAngle += rotSpeed }
+                if (IsKeyDown(ImGuiKey.E)) { g_observerAngle -= rotSpeed }
+            }
+
+            update_quadtree(g_tree, g_observerPos)
+
+            text("Управление: WASD — Движение | Q/E — Вращение взгляда")
+            text("Позиция: X={g_observerPos.x:.0f}, Y={g_observerPos.y:.0f} | Угол: {g_observerAngle:.2f} rad")
+            separator()
+
+            let canvasPos = GetCursorScreenPos()
+            let canvasSize = GetContentRegionAvail()
+
+            // ИСПРАВЛЕНИЕ: Заменяем 'return' на 'if'. 
+            // Теперь блок window завершится корректно, даже если окно слишком маленькое.
+            if (canvasSize.x >= 50.0f && canvasSize.y >= 50.0f) {
+                let viewSize = min(canvasSize.x, canvasSize.y)
+
+                let rootCenter = g_tree.config.rootCenter
+                let rootHalf = g_tree.config.rootSize * 0.5f
+                let worldMin = rootCenter - float2(rootHalf)
+                let worldMax = rootCenter + float2(rootHalf)
+                let worldSize = worldMax - worldMin
+
+                let worldToScreen = $(p : float2) : float2 {
+                    let tx = (p.x - worldMin.x) / worldSize.x
+                    let ty = 1.0f - (p.y - worldMin.y) / worldSize.y
+                    return canvasPos + float2(tx * viewSize, ty * viewSize)
+                }
+
+                // Фон
+                *GetWindowDrawList() |> AddRectFilled(canvasPos, canvasPos + float2(viewSize), uint(0xFF09090B), 0.0f, ImDrawFlags.None)
+
+                // Дерево и узлы
+                draw_node_recursive(g_tree, 0, canvasPos, viewSize, worldMin, worldSize, g_observerPos, g_observerAngle)
+
+                // Отрисовка конуса Frustum через перевод мировых точек в экранные
+                let obsScr = worldToScreen(g_observerPos)
+                let halfFov = g_tree.config.fovAngle * 0.5f
+                let leftA = g_observerAngle - halfFov
+                let rightA = g_observerAngle + halfFov
+
+                let viewDist = g_tree.config.viewDistance
+                let pLeftWorld = g_observerPos + float2(cos(leftA), sin(leftA)) * viewDist
+                let pRightWorld = g_observerPos + float2(cos(rightA), sin(rightA)) * viewDist
+
+                let pLeftScr = worldToScreen(pLeftWorld)
+                let pRightScr = worldToScreen(pRightWorld)
+
+                *GetWindowDrawList() |> AddLine(obsScr, pLeftScr, uint(0xAA00FFCC), 1.5f)
+                *GetWindowDrawList() |> AddLine(obsScr, pRightScr, uint(0xAA00FFCC), 1.5f)
+                *GetWindowDrawList() |> AddLine(pLeftScr, pRightScr, uint(0x6600FFCC), 1.0f)
+
+                // Игрок
+                *GetWindowDrawList() |> AddCircleFilled(obsScr, 5.0f, uint(0xFF00FFCC), 16)
+            }
         }
-
-        update_quadtree(g_tree, g_observerPos)
-
-        text("Управление: WASD — Движение | Q/E — Вращение взгляда")
-        text("Позиция: X={g_observerPos.x:.0f}, Y={g_observerPos.y:.0f} | Угол: {g_observerAngle:.2f} rad")
-        separator()
-
-        let canvasPos = GetCursorScreenPos()
-        let canvasSize = GetContentRegionAvail()
-        if (canvasSize.x < 50.0f || canvasSize.y < 50.0f) { return }
-
-        let viewSize = min(canvasSize.x, canvasSize.y)
-
-        let rootCenter = g_tree.config.rootCenter
-        let rootHalf = g_tree.config.rootSize * 0.5f
-        let worldMin = rootCenter - float2(rootHalf)
-        let worldMax = rootCenter + float2(rootHalf)
-        let worldSize = worldMax - worldMin
-
-        let worldToScreen = $(p : float2) : float2 {
-            let tx = (p.x - worldMin.x) / worldSize.x
-            let ty = 1.0f - (p.y - worldMin.y) / worldSize.y
-            return canvasPos + float2(tx * viewSize, ty * viewSize)
-        }
-
-            // Фон
-            *GetWindowDrawList() |> AddRectFilled(canvasPos, canvasPos + float2(viewSize), uint(0xFF09090B), 0.0f, ImDrawFlags.None)
-
-            // Дерево и узлы
-            draw_node_recursive(g_tree, 0, canvasPos, viewSize, worldMin, worldSize, g_observerPos, g_observerAngle)
-
-            // Отрисовка конуса Frustum через перевод мировых точек в экранные
-            let obsScr = worldToScreen(g_observerPos)
-            let halfFov = g_tree.config.fovAngle * 0.5f
-            let leftA = g_observerAngle - halfFov
-            let rightA = g_observerAngle + halfFov
-
-            let viewDist = g_tree.config.viewDistance
-            let pLeftWorld = g_observerPos + float2(cos(leftA), sin(leftA)) * viewDist
-            let pRightWorld = g_observerPos + float2(cos(rightA), sin(rightA)) * viewDist
-
-            let pLeftScr = worldToScreen(pLeftWorld)
-            let pRightScr = worldToScreen(pRightWorld)
-
-            *GetWindowDrawList() |> AddLine(obsScr, pLeftScr, uint(0xAA00FFCC), 1.5f)
-            *GetWindowDrawList() |> AddLine(obsScr, pRightScr, uint(0xAA00FFCC), 1.5f)
-            *GetWindowDrawList() |> AddLine(pLeftScr, pRightScr, uint(0x6600FFCC), 1.0f)
-
-            // Игрок
-            *GetWindowDrawList() |> AddCircleFilled(obsScr, 5.0f, uint(0xFF00FFCC), 16)
     }
 }

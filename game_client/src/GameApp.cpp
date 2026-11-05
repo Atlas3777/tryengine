@@ -1,7 +1,8 @@
 #include "GameApp.hpp"
 
 #include "GameRender.hpp"
-#include "GameScriptSetup.hpp"
+#include "engine/async/PollHandle.hpp"
+#include "engine/core/GameScriptSetup.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
 #include "engine/graphics/OpaquePass.hpp"
@@ -12,6 +13,8 @@
 #include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
+#include "engine/resources/PendingLoadQueue.hpp"
+#include "engine/resources/ReadFullFile.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace trygame {
@@ -21,6 +24,18 @@ using namespace tryengine::graphics;
 using namespace tryengine::resources;
 using namespace tryengine::async;
 using namespace tryengine::platform;
+
+namespace {
+
+Task<eastl::vector<uint8_t>> LoadScriptPak(AsyncFileManager& fm) {
+    tryengine::Result<eastl::vector<uint8_t>> r = co_await ReadFullFileNonCopy(fm, "script_pak");
+    if (!r.has_value())
+        co_return LogAndMakeError("Не удалось прочитать script_pak");
+
+    co_return  eastl::move(*r);
+}
+
+}  // namespace
 
 void GameApp::Init() {
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "trygame");
@@ -34,6 +49,7 @@ void GameApp::Init() {
 
     auto& fm = engine_->RegisterSystem<AsyncFileManager>();
     auto& registry = engine_->RegisterSystem<AssetRegistry>();
+    engine_->RegisterSystem<PendingLoadQueue>(registry);
 
     engine_->RegisterSystem<PakManager>(fm, registry).StartLoadAll();
 
@@ -50,8 +66,17 @@ void GameApp::Init() {
     time_manager.RegisterClock<GameWorldClock, GameClock>();
     time_manager.RegisterClock<GameUIClock, GameClock>();
 
-    engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_));
-    engine_->Get<ScriptSystem>().LoadMainScript("./game/assets/scripts/main.das");
+    auto pak_task = RunPollable(ThreadPool(), LoadScriptPak(fm));
+    while (!pak_task.IsReady()) {
+        fm.Pull();
+        MainThread().Pull();
+        fm.Submit();
+        std::this_thread::yield();
+    };
+    TRY_ASSERT(pak_task.GetResult().has_value(), "Не удалось загрузить script_pak");
+
+    engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult())));
+    engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 }

@@ -2,6 +2,8 @@ options gen2
 
 module AssetBrowser shared public
 
+require TryEditor
+
 require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
@@ -11,7 +13,6 @@ require imgui/imgui_boost_runtime
 require imgui/imgui_boost_v2
 require imgui/imgui_style_builtin
 require tryengine/Types
-require tryeditor
 require tryeditor/FileSystemUtils
 require strings
 require math

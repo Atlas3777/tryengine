@@ -1,15 +1,18 @@
 #include "editor/EditorApp.hpp"
 
-#include "../include/editor/render/EditorRender.hpp"
+#include "../../engine_source/resources/include/engine/resources/PendingLoadQueue.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"
 #include "editor/EditorInputFilter.hpp"
 #include "editor/EditorScriptSetup.hpp"
+#include "editor/render/EditorRender.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/PollHandle.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/GameScriptSetup.hpp"
 #include "engine/core/Profiler.hpp"
+#include "engine/core/ScriptBuildSystem.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TimeManager.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
@@ -19,6 +22,7 @@
 #include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
+#include "engine/resources/ReadFullFile.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
@@ -41,17 +45,18 @@ void EditorApp::Init() {
 
     engine_ = std::make_unique<Engine>();
 
-    engine_->RegisterSystem<AssetRegistry>();
-    engine_->RegisterSystem<AsyncFileManager>();
+    auto& registry = engine_->RegisterSystem<AssetRegistry>();
+    engine_->RegisterSystem<PendingLoadQueue>(registry);
+    auto& async_file_manager = engine_->RegisterSystem<AsyncFileManager>();
 
-    auto& rm = engine_->RegisterSystem<ResourceManager>(engine_->Get<AsyncFileManager>(), engine_->Get<AssetRegistry>());
+    auto& rm = engine_->RegisterSystem<ResourceManager>(async_file_manager, registry);
 
     rm.RegisterType<Material>(MaterialLoader(*vulkan_device_, rm));
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
 
-    engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), engine_->Get<AsyncFileManager>());
+    engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
 
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
 
@@ -67,13 +72,15 @@ void EditorApp::Init() {
 
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
 
+    engine_->RegisterSystem<ScriptBuildSystem>(GetGameScriptBuildConfig(*engine_));
+
     const auto task = RunPollable(
-        ThreadPool(), editor_->GetAssetSourceDatabase().ImportEngineContent(engine_->Get<AsyncFileManager>()));
+        ThreadPool(), editor_->GetAssetSourceDatabase().ImportEngineContent(async_file_manager));
 
     while (!task.IsReady()) {
-        engine_->Get<AsyncFileManager>().Pull();
+        async_file_manager.Pull();
         MainThread().Pull();
-        engine_->Get<AsyncFileManager>().Submit();
+        async_file_manager.Submit();
         std::this_thread::yield();
     }
 
@@ -82,11 +89,32 @@ void EditorApp::Init() {
                                           *frame_sync_);
 
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast("EditorStart");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
 
+// Передаём vector по значению, чтобы он переехал во фрейм корутины
+Task<void> WriteAA(AsyncFileManager& fm, eastl::string path, eastl::vector<uint8_t> data, uint64_t offset = 0) {
+    co_await fm.WriteChunkAsync(path, data, offset);
+    LogInfo("Write!?");
+    co_return {};
+}
+
+Task<void> TestCompile(Engine& eng, eastl::string_view path) {
+    tryengine::Result<eastl::vector<uint8_t>> a = co_await ReadFullFileNonCopy(eng.Get<AsyncFileManager>(), path);
+    if (!a.has_value())
+        co_return LogAndMakeError("AAA");
+
+    co_await ExecutorSwitch{MainThread()};
+
+    ScriptBuildSystem build_system(GetGameScriptBuildConfig(eng));
+    const auto result = build_system.TestCompile(*a);
+    if (!result.has_value())
+        LogError("TestCompile не прошёл (подробности в логе выше)");
+    co_return {};
+}
 
 void EditorApp::Run() const {
     editor_->running = true;
@@ -94,9 +122,10 @@ void EditorApp::Run() const {
 
     auto& time_manager = engine_->Get<TimeManager>();
     auto& script_system = engine_->Get<ScriptSystem>();
+    auto& game_script = engine_->Get<ScriptBuildSystem>();
     auto& render = engine_->Get<EditorRender>();
     auto& input = engine_->Get<InputService>();
-
+    auto& async_file_manager = engine_->Get<AsyncFileManager>();
 
     while (editor_->running && !input.IsQuitRequested()) {
         TRY_PROFILE_SCOPE("Main Loop Frame");
@@ -104,13 +133,28 @@ void EditorApp::Run() const {
         input.PollEvents();
 
         time_manager.NewFrame();
-        engine_->Get<AsyncFileManager>().Pull();
+        async_file_manager.Pull();
         MainThread().Pull();
 
         script_system.InvokeFunctionFast("EngineUpdate");
+
+        if (input.GetState().Pressed(Key::E)) {
+            auto bytes_o = game_script.BuildPak("./game/scripts/Game.das");
+            if (!bytes_o.has_value()) {
+                LogError("Build Pak error");
+            } else {
+                // Передаём владение вектором в корутину через std::move
+                RunAndForget(ThreadPool(), WriteAA(async_file_manager, "script_pak", eastl::move(*bytes_o)));
+            }
+        }
+
+        if (input.GetState().Pressed(Key::R)) {
+            RunAndForget(ThreadPool(), TestCompile(*engine_, "script_pak"));
+        }
+
         script_system.InvokeFunctionFast("EditorUpdate");
 
-        if (editor_->state == PlayModeState::Play)
+        // if (editor_->state == PlayModeState::Play)
             script_system.InvokeFunctionSafe("GameUpdate");
 
         engine_->Get<AsyncFileManager>().Submit();

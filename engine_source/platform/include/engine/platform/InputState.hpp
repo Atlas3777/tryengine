@@ -50,15 +50,15 @@ struct InputState {
     bool just_pressed[static_cast<int>(Key::Count)] = {false};
     bool just_released[static_cast<int>(Key::Count)] = {false};
 
-    __forceinline bool IsDown(Key key) const {
+    TRY_INLINE bool IsDown(Key key) const {
         return is_down[static_cast<uint16_t>(key)];
     }
 
-    __forceinline bool Pressed(Key key) const {
+    TRY_INLINE bool Pressed(Key key) const {
         return just_pressed[static_cast<uint16_t>(key)];
     }
 
-    __forceinline bool Released(Key key) const {
+    TRY_INLINE bool Released(Key key) const {
         return just_released[static_cast<uint16_t>(key)];
     }
 
@@ -70,15 +70,15 @@ struct InputState {
     bool mouse_just_released[static_cast<int>(Mouse::Count)] = {false};
 
     // Теперь принимаем Mouse вместо int
-    __forceinline bool IsMouseDown(Mouse button) const {
+    TRY_INLINE bool IsMouseDown(Mouse button) const {
         return mouse_buttons[static_cast<int>(button)];
     }
 
-    __forceinline bool MousePressed(Mouse button) const {
+    TRY_INLINE bool MousePressed(Mouse button) const {
         return mouse_just_pressed[static_cast<int>(button)];
     }
 
-    __forceinline bool MouseReleased(Mouse button) const {
+    TRY_INLINE bool MouseReleased(Mouse button) const {
         return mouse_just_released[static_cast<int>(button)];
     }
 

@@ -136,7 +136,7 @@ struct UiFileTestAnnotation : ManagedStructureAnnotation<tryeditor::UiFileTest, 
 
 class Module_TryEditor : public das::Module {
 public:
-    Module_TryEditor() : das::Module("tryeditor") {
+    Module_TryEditor() : das::Module("TryEditor") {
         das::ModuleLibrary lib(this);
 
         addAnnotation(new UiFileAnnotation(lib));

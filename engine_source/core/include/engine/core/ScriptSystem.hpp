@@ -1,3 +1,4 @@
+// engine/core/ScriptSystem.hpp
 #pragma once
 
 #include <EASTL/functional.h>
@@ -11,10 +12,14 @@
 
 namespace tryengine::core {
 
+// ВАЖНО: порядок полей важен для designated initializers.
 struct ScriptSystemConfig {
-    eastl::string project_file = "project.das_project";
     eastl::function<void()> register_modules;
+    eastl::function<das::smart_ptr<das::FileAccess>()> create_file_access;
+    // Необязательный хук: вызывается прямо перед компиляцией главного скрипта.
+    eastl::function<void(das::FileAccess&)> prepare_file_access;
     eastl::function<das::Context*(uint32_t stack_size)> create_context;
+    das::CodeOfPolicies policies;
 };
 
 class ScriptSystem {
@@ -29,10 +34,10 @@ public:
 
     template <typename... Args>
     bool InvokeFunctionSafe(eastl::string_view f_name, Args&&... args) {
-        TRY_ASSERT(das_ctx_, "Script context is null");
-
-        if (!das_ctx_)
+        if (!das_ctx_) {
+            LogError(LogCategory::Script, "Script context is null");
             return false;
+        }
 
         auto* function = das_ctx_->findFunction(f_name.data());
         if (!function) {
@@ -73,8 +78,6 @@ public:
     das::Context* GetContext() const { return das_ctx_; }
 
 private:
-    das::CodeOfPolicies CreateHeavyJitPolicies() const;
-
     template <typename... Args>
     bool InvokeSimFunctionSafe(das::SimFunction* function, eastl::string_view f_name, Args&&... args) {
         if constexpr (sizeof...(Args) == 0) {
@@ -92,9 +95,8 @@ private:
         return true;
     }
 
-    das::CodeOfPolicies policies_;
     ScriptSystemConfig config_;
-    das::smart_ptr<das::FsFileAccess> file_access_;
+    das::smart_ptr<das::FileAccess> file_access_;
     das::Context* das_ctx_ = nullptr;
 };
 

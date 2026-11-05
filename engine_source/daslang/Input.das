@@ -6,7 +6,7 @@ require tryInput public
 
 var g_input : InputState?
 
-def update_input() {
+def SetInputSource() {
     g_input = get_input_state()
 }
 

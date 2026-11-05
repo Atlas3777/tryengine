@@ -2,13 +2,14 @@ options gen2
 
 module Render shared public
 
-require math
 require tryengine/Types
 require tryRenderer
 require tryResources
 require daslib/decs
 require daslib/decs_boost
 require daslib/math_boost
+
+require math
 
 struct PointLightGPU {
     position_radius : float4
@@ -111,8 +112,4 @@ def start_load(){
     }
 
     commit()
-}
-
-def Tetsss{
-    print("TESTSTSTSS\n")
 }

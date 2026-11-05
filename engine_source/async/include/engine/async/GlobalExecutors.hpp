@@ -20,16 +20,11 @@ inline MainThreadExecutor& MainThread() {
 
 
 inline void GetCurrentContextInfo() {
-    // eastl::string exec_name = "Unknown/RawThread";
-    //
-    // if (GetCurrentExecutor() == &MainThread()) {
-    //     exec_name = "MainThread";
-    // } else if (GetCurrentExecutor() == &ThreadPool()) {
-    //     exec_name = "ThreadPool";
-    // }
-    // eastl::string str = fmt::format("Thread: {} | Exec: {}", std::this_thread::get_id(),exec_name);
-    //
-    // TRY_LOG_CRIT("{}", str);
+    if (GetCurrentExecutor() == &MainThread()) {
+        LogInfo("MainThread | Exec: {}", std::this_thread::get_id());
+    } else {
+        LogInfo("ThreadPool | Exec: {}", std::this_thread::get_id());
+    }
 }
 
 }  // namespace tryengine::async

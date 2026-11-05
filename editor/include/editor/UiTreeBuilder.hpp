@@ -14,8 +14,8 @@ struct UiFile {
     eastl::string path;  // Честный путь к файлу: "game/assets/scenes/player.scn"
     uint64_t guid = 0;   // Валидный GUID из .meta (0, если ещё не импортирован)
 
-    __forceinline const char* GetName() const { return name.c_str(); }
-    __forceinline const char* GetPath() const { return path.c_str(); }
+    TRY_INLINE const char* GetName() const { return name.c_str(); }
+    TRY_INLINE const char* GetPath() const { return path.c_str(); }
 };
 
 struct UiFileTest {
@@ -28,8 +28,8 @@ struct UiFolder {
     eastl::vector<uint32_t> subfolders;  // Индексы дочерних папок в глобальном векторе UiFolder
     eastl::vector<UiFile> files;         // Честные, самодостаточные файлы внутри этой папки
 
-    __forceinline const char* GetName() const { return name.c_str(); }
-    __forceinline const char* GetPath() const { return path.c_str(); }
+    TRY_INLINE const char* GetName() const { return name.c_str(); }
+    TRY_INLINE const char* GetPath() const { return path.c_str(); }
 };
 
 
