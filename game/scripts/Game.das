@@ -1,3 +1,4 @@
+
 options gen2
 options rtti = true
 
@@ -12,8 +13,8 @@ require tryengine/Render
 require tryengine/QuadTree
 require math
 
-let mesh_id = 3081795527557720915ul
-let mat_id = 17036954862819815981ul
+let mesh_id_1 = 3081795527557720915ul
+let mat_id_1 = 17036954862819815981ul
 
 // === конвенция движка ===
 let right_raw = float3(1.0f, 0.0f, 0.0f)   // локальная X (вправо)
@@ -54,11 +55,11 @@ def GameStart(){
     commit()
 
     print("request mesh GAME\n")
-    RequestLoadMesh(mesh_id)
+    RequestLoadMesh(mesh_id_1)
     print("request mat GAME\n")
-    RequestLoadMaterial(mat_id)
+    RequestLoadMaterial(mat_id_1)
 
-    Spawn()
+    SpawnGame()
 }
 
 [export]
@@ -110,8 +111,8 @@ def GameUpdate() {
     }
 }
 
-def Spawn() {
-    print("Spawn \n")
+def SpawnGame() {
+    print("Spawn Game\n")
 
     let test_eid = create_entity() @(eid, cmp) {
         cmp.tag := "teeest"
@@ -123,15 +124,15 @@ def Spawn() {
         cmp.inputState := float3(0, 0, 0)
         cmp.speed := float(3)
 
-        cmp.meshGuid := mesh_id
-        cmp.materialGuid := mat_id
+        cmp.meshGuid := mesh_id_1
+        cmp.materialGuid := mat_id_1
         apply_decs_template(cmp, Relationship())
     }
 
-    create_mesh_entity("Right 1", float3(5.0f, 5.0f, 0.0f))
-    create_mesh_entity("Right 2", float3(5.0f, 10.0f, 0.0f))
-    create_mesh_entity("Left 1",  float3(-5.0f, 5.0f, 0.0f))
-    create_mesh_entity("Left 2",  float3(-5.0f, 10.0f, 0.0f))
+    create_mesh_entity_game("Right 1", float3(5.0f, 5.0f, 0.0f))
+    create_mesh_entity_game("Right 2", float3(5.0f, 10.0f, 0.0f))
+    create_mesh_entity_game("Left 1",  float3(-5.0f, 5.0f, 0.0f))
+    create_mesh_entity_game("Left 2",  float3(-5.0f, 10.0f, 0.0f))
 
     spawn_light("Light Red",    float3(5.0f,  5.0f, 4.0f), float3(1.00f, 0.45f, 0.40f), 2.5f, 28.0f)
     spawn_light("Light Green",  float3(-5.0f, 5.0f, 4.0f), float3(0.40f, 1.00f, 0.50f), 2.5f, 28.0f)
@@ -141,7 +142,7 @@ def Spawn() {
     commit()
 }
 
-def create_mesh_entity(tag : string, pos : float3) {
+def create_mesh_entity_game(tag : string, pos : float3) {
     return create_entity() @(eid, cmp) {
         cmp.tag := tag
         apply_decs_template(cmp, Transform(
@@ -149,8 +150,8 @@ def create_mesh_entity(tag : string, pos : float3) {
             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
-        cmp.meshGuid := mesh_id
-        cmp.materialGuid := mat_id
+        cmp.meshGuid := mesh_id_1
+        cmp.materialGuid := mat_id_1
         apply_decs_template(cmp, Relationship())
     }
 }

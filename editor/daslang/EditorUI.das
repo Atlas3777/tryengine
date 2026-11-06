@@ -7,6 +7,9 @@ require tryengine/AsyncTaskManager
 require strings
 require math
 
+require tryeditor/Editor
+require trygame/Game
+
 require tryeditor/Hierarchy
 require tryeditor/Inspector
 require tryeditor/AssetBrowser
@@ -23,6 +26,9 @@ require imgui/imgui_boost_v2
 require imgui/imgui_file_dialog
 
 require TryEditor
+
+require daslib/decs
+require daslib/archive
 
 def DrawMainMenu() {
     main_menu_bar(MAIN_MENU_BAR) {
@@ -78,6 +84,7 @@ def DrawMainMenu() {
             menu_item(FILE_AUTOSAVE, (text = "Auto-Save"))
             separator(FILE_SEP_2)
             menu_label(FILE_EXIT, (text = "Exit", shortcut = "Alt+F4"))
+
         }
 
         menu(EDIT_MENU, (text = "Edit", enabled = true)) {
@@ -99,12 +106,14 @@ def DrawMainMenu() {
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
+
+        separator(MAIN_MENU_SEP_1)
+        DrawPlayControls()
     }
 }
 
 def DrawDockSpace() {
-    dockspace(MAIN_DOCK_SPACE, (flags = ImGuiDockNodeFlags.None)) {
-    }
+
 }
 
 def get_file_name_without_extension(path : string) : string {
@@ -120,6 +129,68 @@ def get_file_name_without_extension(path : string) : string {
     return name
 }
 
+def DrawPlayControls() {
+    assume style    = GetStyle()
+    let pad      = style.FramePadding.x
+    let spacing  = style.ItemSpacing.x
+
+    // 1. Считаем, сколько места займут кнопки в текущем режиме
+    var total_w = 0.0f
+    if (!is_playing) {
+        total_w = CalcTextSize("Play").x + pad * 2.0f
+    } else {
+        let pause_txt = is_paused ? "Continue" : "Pause"
+        total_w = CalcTextSize(pause_txt).x    + pad * 2.0f + spacing + CalcTextSize("One frame").x  + pad * 2.0f + spacing + CalcTextSize("Stop").x       + pad * 2.0f
+    }
+
+    // 2. Ставим курсор так, чтобы кнопки прижались к правому краю с отступом
+    let win_w  = GetWindowWidth()
+    let margin = 12.0f
+    SetCursorPosX(win_w - total_w - margin)
+
+    // 3. Рисуем кнопки как раньше
+    if (!is_playing) {
+        if (button(PLAY_BTN, (text = "Play"))) { StartPlay() }
+    } else {
+        if (button(PAUSE_BTN, (text = is_paused ? "Continue" : "Pause"))) {
+            is_paused = !is_paused
+            if (is_paused) { PausePlay() } else { ResumePlay() }
+        }
+        same_line()
+        if (button(STEP_BTN, (text = "Step frame"))) { StepPlay() }
+        same_line()
+        if (button(STOP_BTN, (text = "Stop"))) { StopPlay() }
+    }
+}
+
+def StartPlay() {
+    // save_decs_state()
+    let data <- mem_archive_save(decsState)
+    live_store_bytes("__decs_state", data)
+
+    is_playing = true
+    is_paused  = false
+    // TODO: снимок состояния редактора
+    GameStart()
+}
+
+def StopPlay() {
+    is_playing = false
+    is_paused  = false
+    // restore_decs_state()
+    var data : array<uint8>
+    if (live_load_bytes("__decs_state", data)) {
+        data |> mem_archive_load(decsState)
+    }
+
+    // TODO: восстановить состояние
+    // TODO: сообщить движку «выйти из play-mode»
+}
+
+def PausePlay()  { is_paused = true}
+def ResumePlay() { is_paused = false }
+def StepPlay()   { /* TODO */ }
+
 [export]
 def DrawEditor() {
     unsafe {
@@ -130,9 +201,8 @@ def DrawEditor() {
         host_ctx.SetCurrentContext()
     }
     begin_frame()
-
     DrawMainMenu()
-    DrawDockSpace()
+    dockspace(MAIN_DOCK_SPACE, (flags = ImGuiDockNodeFlags.None)) {}
 
     DrawHierarchy()
     DrawInspector()

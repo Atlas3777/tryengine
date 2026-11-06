@@ -1,11 +1,11 @@
 #include <daScript/daScript.h>
 #include <imgui.h>
 
-#include "editor/render/EditorRender.hpp"
-#include "editor/render/ImGuiPass.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/TryEditorContext.hpp"
+#include "editor/render/EditorRender.hpp"
+#include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 
@@ -42,13 +42,13 @@ struct SceneDTODas {
     das::Array mats;
 };
 
-eastl::vector<tryeditor::SceneDTO> sceneDtos;
+eastl::vector<tryeditor::SceneDTO> scene_dtos;
 
 void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     auto& build_system = try_ctx->engine.Get<tryeditor::BuildSystem>();
 
-    sceneDtos.clear();
+    scene_dtos.clear();
 
     LogInfo("CreateBuild CPP");
 
@@ -67,23 +67,23 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
         dto.mats = eastl::vector<uint64_t>(mat_ptr, mat_ptr + scene.mats.size);
         dto.name = scene.name;
 
-        sceneDtos.emplace_back(eastl::move(dto));
+        scene_dtos.emplace_back(eastl::move(dto));
     }
-    for (auto& scene : sceneDtos) {
+    for (auto& scene : scene_dtos) {
         for (auto& mesh : scene.meshes)
-            LogInfo("MESH {}",mesh);
+            LogInfo("MESH {}", mesh);
         for (auto& mat : scene.mats)
-            LogInfo("MAT {}",mat);
+            LogInfo("MAT {}", mat);
     }
 
-    tryengine::async::RunAndForget(tryengine::async::ThreadPool(), build_system.Build(settings, sceneDtos, build_path));
+    tryengine::async::RunAndForget(tryengine::async::ThreadPool(), build_system.Build(settings, scene_dtos, build_path));
 }
 
 void* GetEditorImGuiContext() {
     return ImGui::GetCurrentContext();
 }
 
-void* GetImage(das::Context* ctx) {
+void* GetEditorCameraViewImage(das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     if (!try_ctx)
         return nullptr;
@@ -103,10 +103,7 @@ void* GetImage(das::Context* ctx) {
         return nullptr;
 
     // 3. Слой редактора возвращает кэшированный VkDescriptorSet для imgui
-    VkDescriptorSet ds =
-        try_ctx->engine.Get<tryengine::graphics::RenderGraph>().Get<tryeditor::ImGuiPass>()->GetOrCreateTexture(view);
-
-    return ds;
+    return rg->Get<tryeditor::ImGuiPass>()->GetOrCreateTexture(view);
 }
 
 using namespace das;
@@ -148,7 +145,8 @@ public:
         addAnnotation(new UiFileTestAnnotation(lib));
         addVectorAnnotation<UiFolderVector>(this, lib, "UiFolderVector");
 
-        das::addExtern<DAS_BIND_FUN(GetImage)>(*this, lib, "get_image", das::SideEffects::none, "GetImage");
+        das::addExtern<DAS_BIND_FUN(GetEditorCameraViewImage)>(*this, lib, "GetEditorCameraViewImage",
+                                                               das::SideEffects::none, "GetEditorCameraViewImage");
 
         das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "get_editor_imgui_context",
                                                             das::SideEffects::none, "GetEditorImGuiContext");

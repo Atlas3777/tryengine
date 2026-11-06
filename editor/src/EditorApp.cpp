@@ -90,7 +90,6 @@ void EditorApp::Init() {
 
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EditorStart");
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
@@ -137,8 +136,10 @@ void EditorApp::Run() const {
         MainThread().Pull();
 
         script_system.InvokeFunctionFast("EngineUpdate");
+        script_system.InvokeFunctionFast("EditorUpdate");
 
-        if (input.GetState().Pressed(Key::E)) {
+
+        if (input.GetState().Pressed(Key::I)) {
             auto bytes_o = game_script.BuildPak("./game/scripts/Game.das");
             if (!bytes_o.has_value()) {
                 LogError("Build Pak error");
@@ -148,14 +149,9 @@ void EditorApp::Run() const {
             }
         }
 
-        if (input.GetState().Pressed(Key::R)) {
+        if (input.GetState().Pressed(Key::O)) {
             RunAndForget(ThreadPool(), TestCompile(*engine_, "script_pak"));
         }
-
-        script_system.InvokeFunctionFast("EditorUpdate");
-
-        // if (editor_->state == PlayModeState::Play)
-            script_system.InvokeFunctionSafe("GameUpdate");
 
         engine_->Get<AsyncFileManager>().Submit();
 

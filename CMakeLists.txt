@@ -16,19 +16,21 @@ cmake_policy(SET CMP0168 NEW)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# Общий кэш исходников для всех профилей. Можно переопределить через -DCPM_SOURCE_CACHE=... или переменную окружения.
+# Общий кэш исходников для всех профилей
 if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
     set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}")
 endif()
 set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/third_party_src" CACHE PATH "Shared third-party sources")
 include(cmake/get_cpm.cmake)
 
+# Кеш
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
     set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
+# Линковщик
 if(UNIX)
     find_program(MOLD_EXECUTABLE mold)
     if(MOLD_EXECUTABLE)
@@ -36,6 +38,7 @@ if(UNIX)
     endif()
 endif()
 
+# Для helix
 set(SRC_LINK "${CMAKE_SOURCE_DIR}/compile_commands.json")
 set(BIN_FILE "${CMAKE_BINARY_DIR}/compile_commands.json")
 if(UNIX)

@@ -42,7 +42,7 @@ def GetEditorViewportSize : float2 {
 
 def DrawSceneViewPort(){
     window(SCENE_VIEW_WND, (text = "SceneView", closable = false, flags = ImGuiWindowFlags.None)) {
-        let img = get_image()
+        let img = GetEditorCameraViewImage()
         scene_viewport_size = GetContentRegionAvail()
         ResetMouse()
 
