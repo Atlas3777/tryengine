@@ -1,8 +1,9 @@
-#include "../../include/editor/render/ImGuiPass.hpp"
+#include "editor/render/ImGuiPass.hpp"
 
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
+#include "editor/render/EditorRender.hpp"
 #include "engine/core/Assert.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -11,9 +12,9 @@
 
 namespace tryeditor {
 
-ImGuiPass::ImGuiPass(tryengine::graphics::VulkanDevice& device, tryengine::graphics::VulkanSwapchain& swapchain)
-    : device_(device), swapchain_(swapchain) {
-
+ImGuiPass::ImGuiPass(tryengine::graphics::RenderGraph& rg, tryengine::graphics::VulkanDevice& device,
+                     tryengine::graphics::VulkanSwapchain& swapchain)
+    : rg_(rg), device_(device), swapchain_(swapchain) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -85,25 +86,28 @@ ImGuiPass::~ImGuiPass() {
 
     ClearTextureCache();
 
-    if (sampler_) {
+    if (sampler_)
         vkDestroySampler(device_.GetDevice(), sampler_, nullptr);
-    }
 
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    if (descriptor_pool_) {
+    if (descriptor_pool_)
         vkDestroyDescriptorPool(device_.GetDevice(), descriptor_pool_, nullptr);
-    }
 }
 
 void ImGuiPass::Setup(tryengine::graphics::RenderGraphBuilder& builder) {
-    // В редиректной схеме запрашиваем теги сцены и swapchain
-    data_.scene_color_read = builder.Read(tryengine::graphics::RGTag_v<"ForwardColor">, tryengine::graphics::RGUsageHint::ShaderRead);
-    data_.swapchain_target = builder.Write(tryengine::graphics::RGTag_v<"Swapchain">, tryengine::graphics::RGUsageHint::ColorAttachment);
+    data_.game_scene_color =
+        builder.Read(tryengine::graphics::At(tryengine::graphics::RGTag_v<"ForwardColor">, EditorRender::kGameScope),
+                     tryengine::graphics::RGUsageHint::ShaderRead);
+    data_.editor_scene_color =
+        builder.Read(tryengine::graphics::At(tryengine::graphics::RGTag_v<"ForwardColor">, EditorRender::kEditorScope),
+                     tryengine::graphics::RGUsageHint::ShaderRead);
+    data_.swapchain_target =
+        builder.Write(tryengine::graphics::At(tryengine::graphics::RGTag_v<"Swapchain">, EditorRender::kEditorScope),
+                      tryengine::graphics::RGUsageHint::ColorAttachment);
 
-    // Пасс выводит кадр на экран, предотвращаем culling
     builder.MarkSideEffect();
 }
 
@@ -119,9 +123,8 @@ void ImGuiPass::Collect(tryengine::graphics::CollectContext& ctx) {
 
 void ImGuiPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
     ImDrawData* draw_data = ImGui::GetDrawData();
-    if (!draw_data || draw_data->CmdListsCount == 0) {
+    if (!draw_data || draw_data->CmdListsCount == 0)
         return;
-    }
 
     VkExtent2D swap_extent = swapchain_.GetExtent();
 
@@ -138,19 +141,30 @@ void ImGuiPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
     ctx.EndRendering();
 }
 
-VkDescriptorSet ImGuiPass::GetOrCreateTexture(VkImageView view) {
+VkDescriptorSet ImGuiPass::GetTexture(tryengine::graphics::ScopeId scope, tryengine::graphics::RGTag tag) {
+    auto viewport_handle = rg_.GetBlackboard().Get(scope, tag);
+
+    VkImageView view = rg_.GetPhysicalImageView(viewport_handle);
+
     if (!view) {
         return VK_NULL_HANDLE;
     }
 
     auto it = texture_cache_.find(view);
-    if (it != texture_cache_.end()) {
+    if (it != texture_cache_.end())
         return it->second;
-    }
 
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(sampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     texture_cache_[view] = ds;
     return ds;
+}
+
+VkDescriptorSet ImGuiPass::GetGameViewportTexture() {
+    return GetTexture(EditorRender::kGameScope, tryengine::graphics::RGTag_v<"ForwardColor">);
+}
+
+VkDescriptorSet ImGuiPass::GetEditorViewportTexture() {
+    return GetTexture(EditorRender::kEditorScope, tryengine::graphics::RGTag_v<"ForwardColor">);
 }
 
 void ImGuiPass::ClearTextureCache() {
@@ -162,4 +176,4 @@ void ImGuiPass::ClearTextureCache() {
     texture_cache_.clear();
 }
 
-} // namespace tryeditor
+}  // namespace tryeditor

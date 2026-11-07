@@ -1,8 +1,9 @@
-#include "../../include/editor/render/PickingPass.hpp"
+#include "editor/render/PickingPass.hpp"
 
 #include <algorithm>
 #include <cstring>
 
+#include "editor/render/EditorRender.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/MeshDrawCall.hpp"
@@ -58,7 +59,7 @@ PickingPass::~PickingPass() {
 
 void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
     frame_index_ = ctx.frame_index;
-    opaque_ = ctx.graph.Get<tryengine::graphics::OpaquePass>();
+    opaque_ = ctx.graph.Get<tryengine::graphics::OpaquePass>(EditorRender::kEditorScope);
     requested_ = false;
 
     // 1. Всегда импортируем readback-буфер текущего кадра в граф
@@ -69,7 +70,7 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
         .memory_usage = VMA_MEMORY_USAGE_GPU_TO_CPU,
         .debug_name = "PickingReadbackBuffer"
     };
-    ctx.graph.ImportExternalBuffer(tryengine::graphics::RGTag_v<"PickingReadback">, rb.buffer, desc);
+    ctx.graph.ImportExternalBuffer(EditorRender::kEditorScope,tryengine::graphics::RGTag_v<"PickingReadback">, rb.buffer, desc);
 
     // 2. Вычитываем результат прошлого запроса
     if (rb.pending && rb.mapped_ptr) {

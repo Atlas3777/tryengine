@@ -3,9 +3,7 @@
 #ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
 #endif
-
 #include <EASTL/fixed_vector.h>
-#include <EASTL/functional.h>
 #include <EASTL/hash_map.h>
 #include <EASTL/optional.h>
 #include <EASTL/span.h>
@@ -38,7 +36,6 @@ struct RGResourceHandle {
     static constexpr uint32_t kInvalid = 0xFFFFFFFFu;
     uint32_t index = kInvalid;
     uint16_t version = 0;
-
     [[nodiscard]] constexpr bool IsValid() const { return index != kInvalid; }
     friend bool operator==(const RGResourceHandle&, const RGResourceHandle&) = default;
 };
@@ -65,7 +62,6 @@ struct RGBufferDesc {
 };
 
 enum class RGAccessType : uint8_t { Read, Write, Create };
-
 enum class RGUsageHint : uint32_t {
     None = 0,
     ColorAttachment = 1 << 0,
@@ -79,17 +75,16 @@ enum class RGUsageHint : uint32_t {
     TransferDst = 1 << 7,
     Present = 1 << 8
 };
-
 inline constexpr RGUsageHint operator|(RGUsageHint a, RGUsageHint b) {
     return static_cast<RGUsageHint>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
-
 inline constexpr bool operator&(RGUsageHint a, RGUsageHint b) {
     return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
 }
 
 struct RGResourceAccess {
     RGTag tag = 0;
+    ScopeId view = 0;
     RGResourceHandle handle;
     RGAccessType access = RGAccessType::Read;
     RGUsageHint usage_hint = RGUsageHint::None;
@@ -100,87 +95,160 @@ struct TransientAllocation {
     VkDeviceSize offset = 0;
     VkDeviceAddress bda_address = 0;
     uint8_t* mapped_ptr = nullptr;
-
     [[nodiscard]] bool IsValid() const { return buffer != VK_NULL_HANDLE; }
 };
 
 class Blackboard {
 public:
-    void Put(RGTag tag, RGResourceHandle h) { entries_[tag] = h; }
+    void Put(ScopeId view, RGTag tag, RGResourceHandle h) { entries_[MakeTagKey(view, tag)] = h; }
 
-    [[nodiscard]] RGResourceHandle Get(RGTag tag) const {
-        auto it = entries_.find(tag);
-        if (it != entries_.end())
-            return it->second;
-
-        return RGResourceHandle{};
+    [[nodiscard]] RGResourceHandle Get(ScopeId scope, RGTag tag) const {
+        auto it = entries_.find(MakeTagKey(scope, tag));
+        return it != entries_.end() ? it->second : RGResourceHandle{};
     }
 
-    [[nodiscard]] bool Has(RGTag tag) const { return entries_.find(tag) != entries_.end(); }
+    [[nodiscard]] RGResourceHandle GetWithFallback(ScopeId view, RGTag tag) const {
+        auto it = entries_.find(MakeTagKey(view, tag));
+        if (it != entries_.end())
+            return it->second;
+        if (view != kGlobalScope) {
+            it = entries_.find(MakeTagKey(kGlobalScope, tag));
+            if (it != entries_.end())
+                return it->second;
+        }
+        return {};
+    }
 
+    [[nodiscard]] bool Has(ScopeId view, RGTag tag) const {
+        return entries_.find(MakeTagKey(view, tag)) != entries_.end();
+    }
     void Clear() { entries_.clear(); }
 
 private:
-    eastl::hash_map<RGTag, RGResourceHandle> entries_;
+    eastl::hash_map<RGTagKey, RGResourceHandle> entries_;
 };
 
 class CPUBlackboard {
 public:
     CPUBlackboard() = default;
-
-    void Put(RGTag tag, const void* data, size_t size_bytes) {
-        auto& buffer = entries_[tag];
+    void Put(ScopeId scope, RGTag tag, const void* data, size_t size_bytes) {
+        auto& buffer = entries_[MakeTagKey(scope, tag)];
         buffer.resize(size_bytes);
-        if (data && size_bytes > 0) {
+        if (data && size_bytes > 0)
             std::memcpy(buffer.data(), data, size_bytes);
-        }
+    }
+    template <typename T>
+    void Put(ScopeId scope, RGTag tag, const T& data) {
+        Put(scope, tag, &data, sizeof(T));
     }
 
+    // Backward compatibility (kGlobalscope)
+    // void Put(RGTag tag, const void* data, size_t size_bytes) { Put(kGlobalScope, tag, data, size_bytes); }
+    // template <typename T>
+    // // void Put(RGTag tag, const T& data) {
+    // //     Put(kGlobalScope, tag, data);
+    // // }
+
+    [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(ScopeId scope, RGTag tag) const {
+        auto it = entries_.find(MakeTagKey(scope, tag));
+        if (it != entries_.end())
+            return eastl::span(it->second.data(), it->second.size());
+        else
+            return eastl::nullopt;
+    }
+    // [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(RGTag tag) const {
+    //     return GetSpan(kGlobalScope, tag);
+    // }
+
+    [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpanWithFallback(ScopeId scope, RGTag tag) const {
+        auto span = GetSpan(scope, tag);
+        if (!span && scope != kGlobalScope)
+            span = GetSpan(kGlobalScope, tag);
+        if (!span)
+            LogError("CPUBlackboard: Запись для тега {} не найдена.", GetRGTagName(tag));
+        return span;
+    }
+    // [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpanWithFallback(RGTag tag) const {
+    //     return GetSpanWithFallback(kGlobalScope, tag);
+    // }
+
+    [[nodiscard]] const void* GetData(ScopeId scope, RGTag tag) const {
+        auto s = GetSpanWithFallback(scope, tag);
+        return s ? s->data() : nullptr;
+    }
+    [[nodiscard]] const void* GetData(RGTag tag) const { return GetData(kGlobalScope, tag); }
+
+    [[nodiscard]] size_t GetSize(ScopeId scope, RGTag tag) const {
+        auto s = GetSpanWithFallback(scope, tag);
+        return s ? s->size() : 0;
+    }
+    [[nodiscard]] size_t GetSize(RGTag tag) const { return GetSize(kGlobalScope, tag); }
+
+    template <typename T>
+    [[nodiscard]] const T* GetAs(ScopeId scope, RGTag tag) const {
+        auto s = GetSpanWithFallback(scope, tag);
+        if (s && s->size() >= sizeof(T))
+            return reinterpret_cast<const T*>(s->data());
+        if (s)
+            LogError("CPUBlackboard: Размер данных меньше запрашиваемой структуры.");
+        return nullptr;
+    }
+    template <typename T>
+    [[nodiscard]] const T* GetAs(RGTag tag) const {
+        return GetAs<T>(kGlobalScope, tag);
+    }
+
+    [[nodiscard]] bool Has(ScopeId scope, RGTag tag) const {
+        return entries_.find(MakeTagKey(scope, tag)) != entries_.end();
+    }
+    [[nodiscard]] bool Has(RGTag tag) const { return Has(kGlobalScope, tag); }
+    void Clear() { entries_.clear(); }
+
+private:
+    eastl::hash_map<RGTagKey, eastl::vector<uint8_t>> entries_;
+};
+
+class ScopedBlackboard {
+public:
+    ScopedBlackboard(Blackboard& bb, ScopeId scope) : bb_(bb), scope_(scope) {}
+    void Put(RGTag tag, RGResourceHandle h) { bb_.Put(scope_, tag, h); }
+    [[nodiscard]] RGResourceHandle Get(RGTag tag) const { return bb_.GetWithFallback(scope_, tag); }
+    [[nodiscard]] bool Has(RGTag tag) const {
+        return bb_.Has(scope_, tag) || (scope_ != kGlobalScope && bb_.Has(kGlobalScope, tag));
+    }
+
+private:
+    Blackboard& bb_;
+    ScopeId scope_;
+};
+
+class ScopedCPUBlackboard {
+public:
+    ScopedCPUBlackboard(CPUBlackboard& bb, ScopeId scope) : bb_(bb), scope_(scope) {}
+    void Put(RGTag tag, const void* data, size_t size_bytes) { bb_.Put(scope_, tag, data, size_bytes); }
     template <typename T>
     void Put(RGTag tag, const T& data) {
         Put(tag, &data, sizeof(T));
     }
-
     [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(RGTag tag) const {
-        auto it = entries_.find(tag);
-        if (it != entries_.end()) {
-            return eastl::span(it->second.data(), it->second.size());
-        }
-
-        LogError("CPUBlackboard: Запись для тега {} не найдена.", GetRGTagName(tag));
-        return eastl::nullopt;
+        return bb_.GetSpanWithFallback(scope_, tag);
     }
-
-    [[nodiscard]] const void* GetData(RGTag tag) const {
-        auto span = GetSpan(tag);
-        return span ? span->data() : nullptr;
-    }
-
-    [[nodiscard]] size_t GetSize(RGTag tag) const {
-        auto span = GetSpan(tag);
-        return span ? span->size() : 0;
-    }
-
+    [[nodiscard]] const void* GetData(RGTag tag) const { return bb_.GetData(scope_, tag); }
+    [[nodiscard]] size_t GetSize(RGTag tag) const { return bb_.GetSize(scope_, tag); }
     template <typename T>
     [[nodiscard]] const T* GetAs(RGTag tag) const {
-        auto span = GetSpan(tag);
-        if (span && span->size() >= sizeof(T)) {
-            return reinterpret_cast<const T*>(span->data());
-        }
-        LogError("CPUBlackboard: Размер данных меньше запрашиваемой структуры.");
-        return nullptr;
+        return bb_.GetAs<T>(scope_, tag);
+    }
+    [[nodiscard]] bool Has(RGTag tag) const {
+        return bb_.Has(scope_, tag) || (scope_ != kGlobalScope && bb_.Has(kGlobalScope, tag));
     }
 
-    [[nodiscard]] bool Has(RGTag tag) const { return entries_.find(tag) != entries_.end(); }
-
-    void Clear() { entries_.clear(); }
-
 private:
-    eastl::hash_map<RGTag, eastl::vector<uint8_t>> entries_;
+    CPUBlackboard& bb_;
+    ScopeId scope_;
 };
 
 class RenderGraph;
-
 struct RGColorAttachment {
     RGResourceHandle handle;
     VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -190,7 +258,6 @@ struct RGColorAttachment {
     VkAttachmentLoadOp resolve_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     VkAttachmentStoreOp resolve_store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 };
-
 struct RGDepthStencilAttachment {
     RGResourceHandle handle;
     VkAttachmentLoadOp depth_load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -204,138 +271,119 @@ class RGExecuteContext {
 public:
     VkDevice device = VK_NULL_HANDLE;
     VkCommandBuffer cmd_buffer = VK_NULL_HANDLE;
-    Blackboard* frame_bb = nullptr;
-    CPUBlackboard* cpu_bb = nullptr;
-
+    ScopedBlackboard* frame_bb = nullptr;
+    ScopedCPUBlackboard* cpu_bb = nullptr;
     [[nodiscard]] VkImage GetTexture(RGResourceHandle h) const;
     [[nodiscard]] VkImageView GetImageView(RGResourceHandle h) const;
     [[nodiscard]] VkBuffer GetBuffer(RGResourceHandle h) const;
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
     [[nodiscard]] const RGTextureDesc& GetTextureDesc(RGResourceHandle h) const;
-
     void BeginRendering(eastl::span<const RGColorAttachment> color_attachments,
                         const RGDepthStencilAttachment* depth_attachment = nullptr, VkRect2D render_area = {},
                         uint32_t layer_count = 1);
-
     void EndRendering();
-
     [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size,
                                                         VkDeviceSize alignment = 256) const;
-
     void SetGraph(RenderGraph* graph) { graph_ = graph; }
 
 private:
     RenderGraph* graph_ = nullptr;
 };
 
-// Контекст сбора данных: передаётся в IRenderPass::Collect каждый кадр.
 struct CollectContext {
     core::Engine& engine;
-    RenderGraph& graph;  // чтобы пасс мог сам импортировать свои внешние ресурсы
-    CPUBlackboard& cpu_bb;
+    RenderGraph& graph;
+    ScopedCPUBlackboard& cpu_bb;
     uint32_t frame_index;
 };
 
 inline constexpr uint32_t kRGNoPass = 0xFFFFFFFFu;
-
-// Барьер хранится вместе с индексом ресурса: физический VkImage/VkBuffer подставляется
-// в Execute (swapchain-image и readback-буфер меняются каждый кадр, а граф закэширован).
 struct RGImageBarrier {
     VkImageMemoryBarrier2 barrier{};
     uint32_t resource = 0;
 };
-
 struct RGBufferBarrier {
     VkBufferMemoryBarrier2 barrier{};
     uint32_t resource = 0;
 };
 
-// Служебное состояние пасса внутри графа (раньше лежало в PassNodeBase).
-struct PassSlot {
+struct RGNode {
     std::unique_ptr<IRenderPass> pass;
     uint32_t type_id = 0;
+    ScopeId scope_id = 0;
     bool active = true;
     bool culled = false;
     bool has_side_effect = false;
-
     eastl::fixed_vector<RGResourceAccess, 16> accesses;
     eastl::fixed_vector<uint32_t, 8> deps;
-
     eastl::vector<RGImageBarrier> image_barriers;
     eastl::vector<RGBufferBarrier> buffer_barriers;
 };
 
 class RenderGraphBuilder {
 public:
-    RenderGraphBuilder(RenderGraph& graph, uint32_t pass) : graph_(graph), pass_(pass) {}
+    RenderGraphBuilder(RenderGraph& graph, uint32_t pass, ScopeId view, CPUBlackboard& cpu_bb)
+        : graph_(graph), pass_(pass), view_(view), cpu_bb_proxy_(cpu_bb, view) {}
 
     RGResourceHandle CreateTexture(eastl::string_view dbg_name, const RGTextureDesc& desc);
     RGResourceHandle CreateBuffer(eastl::string_view dbg_name, const RGBufferDesc& desc);
-
     RGResourceHandle Read(RGResourceHandle h, RGUsageHint usage = RGUsageHint::ShaderRead);
     RGResourceHandle Read(RGTag tag, RGUsageHint usage = RGUsageHint::ShaderRead);
-
+    RGResourceHandle Read(RGScopedTag scoped_tag, RGUsageHint usage = RGUsageHint::ShaderRead);
     RGResourceHandle Write(RGResourceHandle h, RGUsageHint usage = RGUsageHint::StorageWrite);
     RGResourceHandle Write(RGTag tag, RGUsageHint usage = RGUsageHint::StorageWrite);
-
+    RGResourceHandle Write(RGScopedTag scoped_tag, RGUsageHint usage = RGUsageHint::StorageWrite);
     void Export(RGTag tag, RGResourceHandle h);
     RGResourceHandle Import(RGTag tag);
-
-    CPUBlackboard& GetCPUBlackboard();
-    const CPUBlackboard& GetCPUBlackboard() const;
-
+    RGResourceHandle Import(RGScopedTag scoped_tag);
+    ScopedCPUBlackboard& GetCPUBlackboard();
     void MarkSideEffect();
 
 private:
     RenderGraph& graph_;
     uint32_t pass_;
+    ScopeId view_;
+    ScopedCPUBlackboard cpu_bb_proxy_;
 };
 
 struct RGVirtualResource {
     eastl::string name;
+    ScopeId scope_id = 0;
     RGResourceType type = RGResourceType::Texture;
     RGTextureDesc texture_desc;
     RGBufferDesc buffer_desc;
-
     VkImage physical_image = VK_NULL_HANDLE;
     VkImageView physical_image_view = VK_NULL_HANDLE;
     VmaAllocation image_allocation = VK_NULL_HANDLE;
-
     VkBuffer physical_buffer = VK_NULL_HANDLE;
     VmaAllocation buffer_allocation = VK_NULL_HANDLE;
     void* mapped_ptr = nullptr;
-
     VkImageLayout current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkPipelineStageFlags2 current_stage = VK_PIPELINE_STAGE_2_NONE;
     VkAccessFlags2 current_access = VK_ACCESS_2_NONE;
-
-    uint32_t producer = kRGNoPass;  // было: PassNodeBase* producer_pass
+    uint32_t producer = kRGNoPass;
     uint32_t ref_count = 0;
     bool externally_exported = false;
     bool is_defined = false;
 };
 
-// Реестр внешних ресурсов: переживает пересборку графа, физические объекты обновляются каждый кадр.
 struct RGExternalResource {
     RGResourceType type = RGResourceType::ExternalTexture;
+    ScopeId scope_id = 0;
     RGTextureDesc texture_desc;
     RGBufferDesc buffer_desc;
-
     VkImage image = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
     VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-
     VkBuffer buffer = VK_NULL_HANDLE;
     void* mapped_ptr = nullptr;
-
-    uint32_t resource = RGResourceHandle::kInvalid;  // индекс в resources_ после последней сборки
+    uint32_t resource = RGResourceHandle::kInvalid;
 };
 
 class RGResourcePool {
 public:
     explicit RGResourcePool(VulkanDevice& device);
     ~RGResourcePool();
-
     struct PooledTexture {
         VkImage image = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
@@ -343,7 +391,6 @@ public:
         RGTextureDesc desc;
         bool in_use = false;
     };
-
     struct PooledBuffer {
         VkBuffer buffer = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
@@ -351,10 +398,8 @@ public:
         RGBufferDesc desc;
         bool in_use = false;
     };
-
     PooledTexture AcquireTexture(const RGTextureDesc& desc);
     PooledBuffer AcquireBuffer(const RGBufferDesc& desc);
-
     void ReleaseAll();
     void DestroyAll();
 
@@ -371,7 +416,6 @@ struct TransientPage {
     VkDeviceSize size = 0;
     VkDeviceAddress bda_address = 0;
 };
-
 struct FrameTransientAllocator {
     eastl::vector<TransientPage> pages;
     size_t current_page_index = 0;
@@ -382,127 +426,110 @@ class RenderGraph {
 public:
     static constexpr uint32_t kMaxFramesInFlight = 2;
     static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024;
-
     explicit RenderGraph(VulkanDevice& device);
     ~RenderGraph();
 
-    // ---------- Пассы (НОВОЕ) ----------
     template <typename T, typename... Args>
-    T& AddPass(Args&&... args) {
+    T& AddNode(ScopeId view, Args&&... args) {
         static_assert(std::is_base_of_v<IRenderPass, T>, "T должен наследоваться от IRenderPass");
-
         const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
-        if (id >= by_type_.size())
-            by_type_.resize(id + 1, nullptr);
-        TRY_ASSERT(by_type_[id] == nullptr, "AddPass: пасс этого типа уже добавлен");
-
-        auto& slot = slots_.emplace_back();
+        const uint64_t key = (static_cast<uint64_t>(id) << 32) | static_cast<uint64_t>(view);
+        TRY_ASSERT(node_lookup_.find(key) == node_lookup_.end(),
+                   "AddPassIn: пасс этого типа уже добавлен в данный scope");
+        auto& slot = nodes_.emplace_back();
         slot.pass = std::make_unique<T>(std::forward<Args>(args)...);
         slot.type_id = id;
-        by_type_[id] = slot.pass.get();
-
+        slot.scope_id = view;
+        node_lookup_[key] = slot.pass.get();
         dirty_ = true;
         return static_cast<T&>(*slot.pass);
     }
 
     template <typename T>
-    [[nodiscard]] T* Get() const {
+    [[nodiscard]] T* Get(ScopeId view) const {
         const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
-        return id < by_type_.size() ? static_cast<T*>(by_type_[id]) : nullptr;
+        const uint64_t key = (static_cast<uint64_t>(id) << 32) | static_cast<uint64_t>(view);
+        auto it = node_lookup_.find(key);
+        return it != node_lookup_.end() ? static_cast<T*>(it->second) : nullptr;
     }
 
-    // Ждёт GPU (удаление редкое), уничтожает пасс и помечает граф на пересборку.
     template <typename T>
-    void RemovePass() {
+    void RemoveNode(ScopeId view) {
         const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
-        if (id < by_type_.size() && by_type_[id])
-            DestroyPass(id);
+        const uint64_t key = (static_cast<uint64_t>(id) << 32) | static_cast<uint64_t>(view);
+        if (node_lookup_.find(key) != node_lookup_.end()) {
+            DestroyPass(id, view);
+        }
     }
 
     const RGTextureDesc& GetTextureDesc(RGResourceHandle h) const;
-
-    // Resize вьюпорта, смена настроек графики и т.п.
     void Invalidate() { dirty_ = true; }
 
-    // ---------- Кадр: BeginFrame -> ImportExternal* -> Collect -> Compile -> Execute ----------
     void BeginFrame(uint32_t frame_index);
     void Collect(core::Engine& engine);
-    void Compile();  // no-op, если структура не менялась
+    void Compile();
     void Execute(VkCommandBuffer cmd);
 
-    // Вызывать каждый кадр (сам или из IRenderPass::Collect). Смена desc => пересборка.
-    void ImportExternalTexture(RGTag tag, VkImage image, VkImageView image_view, const RGTextureDesc& desc,
-                               VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED);
-    void ImportExternalBuffer(RGTag tag, VkBuffer buffer, const RGBufferDesc& desc, void* mapped_ptr = nullptr);
+    void ImportExternalTexture(ScopeId view, RGTag tag, VkImage image, VkImageView image_view,
+                               const RGTextureDesc& desc, VkImageLayout initial_layout = VK_IMAGE_LAYOUT_UNDEFINED);
+    void ImportExternalBuffer(ScopeId view, RGTag tag, VkBuffer buffer, const RGBufferDesc& desc,
+                              void* mapped_ptr = nullptr);
 
     TransientAllocation AllocateTransient(const void* data, VkDeviceSize size, VkDeviceSize alignment = 256);
 
     template <typename T>
-    void PutCPUData(RGTag tag, const T& data) {
-        cpu_bb_.Put(tag, data);
+    void PutCPUData(ScopeId view, RGTag tag, const T& data) {
+        cpu_bb_.Put(view, tag, data);
     }
-
-    void PutCPUData(RGTag tag, const void* data, size_t size_bytes) { cpu_bb_.Put(tag, data, size_bytes); }
+    void PutCPUData(ScopeId view, RGTag tag, const void* data, size_t size_bytes) {
+        cpu_bb_.Put(view, tag, data, size_bytes);
+    }
 
     Blackboard& GetBlackboard() { return frame_bb_; }
     const Blackboard& GetBlackboard() const { return frame_bb_; }
-
     CPUBlackboard& GetCPUBlackboard() { return cpu_bb_; }
     const CPUBlackboard& GetCPUBlackboard() const { return cpu_bb_; }
 
     VkImage GetPhysicalImage(RGResourceHandle h) const;
     VkImageView GetPhysicalImageView(RGResourceHandle h) const;
     VkBuffer GetPhysicalBuffer(RGResourceHandle h) const;
-
     [[nodiscard]] uint32_t ResolveHandleIndex(uint32_t index) const;
     [[nodiscard]] RGResourceHandle ResolveHandle(RGResourceHandle h) const;
-
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
-
     VulkanDevice& GetDevice() const { return device_; }
-    bool IsDirty() const {return dirty_;};
+    bool IsDirty() const { return dirty_; };
 
 private:
     friend class RenderGraphBuilder;
-
-    // API билдера (pass - индекс слота)
-    RGResourceHandle CreateTexture(uint32_t pass, eastl::string_view dbg_name, const RGTextureDesc& desc);
-    RGResourceHandle CreateBuffer(uint32_t pass, eastl::string_view dbg_name, const RGBufferDesc& desc);
+    RGResourceHandle CreateTexture(uint32_t pass, ScopeId view, eastl::string_view dbg_name, const RGTextureDesc& desc);
+    RGResourceHandle CreateBuffer(uint32_t pass, ScopeId view, eastl::string_view dbg_name, const RGBufferDesc& desc);
     RGResourceHandle RegisterRead(uint32_t pass, RGResourceHandle h, RGUsageHint usage);
     RGResourceHandle RegisterWrite(uint32_t pass, RGResourceHandle h, RGUsageHint usage);
-    void ExportTag(RGTag tag, RGResourceHandle h);
-    RGResourceHandle ImportTag(uint32_t pass, RGTag tag);
+    void ExportTag(ScopeId view, RGTag tag, RGResourceHandle h);
+    RGResourceHandle ImportTag(uint32_t pass, ScopeId view, RGTag tag);
 
-    void DestroyPass(uint32_t type_id);
+    void DestroyPass(uint32_t type_id, ScopeId view);
     void RefreshActive();
     void Rebuild();
     void BindExternals();
     void ResolveTagBindings();
-    void CullPasses();
+    void CullNodes();
     void TopologicalSort();
     void AllocatePhysical();
     void BuildBarriers();
     void CleanupTransientAllocators();
 
     VulkanDevice& device_;
-
-    // Пассы: владение внутри графа
-    eastl::vector<PassSlot> slots_;
-    eastl::vector<IRenderPass*> by_type_;  // индекс = ScopedTypeId<RenderGraph, T>
+    eastl::vector<RGNode> nodes_;
+    eastl::hash_map<uint64_t, IRenderPass*> node_lookup_;
     bool dirty_ = true;
-
-    // Результат сборки (живёт, пока dirty_ == false)
     eastl::vector<RGVirtualResource> resources_;
-    eastl::hash_map<RGTag, RGResourceHandle> tag_to_handle_;
+    eastl::hash_map<RGTagKey, RGResourceHandle> tag_to_handle_;
     eastl::vector<uint32_t> handle_redirects_;
     eastl::fixed_vector<uint32_t, 128> sorted_order_;
     Blackboard frame_bb_;
     RGResourcePool pool_;
-
-    // Внешние ресурсы переживают пересборку
-    eastl::hash_map<RGTag, RGExternalResource> externals_;
-
-    // Покадровое
+    eastl::hash_map<RGTagKey, RGExternalResource> externals_;
     CPUBlackboard cpu_bb_;
     uint32_t frame_index_ = 0;
     FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];

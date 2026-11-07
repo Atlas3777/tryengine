@@ -138,20 +138,17 @@ void EditorApp::Run() const {
         script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
 
-
-        if (input.GetState().Pressed(Key::I)) {
+        if (input.GetState().Pressed(Key::Z)) {
             auto bytes_o = game_script.BuildPak("./game/scripts/Game.das");
-            if (!bytes_o.has_value()) {
+            if (!bytes_o.has_value())
                 LogError("Build Pak error");
-            } else {
-                // Передаём владение вектором в корутину через std::move
+            else
                 RunAndForget(ThreadPool(), WriteAA(async_file_manager, "script_pak", eastl::move(*bytes_o)));
-            }
         }
 
-        if (input.GetState().Pressed(Key::O)) {
+        if (input.GetState().Pressed(Key::X))
             RunAndForget(ThreadPool(), TestCompile(*engine_, "script_pak"));
-        }
+
 
         engine_->Get<AsyncFileManager>().Submit();
 

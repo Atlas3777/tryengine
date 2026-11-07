@@ -138,6 +138,7 @@ def private CreateCamera{
             far_plane = 100.0f
         ))
         apply_decs_template(cmp, Relationship())
+        cmp.editorCameraTag := true
         cmp |> set("TestSerRRR", TestSer(name = "tet", somee = 324ul, name2 = "HAHHA2"))
     }
 }

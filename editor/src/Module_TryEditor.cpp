@@ -88,22 +88,17 @@ void* GetEditorCameraViewImage(das::Context* ctx) {
     if (!try_ctx)
         return nullptr;
 
-    auto* rg = try_ctx->engine.TryGet<tryengine::graphics::RenderGraph>();
-    if (!rg) {
-        LogError("Render Graph not Found");
-        return nullptr;
-    }
+    auto& rg = try_ctx->engine.Get<tryengine::graphics::RenderGraph>();
+    return rg.Get<tryeditor::ImGuiPass>(tryeditor::EditorRender::kEditorScope)->GetEditorViewportTexture();
+}
 
-    // 1. Извлекаем RGResourceHandle из Blackboard RenderGraph
-    auto viewport_handle = rg->GetBlackboard().Get(tryengine::graphics::RGTag_v<"ForwardColor">);
-
-    // 2. Получаем чистый VkImageView из RenderGraph (без зависимости от ImGui)
-    VkImageView view = rg->GetPhysicalImageView(viewport_handle);
-    if (!view)
+void* GetGameCameraViewImage(das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
         return nullptr;
 
-    // 3. Слой редактора возвращает кэшированный VkDescriptorSet для imgui
-    return rg->Get<tryeditor::ImGuiPass>()->GetOrCreateTexture(view);
+    auto& rg = try_ctx->engine.Get<tryengine::graphics::RenderGraph>();
+    return rg.Get<tryeditor::ImGuiPass>(tryeditor::EditorRender::kEditorScope)->GetGameViewportTexture();
 }
 
 using namespace das;
@@ -147,6 +142,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetEditorCameraViewImage)>(*this, lib, "GetEditorCameraViewImage",
                                                                das::SideEffects::none, "GetEditorCameraViewImage");
+
+        das::addExtern<DAS_BIND_FUN(GetGameCameraViewImage)>(*this, lib, "GetGameCameraViewImage",
+                                                       das::SideEffects::none, "GetGameCameraViewImage");
 
         das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "get_editor_imgui_context",
                                                             das::SideEffects::none, "GetEditorImGuiContext");

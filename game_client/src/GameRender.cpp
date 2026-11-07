@@ -8,12 +8,14 @@
 
 namespace trygame {
 
+constexpr uint32_t kMainScope = 1;
+
 GameRender::GameRender(tryengine::graphics::VulkanDevice& device, tryengine::graphics::RenderGraph& render_graph,
                        tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync)
     : rg_(render_graph), swapchain_(swapchain), frame_sync_(frame_sync) {
-    rg_.AddPass<tryengine::graphics::OpaquePass>();
-    rg_.AddPass<tryengine::graphics::BlitPass>();
-    rg_.AddPass<tryengine::graphics::PresentPass>();
+    rg_.AddNode<tryengine::graphics::OpaquePass>(kMainScope);
+    rg_.AddNode<tryengine::graphics::BlitPass>(kMainScope);
+    rg_.AddNode<tryengine::graphics::PresentPass>(kMainScope);
 }
 
 GameRender::~GameRender() {
@@ -66,12 +68,12 @@ void GameRender::Render(tryengine::core::Engine& engine, tryengine::graphics::Vu
         last_viewport_size_ = game_viewport;
     }
 
-    auto camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("get_camera", das::float2(game_viewport.width, game_viewport.height));
+    auto camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("GetGameCamera", das::float2(game_viewport.width, game_viewport.height));
     tryengine::graphics::CameraData cam_data =
         camera_res.has_value() ? *(*camera_res) : tryengine::graphics::CameraData{};
 
-    rg_.GetCPUBlackboard().Put(tryengine::graphics::RGTag_v<"ViewportSize">, game_viewport);
-    rg_.GetCPUBlackboard().Put(tryengine::graphics::RGTag_v<"Camera">, cam_data);
+    rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"ViewportSize">, game_viewport);
+    rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"Camera">, cam_data);
 
     rg_.Collect(engine);
     rg_.Compile();
@@ -93,7 +95,7 @@ void GameRender::ImportSwapchain(uint32_t image_index) const {
                                                        .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
                                                        .debug_name = "SwapchainTexture"};
 
-    rg_.ImportExternalTexture(tryengine::graphics::RGTag_v<"Swapchain">, swapchain_.GetImages()[image_index],
+    rg_.ImportExternalTexture(kMainScope, tryengine::graphics::RGTag_v<"Swapchain">, swapchain_.GetImages()[image_index],
                               swapchain_.GetImageViews()[image_index], swap_desc, VK_IMAGE_LAYOUT_UNDEFINED);
 }
 

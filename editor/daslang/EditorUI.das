@@ -208,6 +208,7 @@ def DrawEditor() {
     DrawInspector()
     DrawAssetBrowser()
     DrawSceneViewPort()
+    DrawGameSceneViewPort()
     DrawBuildManager()
     // DrawQuadTreeDebug()
 

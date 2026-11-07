@@ -38,7 +38,7 @@ def TestTestTest(){
 def GameStart(){
     print("Game Start\n")
     create_entity() @(eid, cmp){
-        cmp.tag := "Camera"
+        cmp.tag := "EditorCamera"
         apply_decs_template(cmp, Transform(
             position = float3(0.0f, -20.0f, 10.0f),
             rotation = float4(0f, 0f, 0f, 1f),
@@ -49,6 +49,23 @@ def GameStart(){
             near_plane = 0.01f,
             far_plane = 500.0f
         ))
+        apply_decs_template(cmp, Relationship())
+        cmp.editorCameraTag := true
+    }
+
+    create_entity() @(eid, cmp){
+        cmp.tag := "GameCamera"
+        apply_decs_template(cmp, Transform(
+            position = float3(0.0f, -20.0f, 10.0f),
+            rotation = float4(0f, 0f, 0f, 1f),
+            scale = float3(1.0f, 1.0f, 1.0f)
+        ))
+        apply_decs_template(cmp, Camera(
+            fov = 35.0f,
+            near_plane = 0.01f,
+            far_plane = 500.0f
+        ))
+        cmp.active_camera := true
         apply_decs_template(cmp, Relationship())
     }
 
@@ -92,7 +109,7 @@ def GameUpdate() {
     let q2 = quat_from_unit_vec_ang(f, roll)
     let q  = quat_mul(q2, q1)
 
-    query()$(var t : Transform, var cam : Camera) {
+    query()$(var t : Transform, var cam : Camera, let active_camera : bool) {
         t.position = eye
         t.rotation = q
     }

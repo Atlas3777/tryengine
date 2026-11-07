@@ -67,28 +67,53 @@ struct CameraC {
     position : float3
 }
 
-var cameraC : CameraC
+var editor_cameraC : CameraC
 
 [export]
-def get_camera(viewport_size : float2) : CameraC? {
-    query() <| $(let transform : Transform, let camera : Camera){
-        cameraC.position = transform.position
+def GetEditorCamera(viewport_size : float2) : CameraC? {
+    query() <| $(let transform : Transform, let camera : Camera; let editorCameraTag : bool){
+        editor_cameraC.position = transform.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
         let forward = quat_mul_vec(transform.rotation, float3(0.0f, 1.0f, 0.0f))
         let up      = quat_mul_vec(transform.rotation, float3(0.0f, 0.0f, 1.0f))
         let target  = transform.position + forward
 
-        cameraC.view = look_at_rh(transform.position, target, up)
+        editor_cameraC.view = look_at_rh(transform.position, target, up)
 
         let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)
-        cameraC.proj = perspective_rh_0_to_1(fov_rad, aspect, camera.near_plane, camera.far_plane)
+        editor_cameraC.proj = perspective_rh_0_to_1(fov_rad, aspect, camera.near_plane, camera.far_plane)
         // FIX: Инвертируем Y для Vulkan NDC (где +Y направлен вниз)
-        cameraC.proj[1][1] *= -1.0f
+        editor_cameraC.proj[1][1] *= -1.0f
     }
 
-    return unsafe(addr(cameraC))
+    return unsafe(addr(editor_cameraC))
+}
+
+var game_cameraC : CameraC
+
+
+[export]
+def GetGameCamera(viewport_size : float2) : CameraC? {
+    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let transform : Transform, let camera : Camera){
+        game_cameraC.position = transform.position
+
+        // Вектор взгляда берем по +Y, вектор верха — по +Z
+        let forward = quat_mul_vec(transform.rotation, float3(0.0f, 1.0f, 0.0f))
+        let up      = quat_mul_vec(transform.rotation, float3(0.0f, 0.0f, 1.0f))
+        let target  = transform.position + forward
+
+        game_cameraC.view = look_at_rh(transform.position, target, up)
+
+        let aspect = viewport_size.x / viewport_size.y
+        let fov_rad = radians(camera.fov)
+        game_cameraC.proj = perspective_rh_0_to_1(fov_rad, aspect, camera.near_plane, camera.far_plane)
+        // FIX: Инвертируем Y для Vulkan NDC (где +Y направлен вниз)
+        game_cameraC.proj[1][1] *= -1.0f
+    }
+
+    return unsafe(addr(game_cameraC))
 }
 
 

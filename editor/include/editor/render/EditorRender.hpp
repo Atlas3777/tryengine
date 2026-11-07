@@ -18,6 +18,9 @@ namespace tryeditor {
 
 class EditorRender {
 public:
+    static constexpr uint32_t kEditorScope = 1;
+    static constexpr uint32_t kGameScope = 2;
+
     EditorRender(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device, tryengine::graphics::RenderGraph& render_graph,
                  tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync);
 
@@ -36,6 +39,7 @@ private:
     void ImportSwapchain(uint32_t image_index) const;
 
     VkExtent2D last_viewport_size_{0, 0};
+    VkExtent2D last_game_viewport_size_{0, 0};
     tryengine::graphics::RenderGraph& rg_;
     tryengine::graphics::VulkanSwapchain& swapchain_;
     tryengine::graphics::FrameSync& frame_sync_;

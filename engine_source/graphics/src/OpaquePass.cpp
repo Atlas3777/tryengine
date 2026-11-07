@@ -165,9 +165,9 @@ void OpaquePass::Execute(RGExecuteContext& ctx) {
 }
 
 void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
-    if (draw_queue_.empty()) {
-        return;
-    }
+    // if (draw_queue_.empty()) {
+        // return;
+    // }
 
     const auto* camera_cpu = ctx.cpu_bb->GetAs<CameraData>(RGTag_v<"Camera">);
     const auto* light_ubo = ctx.cpu_bb->GetAs<GlobalLight>(RGTag_v<"GlobalLightUBO">);

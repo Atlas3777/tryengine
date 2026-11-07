@@ -9,6 +9,7 @@
 #include "engine/graphics/PresentPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/resources/ResourceManager.hpp"
+#include "engine/core/HlslppFormatter.hpp"
 
 namespace tryeditor {
 
@@ -29,11 +30,12 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
         engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(4250482409988402633ULL);
     TRY_ASSERT(pick_shader.has_value(), "Нет шейдера picking");
 
-    rg_.AddPass<ImGuiPass>(device, swapchain);
-    rg_.AddPass<tryengine::graphics::OpaquePass>();
-    rg_.AddPass<DebugPass>(*deb_shader);
-    rg_.AddPass<PickingPass>(device, *pick_shader);
-    rg_.AddPass<tryengine::graphics::PresentPass>();
+    rg_.AddNode<ImGuiPass>(kEditorScope, rg_,device, swapchain);
+    rg_.AddNode<tryengine::graphics::OpaquePass>(kEditorScope);
+    rg_.AddNode<tryengine::graphics::OpaquePass>(kGameScope);
+    rg_.AddNode<DebugPass>(kEditorScope, *deb_shader);
+    rg_.AddNode<PickingPass>(kEditorScope, device, *pick_shader);
+    rg_.AddNode<tryengine::graphics::PresentPass>(kEditorScope);
 }
 
 EditorRender::~EditorRender() {
@@ -89,13 +91,34 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
         last_viewport_size_ = scene_viewport;
     }
 
-    auto camera_res =
-        script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("get_camera", size_res.value_or(das::float2(1, 1)));
-    tryengine::graphics::CameraData cam_data =
-        camera_res.has_value() ? *(*camera_res) : tryengine::graphics::CameraData{};
+    auto size_game_res = script.SimpleReturnUnsafe<das::float2>("GetGameViewportSize");
+    VkExtent2D scene_game_viewport{1, 1};
+    if (size_game_res.has_value()) {
+        scene_game_viewport = {std::max(1u, (uint32_t) size_game_res->x), std::max(1u, (uint32_t) size_game_res->y)};
+    }
 
-    rg_.GetCPUBlackboard().Put(tryengine::graphics::RGTag_v<"ViewportSize">, scene_viewport);
-    rg_.GetCPUBlackboard().Put(tryengine::graphics::RGTag_v<"Camera">, cam_data);
+    if (scene_game_viewport.width != last_game_viewport_size_.width || scene_game_viewport.height != last_game_viewport_size_.height) {
+        rg_.Invalidate();
+        last_game_viewport_size_ = scene_game_viewport;
+    }
+
+    auto editor_camera_res =
+        script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("GetEditorCamera", size_res.value_or(das::float2(1, 1)));
+    tryengine::graphics::CameraData cam_data =
+        editor_camera_res.has_value() ? *(*editor_camera_res) : tryengine::graphics::CameraData{};
+
+    // LogInfo("x = {}, y = {}, z = {}",cam_data.position.x, cam_data.position.y, cam_data.position.z);
+
+    auto game_camera_res =
+        script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("GetGameCamera", size_game_res.value_or(das::float2(1, 1)));
+    tryengine::graphics::CameraData game_cam_data =
+        editor_camera_res.has_value() ? *(*game_camera_res) : tryengine::graphics::CameraData{};
+
+    rg_.GetCPUBlackboard().Put(kEditorScope, tryengine::graphics::RGTag_v<"ViewportSize">, scene_viewport);
+    rg_.GetCPUBlackboard().Put(kEditorScope, tryengine::graphics::RGTag_v<"Camera">, cam_data);
+
+    rg_.GetCPUBlackboard().Put(kGameScope, tryengine::graphics::RGTag_v<"Camera">, game_cam_data);
+    rg_.GetCPUBlackboard().Put(kGameScope, tryengine::graphics::RGTag_v<"ViewportSize">, scene_game_viewport);
 
     rg_.Collect(engine);
     rg_.Compile();
@@ -117,7 +140,7 @@ void EditorRender::ImportSwapchain(uint32_t image_index) const {
                                                        .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
                                                        .debug_name = "SwapchainTexture"};
 
-    rg_.ImportExternalTexture(tryengine::graphics::RGTag_v<"Swapchain">, swapchain_.GetImages()[image_index],
+    rg_.ImportExternalTexture(kEditorScope, tryengine::graphics::RGTag_v<"Swapchain">, swapchain_.GetImages()[image_index],
                               swapchain_.GetImageViews()[image_index], swap_desc, VK_IMAGE_LAYOUT_UNDEFINED);
 }
 
