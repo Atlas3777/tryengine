@@ -14,19 +14,18 @@ require daslib/decs
 require daslib/decs_boost
 require strings
 require math
-require tryeditor/Hierarchy   // selected_eid
+require tryeditor/Hierarchy
+require tryengine/EcsMacro
 
 // ---------------------------------------------------------------------
 // Поиск сущности в decsState
 // ---------------------------------------------------------------------
 def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index : int64&) : bool {
-    if (uint(eid.id) >= uint(length(decsState.entityLookup))) {
+    if (eid.id >= uint(length(decsState.entityLookup)) || decsState.entityLookup[int(eid.id)].generation != eid.generation) {
         return false
     }
+
     let rec = decsState.entityLookup[int(eid.id)]
-    if (rec.generation != eid.generation) {
-        return false
-    }
     if (!key_exists(decsState.archetypeLookup, rec.archetype)) {
         return false
     }
@@ -39,13 +38,8 @@ def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index :
     return true
 }
 
-// ---------------------------------------------------------------------
-// Состояние для строк, чекбоксов и фильтра
-// ---------------------------------------------------------------------
 var W_BOOL   : table<string; ToggleState>
 var W_STRING : table<string; InputTextState>
-
-var W_FILTER : TextFilterState
 
 // Переменная для отслеживания смены фокуса
 var last_selected_eid : EntityId = INVALID_ENTITY_ID
@@ -67,7 +61,6 @@ def draw_component_value(comp : Component; index : int64; display_name : string)
         let ptr = addr(comp.data[offset])
 
         if (comp.info.basicType == Type.tStructure) {
-            // info.basicType == tStructure — как в ComponentToCF
             let ti = comp.info.mkTypeInfo()
             draw_struct_fields(reinterpret<void?>(ptr), ti.firstType.structType, id_key)
         } else {
@@ -100,16 +93,16 @@ def register_override(name : string; draw : ComponentDrawFn) {
 }
 
 def draw_relationship_override(eid : EntityId) {
-    query(eid) <| $(rel : Relationship) {
-        text("parent:      [{uint(rel.parent.id)}]")
+    query(eid) $(rel : Relationship) {
+        text("parent:      [{rel.parent.id}]")
         if (rel.parent != INVALID_ENTITY_ID) {
             same_line()
             if (button(BT_GO, (text = "Go"))) {
                 selected_eid = rel.parent
             }
         }
-        text("first_child: [{uint(rel.first_child.id)}]")
-        text("next:        [{uint(rel.next.id)}]")
+        text("first_child: [{rel.first_child.id}]")
+        text("next:        [{rel.next.id}]")
     }
 }
 
@@ -150,25 +143,19 @@ def DrawInspector() {
             return
         }
 
-        text("Entity [{uint(selected_eid.id):d}]")
+        text("Entity [{selected_eid.id:d}]")
         let a = unsafe(reinterpret<uint64>(selected_eid));
         text("Entity2 [{a:d}]")
 
         // ---- ПОИСК ПО КОМПОНЕНТАМ ----
-        text("Search:")
-        same_line()
-        text_filter(W_FILTER)
+        text_filter(W_FILTER, "Search", 200f)
 
         separator()
 
         var processed_groups : table<string; bool>
 
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            if (comp.name == "eid") {
-                continue
-            }
-
-            if (!passes_filter(W_FILTER, comp.name)) {
+            if (comp.name == "eid" || !passes_filter(W_FILTER, comp.name)) {
                 continue
             }
 
@@ -182,7 +169,7 @@ def DrawInspector() {
                 processed_groups[prefix] = true
 
                 with_id("{prefix}{selected_eid.id}") {
-                    collapsing_header(BASIC_CHR, (text = prefix, closable = false, flags = ImGuiTreeNodeFlags.None)) {
+                    collapsing_header(BASIC_CHR, (text = prefix, closable = false, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
                         // Проверяем оверрайд для префикса всей структуры
                         if (key_exists(g_overrides, prefix)) {
                             g_overrides[prefix] |> invoke(selected_eid)
@@ -201,7 +188,7 @@ def DrawInspector() {
                 }
             } else {
                 with_id("{comp.name}{selected_eid.id}") {
-                    collapsing_header(BASIC_CHR, (text = comp.name, closable = false, flags = ImGuiTreeNodeFlags.None)) {
+                    collapsing_header(BASIC_CHR, (text = comp.name, closable = false, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
                         if (key_exists(g_overrides, comp.name)) {
                             g_overrides[comp.name] |> invoke(selected_eid)
                         } else {
@@ -211,9 +198,47 @@ def DrawInspector() {
                 }
             }
         }
+        AddComponent(selected_eid)
     }
 }
 
+// ---------------------------------------------------------------------
+// Popup "Add component"
+// ---------------------------------------------------------------------
+// Построчный ToggleState: [widget]-макрос авто-эмитит только синглтоны,
+// для строк в цикле держим таблицу явно (как SH_ROW в selectable_hover.rst).
+var g_add_cmp_rows : table<string; ToggleState>
+
+def private AddComponent(target_eid : EntityId) {
+    if (button(ADD_CMP, (text = "Add component"))) {
+        clear(g_add_cmp_rows)
+        ADD_CMP_POPUP.pending_open = true
+    }
+
+    popup(ADD_CMP_POPUP, (text = "Add component", flags = ImGuiWindowFlags.None)) {
+        // Фильтр — как в инспекторе (text_filter + passes_filter)
+        text_filter(W_ADD_CMP_FILTER, "Search", 220f)
+        separator()
+
+        child(ADD_CMP_LIST, (text = "child", size = float2(250f, 300f),
+         child_flags = ImGuiChildFlags.AutoResizeY, window_flags = ImGuiWindowFlags.None)) {
+            var shown = 0
+            for (name, n in keys(ecs_component_table), values(ecs_component_table)) {
+                if (!passes_filter(W_ADD_CMP_FILTER, name)) {
+                    continue
+                }
+                shown++
+                if (selectable(g_add_cmp_rows[name], (text = "{name} : {n.cmp_type}"))) {
+                    n.cmp_creator(target_eid)
+                    ADD_CMP_POPUP.pending_close = true
+                }
+            }
+            if (shown == 0) {
+                text("No matches")
+            }
+        }
+    }
+}
 // ---------------------------------------------------------------------
 // Отрисовка значения по "сырому" указателю (без привязки к Component).
 // Аналог SerializeBase из сохранения.
@@ -301,37 +326,30 @@ def private draw_value_at_ptr(ptr : void?; t : Type; display_name : string; id_k
 // и либо рекурсивно спускается в tStructure, либо рисует скаляр/вектор.
 // ---------------------------------------------------------------------
 def private draw_struct_fields(ptr : void?; si : StructInfo const?; id_prefix : string) {
-    if (ptr == null) {
-        return
-    }
-    if (si == null) {
+    if (ptr == null || si == null) {
         return
     }
 
     unsafe {
         if (si.fields != null) {
             var pp = si.fields   // VarInfo??
-            for (c in range(si.count)) {
+            for (_ in range(si.count)) {
                 let current = *pp
                 pp++
                 if (current == null) {
                     continue
                 }
 
-                let fieldPtr = reinterpret<void?>(reinterpret<uint64>(ptr) + uint64(current.offset))
+                let field_ptr = reinterpret<void?>(reinterpret<uint64>(ptr) + uint64(current.offset))
                 let field_key = "{id_prefix}_{current.name}"
 
                 with_id(current.name) {
                     if (current.basicType == Type.tStructure) {
-                        // Вложенная структура — tree_node даёт TreePop + отступ тела.
-                        // DefaultOpen — чтобы структура сразу была развёрнута;
-                        // убери флаг, если хочешь свёрнутое состояние по умолчанию.
-                        tree_node(BASIC_TREE, (text = current.name,
-                                               flags = ImGuiTreeNodeFlags.DefaultOpen)) {
-                            draw_struct_fields(fieldPtr, current.structType, field_key)
+                        tree_node(BASIC_TREE, (text = current.name, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
+                            draw_struct_fields(field_ptr, current.structType, field_key)
                         }
                     } else {
-                        draw_value_at_ptr(fieldPtr, current.basicType, current.name, field_key)
+                        draw_value_at_ptr(field_ptr, current.basicType, current.name, field_key)
                     }
                 }
             }
