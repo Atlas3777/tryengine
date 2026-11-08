@@ -153,6 +153,7 @@ void EditorApp::Run() const {
         engine_->Get<AsyncFileManager>().Submit();
 
         render.Render(*engine_, *vulkan_device_, editor_->state);
+        // script_system.GetContext();
         Profiler::Instance().EndFrame(time_manager.Root().DeltaTime() * 1000.0f);
     }
 }

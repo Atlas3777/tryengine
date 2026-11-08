@@ -7,13 +7,13 @@
 
 #include "AssetLocation.hpp"
 #include "AssetRegistry.hpp"
-#include "FileIterator.h"
 #include "binary/AssetPakBinary.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/RunAndForget.hpp"
 #include "engine/async/Task.hpp"
 #include "engine/async/WhenAll.hpp"
 #include "engine/core/MakeError.hpp"
+#include "engine/platform/Directory.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 
 namespace tryengine::resources {
@@ -37,13 +37,23 @@ public:
     PakManager& operator=(const PakManager&) = delete;
 
     void StartLoadAll() {
-        filesystem::Iterate("content/", 0, [&](const eastl::string& path, const char* name, bool is_dir, int idx) {
-            if (!name || !strstr(name, ".pak")) {
+        filesystem::ReadDirectory("content/", [&](eastl::string_view name, filesystem::EntryKind kind) {
+            // Пропускаем директории и другие записи, оставляем только файлы
+            if (kind != filesystem::EntryKind::File)
+                return;
+
+            if (name.size() < 4 || std::memcmp(name.data() + name.size() - 4, ".pak", 4) != 0)
+            {
                 LogTrace(LogCategory::Importer, "Unsupported type in content");
                 return;
             }
 
-            async::RunAndForget(async::ThreadPool(), LoadPakAsync(path));
+            // Формируем полный путь, т.к. ReadDirectory отдаёт только имя файла
+            char fullPath[filesystem::kMaxPath];
+            std::snprintf(fullPath, sizeof(fullPath), "content/%.*s",
+                          static_cast<int>(name.size()), name.data());
+
+            async::RunAndForget(async::ThreadPool(), LoadPakAsync(fullPath));
         });
     }
 

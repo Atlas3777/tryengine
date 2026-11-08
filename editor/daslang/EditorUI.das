@@ -26,7 +26,7 @@ require imgui/imgui_boost_v2
 require imgui/imgui_file_dialog
 
 require TryEditor
-
+require tryengine/EcsMacro
 require daslib/decs
 require daslib/archive
 
@@ -41,7 +41,7 @@ def DrawMainMenu() {
                     FileDialogConfig(
                         title = "Open Scene",
                         mode = FileDialogMode.open,
-                        start_dir = "game/assets",
+                        start_dir = "game/content",
                         filters = file_filters("Scene Files|scene|All Files|")
                     ),
                     @(path : string; ctx : string) : void {
@@ -58,7 +58,7 @@ def DrawMainMenu() {
                             title = "Save Scene",
                             mode = FileDialogMode.save,
                             default_name = "new_scene.scene",
-                            start_dir = "game/assets",
+                            start_dir = "game/content",
                             filters = file_filters("Scene Files|scene|All Files|")
                         ),
                         @(path : string; ctx : string) : void {
@@ -170,7 +170,7 @@ def StartPlay() {
 
     is_playing = true
     is_paused  = false
-    // TODO: снимок состояния редактора
+    // снимок состояния редактора
     GameStart()
 }
 
@@ -183,8 +183,8 @@ def StopPlay() {
         data |> mem_archive_load(decsState)
     }
 
-    // TODO: восстановить состояние
-    // TODO: сообщить движку «выйти из play-mode»
+    // восстановить состояние
+    // сообщить движку «выйти из play-mode»
 }
 
 def PausePlay()  { is_paused = true}
@@ -195,8 +195,7 @@ def StepPlay()   { /* TODO */ }
 def DrawEditor() {
     unsafe {
         let ctx_address = get_editor_imgui_context()
-        if (ctx_address == null)
-            print("imgui is null")
+        if (ctx_address == null){ print("imgui is null")}
         let host_ctx = reinterpret<ImGuiContext?>(ctx_address)
         host_ctx.SetCurrentContext()
     }

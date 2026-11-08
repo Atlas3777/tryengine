@@ -1,4 +1,7 @@
 options gen2
+options gc = true
+options persistent_heap
+options intern_strings
 
 module Engine shared public
 

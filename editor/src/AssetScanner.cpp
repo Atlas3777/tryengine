@@ -1,107 +1,111 @@
 #include "editor/AssetScanner.hpp"
-#include "engine/resources/FileIterator.h"
+#include "engine/platform/Directory.hpp"
 
-#include <EASTL/functional.h>
-#include <EASTL/hash_map.h>
-#include <cstring>
+#include <EASTL/sort.h>
 
 namespace tryeditor {
 
-struct WaitingAsset {
-    eastl::string full_path;
-    eastl::string name;
-    uint32_t parent_folder_idx;
+namespace {
+
+constexpr eastl::string_view kMetaExt = ".meta";
+
+struct FileRef {
+    uint32_t offset;
+    uint32_t length;
     bool is_meta;
+    bool matched;
 };
 
-ScanResult AssetScanner::ScanDirectory(eastl::string_view root_dir) {
-    ScanResult result;
-    eastl::hash_map<uint64_t, WaitingAsset> waiting_room;
+// Файлы одной папки. Пару ассет+.meta можно найти только внутри одной папки,
+// поэтому на каждую открытую папку — свой кадр; никакой глобальной "комнаты ожидания".
+struct Frame {
+    eastl::vector<FileRef> files;
+};
 
-    // Выделяем имя корневой директории
-    size_t root_slash = root_dir.find_last_of("\\/");
-    eastl::string_view root_name =
-        (root_slash == eastl::string_view::npos) ? root_dir : root_dir.substr(root_slash + 1);
+class ScanVisitor {
+public:
+    explicit ScanVisitor(ScanResult& result) : result_(result) { frames_.emplace_back(); }
 
-    // Корневая папка (индекс 0)
-    result.raw_folders.push_back(RawFolder{
-        .name = eastl::string(root_name.data(), root_name.size()),
-        .path = eastl::string(root_dir.data(), root_dir.size()),
-        .parent_idx = 0,
-        .subfolders = {},
-        .files = {}
-    });
-    uint32_t root_folder_idx = 0;
+    bool OnDirectoryEnter(eastl::string_view full, eastl::string_view) {
+        result_.AddEntry(full, true);
+        frames_.emplace_back();
+        return true;
+    }
 
-    tryengine::filesystem::Iterate(
-        root_dir, root_folder_idx,
-        [&](const eastl::string& path_str, const char* name, bool is_dir, uint32_t parent_idx) -> uint32_t {
-            if (is_dir) {
-                uint32_t new_folder_idx = static_cast<uint32_t>(result.raw_folders.size());
-                result.raw_folders.push_back(RawFolder{
-                    .name = eastl::string(name),
-                    .path = path_str,
-                    .parent_idx = parent_idx,
-                    .subfolders = {},
-                    .files = {}
-                });
+    void OnDirectoryLeave() {
+        Resolve(frames_.back());
+        frames_.pop_back();
+    }
 
-                result.raw_folders[parent_idx].subfolders.push_back(new_folder_idx);
-                return new_folder_idx;
+    void OnFile(eastl::string_view full, eastl::string_view name) {
+        const bool is_meta = name.size() >= kMetaExt.size() && name.substr(name.size() - kMetaExt.size()) == kMetaExt;
+        const uint32_t offset = result_.Store(full);
+        if (!is_meta)
+            result_.entries.push_back(ScanEntry{offset, static_cast<uint32_t>(full.size()), false});
+        frames_.back().files.push_back(FileRef{offset, static_cast<uint32_t>(full.size()), is_meta, false});
+    }
+
+    void Finish() { Resolve(frames_.front()); }
+
+private:
+    eastl::string_view View(const FileRef& f) const {
+        return eastl::string_view(result_.blob.data() + f.offset, f.length);
+    }
+
+    void Resolve(Frame& frame) {
+        auto& files = frame.files;
+        // Все пути в кадре имеют общий префикс-папку, поэтому сортировка по полному пути = по имени.
+        eastl::sort(files.begin(), files.end(),
+                    [this](const FileRef& a, const FileRef& b) { return View(a) < View(b); });
+
+        for (FileRef& meta : files) {
+            if (!meta.is_meta)
+                continue;
+            const eastl::string_view want = View(meta).substr(0, meta.length - kMetaExt.size());
+
+            // бинарный поиск ассета с таким именем
+            size_t lo = 0, hi = files.size();
+            while (lo < hi) {
+                const size_t mid = (lo + hi) / 2;
+                if (View(files[mid]) < want)
+                    lo = mid + 1;
+                else
+                    hi = mid;
             }
+            if (lo == files.size() || files[lo].is_meta || View(files[lo]) != want)
+                continue;
 
-            const size_t path_size = path_str.size();
-            const size_t name_size = strlen(name);
-            const bool is_meta = (name_size >= 5 && strcmp(name + name_size - 5, ".meta") == 0);
+            FileRef& asset = files[lo];
+            const eastl::string_view a = View(asset), m = View(meta);
+            result_.matched_assets.push_back(
+                DiscoveredAssetPair{eastl::string(a.data(), a.size()), eastl::string(m.data(), m.size())});
+            asset.matched = meta.matched = true;
+        }
 
-            // Если это файл ассета (не .meta), сохраняем в список файлов папки
-            if (!is_meta) {
-                result.raw_folders[parent_idx].files.push_back(RawFile{
-                    .name = eastl::string(name),
-                    .path = path_str
-                });
-            }
-
-            // Получаем string_view пути к ассету (без .meta)
-            eastl::string_view asset_path_view = is_meta ? eastl::string_view(path_str.data(), path_size - 5)
-                                                         : eastl::string_view(path_str.data(), path_size);
-
-            uint64_t asset_path_hash = eastl::hash<eastl::string_view>{}(asset_path_view);
-            auto it = waiting_room.find(asset_path_hash);
-
-            if (it != waiting_room.end()) {
-                DiscoveredAssetPair pair;
-                if (is_meta) {
-                    pair.asset_path = eastl::move(it->second.full_path);
-                    pair.meta_path = path_str;
-                    pair.name = eastl::move(it->second.name);
-                    pair.parent_folder_idx = it->second.parent_folder_idx;
-                } else {
-                    pair.asset_path = path_str;
-                    pair.meta_path = eastl::move(it->second.full_path);
-                    pair.name = eastl::string(name);
-                    pair.parent_folder_idx = parent_idx;
-                }
-
-                result.matched_assets.push_back(eastl::move(pair));
-                waiting_room.erase(it);
-            } else {
-                waiting_room[asset_path_hash] = WaitingAsset{path_str, eastl::string(name), parent_idx, is_meta};
-            }
-
-            return parent_idx;
-        });
-
-    // Оставшиеся файлы — сироты
-    for (auto& entry : waiting_room) {
-        WaitingAsset& orphan = entry.second;
-        if (!orphan.is_meta) {
-            result.orphan_assets.push_back(eastl::move(orphan.full_path));
-        } else {
-            result.orphan_metas.push_back(eastl::move(orphan.full_path));
+        for (const FileRef& f : files) {
+            if (f.matched)
+                continue;
+            const eastl::string_view v = View(f);
+            (f.is_meta ? result_.orphan_metas : result_.orphan_assets).push_back(eastl::string(v.data(), v.size()));
         }
     }
 
+    ScanResult& result_;
+    eastl::vector<Frame> frames_;
+};
+
+}  // namespace
+
+ScanResult AssetScanner::ScanDirectory(eastl::string_view root_dir) {
+    ScanResult result;
+    while (root_dir.size() > 1 && (root_dir.back() == '/' || root_dir.back() == '\\'))
+        root_dir.remove_suffix(1);
+
+    result.AddEntry(root_dir, true);  // entries[0] — корень
+
+    ScanVisitor visitor(result);
+    tryengine::filesystem::Walk(root_dir, visitor);
+    visitor.Finish();
     return result;
 }
 

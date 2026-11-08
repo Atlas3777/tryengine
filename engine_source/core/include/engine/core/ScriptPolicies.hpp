@@ -12,6 +12,8 @@ inline das::CodeOfPolicies CreateHeavyJitPolicies() {
     policies.jit_size_level = 0;
     policies.jit_opt_level = 3;
     policies.module_cache = true;
+    policies.persistent_heap = true;
+    policies.gc_infer_collect = true;
     return policies;
 }
 

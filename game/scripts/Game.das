@@ -1,4 +1,3 @@
-
 options gen2
 options rtti = true
 
@@ -9,8 +8,6 @@ require tryengine/Types
 require tryengine/Input
 require tryResources
 require tryengine/Engine
-require tryengine/Render
-require tryengine/QuadTree
 require math
 
 let mesh_id_1 = 3081795527557720915ul

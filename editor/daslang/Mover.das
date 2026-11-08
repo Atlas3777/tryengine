@@ -13,7 +13,7 @@ let sens = 0.26f
 let cam_speed = 3f
 
 def Move(dt : float) {
-    query() <| $(var transform : Transform; camera : Camera) {
+    query() $(var transform : Transform; camera : Camera) {
         let md = mouse_delta()
 
         let front_raw = float3(0.0, 1.0, 0.0)

@@ -6,13 +6,6 @@ require TryEditor
 require tryengine/Types
 require strings
 
-// DTO для описания ассета
-struct public AssetItem {
-    guid : uint64
-    name : string
-    path : string
-}
-
 def public FindFilesByExt(ext : string) : array<AssetItem> {
     print("FindFilesByExt\n")
     return <- find_files_by_ext(get_game_folders(), ext)

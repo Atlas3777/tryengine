@@ -1,7 +1,7 @@
 #include "editor/AssetPipeline.hpp"
 
 #include "../../engine_source/resources/include/engine/resources/Json.hpp"
-#include "editor/UiTreeBuilder.hpp"
+#include "editor/UiTree.hpp"
 #include "editor/import/IAssetImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
@@ -10,6 +10,7 @@
 #include "engine/async/WhenAll.hpp"
 #include "engine/core/FormatUtils.h"
 #include "engine/core/MakeError.hpp"
+#include "engine/core/strings/Hash.hpp"
 #include "engine/resources/AssetRegistry.hpp"
 #include "engine/resources/ReadFullFile.hpp"
 
@@ -18,27 +19,18 @@ namespace tryeditor {
 using namespace tryengine::resources;
 using namespace tryengine::async;
 using tryengine::core::Error;
+using tryengine::core::PathHash;
+using tryengine::core::StringTable;
+using tryengine::core::ToView;
 
 const char* meta_ext = ".meta";
 
-const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) const {
-    switch (domain) {
-        case StorageDomain::Engine:
-            return engine_folders_;
-        case StorageDomain::Game:
-            return game_folders_;
-    }
-    return engine_folders_;
+const UiTree& AssetPipeline::GetTree(StorageDomain domain) const {
+    return domain == StorageDomain::Engine ? engine_tree_ : game_tree_;
 }
 
-eastl::vector<UiFolder>& AssetPipeline::GetFoldersMutable(StorageDomain domain) {
-    switch (domain) {
-        case StorageDomain::Engine:
-            return engine_folders_;
-        case StorageDomain::Game:
-            return game_folders_;
-    }
-    return engine_folders_;
+const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) const {
+    return GetTree(domain).Folders();
 }
 
 AssetPipeline::AssetPipeline(AssetRegistry& registry) : registry_(registry) {}
@@ -108,24 +100,12 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
         co_return LogAndMakeError("Ошибка при асинхронной обработке ассетов");
 
 
-    // 3. Фаза построения UI-дерева (все GUID 100% гарантированно зарегистрированы)
-    eastl::hash_map<eastl::string, uint64_t> path_to_guid_copy;
+    // 3. Фаза построения UI-дерева (все GUID 100% гарантированно зарегистрированы).
+    // Первичная загрузка: вызывать, пока das не рисует это дерево (старт редактора).
     {
         std::lock_guard lock(db_mutex_);
-        path_to_guid_copy = path_to_guid_;
-    }
-
-    auto ui_folders = UiTreeBuilder::BuildUiTree(scan_data.raw_folders, path_to_guid_copy);
-
-    switch(domain) {
-        default:
-            TRY_ASSERT(false, "Unhandled StorageDomain Type");
-        case StorageDomain::Engine:
-            engine_folders_ = eastl::move(ui_folders);
-            break;
-        case StorageDomain::Game:
-            game_folders_ = eastl::move(ui_folders);
-            break;
+        UiTree& tree = (domain == StorageDomain::Engine) ? engine_tree_ : game_tree_;
+        tree.BuildFrom(scan_data, path_to_guid_);
     }
 
     co_return {};
@@ -201,8 +181,7 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
 
     {
         std::lock_guard lock(db_mutex_);
-        guid_to_path_[res.main_guid] = asset_path;
-        path_to_guid_[asset_path] = res.main_guid;
+        path_to_guid_[PathHash(ToView(asset_path))] = res.main_guid;
     }
 
     LogInfo(LogCategory::Importer, "Ассет-сирота успешно импортирован: {}", asset_path.c_str());
@@ -279,8 +258,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
 
     {
         std::lock_guard lock(db_mutex_);
-        guid_to_path_[header.guid] = asset_path;
-        path_to_guid_[asset_path] = header.guid;
+        path_to_guid_[PathHash(ToView(asset_path))] = header.guid;
     }
 
     RegisterArtifactPaths(mount, header.guid, header.sub_assets);
@@ -358,16 +336,166 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
     co_return {};
 }
 
-void AssetPipeline::OnFileCreatedOrModified(const char* path) {}
+// ============================================================================
+// Мутация дерева от FileWatcher: потоки-источники только кладут команды в очередь,
+// а применяет их main thread в ApplyPendingTreeChanges() (начало кадра).
+// ============================================================================
+
+namespace {
+
+struct PathParts {
+    eastl::string_view parent;
+    eastl::string_view name;
+};
+
+PathParts SplitPath(eastl::string_view full) {
+    while (full.size() > 1 && (full.back() == '/' || full.back() == '\\'))
+        full.remove_suffix(1);
+    const size_t slash = full.find_last_of("\\/");
+    if (slash == eastl::string_view::npos)
+        return {eastl::string_view(), full};
+    return {full.substr(0, slash), full.substr(slash + 1)};
+}
+
+}  // namespace
+
+void AssetPipeline::Post(TreeCommand::Kind kind, eastl::string_view a, eastl::string_view b, uint64_t guid) {
+    TreeCommand cmd{kind, strings_.Intern(a), b.empty() ? nullptr : strings_.Intern(b), guid};
+    std::lock_guard lock(pending_mutex_);
+    pending_.push_back(cmd);
+}
+
+void AssetPipeline::OnFileCreatedOrModified(const char* path) {
+    // TODO: новый/изменённый файл => импорт (создание .meta, guid) => PostAssetReady(path, guid).
+    // Дерево нельзя пополнять до того, как известен guid.
+    (void)path;
+}
 
 void AssetPipeline::OnFileDeleted(const char* path) {
-    std::lock_guard lock(db_mutex_);
-    auto it = path_to_guid_.find(eastl::string(path));
-    if (it != path_to_guid_.end()) {
-        uint64_t guid = it->second;
-        guid_to_path_.erase(guid);
-        path_to_guid_.erase(it);
+    Post(TreeCommand::Kind::Deleted, eastl::string_view(path), {}, 0);
+}
+
+void AssetPipeline::OnFileRenamed(const char* old_path, const char* new_path) {
+    Post(TreeCommand::Kind::Renamed, eastl::string_view(old_path), eastl::string_view(new_path), 0);
+}
+
+void AssetPipeline::PostAssetReady(const char* path, uint64_t guid) {
+    Post(TreeCommand::Kind::AssetReady, eastl::string_view(path), {}, guid);
+}
+
+void AssetPipeline::ApplyPendingTreeChanges() {
+    eastl::vector<TreeCommand> batch;
+    {
+        std::lock_guard lock(pending_mutex_);
+        batch.swap(pending_);
     }
+    if (batch.empty())
+        return;
+
+    UiTree::Changes changes;
+    for (const TreeCommand& cmd : batch) {
+        switch (cmd.kind) {
+            case TreeCommand::Kind::Deleted:
+                ApplyDeleted(StringTable::View(cmd.a), changes);
+                break;
+            case TreeCommand::Kind::Renamed:
+                ApplyRenamed(StringTable::View(cmd.a), StringTable::View(cmd.b), changes);
+                break;
+            case TreeCommand::Kind::AssetReady:
+                ApplyAssetReady(StringTable::View(cmd.a), cmd.guid, changes);
+                break;
+        }
+        ApplyPathChanges(changes);  // после КАЖДОЙ команды: следующая может зависеть от предыдущей
+        strings_.Release(cmd.a);
+        strings_.Release(cmd.b);
+    }
+}
+
+bool AssetPipeline::LocateFolder(eastl::string_view path, UiTree*& tree, uint32_t& idx) {
+    for (UiTree* t : {&game_tree_, &engine_tree_}) {
+        const uint32_t i = t->FindFolder(path);
+        if (i != kNoFolder) {
+            tree = t;
+            idx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+void AssetPipeline::ApplyDeleted(eastl::string_view path, UiTree::Changes& changes) {
+    UiTree* tree = nullptr;
+    uint32_t idx = kNoFolder;
+
+    if (LocateFolder(path, tree, idx)) {  // удалена папка
+        tree->RemoveFolder(idx, &changes);
+        return;
+    }
+    const PathParts p = SplitPath(path);  // удалён файл
+    if (LocateFolder(p.parent, tree, idx))
+        tree->RemoveFile(idx, p.name, &changes);
+}
+
+void AssetPipeline::ApplyRenamed(eastl::string_view old_path, eastl::string_view new_path, UiTree::Changes& changes) {
+    const PathParts from = SplitPath(old_path);
+    const PathParts to = SplitPath(new_path);
+    const bool same_parent = PathHash(from.parent) == PathHash(to.parent);
+
+    UiTree* tree = nullptr;
+    uint32_t idx = kNoFolder;
+
+    if (LocateFolder(old_path, tree, idx)) {  // папка
+        if (!same_parent) {
+            const uint32_t new_parent = tree->EnsureFolder(to.parent);
+            if (new_parent == kNoFolder || !tree->MoveFolder(idx, new_parent, &changes))
+                return;
+        }
+        tree->RenameFolder(idx, to.name, &changes);
+        return;
+    }
+
+    if (!LocateFolder(from.parent, tree, idx))  // файл
+        return;
+    const uint32_t src_folder = idx;
+    if (!same_parent) {
+        const uint32_t dst_folder = tree->EnsureFolder(to.parent);
+        if (dst_folder == kNoFolder || !tree->MoveFile(src_folder, from.name, dst_folder, &changes))
+            return;
+        idx = dst_folder;
+    }
+    tree->RenameFile(idx, from.name, to.name, &changes);
+}
+
+void AssetPipeline::ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTree::Changes&) {
+    const PathParts p = SplitPath(path);
+    for (UiTree* t : {&game_tree_, &engine_tree_}) {
+        const uint32_t folder = t->EnsureFolder(p.parent);  // kNoFolder, если путь не из этого дерева
+        if (folder == kNoFolder)
+            continue;
+        t->AddFile(folder, p.name, guid);
+        std::lock_guard lock(db_mutex_);
+        path_to_guid_[PathHash(path)] = guid;
+        return;
+    }
+}
+
+// Синхронизирует path_to_guid_ с тем, что дерево переименовало/удалило.
+void AssetPipeline::ApplyPathChanges(UiTree::Changes& changes) {
+    if (changes.empty())
+        return;
+    {
+        std::lock_guard lock(db_mutex_);
+        for (const UiTree::PathChange& c : changes) {
+            auto it = path_to_guid_.find(c.old_hash);
+            if (it == path_to_guid_.end())
+                continue;
+            const uint64_t guid = it->second;
+            path_to_guid_.erase(it);
+            if (c.new_hash != 0)
+                path_to_guid_[c.new_hash] = guid;
+        }
+    }
+    changes.clear();
 }
 
 }  // namespace tryeditor

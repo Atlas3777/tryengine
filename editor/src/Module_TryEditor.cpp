@@ -6,14 +6,13 @@
 #include "editor/TryEditorContext.hpp"
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
-#include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
 using Uint32Vector = eastl::vector<uint32_t>;
 
-MAKE_TYPE_FACTORY(UiFile, tryeditor::UiFile);
+MAKE_TYPE_FACTORY(AssetItem, tryeditor::UiFile);
 MAKE_TYPE_FACTORY(UiFolder, tryeditor::UiFolder);
 
 MAKE_TYPE_FACTORY(UiFolderVector, UiFolderVector);
@@ -104,10 +103,10 @@ void* GetGameCameraViewImage(das::Context* ctx) {
 using namespace das;
 
 struct UiFileAnnotation : ManagedStructureAnnotation<tryeditor::UiFile, false> {
-    UiFileAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("UiFile", ml) {
+    UiFileAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("AssetItem", ml) {
         addField<DAS_BIND_MANAGED_FIELD(guid)>("guid", "guid");
-        addProperty<DAS_BIND_MANAGED_PROP(GetName)>("name", "GetName");
-        addProperty<DAS_BIND_MANAGED_PROP(GetPath)>("path", "GetPath");
+        addField<DAS_BIND_MANAGED_FIELD(name)>("name", "name");
+        addField<DAS_BIND_MANAGED_FIELD(path)>("path", "path");
     }
 };
 
@@ -115,8 +114,8 @@ struct UiFolderAnnotation : ManagedStructureAnnotation<tryeditor::UiFolder, fals
     UiFolderAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("UiFolder", ml) {
         addField<DAS_BIND_MANAGED_FIELD(subfolders)>("subfolders", "subfolders");
         addField<DAS_BIND_MANAGED_FIELD(files)>("files", "files");
-        addProperty<DAS_BIND_MANAGED_PROP(GetName)>("name", "GetName");
-        addProperty<DAS_BIND_MANAGED_PROP(GetPath)>("path", "GetPath");
+        addField<DAS_BIND_MANAGED_FIELD(name)>("name", "name");
+        addField<DAS_BIND_MANAGED_FIELD(path)>("path", "path");
     }
 };
 
