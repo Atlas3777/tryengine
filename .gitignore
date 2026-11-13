@@ -40,3 +40,12 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 modules/dasImgui
+
+# Генерируемые артефакты daslang: перезаписываются любым прогоном компилятора/сборкой
+*.das_module.manifest
+*.shared_module
+
+# Агентский пайплайн
+.dsh/bundles/
+tools/agent/.tmp/
+mcp_server.log
