@@ -1,0 +1,17 @@
+{
+  "name": "@local/tryengine-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Connects the daslang MCP server to this checkout so agents can lint and compile .das files, check C++ translation units and search the ASTs.",
+  "type": "module",
+  "exports": {
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["cordis.patch.yml", "locale/*.json", "docs", "icon.svg"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

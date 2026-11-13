@@ -1,0 +1,10 @@
+# ast-grep configuration used by the daslang MCP server (cwd = repository root).
+# Pinned to the daslang SDK installed at /opt/daslang: the tree-sitter grammar is
+# version-sensitive, and ast-grep 0.50+ ignores the custom `daslang` language.
+ruleDirs: []
+languageGlobs:
+  cpp: ["*.h", "*.hpp"]
+customLanguages:
+  daslang:
+    libraryPath: /opt/daslang/tree-sitter-daslang/daslang.so
+    extensions: [das]

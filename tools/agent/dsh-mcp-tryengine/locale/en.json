@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "daslang compiler tools for tryengine",
+    "description": "Connects the daslang MCP server so the agent can lint .das files, compile them with the engine's binding modules, syntax-check C++ translation units against the CMake compile database, and search daslang/C++ code by AST. The compiler-backed compile_check and list_* tools cannot simulate engine scripts (the LLVM emitter is not loaded in the server), so compile .das through tools/agent/das-check.sh instead. Turn the bundle off to remove all of its tools.",
+    "detail": "docs/DETAIL.md"
+  }
+}

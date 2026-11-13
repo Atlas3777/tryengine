@@ -1,0 +1,15 @@
+- insert:
+    - id: tryengine-daslang-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: tryengine-daslang
+        transport: stdio
+        command: /opt/daslang/bin/daslang
+        args: ['/opt/daslang/utils/mcp/main.das']
+        cwd: /home/artem/tryengine
+        env:
+          PATH: /home/artem/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+          HOME: /home/artem
+        toolCallTimeoutMs: 180000
+        startupTimeoutMs: 30000
+        failOnStartupError: false
