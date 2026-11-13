@@ -28,15 +28,29 @@
 > Убедитесь, что в системе установлен **glslangValidator** (входит в Vulkan SDK). Без него компиляция шейдеров невозможна.
 
 ### Сборка
-```bash
-# Сборка и запуск из корня проетка (рекомендуется Ninja)
-cmake -B build -G Ninja
-cmake --build build
+Каталоги сборки — `cmake-build-debug` (Debug) и `cmake-build-release` (Release); их же
+использует CLion. Оба делят кеш исходников `third_party_src/` и `ccache`.
 
-# Запуск редактора
-./build/editor/editor
+```bash
+# Сборка приложений (Debug по умолчанию)
+cmake --build cmake-build-debug --target editor game_client -j "$(nproc)"
+
+# Модули-биндинги daslang (подсветка кастомных типов в редакторе и работа CLI) — только Release
+cmake --build cmake-build-release --target tryengine_shared tryeditor_shared -j "$(nproc)"
+
+# Запуск — строго из корня репозитория
+./cmake-build-debug/bin/editor
+./cmake-build-debug/bin/game_client
 ```
+
+`script_pak` собирается в редакторе клавишей `Z` (тест-компиляция — `X`): `game_client`
+читает готовый пак и `.das` не компилирует.
+
 *Разработка ведется на Fedora Linux. Кроссплатформенность: заложена через SDL3, требует тестов на других OS.*
+
+## Для агентов
+Правила, команды и границы — в [AGENTS.md](AGENTS.md). Скрипты — `tools/agent/`
+(`verify.sh`, `das-check.sh`, `build.sh`, `doctor.sh`), скиллы — `.dsh/skills/`.
 
 ## Roadmap
 * [ ] Расширение пайплайна SDL GPU (PBR, тени).
