@@ -170,6 +170,9 @@ GUI. `tools/agent/editor-check.sh` запускает редактор с тай
   поищи по репозиторию.
 - Подробные соглашения: `.dsh/skills/tryengine-cpp/SKILL.md` и
   `.dsh/skills/tryengine-daslang/SKILL.md`.
+- Неочевидные детали конкретного каталога — в его `AGENTS.md`
+  (`engine_source/graphics/AGENTS.md`, `editor/AGENTS.md`). После задачи с подтверждением
+  дописывай туда только долговечные выводы, а не пересказ диффа.
 
 ## 8. Границы
 

@@ -1,0 +1,58 @@
+# engine_source/graphics — заметки для агентов
+
+Дополнение к корневому `AGENTS.md`. Здесь только неочевидные вещи этого каталога.
+
+## Математика — типы и операции daScript
+
+Рендер-структуры используют родные типы daScript: `das::float3`, `das::float4`,
+`das::float4x4` (`<daScript/misc/vectypes.h>`, `<daScript/simulate/runtime_matrices.h>`).
+Сторонние math-библиотеки в этот слой не добавляем: типы должны совпадать по памяти
+с тем, что приходит из скриптов.
+
+| тип | size | align |
+| --- | --- | --- |
+| `das::float3` | 12 | 4 |
+| `das::float4` | 16 | 4 |
+| `das::float4x4` | 64 | 4 |
+
+Готовые операции берём из daScript, а не пишем свои:
+
+- `das::float4x4_inverse`, `das::float4x4_transpose`, `das::float4x4_compose`,
+  `das::quat_from_float3x3`, `das::quat_from_float4x4` — объявления в
+  `<daScript/simulate/aot_builtin_matrix.h>`;
+- линкуются через `engine::core` → `DAS::libDaScriptDyn`, отдельная зависимость не нужна;
+- семантика совпадает со скриптовыми `inverse()`, `transpose()`, `compose()`.
+
+Матрицы — row-vector: трансляция лежит в `m[3]`, `compose(pos, quat, scale)` кладёт её туда
+же. Шейдеры ожидают тот же порядок, не переставляй строки и столбцы.
+
+## Выравнивание — главная ловушка
+
+У `das::float4x4` `alignof == 4`, а не 16. Поэтому:
+
+- структуры, которые уходят в GPU, помечай `alignas(16)` явно (`GPUObjectData`,
+  `CameraGPU`, `PointLightGPU`, `FragmentDataGPU`);
+- зеркала daslang-структур с `[cpp_layout]` проверяй `static_assert` по размеру: без
+  явного `_pad` размер может не совпасть из-за хвостового выравнивания
+  (пример — `DaslangDrawCall` = 96 байт);
+- размер на стороне скрипта можно проверить так: `var x : Type;` и
+  `print("{typeinfo sizeof(x)}")`.
+
+## Мост со скриптами
+
+- `engine_source/daslang/Render.das` описывает `[cpp_layout] struct DrawCall` и
+  `struct CameraC`. C++-зеркала: `DaslangDrawCall` в `OpaquePass.cpp` и `CameraData`
+  в `RenderCommon.hpp` (`CameraC` = 140 байт). Меняешь поля в `.das` — обнови зеркало
+  и `static_assert`.
+- `get_render_obj` и `get_lights` возвращают `das::Array*`; элементы читаются приведением
+  указателя, поэтому важна раскладка, а не имена полей.
+- `GetEditorCamera`/`GetGameCamera` возвращают указатель на `CameraC` (view, proj, position);
+  C++ копирует его в `CameraData`.
+- `normalMatrix` считается в `OpaquePass` как `transpose(inverse(model))` от daScript-функций.
+  Если переносишь расчёт в скрипт, формула должна остаться той же.
+
+## Логи
+
+Для `das::float3`/`das::float4`/`das::float4x4` нет `std::formatter`, поэтому
+`LogInfo("{}", vec)` не соберётся. Разворачивай вектор в компоненты
+(`v.x, v.y, v.z`) либо добавь форматтер осознанно.
