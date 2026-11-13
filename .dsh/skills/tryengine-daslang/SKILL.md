@@ -1,6 +1,6 @@
 ---
 name: tryengine-daslang
-description: Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE, .das_module, project.das_project, [export]-точки входа, DECS, как добавить биндинг и проверить его; какие MCP-инструменты работают.
+description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE, .das_module, project.das_project, [export]-точки входа, DECS, как добавить биндинг и проверить его; какие MCP-инструменты работают.'
 ---
 
 # tryengine: C++ ↔ daslang

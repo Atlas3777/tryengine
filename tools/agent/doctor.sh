@@ -81,7 +81,8 @@ done
 
 log "==> search tooling"
 if have sg; then
-    sg_version="$( { sg --version 2>&1 || true; } | head -1)"
+    # `sg` prints a deprecation banner on stderr; the version line is the first stdout line.
+    sg_version="$(sg --version 2>/dev/null | head -1 || true)"
     case $sg_version in
         *ast-grep*) ok "ast-grep: $sg_version ($(command -v sg))" ;;
         *) warn "sg is not ast-grep (${sg_version:-no output}); install ast-grep 0.45.3 for MCP parse-aware tools" ;;

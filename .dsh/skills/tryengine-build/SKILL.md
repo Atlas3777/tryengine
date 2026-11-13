@@ -1,6 +1,6 @@
 ---
 name: tryengine-build
-description: Сборка и проверка tryengine без CLion: каталоги cmake-build-debug/release, правило release для модулей daslang, гейт .das, script_pak, типовые ошибки сборки и компиляции скриптов.
+description: 'Сборка и проверка tryengine без CLion: каталоги cmake-build-debug/release, правило release для модулей daslang, гейт .das, script_pak, типовые ошибки сборки и компиляции скриптов.'
 ---
 
 # tryengine: сборка и проверка

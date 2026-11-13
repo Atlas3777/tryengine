@@ -1,6 +1,6 @@
 ---
 name: tryengine-cpp
-description: Правила C++ в tryengine: слои и раскладка файлов, Engine/системы, Result/Error/Log, EASTL без исключений и RTTI, async-задачи, ресурсы и pak, рендер-граф, стиль и проверка.
+description: 'Правила C++ в tryengine: слои и раскладка файлов, Engine/системы, Result/Error/Log, EASTL без исключений и RTTI, async-задачи, ресурсы и pak, рендер-граф, стиль и проверка.'
 ---
 
 # tryengine: C++
