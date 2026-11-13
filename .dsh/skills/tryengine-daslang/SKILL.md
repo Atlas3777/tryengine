@@ -1,6 +1,6 @@
 ---
 name: tryengine-daslang
-description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE, .das_module, project.das_project, [export]-точки входа, DECS, как добавить биндинг и проверить его; какие MCP-инструменты работают.'
+description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE, .das_module, project.das_project, [export]-точки входа, DECS как ECS, как добавить биндинг и проверить его; какие MCP-инструменты работают.'
 ---
 
 # tryengine: C++ ↔ daslang
@@ -12,6 +12,8 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 
 1. C++-модуль daScript (`Module_Renderer`, `Module_Resources`, `Module_Input`,
    `Module_AsyncFileManager`, `Module_TryEditor`) регистрирует handled-типы и функции.
+   Первые четыре объявлены в одном файле — `engine_source/graphics/src/Module_Renderer.cpp`;
+   `Module_TryEditor` — в `editor/src/Module_TryEditor.cpp`.
 2. Хост (редактор/игра) в `ScriptSystemConfig.register_modules` делает
    `PULL_MODULE(...)` — статически слинкованные модули.
 3. `daslang` CLI и подсветка в редакторе берут те же модули из `modules/<имя>/*.shared_module`
@@ -33,7 +35,7 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 | --- | --- |
 | `engine_source/daslang/*.das` | API движка: `Engine`, `Render`, `Input`, `Scene`, `Types`, `EcsMacro`, `Serializable`, `QuadTree`, `ConfigFormat` |
 | `editor/daslang/*.das` | редактор: `EntryPoint`, `Editor`, `EditorUI`, `Hierarchy`, `Inspector`, `SceneViewPort`, `AssetBrowser`, `BuildManager`, `EditorActions` |
-| `game/scripts/Game.das` | игра: `GameStart`, `GameUpdate`, `EngineStart`-хуки |
+| `game/scripts/Game.das` | игра: `GameStart`, `GameUpdate`, спавн сущностей |
 | `modules/tryengine/.das_module` | дескриптор нативных модулей движка для CLI/редактора |
 | `modules/tryeditor/.das_module` | дескриптор `Module_TryEditor` |
 | `project.das_project` | резолвер модулей (`module_get`) и абсолютный `DAS_PAK_ROOT` |
@@ -76,9 +78,23 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 
 ## DECS (ECS в скриптах)
 
+DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT не используется и добавлять его
+не нужно: все сущности, компоненты и запросы живут в daslang.
+
 `engine_source/daslang/EcsMacro.das` даёт макросы `create_entity`, `update_entity`,
-`apply_decs_template`, `EcsRegister`. Типы компонентов приходят из `tryengine/Types`.
-Живой пример — `game/scripts/Game.das` (`GameStart`, `GameUpdate`).
+`apply_decs_template`, `EcsRegister`, а также reader-макрос `%ecs~("Имя", type<T>)%%` для
+объявления одиночного компонента. Типы компонентов приходят из `tryengine/Types`:
+
+- `Types.das` — `[decs_template, EcsTemplate]`-структуры `Transform`, `Camera`,
+  `PointLight`, `Relationship` и объявления `HP`/`Mana`;
+- `game/scripts/Game.das` — живой пример `create_entity`, `query`, `commit`.
+
+Правила:
+
+- Создание/изменение — внутри `create_entity`/`update_entity` с последующим `commit()`.
+- Чтение — через `query()$(...)`; не тащи C++-реестр сущностей, его нет.
+- Новая структура-компонент — с `[decs_template, EcsTemplate]`, чтобы регистрация и
+  удаление сгенерировались автоматически.
 
 ## Стиль `.das`
 

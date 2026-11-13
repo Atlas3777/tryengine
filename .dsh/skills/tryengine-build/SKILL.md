@@ -1,6 +1,6 @@
 ---
 name: tryengine-build
-description: 'Сборка и проверка tryengine без CLion: каталоги cmake-build-debug/release, правило release для модулей daslang, гейт .das, script_pak, типовые ошибки сборки и компиляции скриптов.'
+description: 'Сборка и проверка tryengine: каталоги build-debug/build-release, правило Release для модулей daslang, гейт .das, script_pak, типовые ошибки сборки и компиляции скриптов.'
 ---
 
 # tryengine: сборка и проверка
@@ -11,15 +11,17 @@ description: 'Сборка и проверка tryengine без CLion: ката�
 
 | Каталог | Конфигурация | Кто использует |
 | --- | --- | --- |
-| `cmake-build-debug` | Debug | CLion (профиль Debug), агенты по умолчанию |
-| `cmake-build-release` | Release | CLion (профиль Release), модули-биндинги |
+| `build-debug` | Debug | (профиль Debug), агенты по умолчанию |
+| `build-release` | Release | (профиль Release), модули-биндинги |
 
-Оба делят кеш исходников `third_party_src/` (CPM). Третьего каталога нет, создавать
+Оба делят кеш исходников `3rdparty/` (CPM). Третьего каталога нет, создавать
 нельзя. Бинарники лежат в `<каталог>/bin/editor` и `<каталог>/bin/game_client`.
 
+Пути заданы в `tools/agent/env.sh` (`DEBUG_DIR`, `RELEASE_DIR`); при необходимости их
+можно переопределить через `TRY_DEBUG_DIR` и `TRY_RELEASE_DIR`.
+
 Агентские сборки идут через `tools/agent/build.sh` (обёртка над `cmake --build`). Она
-использует **свой** каталог ccache — `.cache/ccache` — потому что песочница агента не
-пишет в `~/.cache/ccache` CLion. Первая сборка с пустым кешем компилирует всё; дальше
+использует **свой** каталог ccache — `.cache/ccache`. Первая сборка с пустым кешем компилирует всё; дальше
 инкрементально. Переопределение: `TRY_CCACHE_DIR`, `TRY_JOBS`.
 
 ## Команды
@@ -32,10 +34,7 @@ tools/agent/build.sh modules                 # tryengine_shared + tryeditor_shar
 tools/agent/build.sh all                     # editor + game_client
 ```
 
-Вручную — только так: `cmake --build cmake-build-debug --target editor -j 8`.
-**Никогда** `ninja -C cmake-build-*` из PATH: CLion пишет туда лог своей версией ninja, а
-другая версия перезапускает лог (`build log version is too old; starting over`) и человек
-получает полную пересборку. `cmake --build` берёт ninja из `CMakeCache.txt`.
+Вручную — только так: `cmake --build build-debug --target editor -j 8`.
 
 ## Модули-биндинги: только Release
 
@@ -45,10 +44,11 @@ tools/agent/build.sh all                     # editor + game_client
 
 Оба профиля пишут **один и тот же файл** `modules/<имя>/<имя>.shared_module`, поэтому
 Debug-сборка затирает Release-модуль. Отсюда правило: модули собираются только из
-`cmake-build-release`.
+`build-release`.
 
 Пересобирай модули после правок в:
-- `engine_source/**/Module_*.cpp`, `editor/src/Module_*.cpp`;
+- `engine_source/graphics/src/Module_Renderer.cpp` (регистрирует `tryRenderer`,
+  `tryResources`, `tryInput`, `tryAsyncFile`), `editor/src/Module_TryEditor.cpp`;
 - `engine_source/core/include/engine/core/GameScriptSetup.hpp`,
   `editor/include/editor/EditorScriptSetup.hpp` (`DECLARE_MODULE`/`PULL_MODULE`);
 - любом коде, который регистрирует типы/функции для `.das` (`addExtern`, `MAKE_TYPE_FACTORY`).
@@ -117,10 +117,10 @@ daslang -dry-run -no-lint \
 | `ccache`/сборка не видит изменений | правки в модулях, а не в приложении | `tools/agent/build.sh modules` (Release) |
 | `SKIP ... missing prerequisite` в lint | CLI-линтер не видит нативные модули | линтовать через MCP |
 | `compile DB не знает файл` / `SKIP` в синтакс-чеке | новый файл, каталог ещё не переконфигурирован | собрать таргет, затем повторить |
-| редактор не стартует, `Failed to create window` | нет дисплея/драйвера | CLI-гейт остаётся единственной проверкой |
+| редактор не стартует, `Failed to create window` | нет дисплея/драйвера Vulkan | CLI-гейт остаётся единственной проверкой |
 
 ## Границы
 
-Не трогай `third_party_src/`, `cmake-build-*`, `.cache/ccache`, `.idea/`, `script_pak`,
-`content/`, `game/artifacts`. Не пересобирай весь проект «на всякий случай»: точечный
-таргет дешевле. Не меняй `CMakeLists.txt` без явной задачи.
+Не трогай `3rdparty/`, `build-debug/`, `build-release/`, `.cache/ccache`, `.idea/`,
+`script_pak`, `content/`, `game/artifacts`. Не пересобирай весь проект «на всякий случай»:
+точечный таргет дешевле. Не меняй `CMakeLists.txt` без явной задачи.

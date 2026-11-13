@@ -1,6 +1,6 @@
 ---
 name: tryengine-cpp
-description: 'Правила C++ в tryengine: слои и раскладка файлов, Engine/системы, Result/Error/Log, EASTL без исключений и RTTI, async-задачи, ресурсы и pak, рендер-граф, стиль и проверка.'
+description: 'Правила C++ в tryengine: слои и раскладка файлов, Engine/системы, Result/Error/Log, EASTL без исключений и RTTI, async-задачи, ресурсы и pak, рендер-граф Vulkan, стиль и проверка.'
 ---
 
 # tryengine: C++
@@ -10,22 +10,26 @@ description: 'Правила C++ в tryengine: слои и раскладка ф
 ## Слои и зависимости
 
 ```
-engine_source/core        Engine, Result/Error, Log, ScriptSystem, ScriptPak   (без Vulkan/SDL GPU/ImGui)
-engine_source/async       Task<T>, ThreadPool, pollable handles
-engine_source/resources   PakManager, ResourceManager, loaders, artifacts
-engine_source/graphics    VulkanDevice, RenderGraph, passes, loaders, SDL GPU
-engine_source/platform    окно, SDL events, InputService
-editor                    редактор, ImGui, импорт ассетов, пайплайн
+engine_source/core        Engine, Result/Error, Log, ScriptSystem, ScriptPak   (без Vulkan/SDL/ImGui)
+engine_source/async       Task<T>, ThreadPool, MainThread, pollable-хендлы
+engine_source/resources   PakManager, ResourceManager, AsyncFileManager (io_uring), артефакты
+engine_source/graphics    VulkanDevice, VulkanSwapchain, RenderGraph, проходы, загрузчики (Vulkan)
+engine_source/platform    окно SDL3, события, InputService
+editor                    редактор, ImGui (Vulkan backend), импорт ассетов, пайплайн
 game_client               игровое приложение
 ```
 
 Правила:
 
-- `engine_core` не должен тянуть Vulkan, SDL GPU или ImGui — headless-сервер линкует его.
+- `engine_core` не должен тянуть Vulkan, SDL или ImGui — headless-сервер линкует его.
+- SDL3 используется только для окна, ввода и Vulkan-поверхности; SDL GPU и SDL Renderer
+  в проекте выключены (`SDL_GPU OFF`, `SDL_RENDER OFF`).
 - Новая зависимость — только через `CPMAddPackage` в `CMakeLists.txt` соответствующей
   библиотеки; это изменение уровня сборки, согласуй его.
 - Кросс-слойные знания — через интерфейсы в `core`/`resources`, а не включением заголовков
   «сверху вниз».
+- ECS в C++ нет: сущности и компоненты живут в daslang/DECS. `SlotMap` и `TypeRegistry` в
+  `core` — утилиты, а не реестр сущностей; не заводи второй ECS на C++.
 
 ## Раскладка и имена
 
@@ -75,6 +79,8 @@ MySystem* maybe = engine.TryGet<MySystem>();
 - `Task<T>` + корутины; запуск `RunAndForget(ThreadPool(), Task)` или
   `RunPollable(ThreadPool(), Task)` (даёт `IsReady()`/`GetResult()` для опроса).
 - Переключение на главный поток — `co_await ExecutorSwitch{MainThread()};`.
+- Файловые операции — через `AsyncFileManager` (io_uring), не блокируй главный поток
+  синхронным чтением.
 - Кадровый цикл вручную «крутит» `fm.Pull()`, `MainThread().Pull()`, `fm.Submit()` — не
   блокируй главный поток ожиданием задач.
 
@@ -86,13 +92,18 @@ MySystem* maybe = engine.TryGet<MySystem>();
 
 ## Рендер
 
-- SDL GPU поверх Vulkan; `RenderGraph` — узел = pass + scope. Новый проход регистрируется в
-  графе и получает ресурсы через него, а не напрямую.
-- Шейдеры компилируются на этапе сборки (`glslangValidator`, SPIR-V `*.spv` не коммитятся).
+- Vulkan 1.4 напрямую: `VulkanDevice` (volk + vk-bootstrap + VMA), `VulkanSwapchain`,
+  dynamic rendering. SDL GPU не используется.
+- `RenderGraph` — узел = pass + scope. Новый проход регистрируется в графе и получает
+  ресурсы через него, а не напрямую.
+- ImGui рендерится через `imgui_impl_vulkan` (docking branch).
+- Шейдеры пишутся на Slang и компилируются в SPIR-V при импорте ассета; бинарники шейдеров
+  пакуются в артефакты, `*.spv` в git не коммитятся.
 
 ## Редактор
 
-- `EditorApp` создаёт device, системы, `ScriptSystem`, `ScriptBuildSystem`, `EditorRender`.
+- `EditorApp` создаёт `VulkanDevice`, `VulkanSwapchain`, `FrameSync`, системы,
+  `ScriptSystem`, `ScriptBuildSystem`, `EditorRender`.
 - ImGui-панели — в `editor/src/render`, ui-логика в `editor/daslang`; состояние окна в
   `editor/imgui.ini` (путь относительный, поэтому запуск только из корня репо).
 - `Z` собирает `script_pak`, `X` — тест-компиляция (`EditorApp::Run`).
@@ -123,4 +134,4 @@ MySystem* maybe = engine.TryGet<MySystem>();
 - Не добавляй `std::mutex`/`std::thread` там, где уже есть `ThreadPool`/`Task`.
 - Не храни указатели на системы между кадрами, если система может быть уничтожена.
 - Не меняй порядок полей в `ScriptSystemConfig` (designated initializers).
-- Не трогай `third_party_src/` и `cmake-build-*`; не пересобирай весь проект без нужды.
+- Не трогай `third_party_src/` и `build-*`; не пересобирай весь проект без нужды.

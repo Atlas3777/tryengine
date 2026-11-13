@@ -6,8 +6,8 @@ set -euo pipefail
 AGENT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$AGENT_DIR/../.." && pwd)"
 
-DEBUG_DIR="${TRY_DEBUG_DIR:-$ROOT/cmake-build-debug}"
-RELEASE_DIR="${TRY_RELEASE_DIR:-$ROOT/cmake-build-release}"
+DEBUG_DIR="${TRY_DEBUG_DIR:-$ROOT/build-debug}"
+RELEASE_DIR="${TRY_RELEASE_DIR:-$ROOT/build-release}"
 default_jobs="$(nproc 2>/dev/null || echo 4)"
 (( default_jobs > 8 )) && default_jobs=8
 JOBS="${TRY_JOBS:-$default_jobs}"

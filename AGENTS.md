@@ -1,94 +1,98 @@
 # AGENTS.md
 
-Rules for AI agents working in this repository. This file is loaded automatically at the
-start of every session whose working directory is inside this checkout. Keep it short; the
-task-specific depth lives in `.dsh/skills/` and is loaded on demand by the `skill` tool.
+Правила для AI-агентов, работающих в этом репозитории. Файл загружается автоматически в
+начале каждой сессии, если рабочий каталог внутри чекаута. Держи его коротким: подробности
+по задачам лежат в `.dsh/skills/` и подгружаются по запросу через инструмент `skill`.
 
-## 1. What this is
+## 1. Что это
 
-`tryengine` is a small 3D engine on C++23: ECS via EnTT, rendering via SDL3 GPU (Vulkan
-back end), editor UI via ImGui docking, gameplay and editor logic in daslang 0.6.5. Assets
-are preprocessed into custom binary artifacts. Development platform is Fedora Linux; the
-build is CMake + Ninja with GCC 15, `ccache` and `mold`.
+`tryengine` — небольшой 3D-движок на C++23. Рендер — Vulkan 1.4 напрямую (volk,
+vk-bootstrap, VMA, dynamic rendering), окно и ввод — SDL3, интерфейс
+редактора — ImGui с Vulkan backend. ECS — DECS внутри daslang: сущности и компоненты живут
+в скриптах, EnTT в проекте нет. Игровая и редакторская логика написана на daslang 0.6.5.
+Ассеты препроцессируются в собственные бинарные артефакты. Платформа разработки — Fedora
+Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 
-## 2. Layout
+## 2. Раскладка
 
-| Path | Contents |
+| Путь | Содержимое |
 | --- | --- |
-| `engine_source/core` | `Engine` (system registry), `Result`, logging, script system, script pak |
-| `engine_source/graphics` | SDL GPU device, render graph, passes, loaders, `Module_Renderer` binding |
-| `engine_source/platform` | SDL window/input, `Module_Input` binding |
-| `engine_source/resources` | pak/artifact loading, resource manager, `Module_Resources` binding |
-| `engine_source/async` | coroutine tasks, thread pool, `Module_AsyncFileManager` binding |
-| `engine_source/daslang` | daslang sources of the engine API (`require tryengine/...`) |
-| `editor/src`, `editor/include` | editor application, ImGui panels, asset pipeline, importers |
-| `editor/daslang` | editor scripting (`require tryeditor/...`), entry point `EntryPoint.das` |
-| `game_client` | runtime application (loads `./script_pak`, does not compile `.das`) |
-| `game_server` | headless placeholder; not added to the build yet |
-| `game/scripts`, `game/assets`, `game/artifacts` | game logic and content |
-| `engine_content` | engine-shipped content and its artifacts |
-| `modules/` | generated daslang module descriptors and shared modules |
-| `cmake/`, `third_party_src/` | CPM package cache and CMake glue (never edit the cache) |
+| `engine_source/core` | `Engine` (реестр систем), `Result`/`Error`, логи, `ScriptSystem`, script pak, `SlotMap`/`TypeRegistry` |
+| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; здесь же регистрируются нативные модули `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile` (`src/Module_Renderer.cpp`) |
+| `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры |
+| `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики |
+| `engine_source/async` | корутины `Task<T>`, пул потоков и главный исполнитель, pollable-хендлы |
+| `engine_source/daslang` | исходники API движка для `.das` (`require tryengine/...`) |
+| `editor/src`, `editor/include` | приложение редактора, панели ImGui, импортеры (glTF, Slang, текстуры), asset pipeline, `Module_TryEditor` |
+| `editor/daslang` | редакторские скрипты (`require tryeditor/...`), точка входа `EntryPoint.das` |
+| `game_client` | рантайм-приложение (читает `./script_pak`, `.das` не компилирует) |
+| `game_server` | headless-заглушка; в сборку пока не добавлена |
+| `game/scripts`, `game/assets`, `game/artifacts` | игровая логика и контент |
+| `engine_content` | поставляемый с движком контент и его артефакты |
+| `modules/` | сгенерированные дескрипторы daslang-модулей и shared-модули |
+| `build-debug`, `build-release` | каталоги сборки CMake (генерируются) |
+| `tools/agent/`, `.dsh/skills/` | скрипты и скиллы для агентов |
+| `cmake/`, `3rdparty/` | кеш пакетов CPM и CMake-обвязка (кеш не редактировать) |
 
-## 3. Build
+## 3. Сборка
 
-Two configurations only: `cmake-build-debug` (Debug) and `cmake-build-release` (Release).
-They share the CPM source cache in `third_party_src/` and the `ccache` cache.
-
-```bash
-tools/agent/build.sh editor                 # Debug editor (default)
-tools/agent/build.sh game_client --release  # Release game client
-tools/agent/build.sh modules                # daslang binding modules, always Release
-tools/agent/build.sh all                    # editor + game_client in one config
-```
-
-Manual equivalent of one target:
+Только две конфигурации: `build-debug` (Debug) и `build-release` (Release). Они делят кеш
+исходников CPM в `3rdparty/` и кеш `ccache`.
 
 ```bash
-cmake --build cmake-build-debug --target editor -j "$(nproc)"
+tools/agent/build.sh editor                 # Debug-редактор (по умолчанию)
+tools/agent/build.sh game_client --release  # Release-клиент
+tools/agent/build.sh modules                # модули-биндинги daslang, всегда Release
+tools/agent/build.sh all                    # editor + game_client в одной конфигурации
 ```
 
-Hard rules:
-
-- Use `cmake --build <dir> --target <target>`. **Never** run `ninja -C cmake-build-*` from
-  `PATH`: CLion configures those directories with its own bundled ninja, and a different
-  ninja version restarts the build log (`build log version is too old; starting over`),
-  which forces rebuilds for the human.
-- Do not create a third configuration, and do not delete, move or reconfigure the two that
-  exist. Do not pass `-D` options to an existing build directory unless the task is about
-  the build itself.
-- Never edit `third_party_src/` (shared CPM source cache) or anything under `cmake-build-*`.
-- Binaries are `<build-dir>/bin/editor` and `<build-dir>/bin/game_client`. Run them from the
-  repository root: `project.das_project`, `script_pak`, `content/`, `game/artifacts` are
-  opened by relative path. Both are GUI applications and need a display; there is no
-  headless mode.
-- Agent builds use a workspace-local ccache directory (`.cache/ccache`) because the sandbox
-  cannot write to CLion's `~/.cache/ccache`. The first build with an empty cache compiles
-  everything; override the location with `TRY_CCACHE_DIR` and the parallelism with
-  `TRY_JOBS` (default: `nproc`, capped at 8).
-
-### daslang binding modules (`tryengine_shared`, `tryeditor_shared`)
-
-- Build them in **Release only**. Both configurations write the same output file
-  `modules/<name>/<name>.shared_module`; a Debug build overwrites the Release module, and
-  then the editor and the daslang CLI load a debug binary.
-- Rebuild after changing binding code: `engine_source/**/Module_*.cpp`,
-  `editor/src/Module_*.cpp`, `DECLARE_MODULE`/`PULL_MODULE` lists, or any `addExtern` /
-  type registration exposed to `.das`.
-- The shared modules and their `.das_module.manifest` are generated and not tracked. After a
-  fresh clone run `tools/agent/build.sh modules` once.
-
-## 4. Verifying a change
-
-One entry point:
+Вручную один таргет:
 
 ```bash
-tools/agent/verify.sh            # format + syntax + daslang gate + build of affected targets
-tools/agent/verify.sh --fast     # skip builds
-tools/agent/verify.sh --tidy     # also run clang-tidy on changed translation units
+cmake --build build-debug --target editor -j "$(nproc)"
 ```
 
-### The `.das` gate
+Жёсткие правила:
+
+- Используй `cmake --build <каталог> --target <таргет>`. .
+- Не создавай третью конфигурацию и не удаляй, не переноси и не перенастраивай две
+  существующие. Не передавай `-D` в существующий каталог сборки, если задача не про саму
+  сборку.
+- Никогда не редактируй `3rdparty/` (общий кеш исходников CPM) и ничего внутри
+  `build-*`.
+- Бинарники лежат в `<каталог>/bin/editor` и `<каталог>/bin/game_client`. Запускать их
+  нужно из корня репозитория: `project.das_project`, `script_pak`, `content/`,
+  `game/artifacts` открываются по относительным путям. Оба приложения GUI и требуют
+  дисплей; headless-режима нет.
+- Агентские сборки используют локальный для workspace кеш `ccache` (`.cache/ccache`),
+  потому что песочница не может писать в `~/.cache/ccache`. Первая сборка с пустым
+  кешем компилирует всё; расположение меняется через `TRY_CCACHE_DIR`, параллелизм — через
+  `TRY_JOBS` (по умолчанию `nproc`, но не больше 8).
+
+### Модули-биндинги daslang (`tryengine_shared`, `tryeditor_shared`)
+
+- Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
+  `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
+  CLI начинают грузить debug-бинарник.
+- Пересобирай модули после правок кода биндингов:
+  `engine_source/graphics/src/Module_Renderer.cpp`, `editor/src/Module_TryEditor.cpp`,
+  `DECLARE_MODULE`/`PULL_MODULE` в `engine_source/core/include/engine/core/GameScriptSetup.hpp`
+  и `editor/include/editor/EditorScriptSetup.hpp`, а также любого `addExtern` /
+  регистрации типов, видимых из `.das`.
+- Shared-модули и их `.das_module.manifest` генерируются и не хранятся в git. После
+  свежего клона один раз запусти `tools/agent/build.sh modules`.
+
+## 4. Проверка изменений
+
+Единая точка входа:
+
+```bash
+tools/agent/verify.sh            # формат + синтаксис + гейт .das + сборка затронутых таргетов
+tools/agent/verify.sh --fast     # без сборки
+tools/agent/verify.sh --tidy     # ещё и clang-tidy по изменённым translation unit
+```
+
+### Гейт `.das`
 
 ```bash
 daslang -dry-run -no-lint \
@@ -96,104 +100,110 @@ daslang -dry-run -no-lint \
   -load_module "$PWD/modules/tryengine" \
   -load_module "$PWD/modules/tryeditor" \
   -load_module /opt/daslang/modules/dasLLVM \
-  <file.das>
+  <файл.das>
 ```
 
-Why every flag matters:
+Почему важен каждый флаг:
 
-- `-project project.das_project` resolves `tryengine/`, `tryeditor/`, `trygame/`, `imgui/`,
-  `llvm/`, `daslib/` module paths; without it the project does not compile at all.
-- `-load_module` is still required: native modules (`tryInput`, `tryRenderer`, ...) are
-  registered by `modules/*/.das_module`, and `-project` alone yields
+- `-project project.das_project` резолвит пути модулей `tryengine/`, `tryeditor/`,
+  `trygame/`, `imgui/`, `llvm/`, `daslib/`; без него проект не компилируется вообще.
+- `-load_module` всё равно нужен: нативные модули (`tryInput`, `tryRenderer`, ...)
+  регистрируются дескрипторами `modules/*/.das_module`, и без них `-project` даёт
   `error[20605] missing prerequisite 'tryInput'`.
-- `/opt/daslang/modules/dasLLVM` is required because `engine_source/daslang/Engine.das`
-  requires `daslib/just_in_time`; without it the simulate step panics with
+- `/opt/daslang/modules/dasLLVM` нужен потому, что `engine_source/daslang/Engine.das`
+  требует `daslib/just_in_time`; без модуля LLVM симуляция падает с
   `LLVM JIT: the emitter module llvm/daslib/llvm_macro did not load`.
-- `-dry-run` compiles and simulates (stricter than `-compile-only`) without running the code.
-- Check the exit code **and** `error[` in the output: daslang can print errors and exit 0.
-- `daslang -tool lint <file>` cannot resolve this project's native modules (it reports
-  `SKIP ... missing prerequisite`) and `-project` breaks the lint tool itself. Lint through
-  the MCP tool, or skip linting.
+- `-dry-run` компилирует и симулирует (строже, чем `-compile-only`), но не выполняет код.
+- Проверяй и код возврата, **и** наличие `error[` в выводе: daslang умеет печатать ошибки
+  и завершаться с кодом 0.
+- `daslang -tool lint <файл>` не видит нативные модули этого проекта (печатает
+  `SKIP ... missing prerequisite`), а `-project` ломает сам инструмент lint. Линтуй через
+  MCP-инструмент или пропускай линт.
 
 ### `script_pak`
 
-`game_client` does not compile scripts: it loads `./script_pak`, which the editor builds on
-`Z` (test-compile on `X`). A `.das` change does not reach the game until the pak is rebuilt
-in the GUI. `tools/agent/editor-check.sh` runs the editor with a timeout and greps its
-console for `error[`; it compiles the same sources as the CLI gate, but needs a display.
+`game_client` не компилирует скрипты: он грузит `./script_pak`, который редактор собирает
+по `Z` (тест-компиляция — `X`). Правка `.das` не попадёт в игру, пока пак не пересобран в
+GUI. `tools/agent/editor-check.sh` запускает редактор с таймаутом и ищет в консоли
+`error[`; он компилирует те же исходники, что и CLI-гейт, но требует дисплей.
 
-## 5. C++ rules
+## 5. Правила C++
 
-- Exceptions and RTTI are disabled (`-fno-rtti -fno-exceptions`). Do not add `throw`, `try`
-  or `dynamic_cast`.
-- Containers and strings come from EASTL (`eastl::vector`, `eastl::string`, ...). `std` is
-  used only where it already is (`std::expected`, `std::unique_ptr`, `std::move`).
-- Errors are values: `tryengine::Result<T>` (`std::expected<T, core::Error>`), `LogError`,
-  `LogInfo`, `TRY_ASSERT`, `TRY_INLINE`, `LogAndMakeError`. Do not add error-code out
-  parameters.
-- Systems: define a class, register it with `engine.RegisterSystem<T>(args...)`, read it
-  back with `engine.Get<T>()`. Members are `snake_case_`, methods and types are
-  `PascalCase`, free functions are `PascalCase`.
-- Headers go to `<lib>/include/engine/<lib>/*.hpp`, sources to `<lib>/src/*.cpp`, includes
-  are spelled `"engine/core/Engine.hpp"`.
-- `engine_core` must not depend on Vulkan, SDL GPU or ImGui: the headless server links it.
-- Style is machine-enforced: `.clang-format` (Google, 120 columns, 4 spaces, left
-  pointers) and `.clang-tidy` (bugprone and performance, readability disabled).
+- Исключения и RTTI отключены (`-fno-rtti -fno-exceptions`). Не добавляй `throw`, `try`
+  и `dynamic_cast`.
+- Контейнеры и строки — из EASTL (`eastl::vector`, `eastl::string`, ...). `std`
+  используется только там, где уже есть (`std::expected`, `std::unique_ptr`, `std::move`).
+- Ошибки — значения: `tryengine::Result<T>` (`std::expected<T, core::Error>`), `LogError`,
+  `LogInfo`, `TRY_ASSERT`, `TRY_INLINE`, `LogAndMakeError`. Не добавляй выходные параметры
+  под коды ошибок.
+- Системы: объяви класс, зарегистрируй через `engine.RegisterSystem<T>(args...)`, доставай
+  через `engine.Get<T>()`. Поля — `snake_case_`, методы и типы — `PascalCase`, свободные
+  функции — `PascalCase`.
+- ECS в C++ нет: сущности и компоненты живут в daslang/DECS. `SlotMap` и `TypeRegistry` в
+  `core` — утилиты, а не реестр сущностей.
+- Заголовки лежат в `<lib>/include/engine/<lib>/*.hpp`, исходники — в `<lib>/src/*.cpp`,
+  include пишется как `"engine/core/Engine.hpp"`.
+- `engine_core` не должен зависеть от Vulkan, SDL и ImGui: headless-сервер линкует его.
+- Стиль принудительный: `.clang-format` (Google, 120 колонок, 4 пробела, указатель слева) и
+  `.clang-tidy` (bugprone и performance, readability отключён).
 
-## 6. daslang rules
+## 6. Правила daslang
 
-- gen2 syntax (braces). New files open with `options gen2`; never write gen1.
-- Module resolution is `project.das_project` -> `module_get`: `tryengine/...` maps to
-  `engine_source/daslang`, `tryeditor/...` to `editor/daslang`, `trygame/...` to
-  `game/scripts`, plus `imgui/`, `llvm/`, `daslib/`, `live/`. `DAS_PAK_ROOT` is absolute.
-- Entry points are `[export] def Name()` invoked by name from C++ through
-  `ScriptSystem::InvokeFunctionFast/Safe`; renaming one silently breaks the C++ side.
-- ECS access in scripts goes through the DECS macros (`create_entity`,
-  `apply_decs_template`), see `engine_source/daslang/EcsMacro.das` and
-  `game/scripts/Game.das`.
-- Formatting: `das-fmt --verify` (or `das-fmt` to rewrite). Lint: MCP `lint`.
+- Синтаксис gen2 (фигурные скобки). Новые файлы начинаются с `options gen2`; gen1 не
+  пишем.
+- Резолвинг модулей — `project.das_project` → `module_get`: `tryengine/...` указывает на
+  `engine_source/daslang`, `tryeditor/...` — на `editor/daslang`, `trygame/...` — на
+  `game/scripts`, плюс `imgui/`, `llvm/`, `daslib/`, `live/`. `DAS_PAK_ROOT` абсолютный.
+- Точки входа — `[export] def Name()`; C++ вызывает их по имени через
+  `ScriptSystem::InvokeFunctionFast/Safe`, поэтому переименование молча ломает C++ сторону.
+- ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
+  `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
+  компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
+- Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 
-## 7. Code style
+## 7. Стиль кода
 
-- Comments are written in Russian in this repository; match the file you edit instead of
-  switching its language.
-- Do not leave commented-out code, debug prints or TODO placeholders.
-- Follow the layer and pattern that already exists; search the repository before inventing a
-  parallel mechanism.
-- Long-form conventions: `.dsh/skills/tryengine-cpp/SKILL.md` and
+- Комментарии в этом репозитории пишутся по-русски; подстраивайся под файл, который
+  правишь, а не переключай его язык.
+- Не оставляй закомментированный код, отладочные принты и TODO-заглушки.
+- Следуй уже существующему слою и паттерну; перед изобретением параллельного механизма
+  поищи по репозиторию.
+- Подробные соглашения: `.dsh/skills/tryengine-cpp/SKILL.md` и
   `.dsh/skills/tryengine-daslang/SKILL.md`.
 
-## 8. Boundaries
+## 8. Границы
 
-Never modify or commit: `third_party_src/`, `cmake-build-*/`, `.idea/`, `.zed/`,
+Никогда не изменяй и не коммить: `3rdparty/`, `build-*/`, `.idea/`,
 `script_pak`, `content/`, `engine_content/artifacts`, `game/artifacts`,
 `*.shared_module`, `*.das_module.manifest`, `.cache/`.
 
-Never run: `git push --force`, `git reset --hard` on a shared branch, `rm -rf` outside
-generated directories, `cmake -B` on an existing build directory, or a formatter over the
-whole repository as a drive-by change.
+Никогда не запускай: `git push --force`, `git reset --hard` в общей ветке, `rm -rf` вне
+генерируемых каталогов, `cmake -B` по существующему каталогу сборки, форматтер по всему
+репозиторию как попутное изменение.
 
-Git: work on `agent/<task>`, keep commits small, commit only the files you changed. No
-drive-by refactors, mass reformatting, dependency bumps or unrelated cleanups. Do not commit
-on `main` unless the user asked for it.
+Git: работай в `agent/<задача>`, коммиты делай мелкими и включай только изменённые файлы.
+Без попутных рефакторингов, массового переформатирования, обновлений зависимостей и
+несвязанных чисток. Не коммить в `main`, если пользователь не попросил.
 
-Stop and ask when: the task needs a new dependency, a `CMakeLists.txt` change, a public API
-or `[export]` rename, or when the result cannot be verified with the commands above.
+Остановись и спроси, если: задача требует новой зависимости, правки `CMakeLists.txt`,
+переименования публичного API или `[export]`-функции, либо результат нельзя проверить
+командами выше.
 
-## 9. Definition of done
+## 9. Определение готовности
 
-1. `tools/agent/verify.sh` exits 0, or the report explains which step does not apply.
-2. `git status --short` shows only the files you intended to change.
-3. Report what changed, which commands ran, and what was **not** verified (GUI, GPU output,
-   `script_pak`, anything needing a display).
-4. If `.das` changes must reach the game client, state that `script_pak` needs a rebuild in
-   the editor (`Z`).
+1. `tools/agent/verify.sh` завершился с кодом 0, либо отчёт объясняет, какой шаг не
+   применим.
+2. `git status --short` показывает только те файлы, которые ты собирался изменить.
+3. В отчёте указано, что изменено, какие команды запускались и что **не** проверено (GUI,
+   вывод GPU, `script_pak`, всё, что требует дисплея).
+4. Если правки `.das` должны попасть в game client, скажи, что `script_pak` нужно
+   пересобрать в редакторе (`Z`).
 
-## 10. Toolkit
+## 10. Инструменты
 
-- `tools/agent/` — `doctor.sh` (environment check), `build.sh`, `das-check.sh`,
+- `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
   `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`.
 - `.dsh/skills/` — `tryengine-build`, `tryengine-daslang`, `tryengine-cpp`.
-- MCP server `tryengine-daslang` — `lint`, `cpp_compile_check`, `cpp_build_info`,
-  `cpp_grep_usage`, `find_symbol`, `format_file`. Its `compile_check` and `list_*` tools fail
-  on engine scripts (simulate panic, see section 4); use the CLI gate for compilation.
+- MCP-сервер `tryengine-daslang` — `lint`, `cpp_compile_check`, `cpp_build_info`,
+  `cpp_grep_usage`, `find_symbol`, `format_file`. Его `compile_check` и `list_*` падают на
+  движковых скриптах (паника симуляции, см. раздел 4); для компиляции используй CLI-гейт.

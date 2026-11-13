@@ -18,7 +18,7 @@ log "==> toolchain"
 for t in git cmake g++ jq clang-format; do
     if have "$t"; then ok "$t -> $(command -v "$t")"; else bad "$t not found"; fi
 done
-for t in ccache mold glslangValidator clang-tidy clangd; do
+for t in ccache mold clang-tidy clangd; do
     if have "$t"; then ok "$t -> $(command -v "$t")"; else warn "$t not found (optional)"; fi
 done
 

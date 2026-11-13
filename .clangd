@@ -2,7 +2,7 @@ Index:
   Background: Build
 
 CompileFlags:
-  CompilationDatabase: "cmake-build-debug"
+  CompilationDatabase: "build-debug"
   # Add: ["-I/usr/include", "-I/usr/local/include"]
   # Compiler: /usr/bin/g++ # Или clang++, в зависимости от системы
   Add: [-std=c++23, -Xclang, -fopenmp-simd]

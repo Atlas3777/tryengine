@@ -20,7 +20,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
     set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}")
 endif()
-set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/third_party_src" CACHE PATH "Shared third-party sources")
+set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/3rdparty" CACHE PATH "Shared third-party sources")
 include(cmake/get_cpm.cmake)
 
 # Кеш
