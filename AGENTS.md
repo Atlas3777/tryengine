@@ -186,7 +186,8 @@ GUI. `tools/agent/editor-check.sh` запускает редактор с тай
 
 Git: работай в `agent/<задача>`, коммиты делай мелкими и включай только изменённые файлы.
 Без попутных рефакторингов, массового переформатирования, обновлений зависимостей и
-несвязанных чисток. Не коммить в `main`, если пользователь не попросил.
+несвязанных чисток. Не коммить в `main`, если пользователь не попросил. Комиты пиши в
+Conventional стиле на английском языке.
 
 Остановись и спроси, если: задача требует новой зависимости, правки `CMakeLists.txt`,
 переименования публичного API или `[export]`-функции, либо результат нельзя проверить
@@ -206,7 +207,10 @@ Git: работай в `agent/<задача>`, коммиты делай мел�
 
 - `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
   `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`.
-- `.dsh/skills/` — `tryengine-build`, `tryengine-daslang`, `tryengine-cpp`.
+- `.dsh/skills/` — `tryengine-build`, `tryengine-daslang`, `tryengine-cpp`, `daslang`
+  (язык: копия апстримного `skills/daslang` из `GaijinEntertainment/daScript`).
 - MCP-сервер `tryengine-daslang` — `lint`, `cpp_compile_check`, `cpp_build_info`,
-  `cpp_grep_usage`, `find_symbol`, `format_file`. Его `compile_check` и `list_*` падают на
-  движковых скриптах (паника симуляции, см. раздел 4); для компиляции используй CLI-гейт.
+  `cpp_grep_usage`, `find_symbol`, `format_file`. `compile_check` и `list_*` падают на
+  точках входа, которые тянут `daslib/just_in_time` (паника симуляции, см. раздел 4), а
+  `eval_expression`, `run_script`, `list_module_api`, `describe_type` не работают, пока
+  `/opt/daslang` недоступен на запись; для компиляции используй CLI-гейт.

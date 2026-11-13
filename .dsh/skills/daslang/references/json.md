@@ -1,0 +1,136 @@
+# JSON
+
+```das
+require daslib/json_boost        // re-exports daslib/json publicly - never require both
+```
+
+`sprint_json` / `sscan_json` are builtins - no require.
+
+## Pick the simplest tool that fits
+
+| Situation | Use |
+|---|---|
+| A daslang value <-> a JSON string | `sprint_json(v, pretty)` / `sscan_json(json, var v)` |
+| Unknown shape, or a tree to mutate | `JV(x)` / `from_JV(js, type<T>)` |
+| A one-off object, no struct on hand | `JV((key1 = val1, key2 = val2))` - named tuple |
+| The generic walker doesn't know your type | a `def JV(x : MyType)` / `def from_JV(...)` overload |
+| Runtime keys, conditional inserts | a hand-built `table<string; JsonValue?>` - last resort, loses every field annotation |
+
+## sprint_json / sscan_json
+
+```das
+let s = sprint_json(value, /*pretty=*/true)
+var dst = MyStruct()
+let ok = sscan_json(json_str, dst)          // bool; false on parse error
+```
+
+Round-trips structs, classes (deref the pointer: `sprint_json(*ptr, false)`), arrays, tables,
+tuples, variants (key = the active field name), enums, bitfields, vector types, pointers, and all
+primitives. **Unknown keys are silently ignored** - validate required fields yourself.
+
+| Annotation | Effect |
+|---|---|
+| `@optional` | Omit the field on output when it equals the default/empty value |
+| `@embed` | Emit a `string` field as raw JSON - caller must supply valid JSON |
+| `@unescape` | Emit the string unescaped |
+| `@enum_as_int` | Serialize an enum as its integer value, not its name |
+| `@rename = "json_key"` | Map to another JSON key; fixes daslang-keyword collisions: field `_type` plus `@rename = "type"` |
+
+`JV` / `from_JV` read the same annotations.
+
+**Values `sscan_json` creates get their field initializers.** A new array element, table value,
+pointee or variant alternative runs its struct's initializer before the scan, so a key the JSON
+omits keeps the declared default. A variant that already holds the scanned alternative is updated
+in place. `sscan_json_at` gets its type only at run time, so it runs an initializer only when the
+program keeps it for another reason (some code calls `T()`); otherwise the value is zero-filled.
+
+## JV / from_JV and JsonValue?
+
+```das
+var js = JV(Player(name = "Hero", hp = 100))     // value -> tree
+
+var error : string
+var parsed = read_json(json_str, error)          // null on failure, error set
+let p2 = from_JV(parsed, type<Player>)           // tree -> value
+```
+
+`JV` accepts primitives, vectors, arrays, tables, tuples, variants, enums, and structs/classes by
+reflection; `JV(a, b, c, ...)` (up to 10 arguments) builds an array. `from_JV`'s second argument is a
+type witness; an optional third is the fallback when the value is null, missing, or wrong-typed.
+Custom types need overloads:
+
+```das
+def JV(data : MyType) : JsonValue? {
+    return JV({ "field1" => JV(data.field1), "field2" => JV(data.field2) })
+}
+
+def from_JV(v : JsonValue const explicit?; ent : MyType; defV : MyType = MyType()) : MyType {
+    return MyType(field1 = v?.field1 ?? defV.field1, field2 = v?.field2 ?? defV.field2)
+}
+```
+
+## Navigating a tree
+
+```das
+let name  = js?.user?.name ?? "unknown"           // ?. walks object keys
+let score = js?["user"]?["scores"]?[0] ?? 0       // ?[] takes keys and array indices
+```
+
+Safe operators never crash, even on null. **`js?.value` reads the struct field
+`JsonValue.value`** (the underlying `JsValue` variant), *not* a JSON key named `"value"` - for that
+key write `js?["value"]`.
+
+`is` / `as` test the underlying variant through the pointer; `as` on the wrong case crashes.
+
+Cases: `_object` (`table<string; JsonValue?>`), `_array` (`array<JsonValue?>`), `_string`
+(`string`), `_number` (`double`), `_longint` (`int64`), `_bool` (`bool`), `_null` (a case with no value).
+
+A missing key or index through `?[]` / `?.` yields a NON-null node of the `_null` case, not a null
+pointer: `js?["absent"] == null` is false, so `== null` cannot detect a missing key (`read_json`
+still returns null on failure). Test presence with `let v = js?["absent"]; v != null && !(v is _null)`,
+or read the value with `?? default`, which yields `default` for a `_null` node. A present key whose
+JSON value is `null` is indistinguishable from a missing one. The miss node is a single shared
+per-context node - never `delete` it, mutate it, or store it into a tree. (probe-verified 2026-09-02)
+
+An integer literal is `_longint` only while it fits `int64`; past that it parses as `_number`. So a
+wire format carrying `uint64` ids above `INT64_MAX` loses precision - send those as strings. Any
+number the `double` range cannot hold at all (`1e400`, `1e-400`, 400 digits) is a parse error, never
+a panic and never a silent zero.
+
+## Parsing, writing, embedding
+
+- `read_json(text, var error)` takes a `string` or an `array<uint8>`; `write_json(js)` serializes,
+  a null pointer as `"null"`; `write_json(js, true)` prints every object's keys sorted, for a file that is
+  diffed and merged. `\uXXXX` escapes decode to UTF-8, a surrogate pair folding into one
+  code point; an unpaired surrogate becomes U+FFFD.
+- `try_fixing_broken_json(text)` repairs model-generated output before `read_json` - concatenation
+  (`"a" + "b"`), trailing commas, double-quoted nesting.
+- Writer settings return the previous value (save and restore for a scoped change):
+  `set_no_trailing_zeros`, `set_no_empty_arrays`, `set_allow_duplicate_keys`.
+- `%json~ ... %%` parses a literal at compile time into a runtime `JsonValue?`.
+- `from_json(jv, type<Row>)` is a lazy typed row source over a JSON **array** - see queries.md.
+
+## Building without a struct
+
+```das
+return JV((kind = meta.kind, rendered = false, payload = invoke(meta.serializer)))
+
+var tab : table<string; JsonValue?>
+tab |> insert("name", JV("Alice"))
+var obj = JV(tab)
+```
+
+The named-tuple form has **no `@optional` / `@rename` / `@embed`**: every key is emitted under its
+daslang name. For conditional keys, declare a small struct with `@optional`.
+
+**Do not move owned state into a temporary tuple just to serialize it.** For a non-copyable
+struct containing arrays, `JV((world = world))` consumes the source value. Use
+`JV((world = JV(world)))` to serialize the nested value without transferring ownership,
+or explicitly clone it. Check source preservation when testing read-only snapshots.
+
+The hand-built table takes a plain `var`, **never `var inscope`** - scope-exit finalize would free
+the pointees (`error[31009] ... requires unsafe`). `JsonValue?` is a garbage-collected raw pointer;
+passing it by value copies the pointer.
+
+**Cross-context:** a `JsonValue?` allocated in one context's heap is invalid in another. Send the
+raw text across a thread boundary and re-parse, not the tree.

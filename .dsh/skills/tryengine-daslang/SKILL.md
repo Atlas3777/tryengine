@@ -108,14 +108,28 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 
 ## MCP-инструменты (сервер `tryengine-daslang`)
 
-Работают: `lint` (единственный способ линтовать этот проект), `find_symbol`,
-`list_module_api`, `describe_type`, `format_file`, `cpp_compile_check`, `cpp_build_info`,
-`grep_usage`/`cpp_grep_usage` (при установленном ast-grep).
+Подключён бандлом `tools/agent/dsh-mcp-tryengine/` (stdio:
+`/opt/daslang/bin/daslang /opt/daslang/utils/mcp/main.das`, cwd — корень репозитория).
+Проверено 2026-11-14: 46 инструментов, `serverInfo.name = "daslang"`.
 
-Не работают на движковых скриптах: `compile_check`, `list_functions`, `list_types`,
-`program_log` — они симулируют программу и падают на LLVM-эмиттере
-(`just_in_time` → `llvm_macro`). Для компиляции используй только
+Работают: `lint` (единственный способ линтовать этот проект), `find_symbol`, `discover`
+(поиск по дайджесту stdlib), `outline`, `grep_usage`/`cpp_grep_usage` (при установленном
+ast-grep), `cpp_compile_check`, `cpp_build_info`, `cpp_status`.
+
+Работают на «листовых» скриптах, которые не тянут `daslib/just_in_time` (`Types.das`):
+`compile_check`, `list_types`.
+
+Не работают на точках входа (`editor/daslang/EntryPoint.das`, `game/scripts/Game.das`):
+`compile_check`, `list_functions`, `list_types`, `program_log` — они симулируют программу и
+падают на LLVM-эмиттере (`just_in_time` → `llvm_macro`). Для компиляции используй только
 `tools/agent/das-check.sh`.
+
+Не работают вовсе в этом окружении: `eval_expression`, `run_script`, `list_module_api`,
+`describe_type` — им нужен временный стаб-файл, а он пишется в `get_das_root()`, то есть в
+`/opt/daslang` (владелец `nobody`, пользователю писать нельзя). Ответ —
+`Cannot write temp file: /opt/daslang/_mcp_stub_*.das`. Лечится записываемым `dasroot`:
+`sudo chown artem /opt/daslang` или запуск сервера с `-dasroot` на копию SDK во владении
+пользователя (частично проверено).
 
 Аргументы MCP, которые всегда надо передавать:
 
@@ -141,4 +155,11 @@ SDK лежит в `/opt/daslang`. Полезные файлы:
 - `/opt/daslang/skills/external_module_debugging.md` — почему «модуль не найден»;
 - `/opt/daslang/skills/daslang/SKILL.md` + `references/*.md` — язык, generics, macros.
 
-DSH сам эти скиллы не подхватывает: они вне его корней поиска. Читай их через `read`.
+Языковой бандл daslang лежит в репозитории: `.dsh/skills/daslang/` — копия апстримного
+`skills/daslang` (ревизия `3e6d2da`), `SKILL.md` + `references/*.md`, включая
+`references/everything.md` (дайджест всех модулей). DSH подхватывает его сам: вызывай
+`skill({name: "daslang"})`. В шапке бандла написано «verified against 0.6.4», у нас 0.6.5 —
+расхождение мелкое, но при споре верь локальному `daslang`.
+
+Остальные файлы `/opt/daslang/skills/*.md` (`cpp_integration`, `decs`, `dynamic_modules`, ...)
+— не скиллы (без frontmatter), DSH их не видит; читай через `read`.
