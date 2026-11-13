@@ -17,7 +17,7 @@ namespace tryeditor {
 namespace {
 
 struct alignas(16) PickingObjectGPU {
-    hlslpp::float4x4 model;
+    das::float4x4 model;
     uint64_t entity_id;
     VkDeviceAddress position_buffer_addr;
 };
@@ -43,7 +43,8 @@ PickingPass::PickingPass(tryengine::graphics::VulkanDevice& device,
         alloc_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
         VmaAllocationInfo result{};
-        VkResult res = vmaCreateBuffer(device_.GetAllocator(), &buf_info, &alloc_info, &rb.buffer, &rb.allocation, &result);
+        VkResult res =
+            vmaCreateBuffer(device_.GetAllocator(), &buf_info, &alloc_info, &rb.buffer, &rb.allocation, &result);
         TRY_CHECK(res == VK_SUCCESS, "Не удалось создать PickingReadbackBuffer");
         rb.mapped_ptr = result.pMappedData;
     }
@@ -64,13 +65,12 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
 
     // 1. Всегда импортируем readback-буфер текущего кадра в граф
     Readback& rb = readback_[frame_index_];
-    tryengine::graphics::RGBufferDesc desc{
-        .size = sizeof(uint64_t),
-        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        .memory_usage = VMA_MEMORY_USAGE_GPU_TO_CPU,
-        .debug_name = "PickingReadbackBuffer"
-    };
-    ctx.graph.ImportExternalBuffer(EditorRender::kEditorScope,tryengine::graphics::RGTag_v<"PickingReadback">, rb.buffer, desc);
+    tryengine::graphics::RGBufferDesc desc{.size = sizeof(uint64_t),
+                                           .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                           .memory_usage = VMA_MEMORY_USAGE_GPU_TO_CPU,
+                                           .debug_name = "PickingReadbackBuffer"};
+    ctx.graph.ImportExternalBuffer(EditorRender::kEditorScope, tryengine::graphics::RGTag_v<"PickingReadback">,
+                                   rb.buffer, desc);
 
     // 2. Вычитываем результат прошлого запроса
     if (rb.pending && rb.mapped_ptr) {
@@ -86,17 +86,21 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
     }
 
     // 3. Проверяем наличие нового клика
-    if (!shader_ || !opaque_) return;
+    if (!shader_ || !opaque_)
+        return;
 
     auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
     auto size = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
-    if (!size.has_value()) return;
+    if (!size.has_value())
+        return;
 
     auto mouse = script.SimpleReturnUnsafe<Mouse*>("GetEditorSceneViewportMouse", *size);
-    if (!mouse.has_value()) return;
+    if (!mouse.has_value())
+        return;
 
     const Mouse* m = *mouse;
-    if (!m->pressed) return;
+    if (!m->pressed)
+        return;
 
     requested_ = true;
     mouse_x_ = static_cast<uint32_t>(std::max(0.0f, m->pos.x));
@@ -105,7 +109,8 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
 
 void PickingPass::Setup(tryengine::graphics::RenderGraphBuilder& builder) {
     const auto* extent = builder.GetCPUBlackboard().GetAs<VkExtent2D>(tryengine::graphics::RGTag_v<"ViewportSize">);
-    if (!extent || extent->width == 0 || extent->height == 0) return;
+    if (!extent || extent->width == 0 || extent->height == 0)
+        return;
 
     tryengine::graphics::RGTextureDesc picking_desc{
         .width = extent->width,
@@ -115,20 +120,21 @@ void PickingPass::Setup(tryengine::graphics::RenderGraphBuilder& builder) {
         .format = VK_FORMAT_R32G32_UINT,
         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .debug_name = "PickingTexture"
-    };
+        .debug_name = "PickingTexture"};
 
     picking_ = builder.CreateTexture("PickingTexture", picking_desc);
     picking_ = builder.Write(picking_, tryengine::graphics::RGUsageHint::ColorAttachment);
     depth_ = builder.Write(tryengine::graphics::RGTag_v<"SceneDepth">,
                            tryengine::graphics::RGUsageHint::DepthStencilAttachment);
-    readback_handle_ = builder.Write(tryengine::graphics::RGTag_v<"PickingReadback">, tryengine::graphics::RGUsageHint::TransferDst);
+    readback_handle_ =
+        builder.Write(tryengine::graphics::RGTag_v<"PickingReadback">, tryengine::graphics::RGUsageHint::TransferDst);
 
     builder.MarkSideEffect();
 }
 
 void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
-    if (!requested_ || !opaque_) return;
+    if (!requested_ || !opaque_)
+        return;
 
     const auto* extent = ctx.cpu_bb->GetAs<VkExtent2D>(tryengine::graphics::RGTag_v<"ViewportSize">);
     const auto* camera_cpu = ctx.cpu_bb->GetAs<tryengine::graphics::CameraData>(tryengine::graphics::RGTag_v<"Camera">);
@@ -143,16 +149,16 @@ void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
             valid_draws.push_back(draw);
         }
     }
-    if (valid_draws.empty()) return;
+    if (valid_draws.empty())
+        return;
 
     // 2. Выделение BDA-памяти под камеру и объекты
-    tryengine::graphics::CameraGPU camera_gpu{
-        .view = camera_cpu->view,
-        .proj = camera_cpu->proj
-    };
-    auto camera_alloc = ctx.AllocateTransient(&camera_gpu, sizeof(tryengine::graphics::CameraGPU), alignof(tryengine::graphics::CameraGPU));
+    tryengine::graphics::CameraGPU camera_gpu{.view = camera_cpu->view, .proj = camera_cpu->proj};
+    auto camera_alloc = ctx.AllocateTransient(&camera_gpu, sizeof(tryengine::graphics::CameraGPU),
+                                              alignof(tryengine::graphics::CameraGPU));
 
-    auto objects_alloc = ctx.AllocateTransient(nullptr, sizeof(PickingObjectGPU) * valid_draws.size(), alignof(PickingObjectGPU));
+    auto objects_alloc =
+        ctx.AllocateTransient(nullptr, sizeof(PickingObjectGPU) * valid_draws.size(), alignof(PickingObjectGPU));
     PickingObjectGPU* mapped_objects = reinterpret_cast<PickingObjectGPU*>(objects_alloc.mapped_ptr);
 
     // 3. Attachments
@@ -196,9 +202,7 @@ void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
 
     constexpr VkBool32 blend_enables[] = {VK_FALSE};
     vkCmdSetColorBlendEnableEXT(ctx.cmd_buffer, 0, 1, blend_enables);
-    constexpr VkColorComponentFlags color_write_masks[] = {
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-    };
+    constexpr VkColorComponentFlags color_write_masks[] = {VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT};
     vkCmdSetColorWriteMaskEXT(ctx.cmd_buffer, 0, 1, color_write_masks);
     constexpr VkBool32 color_write_enables[] = {VK_TRUE};
     vkCmdSetColorWriteEnableEXT(ctx.cmd_buffer, 1, color_write_enables);
@@ -220,7 +224,8 @@ void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
 
         while (batch_end < valid_draws.size()) {
             const auto& cmd = valid_draws[batch_end];
-            if (cmd.mesh->index_buffer != index_buf) break;
+            if (cmd.mesh->index_buffer != index_buf)
+                break;
 
             PickingObjectGPU& obj = mapped_objects[batch_end];
             obj.model = cmd.model_matrix;
@@ -240,15 +245,14 @@ void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
 
         uint32_t draw_count = static_cast<uint32_t>(indirect_commands.size());
 
-        auto indirect_alloc = ctx.AllocateTransient(
-            indirect_commands.data(), sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size(), alignof(uint32_t));
+        auto indirect_alloc =
+            ctx.AllocateTransient(indirect_commands.data(),
+                                  sizeof(VkDrawIndexedIndirectCommand) * indirect_commands.size(), alignof(uint32_t));
 
         vkCmdBindIndexBuffer(ctx.cmd_buffer, index_buf, 0, first_cmd.mesh->index_type);
 
-        PickingPushConstants pc{
-            .objects = objects_alloc.bda_address + (batch_start * sizeof(PickingObjectGPU)),
-            .camera = camera_alloc.bda_address
-        };
+        PickingPushConstants pc{.objects = objects_alloc.bda_address + (batch_start * sizeof(PickingObjectGPU)),
+                                .camera = camera_alloc.bda_address};
         vkCmdPushConstants(ctx.cmd_buffer, shader->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(PickingPushConstants), &pc);
 

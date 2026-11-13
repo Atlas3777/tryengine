@@ -64,13 +64,6 @@ CPMAddPackage(
 )
 
 CPMAddPackage(
-        NAME hlsl
-        GIT_REPOSITORY https://github.com/redorav/hlslpp.git
-        GIT_TAG 3d9af2e77a89ddd645928f1600a0688dc898dedc
-        GIT_SHALLOW TRUE
-)
-
-CPMAddPackage(
         NAME volk
         GIT_REPOSITORY https://github.com/zeux/volk.git
         GIT_TAG aa76c86ae99aa76f7411c981dc885f68a08513b5
@@ -94,9 +87,6 @@ CPMAddPackage(
 set_target_properties(vk-bootstrap PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(volk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_library(hlsl_lib INTERFACE)
-target_include_directories(hlsl_lib SYSTEM INTERFACE ${hlsl_SOURCE_DIR}/include)
-
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 file(GLOB_RECURSE HEADERS CONFIGURE_DEPENDS "include/engine/graphics/*.hpp")
 
@@ -112,7 +102,6 @@ target_precompile_headers(engine_graphics
 
 target_link_libraries(engine_graphics PUBLIC
         Vulkan::Headers
-        hlsl_lib
         engine::core
         engine::resources
         engine::platform

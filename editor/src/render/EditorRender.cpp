@@ -9,7 +9,6 @@
 #include "engine/graphics/PresentPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/core/HlslppFormatter.hpp"
 
 namespace tryeditor {
 
@@ -30,7 +29,7 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
         engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(4250482409988402633ULL);
     TRY_ASSERT(pick_shader.has_value(), "Нет шейдера picking");
 
-    rg_.AddNode<ImGuiPass>(kEditorScope, rg_,device, swapchain);
+    rg_.AddNode<ImGuiPass>(kEditorScope, rg_, device, swapchain);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kEditorScope);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kGameScope);
     rg_.AddNode<DebugPass>(kEditorScope, *deb_shader);
@@ -97,20 +96,21 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
         scene_game_viewport = {std::max(1u, (uint32_t) size_game_res->x), std::max(1u, (uint32_t) size_game_res->y)};
     }
 
-    if (scene_game_viewport.width != last_game_viewport_size_.width || scene_game_viewport.height != last_game_viewport_size_.height) {
+    if (scene_game_viewport.width != last_game_viewport_size_.width ||
+        scene_game_viewport.height != last_game_viewport_size_.height) {
         rg_.Invalidate();
         last_game_viewport_size_ = scene_game_viewport;
     }
 
-    auto editor_camera_res =
-        script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("GetEditorCamera", size_res.value_or(das::float2(1, 1)));
+    auto editor_camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>(
+        "GetEditorCamera", size_res.value_or(das::float2(1, 1)));
     tryengine::graphics::CameraData cam_data =
         editor_camera_res.has_value() ? *(*editor_camera_res) : tryengine::graphics::CameraData{};
 
     // LogInfo("x = {}, y = {}, z = {}",cam_data.position.x, cam_data.position.y, cam_data.position.z);
 
-    auto game_camera_res =
-        script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>("GetGameCamera", size_game_res.value_or(das::float2(1, 1)));
+    auto game_camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>(
+        "GetGameCamera", size_game_res.value_or(das::float2(1, 1)));
     tryengine::graphics::CameraData game_cam_data =
         editor_camera_res.has_value() ? *(*game_camera_res) : tryengine::graphics::CameraData{};
 
@@ -140,8 +140,9 @@ void EditorRender::ImportSwapchain(uint32_t image_index) const {
                                                        .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
                                                        .debug_name = "SwapchainTexture"};
 
-    rg_.ImportExternalTexture(kEditorScope, tryengine::graphics::RGTag_v<"Swapchain">, swapchain_.GetImages()[image_index],
-                              swapchain_.GetImageViews()[image_index], swap_desc, VK_IMAGE_LAYOUT_UNDEFINED);
+    rg_.ImportExternalTexture(kEditorScope, tryengine::graphics::RGTag_v<"Swapchain">,
+                              swapchain_.GetImages()[image_index], swapchain_.GetImageViews()[image_index], swap_desc,
+                              VK_IMAGE_LAYOUT_UNDEFINED);
 }
 
 }  // namespace tryeditor

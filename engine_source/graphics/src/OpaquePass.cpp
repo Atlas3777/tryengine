@@ -1,10 +1,10 @@
+#include "engine/graphics/OpaquePass.hpp"
+
 #include <algorithm>
-#include <hlsl++.h>
+#include <daScript/simulate/aot_builtin_matrix.h>
 
 #include "engine/core/Engine.hpp"
-#include "engine/core/HlslppFormatter.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/RasterState.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/ShaderReflection.hpp"
@@ -15,10 +15,11 @@ namespace tryengine::graphics {
 namespace {
 
 struct DaslangDrawCall {
-    hlslpp::float4x4 world_matrix;
+    das::float4x4 world_matrix;
     uint64_t mesh;
     uint64_t material;
     uint64_t entity_id;
+    uint64_t _pad;  // совпадает с [cpp_layout] struct DrawCall в Render.das
 };
 static_assert(sizeof(DaslangDrawCall) == 96);
 
@@ -30,8 +31,8 @@ struct GeometryPointers {
 };
 
 struct alignas(16) GPUObjectData {
-    hlslpp::float4x4 model;
-    hlslpp::float4x4 normalMatrix;
+    das::float4x4 model;
+    das::float4x4 normalMatrix;
     GeometryPointers pointers;
 };
 static_assert(sizeof(GPUObjectData) == 160, "GPUObjectData size must match Standard.slang layout");
@@ -41,8 +42,8 @@ struct alignas(16) FragmentDataGPU {
     VkDeviceAddress lights;  // BDA на массив PointLightGPU
     uint32_t light_count;
     uint32_t _pad[3];
-    hlslpp::float4 ambient_color;
-    hlslpp::float4 view_pos;
+    das::float4 ambient_color;
+    das::float4 view_pos;
 };
 
 struct PushConstants {
@@ -94,8 +95,8 @@ void OpaquePass::Collect(CollectContext& ctx) {
     viewport_ = *viewport_size;
 
     GlobalLight light;
-    light.ambient_color = hlslpp::float4(0.1f, 0.1f, 0.1f, 0);
-    light.view_pos = hlslpp::float4(camera->position, 0);
+    light.ambient_color = das::float4(0.1f, 0.1f, 0.1f, 0.0f);
+    light.view_pos = das::float4(camera->position.x, camera->position.y, camera->position.z, 0.0f);
 
     ctx.cpu_bb.Put(RGTag_v<"GlobalLightUBO">, light);
 
@@ -106,7 +107,6 @@ void OpaquePass::Collect(CollectContext& ctx) {
               [](const MeshDrawCall& a, const MeshDrawCall& b) { return a.sorting_key < b.sorting_key; });
 }
 
-
 void OpaquePass::Setup(RenderGraphBuilder& builder) {
     RGTextureDesc scene_color_desc{
         .width = viewport_.width,
@@ -116,19 +116,16 @@ void OpaquePass::Setup(RenderGraphBuilder& builder) {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .debug_name = "SceneColor"
-    };
+        .debug_name = "SceneColor"};
 
-    RGTextureDesc scene_depth_desc{
-        .width = viewport_.width,
-        .height = viewport_.height,
-        .layers = 1,
-        .mips = 1,
-        .format = VK_FORMAT_D32_SFLOAT,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT,
-        .debug_name = "SceneDepth"
-    };
+    RGTextureDesc scene_depth_desc{.width = viewport_.width,
+                                   .height = viewport_.height,
+                                   .layers = 1,
+                                   .mips = 1,
+                                   .format = VK_FORMAT_D32_SFLOAT,
+                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                   .aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                                   .debug_name = "SceneDepth"};
 
     RGResourceHandle color_rt = builder.CreateTexture("SceneColor", scene_color_desc);
     RGResourceHandle depth_rt = builder.CreateTexture("SceneDepth", scene_depth_desc);
@@ -138,7 +135,6 @@ void OpaquePass::Setup(RenderGraphBuilder& builder) {
 
     builder.Export(RGTag_v<"ForwardColor">, color_);
 }
-
 
 void OpaquePass::Execute(RGExecuteContext& ctx) {
     RGColorAttachment color_attachment{};
@@ -166,35 +162,31 @@ void OpaquePass::Execute(RGExecuteContext& ctx) {
 
 void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
     // if (draw_queue_.empty()) {
-        // return;
+    // return;
     // }
 
     const auto* camera_cpu = ctx.cpu_bb->GetAs<CameraData>(RGTag_v<"Camera">);
     const auto* light_ubo = ctx.cpu_bb->GetAs<GlobalLight>(RGTag_v<"GlobalLightUBO">);
     TRY_ASSERT(camera_cpu && light_ubo, "Camera or LightUBO missing in CPUBlackboard!");
 
-    CameraGPU camera_gpu{
-        .view = camera_cpu->view,
-        .proj = camera_cpu->proj
-    };
+    CameraGPU camera_gpu{.view = camera_cpu->view, .proj = camera_cpu->proj};
     TransientAllocation camera_alloc = ctx.AllocateTransient(&camera_gpu, sizeof(CameraGPU), alignof(CameraGPU));
 
     TransientAllocation lights_alloc = ctx.AllocateTransient(
         point_lights_.data(), sizeof(PointLightGPU) * point_lights_.size(), alignof(PointLightGPU));
 
-    FragmentDataGPU frag_data{
-        .camera = camera_alloc.bda_address,
-        .lights = lights_alloc.bda_address,
-        .light_count = static_cast<uint32_t>(point_lights_.size()),
-        .ambient_color = light_ubo->ambient_color,
-        .view_pos = light_ubo->view_pos
-    };
-    TransientAllocation frag_alloc = ctx.AllocateTransient(&frag_data, sizeof(FragmentDataGPU), alignof(FragmentDataGPU));
+    FragmentDataGPU frag_data{.camera = camera_alloc.bda_address,
+                              .lights = lights_alloc.bda_address,
+                              .light_count = static_cast<uint32_t>(point_lights_.size()),
+                              .ambient_color = light_ubo->ambient_color,
+                              .view_pos = light_ubo->view_pos};
+    TransientAllocation frag_alloc =
+        ctx.AllocateTransient(&frag_data, sizeof(FragmentDataGPU), alignof(FragmentDataGPU));
 
     const auto& draw_queue = draw_queue_;
 
-    TransientAllocation objects_alloc = ctx.AllocateTransient(
-        nullptr, sizeof(GPUObjectData) * draw_queue.size(), alignof(GPUObjectData));
+    TransientAllocation objects_alloc =
+        ctx.AllocateTransient(nullptr, sizeof(GPUObjectData) * draw_queue.size(), alignof(GPUObjectData));
     GPUObjectData* mapped_objects = reinterpret_cast<GPUObjectData*>(objects_alloc.mapped_ptr);
 
     Shader* current_shader = nullptr;
@@ -249,8 +241,8 @@ void OpaquePass::RecordDraws(RGExecuteContext& ctx) {
             // Записываем данные объекта прямо в маппленный транзиентный буфер!
             GPUObjectData& obj = mapped_objects[batch_end];
             obj.model = cmd.model_matrix;
-            obj.normalMatrix = hlslpp::transpose(hlslpp::inverse(cmd.model_matrix));
-            obj.pointers = {mesh.position_buffer_addr, mesh.attribute_buffer_addr, (uint32_t)mesh.attribute_flags,
+            obj.normalMatrix = das::float4x4_transpose(das::float4x4_inverse(cmd.model_matrix));
+            obj.pointers = {mesh.position_buffer_addr, mesh.attribute_buffer_addr, (uint32_t) mesh.attribute_flags,
                             mesh.attribute_stride};
 
             VkDrawIndexedIndirectCommand indirect{};

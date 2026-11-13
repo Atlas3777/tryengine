@@ -2,7 +2,6 @@
 
 #include <EASTL/vector.h>
 #include <daScript/daScript.h>
-#include <hlsl++/vector_float_type.h>
 
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -11,8 +10,8 @@
 namespace tryengine::graphics {
 
 struct alignas(16) PointLightGPU {
-    hlslpp::float4 position_radius;  // xyz = position, w = radius
-    hlslpp::float4 color_intensity;  // rgb = color,    w = intensity
+    das::float4 position_radius;  // xyz = position, w = radius
+    das::float4 color_intensity;  // rgb = color,    w = intensity
 };
 
 struct LightPass {
@@ -28,9 +27,8 @@ inline eastl::vector<PointLightGPU> CollectLight(core::Engine& engine) {
 
     const auto array = *result;
     PointLightGPU* points = reinterpret_cast<PointLightGPU*>(array->data);
-    // LogInfo("light's size = {}", array->size);
 
     return eastl::vector<PointLightGPU>(points, points + array->size);
 }
 
-}
+}  // namespace tryengine::graphics

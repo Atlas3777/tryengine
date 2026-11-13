@@ -1,30 +1,31 @@
 #pragma once
 
-#include <hlsl++.h>
+#include <daScript/misc/vectypes.h>
+#include <daScript/simulate/runtime_matrices.h>
 
 #include "RuntimeTypes.hpp"
 
 namespace tryengine::graphics {
 
 struct CameraData {
-    hlslpp::float4x4 view;
-    hlslpp::float4x4 proj;
-    hlslpp::float3 position;
+    das::float4x4 view;
+    das::float4x4 proj;
+    das::float3 position;
 };
 
 struct alignas(16) CameraGPU {
-    hlslpp::float4x4 view;
-    hlslpp::float4x4 proj;
+    das::float4x4 view;
+    das::float4x4 proj;
 };
 
 struct AmbientSettings {
-    hlslpp::float4 ambient_color{0.05f, 0.05f, 0.08f, 1.0f};
-    hlslpp::float4 clear_color{0.1f, 0.1f, 0.12f, 1.0f};
+    das::float4 ambient_color{0.05f, 0.05f, 0.08f, 1.0f};
+    das::float4 clear_color{0.1f, 0.1f, 0.12f, 1.0f};
 };
 
 struct GlobalLight {
-    hlslpp::float4 ambient_color;
-    hlslpp::float4 view_pos;
+    das::float4 ambient_color;
+    das::float4 view_pos;
 };
 
 }  // namespace tryengine::graphics

@@ -8,7 +8,7 @@ struct Mesh;
 struct Material;
 
 struct MeshDrawCall {
-    hlslpp::float4x4 model_matrix;
+    das::float4x4 model_matrix;
     const Mesh* mesh = nullptr;
     const Material* material = nullptr;
     uint64_t sorting_key = 0;

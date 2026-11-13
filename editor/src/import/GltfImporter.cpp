@@ -1,12 +1,9 @@
 #include "editor/import/GltfImporter.hpp"
 
-#include <hlsl++.h>
-#include <hlsl++/matrix_float_type.h>
-#include <hlsl++/quaternion.h>
-#include <hlsl++/quaternion_type.h>
+#include <cmath>
+#include <daScript/daScript.h>
+#include <daScript/simulate/aot_builtin_matrix.h>
 
-#include "../../../engine_source/resources/include/engine/resources/Json.hpp"
-#include "../../../engine_source/resources/include/engine/resources/binary/TextureBinary.hpp"
 #include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/import/MeshProcessor.hpp"
 #include "editor/import/TextureImporter.hpp"
@@ -17,7 +14,9 @@
 #include "engine/graphics/AssetTypes.hpp"
 #include "engine/resources/AssetTypes.hpp"
 #include "engine/resources/Content.hpp"
+#include "engine/resources/Json.hpp"
 #include "engine/resources/TextureTypes.hpp"
+#include "engine/resources/binary/TextureBinary.hpp"
 #include "tiny_gltf_v3.h"
 
 namespace tryeditor {
@@ -89,8 +88,7 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
 
                 uint64_t expected_tex_guid = tryengine::core::random::CombineID(main_uuid, tex_name);
 
-                mat_data.texture_params["albedo_map"] =
-                    tryengine::graphics::TextureBindingAssets(expected_tex_guid);
+                mat_data.texture_params["albedo_map"] = tryengine::graphics::TextureBindingAssets(expected_tex_guid);
             }
         }
 
@@ -122,12 +120,16 @@ void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uui
 
         tryengine::resources::VkFilter min_filter = tryengine::resources::VkFilter::VK_FILTER_LINEAR;
         tryengine::resources::VkFilter mag_filter = tryengine::resources::VkFilter::VK_FILTER_LINEAR;
-        tryengine::resources::VkSamplerMipmapMode mipmap_mode = tryengine::resources::VkSamplerMipmapMode::VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        tryengine::resources::VkSamplerMipmapMode mipmap_mode =
+            tryengine::resources::VkSamplerMipmapMode::VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
-        tryengine::resources::VkSamplerAddressMode wrap_u = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        tryengine::resources::VkSamplerAddressMode wrap_v = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        tryengine::resources::VkSamplerAddressMode wrap_u =
+            tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        tryengine::resources::VkSamplerAddressMode wrap_v =
+            tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
         // В glTF 2.0 нет wrap_w, используем безопасный дефолт REPEAT
-        tryengine::resources::VkSamplerAddressMode wrap_w = tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        tryengine::resources::VkSamplerAddressMode wrap_w =
+            tryengine::resources::VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
         if (gltf_tex.sampler >= 0 && gltf_tex.sampler < static_cast<int32_t>(m->samplers_count)) {
             const tg3_sampler& sampler = m->samplers[gltf_tex.sampler];
@@ -195,10 +197,8 @@ void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uui
                                   : tryengine::resources::TextureFormat::VK_FORMAT_BC7_UNORM_BLOCK;
 
         settings.sampler = tryengine::resources::SamplerDesc{
-            min_filter, mag_filter, mipmap_mode, wrap_u, wrap_v, wrap_w,
-            compare_op, enable_anisotropy, enable_compare, mip_lod_bias,
-            max_anisotropy, min_lod, max_lod
-        };
+            min_filter,        mag_filter,     mipmap_mode,  wrap_u,         wrap_v,  wrap_w, compare_op,
+            enable_anisotropy, enable_compare, mip_lod_bias, max_anisotropy, min_lod, max_lod};
 
         tryengine::Result<eastl::vector<uint8_t>> process_result;
 
@@ -324,47 +324,53 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
         // --- ТРАНСФОРМ ---
         if (gltf_node.has_matrix) {
             // В glTF матрица хранится по столбцам (column-major)
-            hlslpp::float3 col0(static_cast<float>(gltf_node.matrix[0]), static_cast<float>(gltf_node.matrix[1]),
-                                static_cast<float>(gltf_node.matrix[2]));
-            hlslpp::float3 col1(static_cast<float>(gltf_node.matrix[4]), static_cast<float>(gltf_node.matrix[5]),
-                                static_cast<float>(gltf_node.matrix[6]));
-            hlslpp::float3 col2(static_cast<float>(gltf_node.matrix[8]), static_cast<float>(gltf_node.matrix[9]),
-                                static_cast<float>(gltf_node.matrix[10]));
+            const das::float3 col0(static_cast<float>(gltf_node.matrix[0]), static_cast<float>(gltf_node.matrix[1]),
+                                   static_cast<float>(gltf_node.matrix[2]));
+            const das::float3 col1(static_cast<float>(gltf_node.matrix[4]), static_cast<float>(gltf_node.matrix[5]),
+                                   static_cast<float>(gltf_node.matrix[6]));
+            const das::float3 col2(static_cast<float>(gltf_node.matrix[8]), static_cast<float>(gltf_node.matrix[9]),
+                                   static_cast<float>(gltf_node.matrix[10]));
 
             // Позиция находится в 4-м столбце (индексы 12, 13, 14)
             node_data.local_transform.position =
-                hlslpp::float3(static_cast<float>(gltf_node.matrix[12]), static_cast<float>(gltf_node.matrix[13]),
-                               static_cast<float>(gltf_node.matrix[14]));
+                das::float3(static_cast<float>(gltf_node.matrix[12]), static_cast<float>(gltf_node.matrix[13]),
+                            static_cast<float>(gltf_node.matrix[14]));
 
             // Масштаб — это длины базисных векторов
-            node_data.local_transform.scale =
-                hlslpp::float3(hlslpp::length(col0), hlslpp::length(col1), hlslpp::length(col2));
+            const float scale_x = std::sqrt(col0.x * col0.x + col0.y * col0.y + col0.z * col0.z);
+            const float scale_y = std::sqrt(col1.x * col1.x + col1.y * col1.y + col1.z * col1.z);
+            const float scale_z = std::sqrt(col2.x * col2.x + col2.y * col2.y + col2.z * col2.z);
+            node_data.local_transform.scale = das::float3(scale_x, scale_y, scale_z);
 
             // Нормализуем столбцы для получения чистой матрицы вращения 3x3
-            if (node_data.local_transform.scale.x > 0.0f)
-                col0 /= node_data.local_transform.scale.x;
-            if (node_data.local_transform.scale.y > 0.0f)
-                col1 /= node_data.local_transform.scale.y;
-            if (node_data.local_transform.scale.z > 0.0f)
-                col2 /= node_data.local_transform.scale.z;
+            const das::float3 rot0 =
+                scale_x > 0.0f ? das::float3(col0.x / scale_x, col0.y / scale_x, col0.z / scale_x) : col0;
+            const das::float3 rot1 =
+                scale_y > 0.0f ? das::float3(col1.x / scale_y, col1.y / scale_y, col1.z / scale_y) : col1;
+            const das::float3 rot2 =
+                scale_z > 0.0f ? das::float3(col2.x / scale_z, col2.y / scale_z, col2.z / scale_z) : col2;
 
-            // Конструируем float3x3 построчно (row0, row1, row2)
-            hlslpp::float3x3 rot_mat(col0.x, col1.x, col2.x, col0.y, col1.y, col2.y, col0.z, col1.z, col2.z);
+            // glTF хранит матрицу по столбцам для column-vector соглашения, а движок работает
+            // с row-vector матрицами: столбцы glTF становятся строками матрицы вращения.
+            das::float3x3 rot_mat;
+            rot_mat.m[0] = rot0;
+            rot_mat.m[1] = rot1;
+            rot_mat.m[2] = rot2;
 
-            node_data.local_transform.rotation = hlslpp::quaternion(rot_mat);
+            node_data.local_transform.rotation = das::quat_from_float3x3(rot_mat);
         } else {
-            node_data.local_transform.position = hlslpp::float3(static_cast<float>(gltf_node.translation[0]),
-                                                                static_cast<float>(gltf_node.translation[1]),
-                                                                static_cast<float>(gltf_node.translation[2]));
+            node_data.local_transform.position =
+                das::float3(static_cast<float>(gltf_node.translation[0]), static_cast<float>(gltf_node.translation[1]),
+                            static_cast<float>(gltf_node.translation[2]));
 
-            // glTF хранит кватернион как [x, y, z, w], что идеально совпадает с hlslpp::quaternion(x, y, z, w)
-            node_data.local_transform.rotation = hlslpp::quaternion(
-                static_cast<float>(gltf_node.rotation[0]), static_cast<float>(gltf_node.rotation[1]),
-                static_cast<float>(gltf_node.rotation[2]), static_cast<float>(gltf_node.rotation[3]));
+            // glTF и daslang одинаково хранят кватернион как [x, y, z, w]
+            node_data.local_transform.rotation =
+                das::float4(static_cast<float>(gltf_node.rotation[0]), static_cast<float>(gltf_node.rotation[1]),
+                            static_cast<float>(gltf_node.rotation[2]), static_cast<float>(gltf_node.rotation[3]));
 
             node_data.local_transform.scale =
-                hlslpp::float3(static_cast<float>(gltf_node.scale[0]), static_cast<float>(gltf_node.scale[1]),
-                               static_cast<float>(gltf_node.scale[2]));
+                das::float3(static_cast<float>(gltf_node.scale[0]), static_cast<float>(gltf_node.scale[1]),
+                            static_cast<float>(gltf_node.scale[2]));
         }
         for (uint32_t c = 0; c < gltf_node.children_count; ++c) {
             node_data.children_indices.push_back(gltf_node.children[c]);
