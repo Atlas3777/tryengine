@@ -438,8 +438,14 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     AssetMeta<GltfImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<GltfImportSettings>>(ctx.meta_bytes);
-        meta = parsed_meta.has_value() ? parsed_meta.value() : GenerateDefaultMeta();
+        // Мета — вход импорта. Неизвестные поля игнорируем (схема настроек может новеть),
+        // но битую мету не подменяем дефолтной: иначе молча сменится guid ассета.
+        auto parsed_meta =
+            tryengine::resources::Json::DeserializePartial<AssetMeta<GltfImportSettings>>(ctx.meta_bytes);
+        if (!parsed_meta.has_value())
+            co_return tryengine::core::Error("Failed to parse AssetMeta");
+
+        meta = eastl::move(*parsed_meta);
     } else {
         meta = GenerateDefaultMeta();
     }
@@ -472,6 +478,9 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     result.artifacts.push_back(std::move(map_artifact));
 
+    // Список пересобираем с нуля: мета уже прочитана из файла, и при реимпорте append
+    // задублировал бы все sub_assets.
+    meta.header.sub_assets.clear();
     for (const auto& [key, _] : asset_map.sub_assets) {
         meta.header.sub_assets.push_back(key);
     }

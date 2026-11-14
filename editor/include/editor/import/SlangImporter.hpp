@@ -24,6 +24,9 @@ class SlangImporter : public IAssetImporter {
 public:
     [[nodiscard]] constexpr eastl::string_view GetName() const override { return importer_name_; }
 
+    // Поднимай при изменении того, что попадает в артефакты: все шейдеры переимпортируются.
+    [[nodiscard]] uint32_t GetVersion() const override { return 1; }
+
     [[nodiscard]] tryengine::async::Task<ImportResult> Import(ImportContext ctx) const override {
         ImportResult result{};
 

@@ -36,6 +36,10 @@ public:
     [[nodiscard]] virtual tryengine::async::Task<ImportResult> Import(ImportContext ctx) const = 0;
 
     virtual eastl::string_view GetName() const = 0;
+
+    // Версия логики импортёра. Поднимай, когда меняется содержимое артефактов: штамп импорта
+    // перестанет совпадать, и ассеты этого типа переимпортируются без ручной чистки.
+    [[nodiscard]] virtual uint32_t GetVersion() const { return 1; }
 };
 
 }  // namespace tryeditor

@@ -10,6 +10,9 @@ build-release/
 build-asan/
 game/artifacts/
 game/.cache/
+# Штампы импорта хранят mtime исходников и машинно-специфичны; артефакты движка
+# коммитятся, а штампы к ним — нет (после клона контент один раз переимпортируется).
+engine_content/artifacts/stamps/
 
 3rdparty/
 

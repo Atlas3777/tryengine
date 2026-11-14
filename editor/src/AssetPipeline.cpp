@@ -3,6 +3,7 @@
 #include "../../engine_source/resources/include/engine/resources/Json.hpp"
 #include "editor/UiTree.hpp"
 #include "editor/import/IAssetImporter.hpp"
+#include "editor/import/ImportStamp.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/async/GlobalExecutors.hpp"
@@ -36,11 +37,11 @@ const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) c
 AssetPipeline::AssetPipeline(AssetRegistry& registry) : registry_(registry) {}
 
 void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,
-                                           const eastl::vector<uint64_t>& sub_assets) const {
+                                          const eastl::vector<uint64_t>& sub_assets) const {
     LogInfo(LogCategory::Importer, "add to registry: main guid - {}", main_guid);
     if (sub_assets.empty()) {
-        registry_.RegisterLooseArtifact(main_guid,
-                                         tryengine::fmt::format("{}/runtime/{}/0", mount.artifacts_dir.c_str(), main_guid));
+        registry_.RegisterLooseArtifact(
+            main_guid, tryengine::fmt::format("{}/runtime/{}/0", mount.artifacts_dir.c_str(), main_guid));
         return;
     }
 
@@ -80,7 +81,7 @@ Task<void> AssetPipeline::ImportGameContent(AsyncFileManager& file_manager) {
 }
 
 Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult scan_data,
-                                         AsyncFileManager& file_manager, StorageDomain domain) {
+                                        AsyncFileManager& file_manager, StorageDomain domain) {
     eastl::vector<Task<void>> tasks;
     tasks.reserve(scan_data.matched_assets.size() + scan_data.orphan_assets.size());
 
@@ -99,7 +100,6 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
     if (!expecteds.has_value())
         co_return LogAndMakeError("Ошибка при асинхронной обработке ассетов");
 
-
     // 3. Фаза построения UI-дерева (все GUID 100% гарантированно зарегистрированы).
     // Первичная загрузка: вызывать, пока das не рисует это дерево (старт редактора).
     {
@@ -111,8 +111,156 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
     co_return {};
 }
 
-Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
+namespace {
+
+eastl::string MakeStampPath(const AssetMountPoint& mount, uint64_t guid) {
+    return tryengine::fmt::format("{}/stamps/{}.json", mount.artifacts_dir.c_str(), guid);
+}
+
+// Путь артефакта относительно artifacts_dir. Один и тот же формат у записи и у штампа.
+eastl::string MakeArtifactRelPath(uint64_t main_guid, const ProducedArtifact& artifact) {
+    const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
+    return tryengine::fmt::format("{}/{}/{}", sub_folder, main_guid, artifact.sub_guid);
+}
+
+eastl::string MakeArtifactPath(const AssetMountPoint& mount, uint64_t main_guid, const ProducedArtifact& artifact) {
+    return tryengine::fmt::format("{}/{}", mount.artifacts_dir.c_str(),
+                                  MakeArtifactRelPath(main_guid, artifact).c_str());
+}
+
+uint64_t HashBytes(eastl::span<const uint8_t> bytes) {
+    return tryengine::core::Hash64(eastl::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+}
+
+eastl::vector<uint64_t> CollectRuntimeSubGuids(const ImportResult& res) {
+    eastl::vector<uint64_t> guids;
+    guids.reserve(res.artifacts.size());
+    for (const auto& artifact : res.artifacts) {
+        if (artifact.target == ArtifactTarget::Runtime)
+            guids.push_back(artifact.sub_guid);
+    }
+    return guids;
+}
+
+eastl::vector<eastl::string> CollectArtifactPaths(const ImportResult& res) {
+    eastl::vector<eastl::string> paths;
+    paths.reserve(res.artifacts.size());
+    for (const auto& artifact : res.artifacts)
+        paths.push_back(MakeArtifactRelPath(res.main_guid, artifact));
+    return paths;
+}
+
+// Записывает все артефакты импорта и дожидается их завершения.
+Task<void> WriteArtifacts(const AssetMountPoint& mount, const ImportResult& res, AsyncFileManager& file_manager) {
+    eastl::vector<FileHandle> write_handles;
+    write_handles.reserve(res.artifacts.size());
+
+    for (const auto& artifact : res.artifacts) {
+        auto path = MakeArtifactPath(mount, res.main_guid, artifact);
+        LogInfo(LogCategory::Importer, "Write Path artifact: {}", path.c_str());
+        write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
+    }
+
+    co_await WaitAllFiles(write_handles);
+
+    for (const auto& write_handle : write_handles) {
+        if (write_handle.IsFailed())
+            co_return LogAndMakeError("Не удалось записать артефакт: {}", write_handle.GetPath().data());
+    }
+    co_return {};
+}
+
+Task<bool> AllArtifactsExist(const AssetMountPoint& mount, const eastl::vector<eastl::string>& rel_paths,
+                             AsyncFileManager& file_manager) {
+    if (rel_paths.empty())
+        co_return false;
+
+    eastl::vector<FileHandle> stat_handles;
+    stat_handles.reserve(rel_paths.size());
+    for (const auto& rel_path : rel_paths) {
+        auto path = tryengine::fmt::format("{}/{}", mount.artifacts_dir.c_str(), rel_path.c_str());
+        stat_handles.push_back(file_manager.GetStatAsyncCopy(path));
+    }
+
+    co_await WaitAllFiles(stat_handles);
+
+    for (const auto& stat_handle : stat_handles) {
+        if (stat_handle.IsFailed())
+            co_return false;
+    }
+    co_return true;
+}
+
+Task<eastl::optional<ImportStamp>> ReadStamp(const AssetMountPoint& mount, uint64_t guid,
                                              AsyncFileManager& file_manager) {
+    auto stamp_path = MakeStampPath(mount, guid);
+
+    FileHandle stat_handle = file_manager.GetStatAsyncCopy(stamp_path);
+    co_await stat_handle;
+    if (stat_handle.IsFailed())
+        co_return eastl::nullopt;
+
+    FileHandle read_handle = file_manager.ReadChunkAsyncCopy(stamp_path, 0, stat_handle.GetFileSize());
+    co_await read_handle;
+    if (read_handle.IsFailed())
+        co_return eastl::nullopt;
+
+    co_return Json::DeserializePartial<ImportStamp>(read_handle.GetData());
+}
+
+bool StampMatches(const ImportStamp& stamp, const IAssetImporter& importer, const FileHandle& asset_stat,
+                  eastl::span<const uint8_t> meta_bytes) {
+    if (stamp.format_version != kImportStampVersion)
+        return false;
+    if (tryengine::core::ToView(stamp.importer) != importer.GetName() ||
+        stamp.importer_version != importer.GetVersion())
+        return false;
+
+    // Размер + mtime исходника. Это вход конвейера, его пишет пользователь, а не конвейер,
+    // поэтому порядок асинхронных записей на эту проверку не влияет.
+    if (stamp.source_size != asset_stat.GetFileSize())
+        return false;
+    const FileTime asset_mtime = asset_stat.GetMtime();
+    if (stamp.source_mtime_sec != asset_mtime.sec || stamp.source_mtime_nsec != asset_mtime.nsec)
+        return false;
+
+    // Единственный content-hash: мета уже прочитана, а именно её правка означает
+    // "пользователь поменял настройки импорта".
+    return stamp.meta_hash == HashBytes(meta_bytes);
+}
+
+ImportStamp MakeStamp(const IAssetImporter& importer, uint64_t source_size, FileTime source_mtime, uint64_t meta_hash,
+                      const ImportResult& res) {
+    ImportStamp stamp;
+    stamp.format_version = kImportStampVersion;
+    stamp.importer = eastl::string(importer.GetName().data(), importer.GetName().size());
+    stamp.importer_version = importer.GetVersion();
+    stamp.source_size = source_size;
+    stamp.source_mtime_sec = source_mtime.sec;
+    stamp.source_mtime_nsec = source_mtime.nsec;
+    stamp.meta_hash = meta_hash;
+    stamp.artifacts = CollectArtifactPaths(res);
+    return stamp;
+}
+
+Task<void> WriteStamp(const AssetMountPoint& mount, uint64_t guid, const ImportStamp& stamp,
+                      AsyncFileManager& file_manager) {
+    auto bytes = Json::Serialize(stamp);
+    if (!bytes.has_value())
+        co_return LogAndMakeError("Не удалось сериализовать штамп импорта");
+
+    auto stamp_path = MakeStampPath(mount, guid);
+    FileHandle write_handle = file_manager.WriteChunkAsyncCopy(stamp_path.c_str(), bytes.value());
+    co_await write_handle;
+    if (write_handle.IsFailed())
+        co_return LogAndMakeError("Не удалось записать штамп импорта: {}", stamp_path.c_str());
+    co_return {};
+}
+
+}  // namespace
+
+Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
+                                            AsyncFileManager& file_manager) {
     // 1. Получение размера файла
     FileHandle stat_handle = file_manager.GetStatAsyncCopy(asset_path);
     co_await stat_handle;
@@ -149,35 +297,39 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     const auto& res = *import_res;
 
     // 5. Запись артефактов и мета-файла
-    eastl::vector<FileHandle> write_handles;
-    eastl::vector<uint64_t> runtime_sub_guids;
+    auto artifacts_result = co_await WriteArtifacts(mount, res, file_manager);
+    if (!artifacts_result.has_value())
+        co_return eastl::move(artifacts_result.error());
 
-    for (const auto& artifact : res.artifacts) {
-        const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
-        auto path = tryengine::fmt::format("{}/{}/{}/{}", mount.artifacts_dir.c_str(), sub_folder,
-                                           res.main_guid, artifact.sub_guid);
-
-        LogInfo(LogCategory::Importer, "Write Path artifact: {}", path.c_str());
-        write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
-
-        if (artifact.target == ArtifactTarget::Runtime)
-            runtime_sub_guids.push_back(artifact.sub_guid);
-    }
-
+    bool meta_written = false;
+    uint64_t meta_hash = 0;
     if (!res.meta_bytes.empty()) {
         auto meta_path = tryengine::fmt::format("{}{}", asset_path.c_str(), meta_ext);
-        write_handles.push_back(file_manager.WriteChunkAsyncCopy(meta_path.c_str(), res.meta_bytes));
+        FileHandle meta_write = file_manager.WriteChunkAsyncCopy(meta_path.c_str(), res.meta_bytes);
+        co_await meta_write;
+
+        if (meta_write.IsFailed())
+            co_return LogAndMakeError("Не удалось записать мета-файл: {}", meta_path.c_str());
+
+        meta_written = true;
+        meta_hash = HashBytes(res.meta_bytes);
     }
 
-    co_await WaitAllFiles(write_handles);
-
-    for (const auto& write_handle : write_handles) {
-        if (write_handle.IsFailed())
-            co_return LogAndMakeError("Не удалось записать артефакт: {}", write_handle.GetPath().data());
+    // 6. Штамп импорта — запись о том, что именно лежит на диске. Порядок записей не важен:
+    //    в следующий раз штамп сравнивается по содержимому, а не по mtime.
+    if (meta_written) {
+        const ImportStamp stamp =
+            MakeStamp(*importer, stat_handle.GetFileSize(), stat_handle.GetMtime(), meta_hash, res);
+        auto stamp_result = co_await WriteStamp(mount, res.main_guid, stamp, file_manager);
+        if (!stamp_result.has_value())
+            co_return eastl::move(stamp_result.error());
+    } else {
+        // Без меты guid не сохранился: при следующем сканировании ассет снова будет сиротой.
+        LogError(LogCategory::Importer, "Импортер не выдал мету для {}: штамп не записан", asset_path.c_str());
     }
 
-    // 6. Регистрация артефактов и обновление карт под мьютексом
-    RegisterArtifactPaths(mount, res.main_guid, runtime_sub_guids);
+    // 7. Регистрация артефактов и обновление карт под мьютексом
+    RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
 
     {
         std::lock_guard lock(db_mutex_);
@@ -188,49 +340,8 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     co_return {};
 }
 
-static Task<FileHandle> GetOldestFileTime(AsyncFileManager& file_manager, eastl::vector<eastl::string> artifacts) {
-    if (artifacts.empty()) {
-        co_return LogAndMakeError("Empty artifact list");
-    }
-
-    eastl::vector<FileHandle> stat_handles;
-    stat_handles.reserve(artifacts.size());
-    for (const auto& artifact : artifacts)
-        stat_handles.push_back(file_manager.GetStatAsyncCopy(artifact));
-
-    co_await WaitAllFiles(stat_handles);
-
-    for (auto& handle : stat_handles)
-        if (handle.IsFailed())
-            co_return std::move(handle);
-
-    uint32_t oldest_index = 0;
-    for (uint32_t i = 1; i < stat_handles.size(); ++i)
-        if (stat_handles[i].GetMtime() < stat_handles[oldest_index].GetMtime())
-            oldest_index = i;
-
-    co_return std::move(stat_handles[oldest_index]);
-}
-
-static eastl::vector<eastl::string> FindAllArtifacts(const AssetMountPoint& mount, const AssetMetaHeader& header) {
-    eastl::vector<eastl::string> paths;
-    paths.reserve(header.sub_assets.size() + 1);
-
-    if (header.sub_assets.empty()) {
-        paths.emplace_back(tryengine::fmt::format("{}/runtime/{}/{}", mount.artifacts_dir.c_str(), header.guid, 0));
-    } else {
-        for (const auto sub_id : header.sub_assets) {
-            paths.emplace_back(
-                tryengine::fmt::format("{}/runtime/{}/{}", mount.artifacts_dir.c_str(), header.guid, sub_id));
-        }
-    }
-
-    return paths;
-}
-
-Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
-                                                AssetMountPoint mount,
-                                                AsyncFileManager& file_manager) {
+Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, AssetMountPoint mount,
+                                               AsyncFileManager& file_manager) {
     const eastl::string& asset_path = asset_pair.asset_path;
     const eastl::string& meta_path = asset_pair.meta_path;
 
@@ -263,26 +374,34 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
 
     RegisterArtifactPaths(mount, header.guid, header.sub_assets);
 
-    // 3. Проверка времени модификации артефактов
-    auto artifact_paths = FindAllArtifacts(mount, header);
-    auto oldest_artifact_stat_res = co_await GetOldestFileTime(file_manager, eastl::move(artifact_paths));
-    auto& oldest_artifact_stat = *oldest_artifact_stat_res;
+    IAssetImporter* importer = import_system_.GetImporterByName(header.importer_type);
+    if (!importer)
+        co_return LogAndMakeError("Не найден импортер для типа: {}, путь {}", header.importer_type.c_str(), asset_path);
 
+    // 3. Проверка актуальности. Сравниваем входы с записанными в штампе импорта; mtime
+    //    меты и артефактов не участвует — их пишем мы сами, асинхронно и в любом порядке.
     bool need_reimport = false;
-    if (oldest_artifact_stat.IsFailed()) {
-        LogInfo(LogCategory::Importer, "NEED reimport (отсутствует артефакт): {}, {}", asset_path.c_str(),
-                oldest_artifact_stat.GetPath());
-        need_reimport = true;
-    } else {
-        const FileTime meta_mtime = meta_stat.GetMtime();
-        const FileTime asset_mtime = asset_stat.GetMtime();
-        const FileTime artifact_mtime = oldest_artifact_stat.GetMtime();
 
-        if ((meta_mtime > artifact_mtime) || (asset_mtime > artifact_mtime)) {
-            // LogInfo(LogCategory::Importer, "NEED reimport: {}", asset_path.c_str());
+    auto stamp_result = co_await ReadStamp(mount, header.guid, file_manager);
+    if (!stamp_result.has_value())
+        co_return eastl::move(stamp_result.error());
+
+    const eastl::optional<ImportStamp>& stamp = *stamp_result;
+    if (!stamp.has_value()) {
+        need_reimport = true;
+        LogInfo(LogCategory::Importer, "Reimport {}: нет штампа импорта", asset_path.c_str());
+    } else if (!StampMatches(*stamp, *importer, asset_stat, meta_read.GetData())) {
+        need_reimport = true;
+        LogInfo(LogCategory::Importer, "Reimport {}: изменился исходник, мета или версия импортера",
+                asset_path.c_str());
+    } else {
+        auto artifacts_exist_result = co_await AllArtifactsExist(mount, stamp->artifacts, file_manager);
+        if (!artifacts_exist_result.has_value())
+            co_return eastl::move(artifacts_exist_result.error());
+
+        if (!*artifacts_exist_result) {
             need_reimport = true;
-        } else {
-            // LogInfo(LogCategory::Importer, "NOT need reimport: {}", asset_path.c_str());
+            LogInfo(LogCategory::Importer, "Reimport {}: не хватает артефакта", asset_path.c_str());
         }
     }
 
@@ -290,10 +409,6 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
         co_return {};
 
     // 4. Повторный импорт устаревшего ассета
-    IAssetImporter* importer = import_system_.GetImporterByName(header.importer_type);
-    if (!importer)
-        co_return LogAndMakeError("Не найден импортер для типа: {}, путь {}", header.importer_type.c_str(), asset_path);
-
     FileHandle asset_read = file_manager.ReadChunkAsyncCopy(asset_path, 0, asset_stat.GetFileSize());
     co_await asset_read;
 
@@ -304,35 +419,48 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair,
     auto import_res = co_await importer->Import(ctx);
 
     if (!import_res.has_value()) {
-        LogError(LogCategory::Importer, "Ошибка реимпорта для {}: {}", asset_path.c_str(), import_res.error().Message());
+        LogError(LogCategory::Importer, "Ошибка реимпорта для {}: {}", asset_path.c_str(),
+                 import_res.error().Message());
         co_return eastl::move(import_res.error());
     }
 
     const auto& res = *import_res;
-    eastl::vector<FileHandle> write_handles;
-    eastl::vector<uint64_t> runtime_sub_guids;
 
-    for (const auto& artifact : res.artifacts) {
-        const char* sub_folder = (artifact.target == ArtifactTarget::Runtime) ? "runtime" : "editor";
-        auto path = tryengine::fmt::format("{}/{}/{}/{}", mount.artifacts_dir.c_str(), sub_folder,
-                                           res.main_guid, artifact.sub_guid);
+    auto artifacts_result = co_await WriteArtifacts(mount, res, file_manager);
+    if (!artifacts_result.has_value())
+        co_return eastl::move(artifacts_result.error());
 
-        write_handles.push_back(file_manager.WriteChunkAsyncCopy(path.c_str(), artifact.bytes));
-        if (artifact.target == ArtifactTarget::Runtime) {
-            runtime_sub_guids.push_back(artifact.sub_guid);
+    // 5. Мета — тоже выход импорта (в ней, например, обновляется список sub_assets). Пишем
+    //    только когда содержимое реально изменилось, и только если импортёр сохранил guid:
+    //    иначе перезапись потеряла бы пользовательские настройки и адресацию ассета.
+    uint64_t meta_hash = HashBytes(meta_read.GetData());
+    if (!res.meta_bytes.empty() && HashBytes(res.meta_bytes) != meta_hash) {
+        if (res.main_guid != header.guid) {
+            LogError(LogCategory::Importer, "Импортер сменил guid при реимпорте {} ({} -> {}): мета не перезаписана",
+                     asset_path.c_str(), header.guid, res.main_guid);
+        } else {
+            FileHandle meta_write = file_manager.WriteChunkAsyncCopy(meta_path, res.meta_bytes);
+            co_await meta_write;
+            if (meta_write.IsFailed())
+                co_return LogAndMakeError("Не удалось записать мета-файл: {}", meta_path.c_str());
+
+            meta_hash = HashBytes(res.meta_bytes);
         }
     }
 
-    co_await WaitAllFiles(write_handles);
+    // 6. Штамп. Хеш меты — тот, что теперь лежит на диске. Штамп сравнивается по
+    //    содержимому, поэтому порядок его записи относительно артефактов и меты не важен.
+    const ImportStamp new_stamp = MakeStamp(*importer, asset_stat.GetFileSize(), asset_stat.GetMtime(), meta_hash, res);
+    auto stamp_write_result = co_await WriteStamp(mount, res.main_guid, new_stamp, file_manager);
+    if (!stamp_write_result.has_value())
+        co_return eastl::move(stamp_write_result.error());
 
-    for (const auto& write_handle : write_handles) {
-        if (write_handle.IsFailed()) {
-            co_return LogAndMakeError("Не удалось записать артефакт при реимпорте: {}",
-                                     write_handle.GetPath().data());
-        }
+    {
+        std::lock_guard lock(db_mutex_);
+        path_to_guid_[PathHash(ToView(asset_path))] = res.main_guid;
     }
 
-    RegisterArtifactPaths(mount, res.main_guid, runtime_sub_guids);
+    RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
     co_return {};
 }
 
@@ -368,7 +496,7 @@ void AssetPipeline::Post(TreeCommand::Kind kind, eastl::string_view a, eastl::st
 void AssetPipeline::OnFileCreatedOrModified(const char* path) {
     // TODO: новый/изменённый файл => импорт (создание .meta, guid) => PostAssetReady(path, guid).
     // Дерево нельзя пополнять до того, как известен guid.
-    (void)path;
+    (void) path;
 }
 
 void AssetPipeline::OnFileDeleted(const char* path) {
