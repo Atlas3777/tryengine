@@ -194,7 +194,7 @@ def StepPlay()   { /* TODO */ }
 [export]
 def DrawEditor() {
     unsafe {
-        let ctx_address = get_editor_imgui_context()
+        let ctx_address = GetEditorImGuiContext()
         if (ctx_address == null){ print("imgui is null")}
         let host_ctx = reinterpret<ImGuiContext?>(ctx_address)
         host_ctx.SetCurrentContext()

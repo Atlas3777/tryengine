@@ -22,27 +22,24 @@ MAKE_TYPE_FACTORY(UiFolderVector, UiFolderVector);
 MAKE_TYPE_FACTORY(UiFileVector, UiFileVector);
 MAKE_TYPE_FACTORY(Uint32Vector, Uint32Vector);
 
-MAKE_TYPE_FACTORY(UiFileTest, tryeditor::UiFileTest);
-
 const UiFolderVector& GetEngineFolders(das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Engine);
 }
 
-tryeditor::UiFileTest CreateUiFileTest() {
-    return tryeditor::UiFileTest(3);
-}
 
 const UiFolderVector& GetGameFolders(das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Game);
 }
 
+
 struct SceneDTODas {
     const char* name;
     das::Array meshes;
     das::Array mats;
 };
+
 
 eastl::vector<tryeditor::SceneDTO> scene_dtos;
 
@@ -195,12 +192,6 @@ struct UiFolderAnnotation : ManagedStructureAnnotation<tryeditor::UiFolder, fals
     }
 };
 
-struct UiFileTestAnnotation : ManagedStructureAnnotation<tryeditor::UiFileTest, false> {
-    UiFileTestAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("UiFileTest", ml) {
-        addField<DAS_BIND_MANAGED_FIELD(guid)>("guid", "guid");
-    }
-};
-
 class Module_TryEditor : public das::Module {
 public:
     Module_TryEditor() : das::Module("TryEditor") {
@@ -212,7 +203,6 @@ public:
         addVectorAnnotation<Uint32Vector>(this, lib, "Uint32Vector");
 
         addAnnotation(new UiFolderAnnotation(lib));
-        addAnnotation(new UiFileTestAnnotation(lib));
         addVectorAnnotation<UiFolderVector>(this, lib, "UiFolderVector");
 
         das::addExtern<DAS_BIND_FUN(GetEditorCameraViewImage)>(*this, lib, "GetEditorCameraViewImage",
@@ -221,7 +211,7 @@ public:
         das::addExtern<DAS_BIND_FUN(GetGameCameraViewImage)>(*this, lib, "GetGameCameraViewImage",
                                                              das::SideEffects::none, "GetGameCameraViewImage");
 
-        das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "get_editor_imgui_context",
+        das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "GetEditorImGuiContext",
                                                             das::SideEffects::none, "GetEditorImGuiContext");
 
         das::addExtern<DAS_BIND_FUN(GetEngineFolders)>(*this, lib, "get_engine_folders", das::SideEffects::none,
@@ -229,9 +219,6 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetGameFolders)>(*this, lib, "get_game_folders", das::SideEffects::none,
                                                      "GetGameFolders");
-
-        das::addExtern<DAS_BIND_FUN(CreateUiFileTest), das::SimNode_ExtFuncCallAndCopyOrMove>(
-            *this, lib, "CreateUiFileTest", das::SideEffects::none, "CreateUiFileTest");
 
         das::addExtern<DAS_BIND_FUN(CreateBuild)>(*this, lib, "CreateBuild", das::SideEffects::accessGlobal,
                                                   "CreateBuild");

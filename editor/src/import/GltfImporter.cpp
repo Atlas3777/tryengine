@@ -457,9 +457,9 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     tg3_error_code err = tinygltf3::parse(model, errors, ctx.source_bytes.data(), ctx.source_bytes.size());
 
-    if (err != TG3_OK) {
+    if (err != TG3_OK)
         co_return tryengine::core::Error("Failed to parse gltf model");
-    }
+
     const tg3_model* m = model.get();
 
     eastl::vector<uint64_t> material_guids = ProcessMaterials(result, m, meta.header.guid, asset_map);
@@ -469,9 +469,9 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     ProducedArtifact map_artifact;
     auto asset_map_bytes = tryengine::resources::Json::Serialize(asset_map);
-    if (!asset_map_bytes.has_value()) {
+    if (!asset_map_bytes.has_value())
         co_return tryengine::core::Error("Failed to serialize ModelAssetMap");
-    }
+
     map_artifact.bytes = *asset_map_bytes;
     map_artifact.sub_guid = static_cast<uint32_t>(tryengine::EditorArtifactGuid::AssetMap);
     map_artifact.target = ArtifactTarget::Editor;
@@ -481,16 +481,14 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
     // Список пересобираем с нуля: мета уже прочитана из файла, и при реимпорте append
     // задублировал бы все sub_assets.
     meta.header.sub_assets.clear();
-    for (const auto& [key, _] : asset_map.sub_assets) {
+    for (const auto& [key, _] : asset_map.sub_assets)
         meta.header.sub_assets.push_back(key);
-    }
 
     auto meta_bytes = tryengine::resources::Json::Serialize(meta);
-    if (meta_bytes.has_value()) {
+    if (meta_bytes.has_value())
         result.meta_bytes = *meta_bytes;
-    } else {
+    else
         co_return tryengine::core::Error("Failed to serialize AssetMeta");
-    }
 
     LogCritical("END IMPORTING GLTF");
 

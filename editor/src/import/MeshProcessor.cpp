@@ -244,21 +244,21 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(const 
         for (uint32_t id = 0; id < index_count; ++id) {
             const uint8_t* raw_idx = input.indices.data + (id * input.indices.stride);
             uint32_t val = 0;
-            if (input.indices.format == IndexFormat::UInt16) {
+            if (input.indices.format == IndexFormat::UInt16)
                 val = *reinterpret_cast<const uint16_t*>(raw_idx);
-            } else if (input.indices.format == IndexFormat::UInt32) {
+            else if (input.indices.format == IndexFormat::UInt32)
                 val = *reinterpret_cast<const uint32_t*>(raw_idx);
-            } else {  // IndexFormat::UInt8
+            else
                 val = *raw_idx;
-            }
 
-            if (target_index_format == IndexFormat::UInt8) {
+
+            if (target_index_format == IndexFormat::UInt8)
                 index_buffer[id] = static_cast<uint8_t>(val);
-            } else if (target_index_format == IndexFormat::UInt16) {
+            else if (target_index_format == IndexFormat::UInt16)
                 reinterpret_cast<uint16_t*>(index_buffer.data())[id] = static_cast<uint16_t>(val);
-            } else {
+            else
                 reinterpret_cast<uint32_t*>(index_buffer.data())[id] = val;
-            }
+
         }
     } else {
         if (target_index_format == IndexFormat::UInt8) {

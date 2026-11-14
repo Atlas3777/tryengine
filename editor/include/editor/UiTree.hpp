@@ -19,10 +19,6 @@ struct UiFile {
     const char* path;
 };
 
-struct UiFileTest {
-    uint64_t guid;
-};
-
 struct UiFolder {
     const char* name = nullptr;  // nullptr == слот свободен
     const char* path = nullptr;

@@ -8,13 +8,12 @@
 #include <slang-com-ptr.h>
 #include <slang.h>
 
-#include "../../../../engine_source/resources/include/engine/resources/Json.hpp"
-#include "editor/import/BaseTypedImporter.hpp"
 #include "editor/import/IAssetImporter.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/core/MakeError.hpp"
 #include "engine/core/Random.hpp"
 #include "engine/graphics/ShaderBinary.hpp"
+#include "engine/resources/Json.hpp"
 
 namespace tryeditor {
 
