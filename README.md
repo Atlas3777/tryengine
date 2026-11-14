@@ -88,8 +88,10 @@ cmake --build build-release --target tryengine_shared tryeditor_shared -j "$(npr
 пишут один и тот же `modules/<имя>/<имя>.shared_module`, поэтому Debug-сборка затирает
 Release-модуль.
 
-`script_pak` собирается в редакторе клавишей `Z` (тест-компиляция — `X`): `game_client`
-читает готовый пак и `.das` не компилирует.
+`script_pak` собирается в редакторе в окне `BuildSettings` (кнопка `Build Scripts` или
+`Z`) и кладётся в корень выбранной папки билда — рядом с `content/`, а не в корень
+репозитория. Тест-компиляция — `Test Compile Scripts` или `X`. `game_client` читает
+готовый пак и `.das` не компилирует.
 
 ## Для агентов
 

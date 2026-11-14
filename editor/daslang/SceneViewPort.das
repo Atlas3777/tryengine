@@ -8,6 +8,7 @@ require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 
 require TryEditor
+require tryeditor/EditorInput
 require tryeditor/FileSystemUtils
 
 var a : AssetItem
@@ -49,6 +50,8 @@ def GetGameViewportSize : float2 {
 }
 
 def DrawSceneViewPort(){
+    SetSceneViewportHovered(false)
+
     window(SCENE_VIEW_WND, (text = "SceneView", closable = false, flags = ImGuiWindowFlags.None)) {
         let img = GetEditorCameraViewImage()
         scene_viewport_size = GetContentRegionAvail()
@@ -71,6 +74,7 @@ def DrawSceneViewPort(){
 
             // 3. Обновляем состояние клика (только если мышь находится над вьюпортом)
             let is_hovered = IsItemHovered()
+            SetSceneViewportHovered(is_hovered)
             scene_viewport_mouse.is_down = is_hovered && IsMouseDown(ImGuiMouseButton.Left)
             scene_viewport_mouse.pressed = is_hovered && IsMouseClicked(ImGuiMouseButton.Left)
 
@@ -89,7 +93,11 @@ def DrawSceneViewPort(){
 }
 
 def DrawGameSceneViewPort(){
+    SetGameViewportFocused(false)
+
     window(SCENE_GAME_VIEW_WND, (text = "SceneGameView", closable = false, flags = ImGuiWindowFlags.None)) {
+        SetGameViewportFocused(IsWindowFocused())
+
         let img = GetGameCameraViewImage()
         scene_game_viewport_size = GetContentRegionAvail()
 

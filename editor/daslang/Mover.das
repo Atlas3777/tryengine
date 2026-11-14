@@ -6,6 +6,7 @@ require math
 require daslib/math_boost
 require tryengine/Input
 require tryengine/Types
+require tryeditor/EditorInput
 require daslib/decs
 require daslib/decs_boost
 
@@ -13,6 +14,12 @@ let sens = 0.26f
 let cam_speed = 3f
 
 def Move(dt : float) {
+    // Камера редактора слушается мыши только внутри SceneView и только когда
+    // фокус не у game viewport.
+    if (!IsSceneViewportHovered() || IsGameViewportFocused()) {
+        return
+    }
+
     query() $(var transform : Transform; camera : Camera) {
         let md = mouse_delta()
 

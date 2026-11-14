@@ -4,6 +4,7 @@ module Editor shared public
 
 require tryeditor/Mover
 require tryeditor/DebugRender
+require tryeditor/EditorHotkeys
 
 require trygame/Game
 
@@ -31,6 +32,7 @@ def EditorStart(){
 
 [export]
 def EditorUpdate(){
+    ProcessHotkeys()
     Move(0.03)
 
     if (is_playing && !is_paused){

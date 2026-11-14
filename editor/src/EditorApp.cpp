@@ -22,7 +22,6 @@
 #include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
-#include "engine/resources/ReadFullFile.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
@@ -74,8 +73,8 @@ void EditorApp::Init() {
 
     engine_->RegisterSystem<ScriptBuildSystem>(GetGameScriptBuildConfig(*engine_));
 
-    const auto task = RunPollable(
-        ThreadPool(), editor_->GetAssetSourceDatabase().ImportEngineContent(async_file_manager));
+    const auto task =
+        RunPollable(ThreadPool(), editor_->GetAssetSourceDatabase().ImportEngineContent(async_file_manager));
 
     while (!task.IsReady()) {
         async_file_manager.Pull();
@@ -94,34 +93,12 @@ void EditorApp::Init() {
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
 
-// Передаём vector по значению, чтобы он переехал во фрейм корутины
-Task<void> WriteAA(AsyncFileManager& fm, eastl::string path, eastl::vector<uint8_t> data, uint64_t offset = 0) {
-    co_await fm.WriteChunkAsync(path, data, offset);
-    LogInfo("Write!?");
-    co_return {};
-}
-
-Task<void> TestCompile(Engine& eng, eastl::string_view path) {
-    tryengine::Result<eastl::vector<uint8_t>> a = co_await ReadFullFileNonCopy(eng.Get<AsyncFileManager>(), path);
-    if (!a.has_value())
-        co_return LogAndMakeError("AAA");
-
-    co_await ExecutorSwitch{MainThread()};
-
-    ScriptBuildSystem build_system(GetGameScriptBuildConfig(eng));
-    const auto result = build_system.TestCompile(*a);
-    if (!result.has_value())
-        LogError("TestCompile не прошёл (подробности в логе выше)");
-    co_return {};
-}
-
 void EditorApp::Run() const {
     editor_->running = true;
     editor_->state = PlayModeState::Edit;
 
     auto& time_manager = engine_->Get<TimeManager>();
     auto& script_system = engine_->Get<ScriptSystem>();
-    auto& game_script = engine_->Get<ScriptBuildSystem>();
     auto& render = engine_->Get<EditorRender>();
     auto& input = engine_->Get<InputService>();
     auto& async_file_manager = engine_->Get<AsyncFileManager>();
@@ -137,18 +114,6 @@ void EditorApp::Run() const {
 
         script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
-
-        if (input.GetState().Pressed(Key::Z)) {
-            auto bytes_o = game_script.BuildPak("./game/scripts/Game.das");
-            if (!bytes_o.has_value())
-                LogError("Build Pak error");
-            else
-                RunAndForget(ThreadPool(), WriteAA(async_file_manager, "script_pak", eastl::move(*bytes_o)));
-        }
-
-        if (input.GetState().Pressed(Key::X))
-            RunAndForget(ThreadPool(), TestCompile(*engine_, "script_pak"));
-
 
         engine_->Get<AsyncFileManager>().Submit();
 
