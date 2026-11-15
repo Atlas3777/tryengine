@@ -1,6 +1,6 @@
 #include "editor/EditorApp.hpp"
 
-#include "../../engine_source/resources/include/engine/resources/PendingLoadQueue.hpp"
+#include "engine/resources/PendingLoadQueue.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"

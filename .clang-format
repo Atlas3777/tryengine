@@ -46,3 +46,4 @@ PackConstructorInitializers: NextLine
 SpaceAfterCStyleCast: true
 SpacesInContainerLiterals: false
 FixNamespaceComments: true # Автоматически добавляет // namespace name в конце
+RemoveBracesLLVM: true
