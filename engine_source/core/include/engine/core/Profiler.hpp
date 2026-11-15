@@ -1,10 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <mutex>
 #include <string_view>
 #include <unordered_map>
-#include <mutex>
-#include <algorithm>
 
 namespace tryengine::core {
 
@@ -34,9 +34,8 @@ public:
         auto& sample = current_frame_samples_[name];
         sample.call_count++;
         sample.total_time_ms += duration_ms;
-        if (duration_ms > sample.max_time_ms) {
+        if (duration_ms > sample.max_time_ms)
             sample.max_time_ms = duration_ms;
-        }
     }
 
     // Вызывается в конце кадра
@@ -87,9 +86,17 @@ public:
         current_frame_samples_.clear();
     }
 
-    const auto& GetMetrics() const { return metrics_; }
-    const float* GetFrameTimeHistory() const { return frame_time_history_; }
-    size_t GetFrameHistoryOffset() const { return frame_history_offset_; }
+    const auto& GetMetrics() const {
+        return metrics_;
+    }
+
+    const float* GetFrameTimeHistory() const {
+        return frame_time_history_;
+    }
+
+    size_t GetFrameHistoryOffset() const {
+        return frame_history_offset_;
+    }
 
 private:
     struct Sample {
@@ -109,8 +116,7 @@ private:
 // RAII Scope & macros
 class ProfileScope {
 public:
-    explicit ProfileScope(std::string_view name)
-        : name_(name), start_(std::chrono::steady_clock::now()) {}
+    explicit ProfileScope(std::string_view name) : name_(name), start_(std::chrono::steady_clock::now()) {}
 
     ~ProfileScope() {
         auto end = std::chrono::steady_clock::now();
@@ -123,7 +129,7 @@ private:
     std::chrono::steady_clock::time_point start_;
 };
 
-} // namespace tryengine::core
+}  // namespace tryengine::core
 
 #define TRY_PROFILE_CONCAT_IMPL(a, b) a##b
 #define TRY_PROFILE_CONCAT(a, b) TRY_PROFILE_CONCAT_IMPL(a, b)

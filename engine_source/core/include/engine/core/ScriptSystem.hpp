@@ -75,7 +75,9 @@ public:
         return true;
     }
 
-    das::Context* GetContext() const { return das_ctx_; }
+    das::Context* GetContext() const {
+        return das_ctx_;
+    }
 
 private:
     template <typename... Args>

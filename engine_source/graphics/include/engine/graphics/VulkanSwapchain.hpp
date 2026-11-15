@@ -1,8 +1,9 @@
 #pragma once
 
 #include <EASTL/vector.h>
-#include <volk.h>
 #include <VkBootstrap.h>
+#include <volk.h>
+
 #include "engine/graphics/VulkanDevice.hpp"
 
 namespace tryengine::graphics {
@@ -17,15 +18,33 @@ public:
 
     void Recreate(uint32_t width, uint32_t height, bool vsync);
 
-    [[nodiscard]] VkSwapchainKHR GetHandle() const { return swapchain_; }
-    [[nodiscard]] VkFormat GetImageFormat() const { return image_format_; }
-    [[nodiscard]] VkExtent2D GetExtent() const { return extent_; }
-    [[nodiscard]] const eastl::vector<VkImage>& GetImages() const { return images_; }
-    [[nodiscard]] const eastl::vector<VkImageView>& GetImageViews() const { return image_views_; }
+    [[nodiscard]] VkSwapchainKHR GetHandle() const {
+        return swapchain_;
+    }
+
+    [[nodiscard]] VkFormat GetImageFormat() const {
+        return image_format_;
+    }
+
+    [[nodiscard]] VkExtent2D GetExtent() const {
+        return extent_;
+    }
+
+    [[nodiscard]] const eastl::vector<VkImage>& GetImages() const {
+        return images_;
+    }
+
+    [[nodiscard]] const eastl::vector<VkImageView>& GetImageViews() const {
+        return image_views_;
+    }
+
     [[nodiscard]] VkSemaphore GetRenderFinishedSemaphore(uint32_t image_index) const {
         return render_finished_semaphores_[image_index];
     }
-    [[nodiscard]] bool IsVsync() const { return vsync_; }
+
+    [[nodiscard]] bool IsVsync() const {
+        return vsync_;
+    }
 
 private:
     void Cleanup();

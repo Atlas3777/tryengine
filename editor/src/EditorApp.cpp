@@ -1,6 +1,5 @@
 #include "editor/EditorApp.hpp"
 
-#include "engine/resources/PendingLoadQueue.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"
@@ -24,6 +23,7 @@
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/LooseFiles.hpp"
 #include "engine/resources/PakManager.hpp"
+#include "engine/resources/PendingLoadQueue.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 namespace tryeditor {
@@ -131,7 +131,6 @@ void EditorApp::Run() const {
         engine_->Get<AsyncFileManager>().Submit();
 
         render.Render(*engine_, *vulkan_device_, editor_->state);
-        // script_system.GetContext();
         Profiler::Instance().EndFrame(time_manager.Root().DeltaTime() * 1000.0f);
     }
 }

@@ -1,4 +1,5 @@
 #include "engine/graphics/VulkanSwapchain.hpp"
+
 #include "engine/core/Assert.hpp"
 
 namespace tryengine::graphics {
@@ -62,14 +63,13 @@ void VulkanSwapchain::Build(const uint32_t width, const uint32_t height, const b
 void VulkanSwapchain::Cleanup() {
     VkDevice dev = device_.GetDevice();
 
-    for (auto sem : render_finished_semaphores_) {
-        if (sem) vkDestroySemaphore(dev, sem, nullptr);
-    }
+    for (auto sem : render_finished_semaphores_)
+        if (sem)
+            vkDestroySemaphore(dev, sem, nullptr);
     render_finished_semaphores_.clear();
 
-    for (auto view : image_views_) {
+    for (auto view : image_views_)
         vkDestroyImageView(dev, view, nullptr);
-    }
     image_views_.clear();
     images_.clear();
 

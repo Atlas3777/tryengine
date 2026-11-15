@@ -35,7 +35,6 @@ struct SamplerDesc {
 
 #pragma pack(push, 1)
 
-
 struct TextureHeader {
     uint32_t magic{TextureMagic};
     uint32_t version{TextureVersion};
@@ -87,8 +86,7 @@ struct UnpackedTextureView {
 
 class TextureBinary {
 public:
-    static eastl::vector<uint8_t> Pack(const TextureHeader& header,
-                                       eastl::span<const uint8_t> full_data);
+    static eastl::vector<uint8_t> Pack(const TextureHeader& header, eastl::span<const uint8_t> full_data);
 
     static Result<UnpackedTextureView> UnpackFull(eastl::span<const uint8_t> raw_bytes);
 };

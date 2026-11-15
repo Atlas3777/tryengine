@@ -1,7 +1,7 @@
 #pragma once
 
-#include "FormatUtils.h"
 #include "Error.hpp"
+#include "FormatUtils.h"
 #include "Log.hpp"
 
 namespace tryengine::core {

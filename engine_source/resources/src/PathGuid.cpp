@@ -14,18 +14,15 @@ eastl::string NormalizePath(eastl::string_view path) {
 
     for (const char ch : path) {
         const char fixed = ch == '\\' ? '/' : ch;
-        if (fixed == '/' && !normalized.empty() && normalized.back() == '/') {
+        if (fixed == '/' && !normalized.empty() && normalized.back() == '/')
             continue;
-        }
         normalized.push_back(fixed);
     }
 
-    while (normalized.size() >= 2 && normalized[0] == '.' && normalized[1] == '/') {
+    while (normalized.size() >= 2 && normalized[0] == '.' && normalized[1] == '/')
         normalized.erase(0, 2);
-    }
-    while (!normalized.empty() && normalized.back() == '/') {
+    while (!normalized.empty() && normalized.back() == '/')
         normalized.pop_back();
-    }
     return normalized;
 }
 

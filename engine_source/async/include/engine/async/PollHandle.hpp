@@ -19,16 +19,22 @@ template <typename T>
 class [[nodiscard]] PollHandle {
 public:
     PollHandle() noexcept = default;
+
     explicit PollHandle(std::shared_ptr<PollState<T>> state) noexcept : state_(std::move(state)) {}
 
-    [[nodiscard]] bool IsReady() const noexcept { return state_ && state_->ready.load(std::memory_order_acquire); }
+    [[nodiscard]] bool IsReady() const noexcept {
+        return state_ && state_->ready.load(std::memory_order_acquire);
+    }
+
     [[nodiscard]] Result<T>& GetResult() & {
-        TRY_ASSERT(state_ && state_->result.has_value(), "PollHandle result accessed before completion or state is null");
+        TRY_ASSERT(state_ && state_->result.has_value(),
+                   "PollHandle result accessed before completion or state is null");
         return *state_->result;
     }
 
     [[nodiscard]] Result<T>&& GetResult() && {
-        TRY_ASSERT(state_ && state_->result.has_value(), "PollHandle result accessed before completion or state is null");
+        TRY_ASSERT(state_ && state_->result.has_value(),
+                   "PollHandle result accessed before completion or state is null");
         return std::move(*state_->result);
     }
 
@@ -40,22 +46,36 @@ namespace detail {
 
 template <typename T>
 struct PollDriverPromise {
-    std::suspend_never initial_suspend() noexcept { return {}; }
+    std::suspend_never initial_suspend() noexcept {
+        return {};
+    }
 
     struct FinalAwaiter {
-        bool await_ready() noexcept { return false; }
-        void await_suspend(std::coroutine_handle<PollDriverPromise> h) noexcept { h.destroy(); }
+        bool await_ready() noexcept {
+            return false;
+        }
+
+        void await_suspend(std::coroutine_handle<PollDriverPromise> h) noexcept {
+            h.destroy();
+        }
+
         void await_resume() noexcept {}
     };
-    FinalAwaiter final_suspend() noexcept { return {}; }
+
+    FinalAwaiter final_suspend() noexcept {
+        return {};
+    }
 
     void return_void() noexcept {}
+
     void unhandled_exception() noexcept {}  // сюда никогда не попадём: Task сама ловит исключения в TaskPromise
 
     struct Handle {
         using promise_type = PollDriverPromise;
+
         Handle(std::coroutine_handle<promise_type>) noexcept {}
     };
+
     Handle get_return_object() noexcept {
         return Handle{std::coroutine_handle<PollDriverPromise>::from_promise(*this)};
     }

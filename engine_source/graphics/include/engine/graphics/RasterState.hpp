@@ -56,7 +56,8 @@ inline void ApplyRasterState(VkCommandBuffer cmd, const RasterState& s = {}) {
 }
 
 inline void SetViewportScissor(VkCommandBuffer cmd, VkExtent2D extent) {
-    const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f};
+    const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
+                              0.0f, 1.0f};
     const VkRect2D scissor{{0, 0}, extent};
     vkCmdSetViewportWithCountEXT(cmd, 1, &viewport);
     vkCmdSetScissorWithCountEXT(cmd, 1, &scissor);

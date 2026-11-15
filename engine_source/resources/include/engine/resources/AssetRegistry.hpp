@@ -41,14 +41,16 @@ public:
     eastl::optional<AssetLocation> GetAssetLocation(uint64_t guid) const {
         std::lock_guard lock(mutex_);
         auto it = locations_.find(guid);
-        if (it != locations_.end()) {
+        if (it != locations_.end())
             return it->second;
-        }
         return eastl::nullopt;
     }
 
     // Вызывать до старта потоков. В game не вызывается.
-    void SetMissHandler(IAssetMissHandler* h) { miss_handler_ = h; }
+    void SetMissHandler(IAssetMissHandler* h) {
+        miss_handler_ = h;
+    }
+
     bool TryDefer(uint64_t guid, eastl::function<void()> retry) {
         return miss_handler_ && miss_handler_->Defer(guid, std::move(retry));
     }

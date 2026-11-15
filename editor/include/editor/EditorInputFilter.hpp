@@ -16,9 +16,8 @@ public:
         const ImGuiIO& io = ImGui::GetIO();
 
         // 1. Клавиатура: забираем только когда открыто текстовое поле
-        if ((event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_KEYMAP_CHANGED) && io.WantTextInput) {
+        if ((event.type >= SDL_EVENT_KEY_DOWN && event.type <= SDL_EVENT_KEYMAP_CHANGED) && io.WantTextInput)
             return true;
-        }
 
         // Клик и движение мыши пропускаем ВЕСЬ в InputState!
         return false;

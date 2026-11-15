@@ -35,17 +35,14 @@ inline tryengine::core::ScriptSystemConfig GetEditorScriptConfig(tryengine::core
                                                                  tryeditor::Editor& editor) {
     return tryengine::core::ScriptSystemConfig{
         .register_modules = &::RegisterEditorScriptModules,
-        .create_file_access =
-            []() -> das::smart_ptr<das::FileAccess> {
-                return tryengine::core::MakeFsFileAccess("project.das_project");
+        .create_file_access = []() -> das::smart_ptr<das::FileAccess> {
+            return tryengine::core::MakeFsFileAccess("project.das_project");
         },
-        .create_context =
-            [&engine, &editor](uint32_t stack_size) -> das::Context* {
-                return new TryEditorContext(engine, editor, stack_size);
+        .create_context = [&engine, &editor](uint32_t stack_size) -> das::Context* {
+            return new TryEditorContext(engine, editor, stack_size);
         },
         .policies = tryengine::core::CreateHeavyJitPolicies(),
     };
 }
-
 
 }  // namespace tryeditor

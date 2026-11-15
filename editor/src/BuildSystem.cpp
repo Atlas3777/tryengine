@@ -33,17 +33,15 @@ eastl::vector<uint64_t> BuildSystem::ExtractAndRemoveShared(eastl::span<eastl::v
     // 2. Отбираем общие и сортируем (детерминированный билд + binary_search ниже).
     eastl::vector<uint64_t> shared;
     shared.reserve(ref_count.size());
-    for (const auto& kv : ref_count) {
+    for (const auto& kv : ref_count)
         if (kv.second > 1)
             shared.push_back(kv.first);
-    }
     eastl::sort(shared.begin(), shared.end());
 
     // 3. Чистим каждый список.
     auto is_shared = [&shared](uint64_t g) { return eastl::binary_search(shared.begin(), shared.end(), g); };
-    for (auto* list : per_scene_lists) {
+    for (auto* list : per_scene_lists)
         list->erase(eastl::remove_if(list->begin(), list->end(), is_shared), list->end());
-    }
 
     return shared;
 }
@@ -79,15 +77,11 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 
             if (mat_res.has_value()) {
                 const auto& asset_data = *mat_res;
-                if (asset_data->shader != 0) {
+                if (asset_data->shader != 0)
                     per_scene_shaders[i].push_back(asset_data->shader);
-                }
-                for (const auto& field : asset_data->textures.fields) {
-                    if (const auto* texture_id = eastl::get_if<uint64_t>(&field.value);
-                        texture_id && *texture_id != 0) {
+                for (const auto& field : asset_data->textures.fields)
+                    if (const auto* texture_id = eastl::get_if<uint64_t>(&field.value); texture_id && *texture_id != 0)
                         per_scene_textures[i].push_back(*texture_id);
-                    }
-                }
             }
         }
     }

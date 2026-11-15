@@ -21,6 +21,7 @@ struct DaslangDrawCall {
     uint64_t entity_id;
     uint64_t _pad;  // совпадает с [cpp_layout] struct DrawCall в Render.das
 };
+
 static_assert(sizeof(DaslangDrawCall) == 96);
 
 struct GeometryPointers {
@@ -35,6 +36,7 @@ struct alignas(16) GPUObjectData {
     das::float4x4 normalMatrix;
     GeometryPointers pointers;
 };
+
 static_assert(sizeof(GPUObjectData) == 160, "GPUObjectData size must match Standard.slang layout");
 
 struct alignas(16) FragmentDataGPU {

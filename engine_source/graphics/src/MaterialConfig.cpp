@@ -49,9 +49,8 @@ ConfigField MakeBlockField(const char* name, const char* type_name, const Config
 
 bool ReadString(const ConfigValue& value, eastl::string& out) {
     const auto* string_value = eastl::get_if<eastl::string>(&value);
-    if (!string_value) {
+    if (!string_value)
         return false;
-    }
     out = *string_value;
     return true;
 }
@@ -75,12 +74,10 @@ bool ReadU64(const ConfigValue& value, uint64_t& out) {
     }
     if (const auto* string_value = eastl::get_if<eastl::string>(&value)) {
         eastl::string_view token(string_value->data(), string_value->size());
-        if (!token.empty() && token.front() == '+') {
+        if (!token.empty() && token.front() == '+')
             token.remove_prefix(1);
-        }
-        if (token.empty()) {
+        if (token.empty())
             return false;
-        }
         const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
         return ec == std::errc{} && ptr == token.data() + token.size();
     }
@@ -91,45 +88,39 @@ bool ReadU64(const ConfigValue& value, uint64_t& out) {
 
 Result<MaterialConfig> ParseMaterialConfig(eastl::string_view text) {
     auto parsed = tryengine::resources::ParseConfig(text);
-    if (!parsed.has_value()) {
+    if (!parsed.has_value())
         return std::unexpected(eastl::move(parsed.error()));
-    }
 
     ConfigObject root = eastl::move(*parsed);
     MaterialConfig config;
 
     for (ConfigField& field : root.fields) {
         if (field.name == "name") {
-            if (!ReadString(field.value, config.name)) {
+            if (!ReadString(field.value, config.name))
                 return LogAndMakeError("Material config: field 'name' must be a string");
-            }
             continue;
         }
         if (field.name == "shader") {
-            if (!ReadU64(field.value, config.shader)) {
+            if (!ReadU64(field.value, config.shader))
                 return LogAndMakeError("Material config: field 'shader' must be a u64");
-            }
             continue;
         }
         if (field.name == "params" || field.name == "textures") {
             ConfigObject* block = tryengine::resources::GetObject(field.value);
-            if (!block) {
+            if (!block)
                 return LogAndMakeError("Material config: field '{}' must be an object", field.name.c_str());
-            }
-            if (field.name == "params") {
+            if (field.name == "params")
                 config.params = eastl::move(*block);
-            } else {
+            else
                 config.textures = eastl::move(*block);
-            }
             continue;
         }
 
         return LogAndMakeError("Material config: unknown field '{}'", field.name.c_str());
     }
 
-    if (config.shader == 0) {
+    if (config.shader == 0)
         return LogAndMakeError("Material config: field 'shader' is missing or zero");
-    }
     return config;
 }
 
@@ -153,12 +144,10 @@ eastl::string WriteMaterialConfig(const MaterialConfig& config) {
     shader.value = config.shader;
     root.fields.push_back(eastl::move(shader));
 
-    if (!config.params.fields.empty()) {
+    if (!config.params.fields.empty())
         root.fields.push_back(MakeBlockField("params", "Params", config.params));
-    }
-    if (!config.textures.fields.empty()) {
+    if (!config.textures.fields.empty())
         root.fields.push_back(MakeBlockField("textures", "Textures", config.textures));
-    }
 
     return tryengine::resources::WriteConfig(root);
 }
@@ -187,16 +176,14 @@ eastl::string BuildMaterialSchemaConfig(const ShaderReflectionData& reflection) 
     ConfigArray params;
 
     for (const ShaderReflectedBinding& binding : reflection.bindings) {
-        if (!binding.IsMaterial()) {
+        if (!binding.IsMaterial())
             continue;
-        }
 
         if (binding.kind == ShaderResourceKind::UniformBuffer) {
             for (const ShaderReflectedParam& param : binding.params) {
                 // Выравнивающие поля `_padding` не являются параметрами материала.
-                if (!param.name.empty() && param.name.front() == '_') {
+                if (!param.name.empty() && param.name.front() == '_')
                     continue;
-                }
 
                 ConfigObject item;
                 item.fields.push_back(MakeStringField("name", "string", param.name));

@@ -24,9 +24,12 @@ public:
     [[nodiscard]] virtual const char* Name() const = 0;
 
     // Участвует ли пасс в графе. Смена значения между кадрами => граф пересоберётся.
-    [[nodiscard]] virtual bool IsActive() const { return true; }
+    [[nodiscard]] virtual bool IsActive() const {
+        return true;
+    }
 
     virtual void Collect(CollectContext& ctx) {}
+
     virtual void Setup(RenderGraphBuilder& builder) = 0;
     virtual void Execute(RGExecuteContext& ctx) = 0;
 };

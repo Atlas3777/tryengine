@@ -4,11 +4,10 @@
 #define VK_NO_PROTOTYPES
 #endif
 
-#include <volk.h>
-
 #include <EASTL/hash_map.h>
 #include <EASTL/span.h>
 #include <EASTL/vector.h>
+#include <volk.h>
 
 #include "engine/async/Task.hpp"
 #include "engine/core/MakeError.hpp"
@@ -27,9 +26,8 @@ public:
         co_await tryengine::async::ExecutorSwitch(tryengine::async::MainThread());
 
         auto unpack_result = UnpackShaderBinary(data);
-        if (!unpack_result.has_value()) {
+        if (!unpack_result.has_value())
             co_return LogAndMakeError("Failed to unpack ShaderBinary container");
-        }
 
         auto& binary_content = *unpack_result;
 
@@ -43,9 +41,8 @@ public:
         for (const auto& b : shader.reflection.bindings) {
             VkShaderStageFlags vk_stage_flags = MapToVkShaderStageFlags(b.stage_flags);
 
-            if (b.IsPerObj()) {
+            if (b.IsPerObj())
                 per_obj_stages |= vk_stage_flags;
-            }
 
             auto& bindings_vec = set_bindings_map[b.set];
             bool found = false;
@@ -66,27 +63,29 @@ public:
             }
         }
 
-        shader.per_obj_push_stages = (per_obj_stages != 0) ? per_obj_stages : (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+        shader.per_obj_push_stages =
+            (per_obj_stages != 0) ? per_obj_stages : (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
         // 2. Создаём VkDescriptorSetLayout
         if (!set_bindings_map.empty()) {
             uint32_t max_set = 0;
-            for (const auto& [set_idx, _] : set_bindings_map) {
-                if (set_idx > max_set) max_set = set_idx;
-            }
+            for (const auto& [set_idx, _] : set_bindings_map)
+                if (set_idx > max_set)
+                    max_set = set_idx;
 
             shader.descriptor_set_layouts.resize(max_set + 1, VK_NULL_HANDLE);
 
             for (uint32_t set_idx = 0; set_idx <= max_set; ++set_idx) {
                 auto it = set_bindings_map.find(set_idx);
-                VkDescriptorSetLayoutCreateInfo layout_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+                VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
 
                 if (it != set_bindings_map.end()) {
                     layout_info.bindingCount = static_cast<uint32_t>(it->second.size());
                     layout_info.pBindings = it->second.data();
                 }
 
-                if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr, &shader.descriptor_set_layouts[set_idx]) != VK_SUCCESS) {
+                if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr,
+                                                &shader.descriptor_set_layouts[set_idx]) != VK_SUCCESS) {
                     shader.Destroy(device_);
                     co_return LogAndMakeError("Failed to create VkDescriptorSetLayout");
                 }
@@ -101,7 +100,7 @@ public:
         push_constant_range.offset = 0;
         push_constant_range.size = 128;
 
-        VkPipelineLayoutCreateInfo pipeline_layout_info{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(shader.descriptor_set_layouts.size());
         pipeline_layout_info.pSetLayouts = shader.descriptor_set_layouts.data();
         pipeline_layout_info.pushConstantRangeCount = 1;
@@ -113,14 +112,12 @@ public:
         }
 
         // 4. Пул дескрипторов
-        VkDescriptorPoolSize pool_sizes[] = {
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 128 },
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 128 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 128 }
-        };
+        VkDescriptorPoolSize pool_sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 128},
+                                             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 512},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 128},
+                                             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 128}};
 
-        VkDescriptorPoolCreateInfo pool_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = 256;
         pool_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
@@ -132,7 +129,7 @@ public:
         }
 
         // 5. Создаём VkShaderEXT (указываем pushConstantRanges явным образом)
-        VkShaderCreateInfoEXT vs_info{ VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT };
+        VkShaderCreateInfoEXT vs_info{VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT};
         vs_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
         vs_info.nextStage = VK_SHADER_STAGE_FRAGMENT_BIT;
         vs_info.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
@@ -149,7 +146,7 @@ public:
             co_return LogAndMakeError("Failed to create Vertex VkShaderEXT");
         }
 
-        VkShaderCreateInfoEXT fs_info{ VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT };
+        VkShaderCreateInfoEXT fs_info{VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT};
         fs_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
         fs_info.nextStage = 0;
         fs_info.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;

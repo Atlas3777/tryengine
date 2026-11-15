@@ -1,12 +1,12 @@
 #pragma once
 
+#include <EASTL/queue.h>
+#include <EASTL/vector.h>
 #include <condition_variable>
 #include <cstddef>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <EASTL/vector.h>
-#include <EASTL/queue.h>
 
 #include "engine/async/Executor.hpp"
 
@@ -15,14 +15,12 @@ namespace tryengine::async {
 class ThreadPoolExecutor final : public Executor {
 public:
     explicit ThreadPoolExecutor(std::size_t thread_count = std::thread::hardware_concurrency()) {
-        if (thread_count == 0) {
+        if (thread_count == 0)
             thread_count = 1;
-        }
 
         workers_.reserve(thread_count);
-        for (std::size_t i = 0; i < thread_count; ++i) {
+        for (std::size_t i = 0; i < thread_count; ++i)
             workers_.emplace_back([this] { WorkerLoop(); });
-        }
     }
 
     ThreadPoolExecutor(const ThreadPoolExecutor&) = delete;
@@ -34,11 +32,9 @@ public:
             stopping_ = true;
         }
         cv_.notify_all();
-        for (auto& worker : workers_) {
-            if (worker.joinable()) {
+        for (auto& worker : workers_)
+            if (worker.joinable())
                 worker.join();
-            }
-        }
     }
 
     void Post(std::move_only_function<void()> work) override {
@@ -49,7 +45,9 @@ public:
         cv_.notify_one();
     }
 
-    [[nodiscard]] std::size_t ThreadCount() const noexcept { return workers_.size(); }
+    [[nodiscard]] std::size_t ThreadCount() const noexcept {
+        return workers_.size();
+    }
 
 private:
     void WorkerLoop() {
@@ -59,9 +57,8 @@ private:
                 std::unique_lock lock(mutex_);
                 cv_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
 
-                if (stopping_ && queue_.empty()) {
+                if (stopping_ && queue_.empty())
                     return;
-                }
 
                 work = std::move(queue_.front());
                 queue_.pop();

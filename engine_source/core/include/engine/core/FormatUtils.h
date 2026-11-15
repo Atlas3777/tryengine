@@ -145,9 +145,13 @@ public:
         return {data(), size()};
     }
 
-    operator const char*() const noexcept { return c_str(); }
+    operator const char*() const noexcept {
+        return c_str();
+    }
 
-    operator eastl::string_view() const noexcept { return sv(); }
+    operator eastl::string_view() const noexcept {
+        return sv();
+    }
 
 private:
     bool m_heap = false;

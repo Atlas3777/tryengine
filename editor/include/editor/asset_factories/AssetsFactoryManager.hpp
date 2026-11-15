@@ -32,7 +32,9 @@ public:
         return static_cast<TFactory*>(storage_[type_id].get());
     }
 
-    const eastl::vector<IAssetFactory*>& GetFactories() const { return gui_factories_; }
+    const eastl::vector<IAssetFactory*>& GetFactories() const {
+        return gui_factories_;
+    }
 
 private:
     eastl::vector<std::unique_ptr<IAssetFactory>> storage_;

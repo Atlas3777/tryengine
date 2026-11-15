@@ -32,7 +32,7 @@ Task<eastl::vector<uint8_t>> LoadScriptPak(AsyncFileManager& fm) {
     if (!r.has_value())
         co_return LogAndMakeError("Не удалось прочитать script_pak");
 
-    co_return  eastl::move(*r);
+    co_return eastl::move(*r);
 }
 
 }  // namespace

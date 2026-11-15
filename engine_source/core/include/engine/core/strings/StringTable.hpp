@@ -25,8 +25,8 @@ public:
         const uint64_t h = Hash64(s);
         std::lock_guard<std::mutex> lk(mutex_);
 
-        auto it = set_.find_as(s, [h](const eastl::string_view&) -> size_t { return static_cast<size_t>(h); },
-                               EntryEq{});
+        auto it =
+            set_.find_as(s, [h](const eastl::string_view&) -> size_t { return static_cast<size_t>(h); }, EntryEq{});
         if (it != set_.end()) {
             ++Hdr(*it)->refs;
             return *it;
@@ -61,8 +61,13 @@ public:
         arena_.Free(h, static_cast<uint32_t>(sizeof(Header) + h->len + 1));
     }
 
-    static uint32_t Length(const char* s) { return Hdr(s)->len; }
-    static eastl::string_view View(const char* s) { return eastl::string_view(s, Hdr(s)->len); }
+    static uint32_t Length(const char* s) {
+        return Hdr(s)->len;
+    }
+
+    static eastl::string_view View(const char* s) {
+        return eastl::string_view(s, Hdr(s)->len);
+    }
 
     // Количество живых уникальных строк (для тестов на утечки).
     size_t Count() const {
@@ -76,17 +81,31 @@ private:
         uint32_t len;
         uint32_t refs;
     };  // 16 байт => данные выровнены по 16
+
     static_assert(sizeof(Header) == 16);
 
-    static Header* Hdr(const char* s) { return reinterpret_cast<Header*>(const_cast<char*>(s)) - 1; }
+    static Header* Hdr(const char* s) {
+        return reinterpret_cast<Header*>(const_cast<char*>(s)) - 1;
+    }
 
     struct EntryHash {
-        size_t operator()(const char* s) const { return static_cast<size_t>(Hdr(s)->hash); }
+        size_t operator()(const char* s) const {
+            return static_cast<size_t>(Hdr(s)->hash);
+        }
     };
+
     struct EntryEq {
-        bool operator()(const char* a, const char* b) const { return a == b; }
-        bool operator()(const char* a, const eastl::string_view& b) const { return View(a) == b; }
-        bool operator()(const eastl::string_view& b, const char* a) const { return View(a) == b; }
+        bool operator()(const char* a, const char* b) const {
+            return a == b;
+        }
+
+        bool operator()(const char* a, const eastl::string_view& b) const {
+            return View(a) == b;
+        }
+
+        bool operator()(const eastl::string_view& b, const char* a) const {
+            return View(a) == b;
+        }
     };
 
     mutable std::mutex mutex_;

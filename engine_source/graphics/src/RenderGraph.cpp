@@ -246,10 +246,9 @@ void RGResourcePool::DestroyAll() {
             vmaDestroyImage(alloc, entry.image, entry.allocation);
     }
     texture_pool_.clear();
-    for (auto& entry : buffer_pool_) {
+    for (auto& entry : buffer_pool_)
         if (entry.buffer)
             vmaDestroyBuffer(alloc, entry.buffer, entry.allocation);
-    }
     buffer_pool_.clear();
 }
 
@@ -264,9 +263,8 @@ RenderGraph::~RenderGraph() {
 }
 
 uint32_t RenderGraph::ResolveHandleIndex(uint32_t index) const {
-    while (index < handle_redirects_.size() && handle_redirects_[index] != RGResourceHandle::kInvalid) {
+    while (index < handle_redirects_.size() && handle_redirects_[index] != RGResourceHandle::kInvalid)
         index = handle_redirects_[index];
-    }
     return index;
 }
 
@@ -293,9 +291,8 @@ const RGTextureDesc& RenderGraph::GetTextureDesc(RGResourceHandle h) const {
     if (idx >= resources_.size())
         return kEmptyDesc;
     const auto& res = resources_[idx];
-    if (res.type == RGResourceType::Texture || res.type == RGResourceType::ExternalTexture) {
+    if (res.type == RGResourceType::Texture || res.type == RGResourceType::ExternalTexture)
         return res.texture_desc;
-    }
     return kEmptyDesc;
 }
 
@@ -375,9 +372,8 @@ TransientAllocation RenderGraph::AllocateTransient(const void* data, VkDeviceSiz
     alloc.bda_address = page->bda_address ? (page->bda_address + aligned_offset) : 0;
     alloc.mapped_ptr = page->mapped_ptr + aligned_offset;
 
-    if (data && alloc.mapped_ptr) {
+    if (data && alloc.mapped_ptr)
         std::memcpy(alloc.mapped_ptr, data, size);
-    }
 
     allocator.current_offset = aligned_offset + size;
     return alloc;
@@ -386,11 +382,9 @@ TransientAllocation RenderGraph::AllocateTransient(const void* data, VkDeviceSiz
 void RenderGraph::CleanupTransientAllocators() {
     VmaAllocator allocator = device_.GetAllocator();
     for (uint32_t f = 0; f < kMaxFramesInFlight; ++f) {
-        for (auto& page : transient_allocators_[f].pages) {
-            if (page.buffer) {
+        for (auto& page : transient_allocators_[f].pages)
+            if (page.buffer)
                 vmaDestroyBuffer(allocator, page.buffer, page.allocation);
-            }
-        }
         transient_allocators_[f].pages.clear();
     }
 }
@@ -553,9 +547,8 @@ void RenderGraph::ExportTag(ScopeId view, RGTag tag, RGResourceHandle h) {
     auto it = tag_to_handle_.find(key);
     if (it != tag_to_handle_.end()) {
         uint32_t old_idx = ResolveHandleIndex(it->second.index);
-        if (old_idx != h.index) {
+        if (old_idx != h.index)
             handle_redirects_[old_idx] = h.index;
-        }
     }
     tag_to_handle_[key] = h;
 }
@@ -563,17 +556,15 @@ void RenderGraph::ExportTag(ScopeId view, RGTag tag, RGResourceHandle h) {
 RGResourceHandle RenderGraph::ImportTag(uint32_t pass, ScopeId view, RGTag tag) {
     RGTagKey key = MakeTagKey(view, tag);
     auto it = tag_to_handle_.find(key);
-    if (it != tag_to_handle_.end()) {
+    if (it != tag_to_handle_.end())
         return ResolveHandle(it->second);
-    }
 
     // Fallback to Global View if not found in current scope
     if (view != kGlobalScope) {
         RGTagKey global_key = MakeTagKey(kGlobalScope, tag);
         auto global_it = tag_to_handle_.find(global_key);
-        if (global_it != tag_to_handle_.end()) {
+        if (global_it != tag_to_handle_.end())
             return ResolveHandle(global_it->second);
-        }
     }
 
     RGVirtualResource res;
@@ -746,18 +737,14 @@ void RenderGraph::CullNodes() {
         res.ref_count = 0;
     for (auto& slot : nodes_) {
         slot.culled = !slot.active;
-        for (auto& acc : slot.accesses) {
-            if (acc.access == RGAccessType::Read && acc.handle.IsValid()) {
+        for (auto& acc : slot.accesses)
+            if (acc.access == RGAccessType::Read && acc.handle.IsValid())
                 resources_[acc.handle.index].ref_count++;
-            }
-        }
     }
     eastl::fixed_vector<uint32_t, 64> zero_ref_stack;
-    for (uint32_t i = 0; i < resources_.size(); ++i) {
-        if (resources_[i].ref_count == 0 && !resources_[i].externally_exported) {
+    for (uint32_t i = 0; i < resources_.size(); ++i)
+        if (resources_[i].ref_count == 0 && !resources_[i].externally_exported)
             zero_ref_stack.push_back(i);
-        }
-    }
     while (!zero_ref_stack.empty()) {
         const uint32_t res_idx = zero_ref_stack.back();
         zero_ref_stack.pop_back();
@@ -779,9 +766,8 @@ void RenderGraph::CullNodes() {
         producer.culled = true;
         for (auto& a : producer.accesses) {
             if (a.access == RGAccessType::Read && a.handle.IsValid()) {
-                if (--resources_[a.handle.index].ref_count == 0) {
+                if (--resources_[a.handle.index].ref_count == 0)
                     zero_ref_stack.push_back(a.handle.index);
-                }
             }
         }
     }
@@ -797,10 +783,9 @@ void RenderGraph::TopologicalSort() {
         if (nodes_[i].culled)
             continue;
         ++alive;
-        for (uint32_t dep : nodes_[i].deps) {
+        for (uint32_t dep : nodes_[i].deps)
             if (!nodes_[dep].culled)
                 in_degree[i]++;
-        }
     }
     for (uint32_t emitted = 0; emitted < alive; ++emitted) {
         uint32_t u = n;
@@ -816,10 +801,9 @@ void RenderGraph::TopologicalSort() {
         for (uint32_t v = 0; v < n; ++v) {
             if (nodes_[v].culled || done[v])
                 continue;
-            for (uint32_t dep : nodes_[v].deps) {
+            for (uint32_t dep : nodes_[v].deps)
                 if (dep == u)
                     in_degree[v]--;
-            }
         }
     }
 }
@@ -872,16 +856,14 @@ static StateTransitionInfo MapTextureState(RGAccessType access, RGUsageHint usag
         info.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         info.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
         info.access = VK_ACCESS_2_NONE;
+    } else if (access == RGAccessType::Read) {
+        info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        info.access = VK_ACCESS_2_SHADER_READ_BIT;
     } else {
-        if (access == RGAccessType::Read) {
-            info.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            info.access = VK_ACCESS_2_SHADER_READ_BIT;
-        } else {
-            info.layout = VK_IMAGE_LAYOUT_GENERAL;
-            info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            info.access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-        }
+        info.layout = VK_IMAGE_LAYOUT_GENERAL;
+        info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        info.access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
     }
     return info;
 }
@@ -906,14 +888,12 @@ static StateTransitionInfo MapBufferState(RGAccessType access, RGUsageHint usage
     } else if (usage & RGUsageHint::TransferDst) {
         info.stage = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
         info.access = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    } else if (access == RGAccessType::Read) {
+        info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        info.access = VK_ACCESS_2_MEMORY_READ_BIT;
     } else {
-        if (access == RGAccessType::Read) {
-            info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            info.access = VK_ACCESS_2_MEMORY_READ_BIT;
-        } else {
-            info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            info.access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-        }
+        info.stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        info.access = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
     }
     return info;
 }

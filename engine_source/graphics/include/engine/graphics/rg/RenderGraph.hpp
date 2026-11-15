@@ -36,7 +36,11 @@ struct RGResourceHandle {
     static constexpr uint32_t kInvalid = 0xFFFFFFFFu;
     uint32_t index = kInvalid;
     uint16_t version = 0;
-    [[nodiscard]] constexpr bool IsValid() const { return index != kInvalid; }
+
+    [[nodiscard]] constexpr bool IsValid() const {
+        return index != kInvalid;
+    }
+
     friend bool operator==(const RGResourceHandle&, const RGResourceHandle&) = default;
 };
 
@@ -75,9 +79,11 @@ enum class RGUsageHint : uint32_t {
     TransferDst = 1 << 7,
     Present = 1 << 8
 };
+
 inline constexpr RGUsageHint operator|(RGUsageHint a, RGUsageHint b) {
     return static_cast<RGUsageHint>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
+
 inline constexpr bool operator&(RGUsageHint a, RGUsageHint b) {
     return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
 }
@@ -95,12 +101,17 @@ struct TransientAllocation {
     VkDeviceSize offset = 0;
     VkDeviceAddress bda_address = 0;
     uint8_t* mapped_ptr = nullptr;
-    [[nodiscard]] bool IsValid() const { return buffer != VK_NULL_HANDLE; }
+
+    [[nodiscard]] bool IsValid() const {
+        return buffer != VK_NULL_HANDLE;
+    }
 };
 
 class Blackboard {
 public:
-    void Put(ScopeId view, RGTag tag, RGResourceHandle h) { entries_[MakeTagKey(view, tag)] = h; }
+    void Put(ScopeId view, RGTag tag, RGResourceHandle h) {
+        entries_[MakeTagKey(view, tag)] = h;
+    }
 
     [[nodiscard]] RGResourceHandle Get(ScopeId scope, RGTag tag) const {
         auto it = entries_.find(MakeTagKey(scope, tag));
@@ -122,7 +133,10 @@ public:
     [[nodiscard]] bool Has(ScopeId view, RGTag tag) const {
         return entries_.find(MakeTagKey(view, tag)) != entries_.end();
     }
-    void Clear() { entries_.clear(); }
+
+    void Clear() {
+        entries_.clear();
+    }
 
 private:
     eastl::hash_map<RGTagKey, RGResourceHandle> entries_;
@@ -131,12 +145,14 @@ private:
 class CPUBlackboard {
 public:
     CPUBlackboard() = default;
+
     void Put(ScopeId scope, RGTag tag, const void* data, size_t size_bytes) {
         auto& buffer = entries_[MakeTagKey(scope, tag)];
         buffer.resize(size_bytes);
         if (data && size_bytes > 0)
             std::memcpy(buffer.data(), data, size_bytes);
     }
+
     template <typename T>
     void Put(ScopeId scope, RGTag tag, const T& data) {
         Put(scope, tag, &data, sizeof(T));
@@ -156,6 +172,7 @@ public:
         else
             return eastl::nullopt;
     }
+
     // [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(RGTag tag) const {
     //     return GetSpan(kGlobalScope, tag);
     // }
@@ -168,6 +185,7 @@ public:
             LogError("CPUBlackboard: Запись для тега {} не найдена.", GetRGTagName(tag));
         return span;
     }
+
     // [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpanWithFallback(RGTag tag) const {
     //     return GetSpanWithFallback(kGlobalScope, tag);
     // }
@@ -176,13 +194,19 @@ public:
         auto s = GetSpanWithFallback(scope, tag);
         return s ? s->data() : nullptr;
     }
-    [[nodiscard]] const void* GetData(RGTag tag) const { return GetData(kGlobalScope, tag); }
+
+    [[nodiscard]] const void* GetData(RGTag tag) const {
+        return GetData(kGlobalScope, tag);
+    }
 
     [[nodiscard]] size_t GetSize(ScopeId scope, RGTag tag) const {
         auto s = GetSpanWithFallback(scope, tag);
         return s ? s->size() : 0;
     }
-    [[nodiscard]] size_t GetSize(RGTag tag) const { return GetSize(kGlobalScope, tag); }
+
+    [[nodiscard]] size_t GetSize(RGTag tag) const {
+        return GetSize(kGlobalScope, tag);
+    }
 
     template <typename T>
     [[nodiscard]] const T* GetAs(ScopeId scope, RGTag tag) const {
@@ -193,6 +217,7 @@ public:
             LogError("CPUBlackboard: Размер данных меньше запрашиваемой структуры.");
         return nullptr;
     }
+
     template <typename T>
     [[nodiscard]] const T* GetAs(RGTag tag) const {
         return GetAs<T>(kGlobalScope, tag);
@@ -201,8 +226,14 @@ public:
     [[nodiscard]] bool Has(ScopeId scope, RGTag tag) const {
         return entries_.find(MakeTagKey(scope, tag)) != entries_.end();
     }
-    [[nodiscard]] bool Has(RGTag tag) const { return Has(kGlobalScope, tag); }
-    void Clear() { entries_.clear(); }
+
+    [[nodiscard]] bool Has(RGTag tag) const {
+        return Has(kGlobalScope, tag);
+    }
+
+    void Clear() {
+        entries_.clear();
+    }
 
 private:
     eastl::hash_map<RGTagKey, eastl::vector<uint8_t>> entries_;
@@ -211,8 +242,15 @@ private:
 class ScopedBlackboard {
 public:
     ScopedBlackboard(Blackboard& bb, ScopeId scope) : bb_(bb), scope_(scope) {}
-    void Put(RGTag tag, RGResourceHandle h) { bb_.Put(scope_, tag, h); }
-    [[nodiscard]] RGResourceHandle Get(RGTag tag) const { return bb_.GetWithFallback(scope_, tag); }
+
+    void Put(RGTag tag, RGResourceHandle h) {
+        bb_.Put(scope_, tag, h);
+    }
+
+    [[nodiscard]] RGResourceHandle Get(RGTag tag) const {
+        return bb_.GetWithFallback(scope_, tag);
+    }
+
     [[nodiscard]] bool Has(RGTag tag) const {
         return bb_.Has(scope_, tag) || (scope_ != kGlobalScope && bb_.Has(kGlobalScope, tag));
     }
@@ -225,20 +263,33 @@ private:
 class ScopedCPUBlackboard {
 public:
     ScopedCPUBlackboard(CPUBlackboard& bb, ScopeId scope) : bb_(bb), scope_(scope) {}
-    void Put(RGTag tag, const void* data, size_t size_bytes) { bb_.Put(scope_, tag, data, size_bytes); }
+
+    void Put(RGTag tag, const void* data, size_t size_bytes) {
+        bb_.Put(scope_, tag, data, size_bytes);
+    }
+
     template <typename T>
     void Put(RGTag tag, const T& data) {
         Put(tag, &data, sizeof(T));
     }
+
     [[nodiscard]] eastl::optional<eastl::span<const uint8_t>> GetSpan(RGTag tag) const {
         return bb_.GetSpanWithFallback(scope_, tag);
     }
-    [[nodiscard]] const void* GetData(RGTag tag) const { return bb_.GetData(scope_, tag); }
-    [[nodiscard]] size_t GetSize(RGTag tag) const { return bb_.GetSize(scope_, tag); }
+
+    [[nodiscard]] const void* GetData(RGTag tag) const {
+        return bb_.GetData(scope_, tag);
+    }
+
+    [[nodiscard]] size_t GetSize(RGTag tag) const {
+        return bb_.GetSize(scope_, tag);
+    }
+
     template <typename T>
     [[nodiscard]] const T* GetAs(RGTag tag) const {
         return bb_.GetAs<T>(scope_, tag);
     }
+
     [[nodiscard]] bool Has(RGTag tag) const {
         return bb_.Has(scope_, tag) || (scope_ != kGlobalScope && bb_.Has(kGlobalScope, tag));
     }
@@ -249,6 +300,7 @@ private:
 };
 
 class RenderGraph;
+
 struct RGColorAttachment {
     RGResourceHandle handle;
     VkAttachmentLoadOp load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -258,6 +310,7 @@ struct RGColorAttachment {
     VkAttachmentLoadOp resolve_load_op = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     VkAttachmentStoreOp resolve_store_op = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 };
+
 struct RGDepthStencilAttachment {
     RGResourceHandle handle;
     VkAttachmentLoadOp depth_load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -284,7 +337,10 @@ public:
     void EndRendering();
     [[nodiscard]] TransientAllocation AllocateTransient(const void* data, VkDeviceSize size,
                                                         VkDeviceSize alignment = 256) const;
-    void SetGraph(RenderGraph* graph) { graph_ = graph; }
+
+    void SetGraph(RenderGraph* graph) {
+        graph_ = graph;
+    }
 
 private:
     RenderGraph* graph_ = nullptr;
@@ -298,10 +354,12 @@ struct CollectContext {
 };
 
 inline constexpr uint32_t kRGNoPass = 0xFFFFFFFFu;
+
 struct RGImageBarrier {
     VkImageMemoryBarrier2 barrier{};
     uint32_t resource = 0;
 };
+
 struct RGBufferBarrier {
     VkBufferMemoryBarrier2 barrier{};
     uint32_t resource = 0;
@@ -384,6 +442,7 @@ class RGResourcePool {
 public:
     explicit RGResourcePool(VulkanDevice& device);
     ~RGResourcePool();
+
     struct PooledTexture {
         VkImage image = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
@@ -391,6 +450,7 @@ public:
         RGTextureDesc desc;
         bool in_use = false;
     };
+
     struct PooledBuffer {
         VkBuffer buffer = VK_NULL_HANDLE;
         VmaAllocation allocation = VK_NULL_HANDLE;
@@ -398,6 +458,7 @@ public:
         RGBufferDesc desc;
         bool in_use = false;
     };
+
     PooledTexture AcquireTexture(const RGTextureDesc& desc);
     PooledBuffer AcquireBuffer(const RGBufferDesc& desc);
     void ReleaseAll();
@@ -416,6 +477,7 @@ struct TransientPage {
     VkDeviceSize size = 0;
     VkDeviceAddress bda_address = 0;
 };
+
 struct FrameTransientAllocator {
     eastl::vector<TransientPage> pages;
     size_t current_page_index = 0;
@@ -457,13 +519,15 @@ public:
     void RemoveNode(ScopeId view) {
         const uint32_t id = core::ScopedTypeId<RenderGraph, T>::Value();
         const uint64_t key = (static_cast<uint64_t>(id) << 32) | static_cast<uint64_t>(view);
-        if (node_lookup_.find(key) != node_lookup_.end()) {
+        if (node_lookup_.find(key) != node_lookup_.end())
             DestroyPass(id, view);
-        }
     }
 
     const RGTextureDesc& GetTextureDesc(RGResourceHandle h) const;
-    void Invalidate() { dirty_ = true; }
+
+    void Invalidate() {
+        dirty_ = true;
+    }
 
     void BeginFrame(uint32_t frame_index);
     void Collect(core::Engine& engine);
@@ -481,14 +545,26 @@ public:
     void PutCPUData(ScopeId view, RGTag tag, const T& data) {
         cpu_bb_.Put(view, tag, data);
     }
+
     void PutCPUData(ScopeId view, RGTag tag, const void* data, size_t size_bytes) {
         cpu_bb_.Put(view, tag, data, size_bytes);
     }
 
-    Blackboard& GetBlackboard() { return frame_bb_; }
-    const Blackboard& GetBlackboard() const { return frame_bb_; }
-    CPUBlackboard& GetCPUBlackboard() { return cpu_bb_; }
-    const CPUBlackboard& GetCPUBlackboard() const { return cpu_bb_; }
+    Blackboard& GetBlackboard() {
+        return frame_bb_;
+    }
+
+    const Blackboard& GetBlackboard() const {
+        return frame_bb_;
+    }
+
+    CPUBlackboard& GetCPUBlackboard() {
+        return cpu_bb_;
+    }
+
+    const CPUBlackboard& GetCPUBlackboard() const {
+        return cpu_bb_;
+    }
 
     VkImage GetPhysicalImage(RGResourceHandle h) const;
     VkImageView GetPhysicalImageView(RGResourceHandle h) const;
@@ -496,8 +572,14 @@ public:
     [[nodiscard]] uint32_t ResolveHandleIndex(uint32_t index) const;
     [[nodiscard]] RGResourceHandle ResolveHandle(RGResourceHandle h) const;
     [[nodiscard]] void* GetBufferMappedPtr(RGResourceHandle h) const;
-    VulkanDevice& GetDevice() const { return device_; }
-    bool IsDirty() const { return dirty_; };
+
+    VulkanDevice& GetDevice() const {
+        return device_;
+    }
+
+    bool IsDirty() const {
+        return dirty_;
+    };
 
 private:
     friend class RenderGraphBuilder;

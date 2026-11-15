@@ -34,11 +34,9 @@ private:
     eastl::vector<uint64_t> ExtractAndRemoveShared(eastl::span<eastl::vector<uint64_t>*> per_scene_lists);
 
     // Изменили сигнатуру: передаем зависимости явно, не раздувая SceneDTO
-    tryengine::async::Task<tryengine::resources::AssetPak> CreatePak(
-        const SceneDTO& scene,
-        const eastl::vector<uint64_t>& shaders,
-        const eastl::vector<uint64_t>& textures) const;
-
+    tryengine::async::Task<tryengine::resources::AssetPak> CreatePak(const SceneDTO& scene,
+                                                                     const eastl::vector<uint64_t>& shaders,
+                                                                     const eastl::vector<uint64_t>& textures) const;
 
     tryengine::resources::ResourceManager& res_m_;
     tryengine::resources::AsyncFileManager& file_m_;

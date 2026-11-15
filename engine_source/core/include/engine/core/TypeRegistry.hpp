@@ -17,4 +17,4 @@ struct ScopedTypeId {
     }
 };
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

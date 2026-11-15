@@ -1,4 +1,5 @@
 #include "engine/graphics/FrameContext.hpp"
+
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 
@@ -35,8 +36,9 @@ FrameSync::FrameSync(VulkanDevice& device) : device_(device) {
         TRY_CHECK(vkAllocateCommandBuffers(vk_device, &alloc_info, &frame.command_buffer) == VK_SUCCESS,
                   "Не удалось выделить Command Buffer для кадра {}", i);
 
-        TRY_CHECK(vkCreateSemaphore(vk_device, &semaphore_info, nullptr, &frame.image_available_semaphore) == VK_SUCCESS,
-                  "Не удалось создать image_available_semaphore для кадра {}", i);
+        TRY_CHECK(
+            vkCreateSemaphore(vk_device, &semaphore_info, nullptr, &frame.image_available_semaphore) == VK_SUCCESS,
+            "Не удалось создать image_available_semaphore для кадра {}", i);
 
         TRY_CHECK(vkCreateFence(vk_device, &fence_info, nullptr, &frame.in_flight_fence) == VK_SUCCESS,
                   "Не удалось создать in_flight_fence для кадра {}", i);
@@ -45,7 +47,8 @@ FrameSync::FrameSync(VulkanDevice& device) : device_(device) {
 
 FrameSync::~FrameSync() {
     VkDevice vk_device = device_.GetDevice();
-    if (!vk_device) return;
+    if (!vk_device)
+        return;
 
     vkDeviceWaitIdle(vk_device);
 
@@ -80,17 +83,15 @@ bool FrameSync::BeginFrame(VulkanDevice& device, VulkanSwapchain& swapchain, uin
     }
 
     // 2. Запрос следующей картинки из Swapchain
-    VkResult acquire_res = vkAcquireNextImageKHR(
-        vk_device, swapchain.GetHandle(), UINT64_MAX,
-        frame.image_available_semaphore, VK_NULL_HANDLE, &out_image_index);
+    VkResult acquire_res = vkAcquireNextImageKHR(vk_device, swapchain.GetHandle(), UINT64_MAX,
+                                                 frame.image_available_semaphore, VK_NULL_HANDLE, &out_image_index);
 
     if (acquire_res == VK_ERROR_DEVICE_LOST) {
         LogCritical("GPU Device Lost при вызове vkAcquireNextImageKHR!");
         return false;
     }
-    if (acquire_res == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (acquire_res == VK_ERROR_OUT_OF_DATE_KHR)
         return false;
-    }
     if (acquire_res != VK_SUCCESS && acquire_res != VK_SUBOPTIMAL_KHR) {
         LogError("Ошибка при вызове vkAcquireNextImageKHR: {}", static_cast<int>(acquire_res));
         return false;
@@ -180,9 +181,8 @@ bool FrameSync::EndFrameAndPresent(VulkanDevice& device, VulkanSwapchain& swapch
         return false;
     }
 
-    if (present_res == VK_ERROR_OUT_OF_DATE_KHR || present_res == VK_SUBOPTIMAL_KHR) {
+    if (present_res == VK_ERROR_OUT_OF_DATE_KHR || present_res == VK_SUBOPTIMAL_KHR)
         return false;
-    }
 
     if (present_res != VK_SUCCESS) {
         LogError("Ошибка при вызове vkQueuePresentKHR: {}", static_cast<int>(present_res));

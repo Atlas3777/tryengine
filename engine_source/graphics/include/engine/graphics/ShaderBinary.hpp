@@ -23,6 +23,7 @@ struct StageResourceCounts {
 };
 
 #pragma pack(push, 1)
+
 struct ShaderContainerHeader {
     uint32_t magic = kShaderBinaryMagic;
     uint32_t version = kShaderBinaryVersion;
@@ -39,6 +40,7 @@ struct ShaderContainerHeader {
     uint32_t offset_fragment_spv = 0;
     uint32_t size_fragment_spv = 0;
 };
+
 #pragma pack(pop)
 
 static_assert(sizeof(ShaderContainerHeader) == 64);
@@ -80,15 +82,12 @@ inline eastl::vector<uint8_t> PackShaderBinary(const ShaderBinaryContent& conten
 
     std::memcpy(result.data(), &header, sizeof(ShaderContainerHeader));
 
-    if (header.size_reflect_data > 0) {
+    if (header.size_reflect_data > 0)
         std::memcpy(result.data() + header.offset_reflect_data, reflection_bytes.data(), header.size_reflect_data);
-    }
-    if (header.size_vertex_spv > 0) {
+    if (header.size_vertex_spv > 0)
         std::memcpy(result.data() + header.offset_vertex_spv, content.vertex_spv.data(), header.size_vertex_spv);
-    }
-    if (header.size_fragment_spv > 0) {
+    if (header.size_fragment_spv > 0)
         std::memcpy(result.data() + header.offset_fragment_spv, content.fragment_spv.data(), header.size_fragment_spv);
-    }
 
     return result;
 }
@@ -105,9 +104,8 @@ inline Result<ShaderBinaryContent> UnpackShaderBinary(eastl::span<const uint8_t>
     ShaderContainerHeader header{};
     std::memcpy(&header, bytes.data(), sizeof(ShaderContainerHeader));
 
-    if (header.magic != kShaderBinaryMagic || header.version != kShaderBinaryVersion) {
+    if (header.magic != kShaderBinaryMagic || header.version != kShaderBinaryVersion)
         return LogAndMakeError("Invalid shader binary magic or version");
-    }
 
     if (!SafeCheckBounds(header.offset_reflect_data, header.size_reflect_data, bytes.size()) ||
         !SafeCheckBounds(header.offset_vertex_spv, header.size_vertex_spv, bytes.size()) ||
@@ -122,9 +120,8 @@ inline Result<ShaderBinaryContent> UnpackShaderBinary(eastl::span<const uint8_t>
         const eastl::span refl_span(bytes.data() + header.offset_reflect_data, header.size_reflect_data);
         size_t cursor = 0;
         auto res = detail::ReadReflection(refl_span, cursor, out_content.reflection);
-        if (!res.has_value()){
+        if (!res.has_value())
             return LogAndMakeError("Failed to deserialize shader reflection: {}", res.error());
-        }
     }
 
     if (header.size_vertex_spv > 0) {

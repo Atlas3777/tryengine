@@ -1,13 +1,13 @@
 // EastlGlazeSerializers.hpp
 #pragma once
 
-#include <glaze/glaze.hpp>
 #include <EASTL/hash_map.h>
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
+#include <glaze/glaze.hpp>
+#include <string>
 #include <unordered_map>
 #include <vector>
-#include <string>
 
 namespace glz {
 
@@ -45,9 +45,8 @@ struct from<JSON, eastl::vector<T, Alloc>> {
 
         value.clear();
         value.reserve(temp.size());
-        for (auto& item : temp) {
+        for (auto& item : temp)
             value.push_back(std::move(item));
-        }
     }
 };
 
@@ -67,29 +66,29 @@ struct to<JSON, eastl::vector<T, Alloc>> {
 template <typename V, typename Hash, typename Eq, typename Alloc>
 struct from<JSON, eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>> {
     template <auto Opts>
-    static void op(eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>& value, is_context auto&& ctx, auto&& it, auto&& end) {
+    static void op(eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>& value, is_context auto&& ctx, auto&& it,
+                   auto&& end) {
         std::unordered_map<std::string, V> temp;
         parse<JSON>::op<Opts>(temp, ctx, it, end);
 
         value.clear();
         value.reserve(temp.size());
-        for (auto& [k, v] : temp) {
+        for (auto& [k, v] : temp)
             value.emplace(eastl::string(k.c_str(), k.size()), std::move(v));
-        }
     }
 };
 
 template <typename V, typename Hash, typename Eq, typename Alloc>
 struct to<JSON, eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>> {
     template <auto Opts>
-    static void op(const eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>& value, is_context auto&& ctx, auto&& b, auto&& ix) noexcept {
+    static void op(const eastl::hash_map<eastl::string, V, Hash, Eq, Alloc>& value, is_context auto&& ctx, auto&& b,
+                   auto&& ix) noexcept {
         std::unordered_map<std::string, V> temp;
         temp.reserve(value.size());
-        for (const auto& [k, v] : value) {
+        for (const auto& [k, v] : value)
             temp.emplace(std::string(k.c_str(), k.size()), v);
-        }
         serialize<JSON>::op<Opts>(temp, ctx, b, ix);
     }
 };
 
-} // namespace glz
+}  // namespace glz

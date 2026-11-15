@@ -21,10 +21,14 @@ class SlangImporter : public IAssetImporter {
 public:
     explicit SlangImporter(ShaderCompilerSystem& compiler) : compiler_(compiler) {}
 
-    [[nodiscard]] constexpr eastl::string_view GetName() const override { return importer_name_; }
+    [[nodiscard]] constexpr eastl::string_view GetName() const override {
+        return importer_name_;
+    }
 
     // Поднимай при изменении того, что попадает в артефакты: все шейдеры переимпортируются.
-    [[nodiscard]] uint32_t GetVersion() const override { return 2; }
+    [[nodiscard]] uint32_t GetVersion() const override {
+        return 2;
+    }
 
     [[nodiscard]] tryengine::async::Task<ImportResult> Import(ImportContext ctx) const override;
 

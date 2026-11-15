@@ -12,8 +12,10 @@ namespace tryengine::core {
 class [[nodiscard]] Error {
 public:
     explicit constexpr Error(ErrorCode code) noexcept : code_(code) {}
+
     explicit constexpr Error(ErrorCode code, eastl::string message) noexcept
         : code_(code), message_(eastl::move(message)) {}
+
     explicit constexpr Error(eastl::string message) : message_(eastl::move(message)) {}
 
     Error(Error&& other) noexcept : code_(other.code_), message_(std::move(other.message_)) {
@@ -36,7 +38,9 @@ public:
         return *this;
     }
 
-    ~Error() { CheckUnhandled(); }
+    ~Error() {
+        CheckUnhandled();
+    }
 
     [[nodiscard]] ErrorCode Code() const noexcept {
         MarkChecked();
@@ -51,7 +55,9 @@ public:
     }
 
     // Если ошибку явно заглушили или обработали
-    void Discard() const noexcept { MarkChecked(); }
+    void Discard() const noexcept {
+        MarkChecked();
+    }
 
     // template <typename T>
     // [[nodiscard]] constexpr operator std::expected<T, Error>() const& {

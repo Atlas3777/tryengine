@@ -162,16 +162,14 @@ void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uui
                 min_filter = MapGltfMinFilter(sampler.min_filter);
                 mipmap_mode = MapGltfMipmapMode(sampler.min_filter);
             }
-            if (sampler.mag_filter != -1) {
+            if (sampler.mag_filter != -1)
                 mag_filter = MapGltfMagFilter(sampler.mag_filter);
-            }
             wrap_u = MapGltfWrap(sampler.wrap_s);
             wrap_v = MapGltfWrap(sampler.wrap_t);
         }
 
-        if (gltf_tex.source < 0 || gltf_tex.source >= static_cast<int32_t>(m->images_count)) {
+        if (gltf_tex.source < 0 || gltf_tex.source >= static_cast<int32_t>(m->images_count))
             continue;
-        }
 
         const tg3_image& gltf_img = m->images[gltf_tex.source];
 
@@ -234,9 +232,8 @@ void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uui
             process_result = TextureProcessor::ProcessFromEncodedMemory(input_bytes, settings);
         }
 
-        if (!process_result.has_value()) {
+        if (!process_result.has_value())
             LogError("Failed to process texture {}: {}", base_name.c_str(), process_result.error().Message());
-        }
 
         ProducedArtifact artifact;
         artifact.bytes = eastl::move(*process_result);
@@ -301,9 +298,8 @@ eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const
                     raw_input.indices.format = tryengine::resources::IndexFormat::UInt16;
                 else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT)
                     raw_input.indices.format = tryengine::resources::IndexFormat::UInt32;
-                else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                else if (idx_acc.component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE)
                     raw_input.indices.format = tryengine::resources::IndexFormat::UInt8;
-                }
             }
 
             // --- Запекание меша ---
@@ -396,9 +392,8 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
                 das::float3(static_cast<float>(gltf_node.scale[0]), static_cast<float>(gltf_node.scale[1]),
                             static_cast<float>(gltf_node.scale[2]));
         }
-        for (uint32_t c = 0; c < gltf_node.children_count; ++c) {
+        for (uint32_t c = 0; c < gltf_node.children_count; ++c)
             node_data.children_indices.push_back(gltf_node.children[c]);
-        }
 
         if (gltf_node.mesh >= 0 && gltf_node.mesh < static_cast<int32_t>(m->meshes_count)) {
             const tg3_mesh& gltf_mesh = m->meshes[gltf_node.mesh];
@@ -439,9 +434,8 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
     const int32_t scene_idx = m->default_scene >= 0 ? m->default_scene : 0;
     if (scene_idx < (int32_t) m->scenes_count) {
         const tg3_scene& scene = m->scenes[scene_idx];
-        for (uint32_t i = 0; i < scene.nodes_count; ++i) {
+        for (uint32_t i = 0; i < scene.nodes_count; ++i)
             asset_map.scene_roots.push_back(scene.nodes[i]);
-        }
     }
 }
 

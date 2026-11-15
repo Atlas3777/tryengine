@@ -29,9 +29,8 @@ public:
 
     async::Task<Mesh> Parse(eastl::span<const uint8_t> raw_bytes) {
         auto unpack_res = resources::MeshBinary::Unpack(raw_bytes);
-        if (!unpack_res.has_value()) {
+        if (!unpack_res.has_value())
             co_return LogAndMakeError("Failed to load mesh: {}", unpack_res.error().Message());
-        }
 
         const auto& [header, position_data, attribute_data, index_data] = *unpack_res;
 
@@ -63,13 +62,13 @@ public:
         VkBufferCreateInfo pos_buffer_info{
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = position_data.size_bytes(),
-            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         };
 
-        if (vmaCreateBuffer(allocator, &pos_buffer_info, &gpu_alloc_info, &mesh.position_buffer, &mesh.position_allocation, nullptr) != VK_SUCCESS) {
+        if (vmaCreateBuffer(allocator, &pos_buffer_info, &gpu_alloc_info, &mesh.position_buffer,
+                            &mesh.position_allocation, nullptr) != VK_SUCCESS) {
             co_return LogAndMakeError("Failed to create position buffer");
         }
         mesh.position_buffer_addr = get_buffer_address(mesh.position_buffer);
@@ -78,13 +77,13 @@ public:
         VkBufferCreateInfo attr_buffer_info{
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = attribute_data.size_bytes(),
-            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         };
 
-        if (vmaCreateBuffer(allocator, &attr_buffer_info, &gpu_alloc_info, &mesh.attribute_buffer, &mesh.attribute_allocation, nullptr) != VK_SUCCESS) {
+        if (vmaCreateBuffer(allocator, &attr_buffer_info, &gpu_alloc_info, &mesh.attribute_buffer,
+                            &mesh.attribute_allocation, nullptr) != VK_SUCCESS) {
             vmaDestroyBuffer(allocator, mesh.position_buffer, mesh.position_allocation);
             co_return LogAndMakeError("Failed to create attribute buffer");
         }
@@ -94,14 +93,13 @@ public:
         VkBufferCreateInfo index_buffer_info{
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = index_data.size_bytes(),
-            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                     VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         };
 
-        if (vmaCreateBuffer(allocator, &index_buffer_info, &gpu_alloc_info, &mesh.index_buffer, &mesh.index_allocation, nullptr) != VK_SUCCESS) {
+        if (vmaCreateBuffer(allocator, &index_buffer_info, &gpu_alloc_info, &mesh.index_buffer, &mesh.index_allocation,
+                            nullptr) != VK_SUCCESS) {
             vmaDestroyBuffer(allocator, mesh.position_buffer, mesh.position_allocation);
             vmaDestroyBuffer(allocator, mesh.attribute_buffer, mesh.attribute_allocation);
             co_return LogAndMakeError("Failed to create index buffer");
@@ -130,7 +128,8 @@ public:
         VmaAllocation staging_allocation = VK_NULL_HANDLE;
         VmaAllocationInfo staging_alloc_result{};
 
-        if (vmaCreateBuffer(allocator, &staging_buffer_info, &staging_alloc_info, &staging_buffer, &staging_allocation, &staging_alloc_result) != VK_SUCCESS) {
+        if (vmaCreateBuffer(allocator, &staging_buffer_info, &staging_alloc_info, &staging_buffer, &staging_allocation,
+                            &staging_alloc_result) != VK_SUCCESS) {
             vmaDestroyBuffer(allocator, mesh.position_buffer, mesh.position_allocation);
             vmaDestroyBuffer(allocator, mesh.attribute_buffer, mesh.attribute_allocation);
             vmaDestroyBuffer(allocator, mesh.index_buffer, mesh.index_allocation);

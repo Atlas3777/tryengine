@@ -53,9 +53,12 @@ struct FileTask {
 class FileHandle {
 public:
     FileHandle() = default;
+
     explicit FileHandle(FileTask* task) noexcept : task_(task) {}
 
-    ~FileHandle() { Release(); }
+    ~FileHandle() {
+        Release();
+    }
 
     FileHandle(FileHandle&& other) noexcept : task_(std::exchange(other.task_, nullptr)) {}
 
@@ -70,32 +73,51 @@ public:
     FileHandle(const FileHandle&) = delete;
     FileHandle& operator=(const FileHandle&) = delete;
 
-    [[nodiscard]] bool IsValid() const noexcept { return task_ != nullptr; }
-    [[nodiscard]] bool IsReady() const noexcept { return task_ && task_->status == TaskStatus::Completed; }
-    [[nodiscard]] bool IsFailed() const noexcept { return task_ && task_->status == TaskStatus::Failed; }
-    [[nodiscard]] bool IsPending() const noexcept { return task_ && task_->status == TaskStatus::Pending; }
-    [[nodiscard]] uint32_t GetSlotIndex() const noexcept { return task_ ? task_->slot_index : UINT32_MAX; }
+    [[nodiscard]] bool IsValid() const noexcept {
+        return task_ != nullptr;
+    }
 
-    [[nodiscard]] int BytesRead() const noexcept { return task_ ? task_->bytes_read : -1; }
-    [[nodiscard]] int BytesWritten() const noexcept { return BytesRead(); }
+    [[nodiscard]] bool IsReady() const noexcept {
+        return task_ && task_->status == TaskStatus::Completed;
+    }
+
+    [[nodiscard]] bool IsFailed() const noexcept {
+        return task_ && task_->status == TaskStatus::Failed;
+    }
+
+    [[nodiscard]] bool IsPending() const noexcept {
+        return task_ && task_->status == TaskStatus::Pending;
+    }
+
+    [[nodiscard]] uint32_t GetSlotIndex() const noexcept {
+        return task_ ? task_->slot_index : UINT32_MAX;
+    }
+
+    [[nodiscard]] int BytesRead() const noexcept {
+        return task_ ? task_->bytes_read : -1;
+    }
+
+    [[nodiscard]] int BytesWritten() const noexcept {
+        return BytesRead();
+    }
 
     [[nodiscard]] eastl::span<const uint8_t> GetData() const noexcept {
-        if (IsReady() && task_) {
+        if (IsReady() && task_)
             return {task_->storage.data(), task_->storage.size()};
-        }
         TRY_ASSERT(false, "IsReady == false");
         return {};
     }
 
     [[nodiscard]] eastl::vector<uint8_t> TakeData() const noexcept {
-        if (IsReady() && task_) {
+        if (IsReady() && task_)
             return std::move(task_->storage);
-        }
         TRY_ASSERT(false, "IsReady == false");
         return {};
     }
 
-    [[nodiscard]] eastl::string_view GetPath() const noexcept { return task_ ? task_->path : eastl::string_view{}; }
+    [[nodiscard]] eastl::string_view GetPath() const noexcept {
+        return task_ ? task_->path : eastl::string_view{};
+    }
 
     [[nodiscard]] FileTime GetMtime() const noexcept {
         if (IsReady() && task_ && task_->storage.size() >= sizeof(struct statx)) {
@@ -145,7 +167,9 @@ inline void FileHandle::Release() noexcept {
 struct FileIoAwaiter {
     const FileHandle& handle;
 
-    bool await_ready() const noexcept { return !handle.IsPending(); }
+    bool await_ready() const noexcept {
+        return !handle.IsPending();
+    }
 
     void await_suspend(const std::coroutine_handle<> awaiting) const noexcept {
         handle.task_->continuation = awaiting;
@@ -199,10 +223,9 @@ struct VectorIoAwaiter {
     uint32_t remaining{0};
 
     bool await_ready() noexcept {
-        for (const auto& h : handles) {
+        for (const auto& h : handles)
             if (h.IsPending())
                 ++remaining;
-        }
         return remaining == 0;
     }
 
@@ -232,9 +255,8 @@ public:
         io_uring_register_files_sparse(&ring_, MAX_CONCURRENT_TASKS);
 
         free_fd_slots_.reserve(MAX_CONCURRENT_TASKS);
-        for (uint32_t i = 0; i < MAX_CONCURRENT_TASKS; ++i) {
+        for (uint32_t i = 0; i < MAX_CONCURRENT_TASKS; ++i)
             free_fd_slots_.push_back(i);
-        }
     }
 
     ~AsyncFileManager() {
@@ -253,9 +275,13 @@ public:
         return ReadChunkAsyncImpl(path, offset, size, PathOwnership::Owned);
     }
 
-    FileHandle GetStatAsync(eastl::string_view path) { return GetStatAsyncImpl(path, PathOwnership::Borrowed); }
+    FileHandle GetStatAsync(eastl::string_view path) {
+        return GetStatAsyncImpl(path, PathOwnership::Borrowed);
+    }
 
-    FileHandle GetStatAsyncCopy(eastl::string_view path) { return GetStatAsyncImpl(path, PathOwnership::Owned); }
+    FileHandle GetStatAsyncCopy(eastl::string_view path) {
+        return GetStatAsyncImpl(path, PathOwnership::Owned);
+    }
 
     FileHandle WriteChunkAsync(eastl::string_view path, eastl::span<const uint8_t> data, uint64_t offset = 0) {
         return WriteChunkAsyncImpl(path, data, offset, PathOwnership::Borrowed);
@@ -280,9 +306,8 @@ public:
 
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
-        if (task_idx == UINT32_MAX) {
+        if (task_idx == UINT32_MAX)
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);
@@ -309,9 +334,8 @@ public:
 
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
-        if (task_idx == UINT32_MAX) {
+        if (task_idx == UINT32_MAX)
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);
@@ -356,7 +380,8 @@ public:
                 // Извлекаем fd_slot из бит 32..62, а task_idx из бит 0..31
                 const uint32_t fd_slot = static_cast<uint32_t>((data >> 32) & 0x7FFFFFFF);
                 const uint32_t task_idx = static_cast<uint32_t>(data & 0xFFFFFFFF);
-                // LogTrace(LogCategory::FileSystem,"Pull: Received CLOSE_TAG CQE. fd_slot={}, task_idx={}, res={}", fd_slot, task_idx, cqe->res);
+                // LogTrace(LogCategory::FileSystem,"Pull: Received CLOSE_TAG CQE. fd_slot={}, task_idx={}, res={}",
+                // fd_slot, task_idx, cqe->res);
 
                 {
                     std::lock_guard lock(ring_mutex_);
@@ -378,9 +403,8 @@ public:
                         task.wait_counter = nullptr;
                         task.executor = nullptr;
 
-                        if (should_resume && exec) {
+                        if (should_resume && exec)
                             exec->Schedule(handle);
-                        }
                     }
                 }
 
@@ -462,11 +486,9 @@ private:
     }
 
     uint32_t allocate_task_slot() noexcept {
-        for (uint32_t i = 0; i < MAX_CONCURRENT_TASKS; ++i) {
-            if (tasks_[i].status == TaskStatus::Unused) {
+        for (uint32_t i = 0; i < MAX_CONCURRENT_TASKS; ++i)
+            if (tasks_[i].status == TaskStatus::Unused)
                 return i;
-            }
-        }
         return UINT32_MAX;
     }
 
@@ -476,9 +498,8 @@ private:
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
         TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
-        if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
+        if (task_idx == UINT32_MAX || free_fd_slots_.empty())
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);
@@ -521,9 +542,8 @@ private:
 
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
-        if (task_idx == UINT32_MAX) {
+        if (task_idx == UINT32_MAX)
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);
@@ -554,9 +574,8 @@ private:
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
         TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
-        if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
+        if (task_idx == UINT32_MAX || free_fd_slots_.empty())
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);
@@ -605,9 +624,8 @@ private:
 
     static eastl::string_view GetParentPath(eastl::string_view path) noexcept {
         size_t last_slash = path.find_last_of("/\\");
-        if (last_slash == eastl::string_view::npos) {
+        if (last_slash == eastl::string_view::npos)
             return {};
-        }
         return path.substr(0, last_slash);
     }
 
@@ -638,14 +656,12 @@ private:
 
     void mkdir_if_new(const char* buffer, size_t len) {
         eastl::string_view segment(buffer, len);
-        if (known_dirs_.find(eastl::string(segment.data(), segment.size())) != known_dirs_.end()) {
+        if (known_dirs_.find(eastl::string(segment.data(), segment.size())) != known_dirs_.end())
             return;
-        }
 
         const int res = ::mkdir(buffer, 0755);
-        if (res == 0 || errno == EEXIST) {
+        if (res == 0 || errno == EEXIST)
             known_dirs_.emplace(segment.data(), segment.size());
-        }
     }
 
     FileHandle OpenAsyncImpl(eastl::string_view path, int flags, mode_t mode, PathOwnership ownership) {
@@ -654,9 +670,8 @@ private:
         uint32_t task_idx = allocate_task_slot();
         TRY_ASSERT(task_idx != UINT32_MAX, "AsyncFileManager: MAX_CONCURRENT_TASKS limit exceeded!");
         TRY_ASSERT(!free_fd_slots_.empty(), "AsyncFileManager: Out of free FD slots!");
-        if (task_idx == UINT32_MAX || free_fd_slots_.empty()) {
+        if (task_idx == UINT32_MAX || free_fd_slots_.empty())
             return FileHandle{};
-        }
 
         FileTask& task = tasks_[task_idx];
         init_task(task, task_idx);

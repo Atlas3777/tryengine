@@ -14,22 +14,18 @@ namespace material_detail {
 // Имя параметра ищется в UBO материала (set 1), остальные биндинги не материал.
 inline const ShaderReflectedParam* FindUniformParam(const ShaderReflectionData& reflection, eastl::string_view name) {
     for (const ShaderReflectedBinding& binding : reflection.bindings) {
-        if (!binding.IsMaterial() || binding.kind != ShaderResourceKind::UniformBuffer) {
+        if (!binding.IsMaterial() || binding.kind != ShaderResourceKind::UniformBuffer)
             continue;
-        }
-        if (const ShaderReflectedParam* param = binding.FindParam(name)) {
+        if (const ShaderReflectedParam* param = binding.FindParam(name))
             return param;
-        }
     }
     return nullptr;
 }
 
 inline bool HasTextureBinding(const ShaderReflectionData& reflection, eastl::string_view name) {
-    for (const ShaderReflectedBinding& binding : reflection.bindings) {
-        if (binding.IsMaterial() && binding.kind == ShaderResourceKind::SampledTexture && binding.name == name) {
+    for (const ShaderReflectedBinding& binding : reflection.bindings)
+        if (binding.IsMaterial() && binding.kind == ShaderResourceKind::SampledTexture && binding.name == name)
             return true;
-        }
-    }
     return false;
 }
 
@@ -117,9 +113,8 @@ inline bool GetTextureId(const resources::ConfigValue& value, uint64_t& out) {
 // пишутся прямо в замапленный UBO материала.
 inline void ApplyMaterialParams(const MaterialConfig& config, Material& material) {
     for (const resources::ConfigField& field : config.params.fields) {
-        if (!field.name.empty() && field.name.front() == '_') {
+        if (!field.name.empty() && field.name.front() == '_')
             continue;
-        }
 
         const ShaderReflectedParam* param = material_detail::FindUniformParam(material.shader->reflection, field.name);
         if (!param) {
@@ -145,21 +140,18 @@ inline void ApplyMaterialParams(const MaterialConfig& config, Material& material
 inline bool ApplyMaterialConfigLive(resources::ResourceManager& rm, uint64_t material_guid,
                                     const MaterialConfig& config) {
     Material* material = rm.GetPointerExplicit<Material>(material_guid);
-    if (!material) {
+    if (!material)
         return false;
-    }
 
     ApplyMaterialParams(config, *material);
 
     for (const resources::ConfigField& field : config.textures.fields) {
-        if (!material_detail::HasTextureBinding(material->shader->reflection, field.name)) {
+        if (!material_detail::HasTextureBinding(material->shader->reflection, field.name))
             continue;
-        }
 
         uint64_t texture_id = 0;
-        if (!material_detail::GetTextureId(field.value, texture_id) || texture_id == 0) {
+        if (!material_detail::GetTextureId(field.value, texture_id) || texture_id == 0)
             continue;
-        }
 
         auto texture = rm.Get<TextureSampler>(texture_id);
         if (!texture.has_value()) {
@@ -181,9 +173,8 @@ public:
 
     async::Task<Material> Parse(const eastl::span<const uint8_t> data) const {
         auto config_result = ParseMaterialConfig(data);
-        if (!config_result.has_value()) {
+        if (!config_result.has_value())
             co_return LogAndMakeError("Material config: {}", config_result.error());
-        }
 
         MaterialConfig config = eastl::move(*config_result);
 
@@ -215,9 +206,8 @@ public:
                 LogWarn("Material '{}': texture '{}' must be a u64 id", config.name.c_str(), field.name.c_str());
                 continue;
             }
-            if (texture_id == 0) {
+            if (texture_id == 0)
                 continue;
-            }
 
             const auto texture_res = co_await resource_manager_.GetAsync<TextureSampler>(texture_id);
 

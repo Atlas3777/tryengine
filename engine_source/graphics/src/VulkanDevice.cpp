@@ -3,6 +3,7 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 
 #include "engine/graphics/VulkanDevice.hpp"
+
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 
@@ -22,17 +23,14 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
     const char* const* sdl_extensions = SDL_Vulkan_GetInstanceExtensions(&sdl_ext_count);
 
     vkb::InstanceBuilder instance_builder;
-    instance_builder.set_app_name("tryengine")
-        .require_api_version(1, 4, 0)
-        .use_default_debug_messenger();
+    instance_builder.set_app_name("tryengine").require_api_version(1, 4, 0).use_default_debug_messenger();
 
 #ifndef NDEBUG
     instance_builder.enable_validation_layers();
 #endif
 
-    for (uint32_t i = 0; i < sdl_ext_count; ++i) {
+    for (uint32_t i = 0; i < sdl_ext_count; ++i)
         instance_builder.enable_extension(sdl_extensions[i]);
-    }
 
     auto instance_ret = instance_builder.build();
     TRY_CHECK(instance_ret.has_value(), "Ошибка создания Vulkan Instance");
@@ -67,7 +65,7 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
     VkPhysicalDeviceFeatures features10{};
     features10.shaderInt64 = VK_TRUE;
     features10.shaderInt16 = VK_TRUE;
-    features10.multiDrawIndirect = VK_TRUE; // <--- Включаем MultiDrawIndirect
+    features10.multiDrawIndirect = VK_TRUE;  // <--- Включаем MultiDrawIndirect
 
     VkPhysicalDeviceShaderObjectFeaturesEXT shader_object_features{};
     shader_object_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT;
@@ -98,7 +96,8 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
                         .add_required_extension_features(color_write_features)
                         .select();
 
-    TRY_CHECK(phys_ret.has_value(), "Не найдено физическое устройство Vulkan 1.4. Error : {}", phys_ret.error().message());
+    TRY_CHECK(phys_ret.has_value(), "Не найдено физическое устройство Vulkan 1.4. Error : {}",
+              phys_ret.error().message());
     vkb::PhysicalDevice vkb_phys_device = phys_ret.value();
     physical_device_ = vkb_phys_device.physical_device;
 

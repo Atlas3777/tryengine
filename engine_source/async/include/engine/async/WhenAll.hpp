@@ -27,9 +27,8 @@ public:
     }
 
     void NotifyCompleted() noexcept {
-        if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1)
             continuation_.resume();
-        }
     }
 
 private:
@@ -40,8 +39,14 @@ private:
 struct WhenAllReadyAwaiter {
     WhenAllCounter& counter;
 
-    bool await_ready() noexcept { return false; }
-    bool await_suspend(std::coroutine_handle<> awaiting) noexcept { return counter.TryAwait(awaiting); }
+    bool await_ready() noexcept {
+        return false;
+    }
+
+    bool await_suspend(std::coroutine_handle<> awaiting) noexcept {
+        return counter.TryAwait(awaiting);
+    }
+
     void await_resume() noexcept {}
 };
 
@@ -53,12 +58,14 @@ struct WhenAllTask {
     using promise_type = WhenAllTaskPromise<T>;
 
     explicit WhenAllTask(std::coroutine_handle<promise_type> h) noexcept : handle_(h) {}
+
     WhenAllTask(WhenAllTask&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
+
     WhenAllTask(const WhenAllTask&) = delete;
+
     ~WhenAllTask() {
-        if (handle_) {
+        if (handle_)
             handle_.destroy();
-        }
     }
 
     void Start(WhenAllCounter& counter) {
@@ -84,19 +91,29 @@ struct WhenAllTaskPromise {
         return WhenAllTask<T>{std::coroutine_handle<WhenAllTaskPromise>::from_promise(*this)};
     }
 
-    std::suspend_always initial_suspend() noexcept { return {}; }
+    std::suspend_always initial_suspend() noexcept {
+        return {};
+    }
 
     struct FinalAwaiter {
-        bool await_ready() noexcept { return false; }
+        bool await_ready() noexcept {
+            return false;
+        }
+
         void await_suspend(std::coroutine_handle<WhenAllTaskPromise> h) noexcept {
             h.promise().counter->NotifyCompleted();
         }
+
         void await_resume() noexcept {}
     };
 
-    FinalAwaiter final_suspend() noexcept { return {}; }
+    FinalAwaiter final_suspend() noexcept {
+        return {};
+    }
 
-    void return_value(Result<T> value) { result = std::move(value); }
+    void return_value(Result<T> value) {
+        result = std::move(value);
+    }
 
     void unhandled_exception() noexcept {
         try {
@@ -122,24 +139,20 @@ template <typename T>
 Task<eastl::vector<Result<T>>> WhenAll(eastl::vector<Task<T>> tasks) {
     eastl::vector<detail::WhenAllTask<T>> wrapped;
     wrapped.reserve(tasks.size());
-    for (auto& task : tasks) {
+    for (auto& task : tasks)
         wrapped.push_back(detail::MakeWhenAllTask(eastl::move(task)));
-    }
 
     detail::WhenAllCounter counter(wrapped.size());
-    for (auto& t : wrapped) {
+    for (auto& t : wrapped)
         t.Start(counter);
-    }
 
-    if (!wrapped.empty()) {
+    if (!wrapped.empty())
         co_await detail::WhenAllReadyAwaiter{counter};
-    }
 
     eastl::vector<Result<T>> results;
     results.reserve(wrapped.size());
-    for (auto& t : wrapped) {
+    for (auto& t : wrapped)
         results.push_back(eastl::move(t.ResultRef()));
-    }
     co_return results;
 }
 
@@ -150,9 +163,8 @@ Task<eastl::tuple<Result<Ts>...>> WhenAll(Task<Ts>... tasks) {
     detail::WhenAllCounter counter(sizeof...(Ts));
     eastl::apply([&counter](auto&... t) { (t.Start(counter), ...); }, wrapped);
 
-    if constexpr (sizeof...(Ts) > 0) {
+    if constexpr (sizeof...(Ts) > 0)
         co_await detail::WhenAllReadyAwaiter{counter};
-    }
 
     co_return eastl::apply([](auto&... t) { return eastl::make_tuple(eastl::move(t.ResultRef())...); }, wrapped);
 }
@@ -172,24 +184,20 @@ template <typename T>
 Task<eastl::vector<Result<T>>> WhenAll(Executor& executor, eastl::vector<Task<T>> tasks) {
     eastl::vector<detail::WhenAllTask<T>> wrapped;
     wrapped.reserve(tasks.size());
-    for (auto& task : tasks) {
+    for (auto& task : tasks)
         wrapped.push_back(detail::MakeWhenAllTask(eastl::move(task)));
-    }
 
     detail::WhenAllCounter counter(wrapped.size());
-    for (auto& t : wrapped) {
+    for (auto& t : wrapped)
         executor.Post([&t, &counter] { t.Start(counter); });
-    }
 
-    if (!wrapped.empty()) {
+    if (!wrapped.empty())
         co_await detail::WhenAllReadyAwaiter{counter};
-    }
 
     eastl::vector<Result<T>> results;
     results.reserve(wrapped.size());
-    for (auto& t : wrapped) {
+    for (auto& t : wrapped)
         results.push_back(eastl::move(t.ResultRef()));
-    }
     co_return results;
 }
 
@@ -201,9 +209,8 @@ Task<eastl::tuple<Result<Ts>...>> WhenAll(Executor& executor, Task<Ts>... tasks)
     eastl::apply([&executor, &counter](auto&... t) { (executor.Post([&t, &counter] { t.Start(counter); }), ...); },
                  wrapped);
 
-    if constexpr (sizeof...(Ts) > 0) {
+    if constexpr (sizeof...(Ts) > 0)
         co_await detail::WhenAllReadyAwaiter{counter};
-    }
 
     co_return eastl::apply([](auto&... t) { return eastl::make_tuple(eastl::move(t.ResultRef())...); }, wrapped);
 }

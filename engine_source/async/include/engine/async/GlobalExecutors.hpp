@@ -8,8 +8,8 @@
 namespace tryengine::async {
 
 inline ThreadPoolExecutor& ThreadPool() {
-    static ThreadPoolExecutor instance(
-        std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1);
+    static ThreadPoolExecutor instance(std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2
+                                                                               : 1);
     return instance;
 }
 
@@ -18,13 +18,11 @@ inline MainThreadExecutor& MainThread() {
     return instance;
 }
 
-
 inline void GetCurrentContextInfo() {
-    if (GetCurrentExecutor() == &MainThread()) {
+    if (GetCurrentExecutor() == &MainThread())
         LogInfo("MainThread | Exec: {}", std::this_thread::get_id());
-    } else {
+    else
         LogInfo("ThreadPool | Exec: {}", std::this_thread::get_id());
-    }
 }
 
 }  // namespace tryengine::async

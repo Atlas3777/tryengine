@@ -29,9 +29,9 @@ struct RawPrimitiveInput {
     RawAttributeStream joints;   // JOINTS_0
     RawAttributeStream weights;  // WEIGHTS_0
 
-    uint32_t color_components = 4;        // 3 (RGB) или 4 (RGBA)
-    uint32_t joint_component_type = 5121; // 5121 (u8) или 5123 (u16)
-    uint32_t weight_component_type = 5126; // 5126 (float), 5121 (u8_unorm), 5123 (u16_unorm)
+    uint32_t color_components = 4;          // 3 (RGB) или 4 (RGBA)
+    uint32_t joint_component_type = 5121;   // 5121 (u8) или 5123 (u16)
+    uint32_t weight_component_type = 5126;  // 5126 (float), 5121 (u8_unorm), 5123 (u16_unorm)
 
     RawIndexStream indices;
 };
@@ -40,14 +40,13 @@ struct MeshProcessSettings {
     bool generate_aabb = true;
     bool generate_radius = true;
     bool generate_flat_normals_if_missing = true;
-    bool auto_select_format = true; // Если true, выбирает подходящий формат на основе атрибутов
+    bool auto_select_format = true;  // Если true, выбирает подходящий формат на основе атрибутов
 };
 
 class MeshProcessor {
 public:
-    static tryengine::Result<eastl::vector<uint8_t>> ProcessPrimitive(
-        const RawPrimitiveInput& input,
-        const MeshProcessSettings& settings = {});
+    static tryengine::Result<eastl::vector<uint8_t>> ProcessPrimitive(const RawPrimitiveInput& input,
+                                                                      const MeshProcessSettings& settings = {});
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

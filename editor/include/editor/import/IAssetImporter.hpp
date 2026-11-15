@@ -48,7 +48,9 @@ public:
 
     // Версия логики импортёра. Поднимай, когда меняется содержимое артефактов: штамп импорта
     // перестанет совпадать, и ассеты этого типа переимпортируются без ручной чистки.
-    [[nodiscard]] virtual uint32_t GetVersion() const { return 1; }
+    [[nodiscard]] virtual uint32_t GetVersion() const {
+        return 1;
+    }
 };
 
 }  // namespace tryeditor

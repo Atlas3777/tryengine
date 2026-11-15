@@ -8,7 +8,8 @@
 namespace tryengine::graphics {
 class FrameSync;
 class VulkanSwapchain;
-}
+}  // namespace tryengine::graphics
+
 namespace tryeditor {
 class EditorApp {
 public:

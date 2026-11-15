@@ -158,9 +158,8 @@ bool TestCompileScriptPak(const das::TArray<uint8_t>& data, das::Context* ctx) {
 // в сцене остаётся стабильной.
 uint64_t RegisterMaterialFile(const char* path, das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    if (!try_ctx || !path || !*path) {
+    if (!try_ctx || !path || !*path)
         return 0;
-    }
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
     if (!res_manager) {
         LogError("Resource Manager not found");
@@ -177,9 +176,8 @@ uint64_t RegisterMaterialFile(const char* path, das::Context* ctx) {
 // guid создаётся новый.
 uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    if (!try_ctx || !path || !*path) {
+    if (!try_ctx || !path || !*path)
         return 0;
-    }
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
     if (!res_manager) {
         LogError("Resource Manager not found");
@@ -197,22 +195,18 @@ uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
 // у авторитетных файлов — в game/data; по пути редактор решает, можно ли материал править.
 char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    if (!try_ctx) {
+    if (!try_ctx)
         return nullptr;
-    }
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
-    if (!res_manager) {
+    if (!res_manager)
         return nullptr;
-    }
 
     const auto location = res_manager->GetAssetRegistry().GetAssetLocation(guid);
-    if (!location.has_value()) {
+    if (!location.has_value())
         return nullptr;
-    }
     const auto* loose = eastl::get_if<tryengine::resources::LooseFileLocation>(&*location);
-    if (!loose) {
+    if (!loose)
         return nullptr;
-    }
     return ctx->allocateString(loose->path.c_str(), static_cast<uint32_t>(loose->path.size()), at);
 }
 
@@ -220,13 +214,11 @@ char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
 // пересоздания GPU-ресурсов, поэтому изменения видны в том же кадре.
 bool ApplyMaterialConfigText(uint64_t material_guid, const char* text, das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    if (!try_ctx || !material_guid || !text) {
+    if (!try_ctx || !material_guid || !text)
         return false;
-    }
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
-    if (!res_manager) {
+    if (!res_manager)
         return false;
-    }
 
     const auto* bytes = reinterpret_cast<const uint8_t*>(text);
     const auto config = tryengine::graphics::ParseMaterialConfig(eastl::span<const uint8_t>(bytes, std::strlen(text)));

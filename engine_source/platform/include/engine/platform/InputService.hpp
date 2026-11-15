@@ -14,9 +14,8 @@ inline void ProcessEvent(const SDL_Event& event, InputState& state) {
         case SDL_EVENT_KEY_DOWN: {
             auto key = static_cast<uint16_t>(event.key.scancode);
             if (key < static_cast<uint16_t>(Key::Count)) {
-                if (!event.key.repeat) {
+                if (!event.key.repeat)
                     state.just_pressed[key] = true;
-                }
                 state.is_down[key] = true;
             }
             break;
@@ -42,9 +41,8 @@ inline void ProcessEvent(const SDL_Event& event, InputState& state) {
         case SDL_EVENT_MOUSE_BUTTON_DOWN: {
             int btnIdx = event.button.button - 1;
             if (btnIdx >= 0 && btnIdx < static_cast<int>(Mouse::Count)) {
-                if (!state.mouse_buttons[btnIdx]) {
+                if (!state.mouse_buttons[btnIdx])
                     state.mouse_just_pressed[btnIdx] = true;
-                }
                 state.mouse_buttons[btnIdx] = true;
             }
             break;
@@ -89,9 +87,8 @@ public:
                 }
             }
 
-            if (handled) {
+            if (handled)
                 continue;
-            }
 
             if (event.type == SDL_EVENT_QUIT) {
                 quit_requested_ = true;
@@ -102,8 +99,13 @@ public:
         }
     }
 
-    [[nodiscard]] bool IsQuitRequested() const noexcept { return quit_requested_; }
-    [[nodiscard]] InputState& GetState() noexcept { return input_state_; }
+    [[nodiscard]] bool IsQuitRequested() const noexcept {
+        return quit_requested_;
+    }
+
+    [[nodiscard]] InputState& GetState() noexcept {
+        return input_state_;
+    }
 
 private:
     InputState input_state_;

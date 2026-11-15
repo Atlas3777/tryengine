@@ -22,33 +22,30 @@ public:
         auto importer = eastl::make_unique<TImporter>(std::forward<Args>(args)...);
 
         auto settings_id = tryengine::core::ScopedTypeId<ImportSystem, TSettings>::Value();
-        if (settings_id >= importers_by_settings_type_.size()) {
+        if (settings_id >= importers_by_settings_type_.size())
             importers_by_settings_type_.resize(settings_id + 1, nullptr);
-        }
         importers_by_settings_type_[settings_id] = importer.get();
 
         IAssetImporter* ptr = importer.get();
         importers_by_name_[eastl::string(importer->GetName())] = ptr;
 
-        for (const auto& ext : extensions) {
+        for (const auto& ext : extensions)
             importers_by_ext_[eastl::string(ext)] = ptr;
-        }
 
         importers_.push_back(eastl::move(importer));
     }
 
     template <typename TImporter, typename TSettings, typename... Args>
     void RegisterImporter(std::initializer_list<eastl::string_view> extensions, Args&&... args) {
-        RegisterImporter<TImporter, TSettings>(
-            eastl::span(extensions.begin(), extensions.end()), std::forward<Args>(args)...);
+        RegisterImporter<TImporter, TSettings>(eastl::span(extensions.begin(), extensions.end()),
+                                               std::forward<Args>(args)...);
     }
 
     template <typename TSettings>
     [[nodiscard]] IAssetImporter* GetImporterBySettings() const {
         auto settings_id = tryengine::core::ScopedTypeId<ImportSystem, TSettings>::Value();
-        if (settings_id < importers_by_settings_type_.size()) {
+        if (settings_id < importers_by_settings_type_.size())
             return importers_by_settings_type_[settings_id];
-        }
         return nullptr;
     }
 

@@ -34,6 +34,7 @@ string_view Join(char* buf, string_view parent, string_view name) {
 }  // namespace
 
 UiTree::UiTree(StringTable& strings) : strings_(strings) {}
+
 UiTree::~UiTree() {
     Clear();
 }

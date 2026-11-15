@@ -95,8 +95,8 @@
 //         }
 //
 //         if (ImGui::Button("Add Parameter")) {
-//             current_shader_data_.params.push_back({"u_NewParam", tryengine::graphics::ShaderParamType::Float, {0.0f}});
-//             dirty_ = true;
+//             current_shader_data_.params.push_back({"u_NewParam", tryengine::graphics::ShaderParamType::Float,
+//             {0.0f}}); dirty_ = true;
 //         }
 //         ImGui::PopID();
 //

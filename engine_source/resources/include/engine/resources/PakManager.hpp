@@ -25,11 +25,9 @@ public:
 
     ~PakManager() {
         std::lock_guard lock(mutex_);
-        for (const auto& record : pak_records_) {
-            if (record.fd_slot != UINT32_MAX) {
+        for (const auto& record : pak_records_)
+            if (record.fd_slot != UINT32_MAX)
                 file_manager_.CloseFDAsync(record.fd_slot);
-            }
-        }
         file_manager_.Submit();
     }
 
@@ -42,16 +40,14 @@ public:
             if (kind != filesystem::EntryKind::File)
                 return;
 
-            if (name.size() < 4 || std::memcmp(name.data() + name.size() - 4, ".pak", 4) != 0)
-            {
+            if (name.size() < 4 || std::memcmp(name.data() + name.size() - 4, ".pak", 4) != 0) {
                 LogTrace(LogCategory::Importer, "Unsupported type in content");
                 return;
             }
 
             // Формируем полный путь, т.к. ReadDirectory отдаёт только имя файла
             char fullPath[filesystem::kMaxPath];
-            std::snprintf(fullPath, sizeof(fullPath), "content/%.*s",
-                          static_cast<int>(name.size()), name.data());
+            std::snprintf(fullPath, sizeof(fullPath), "content/%.*s", static_cast<int>(name.size()), name.data());
 
             async::RunAndForget(async::ThreadPool(), LoadPakAsync(fullPath));
         });
@@ -89,7 +85,7 @@ public:
         if (!header_res.has_value()) {
             auto close_handle = file_manager_.CloseFDAsync(fd_slot);
             co_await close_handle;
-            co_return LogAndMakeError("Failed AssetPakBinary::ReadHeader {}",header_res.error().Message());
+            co_return LogAndMakeError("Failed AssetPakBinary::ReadHeader {}", header_res.error().Message());
         }
 
         const auto header = *header_res;
@@ -119,9 +115,8 @@ public:
             eastl::vector<async::Task<PakHandle>> dep_tasks;
             dep_tasks.reserve(manifest.dependencies.size());
 
-            for (const auto& dep_path : manifest.dependencies) {
+            for (const auto& dep_path : manifest.dependencies)
                 dep_tasks.push_back(LoadPakAsync(dep_path));
-            }
 
             auto results_r = co_await async::WhenAll(async::ThreadPool(), std::move(dep_tasks));
 

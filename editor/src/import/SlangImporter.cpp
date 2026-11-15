@@ -19,9 +19,8 @@ AssetMeta<SlangImportSettings> SlangImporter::GenerateDefaultMeta() const {
 tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) const {
     ImportResult result{};
 
-    if (ctx.source_bytes.empty()) {
+    if (ctx.source_bytes.empty())
         co_return LogAndMakeError("Slang source is empty");
-    }
 
     AssetMeta<SlangImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
@@ -36,9 +35,8 @@ tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) co
     request.source = eastl::string(reinterpret_cast<const char*>(ctx.source_bytes.data()), ctx.source_bytes.size());
 
     auto compile_result = compiler_.Compile(request);
-    if (!compile_result.has_value()) {
+    if (!compile_result.has_value())
         co_return eastl::move(compile_result.error());
-    }
 
     ShaderCompileResult& compiled = *compile_result;
 
@@ -72,18 +70,16 @@ tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) co
     }
 
     result.dependencies.reserve(compiled.dependencies.size());
-    for (const ShaderDependency& dependency : compiled.dependencies) {
+    for (const ShaderDependency& dependency : compiled.dependencies)
         result.dependencies.push_back(ImportDependencyRef{dependency.name, dependency.path});
-    }
 
     result.main_guid = meta.header.guid;
 
     auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<SlangImportSettings>>(meta);
-    if (meta_bytes.has_value()) {
+    if (meta_bytes.has_value())
         result.meta_bytes = eastl::move(meta_bytes.value());
-    } else {
+    else
         LogError("Не удалось сериализовать мету");
-    }
 
     co_return result;
 }

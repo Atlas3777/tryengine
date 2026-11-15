@@ -46,22 +46,19 @@ public:
         auto [cb, is_first_initiator] = GetOrCreateControlBlock(guid);
 
         if (!is_first_initiator) {
-            if (cb->state.load(std::memory_order_acquire) == ResourceState::Loading) {
+            if (cb->state.load(std::memory_order_acquire) == ResourceState::Loading)
                 co_await WaitForLoadAwaiter{cb};
-            }
 
-            if (cb->state.load(std::memory_order_acquire) == ResourceState::Failed) {
+            if (cb->state.load(std::memory_order_acquire) == ResourceState::Failed)
                 co_return LogAndMakeError("Failed to load resource with GUID {}", guid);
-            }
 
             co_return ResourceHandle<T>(cb);
         }
 
         co_await LoadAsync(guid, cb);
 
-        if (cb->state.load(std::memory_order_acquire) == ResourceState::Failed) {
+        if (cb->state.load(std::memory_order_acquire) == ResourceState::Failed)
             co_return LogAndMakeError("Failed to load resource with GUID {}", guid);
-        }
 
         co_return ResourceHandle<T>(cb);
     }
@@ -69,9 +66,8 @@ public:
     ResourceHandle<T> Get(uint64_t guid) override {
         auto [cb, is_first_initiator] = GetOrCreateControlBlock(guid);
 
-        if (is_first_initiator) {
+        if (is_first_initiator)
             async::RunAndForget(async::ThreadPool(), LoadAsync(guid, cb));
-        }
 
         return ResourceHandle<T>(cb);
     }
@@ -80,17 +76,15 @@ public:
         auto [cb, is_first_initiator] = GetOrCreateControlBlock(guid);
         cb->ref_count.fetch_add(1, std::memory_order_relaxed);
 
-        if (is_first_initiator) {
+        if (is_first_initiator)
             async::RunAndForget(async::ThreadPool(), LoadAsync(guid, cb));
-        }
     }
 
     bool IsReady(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
-        if (it != cache_.end() && it->second) {
+        if (it != cache_.end() && it->second)
             return it->second->state.load(std::memory_order_acquire) == ResourceState::Ready;
-        }
         return false;
     }
 
@@ -98,9 +92,8 @@ public:
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
         if (it != cache_.end() && it->second) {
-            if (it->second->state.load(std::memory_order_acquire) == ResourceState::Ready) {
+            if (it->second->state.load(std::memory_order_acquire) == ResourceState::Ready)
                 return static_cast<void*>(it->second->data);
-            }
         }
         return nullptr;
     }
@@ -108,9 +101,8 @@ public:
     bool Release(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
-        if (it == cache_.end()) {
+        if (it == cache_.end())
             return false;
-        }
 
         // Вызов только уменьшает счетчик. Очистка произойдет в Purge()
         it->second->ref_count.fetch_sub(1, std::memory_order_acq_rel);
@@ -127,12 +119,10 @@ public:
     bool Invalidate(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
-        if (it == cache_.end()) {
+        if (it == cache_.end())
             return false;
-        }
-        if (it->second->state.load(std::memory_order_acquire) == ResourceState::Loading) {
+        if (it->second->state.load(std::memory_order_acquire) == ResourceState::Loading)
             return false;
-        }
 
         // Не уничтожаем данные: на старый указатель ещё могут ссылаться кадры/хендлы.
         // Ресурс доживает до разрушения кеша, а по тому же guid создаётся новый.
@@ -148,11 +138,10 @@ public:
             const uint32_t refs = it->second->ref_count.load(std::memory_order_acquire);
 
             // Ресурс уничтожается ТОЛЬКО если на него нет ссылок и он НЕ находится в процессе загрузки
-            if (refs == 0 && state != ResourceState::Loading) {
+            if (refs == 0 && state != ResourceState::Loading)
                 it = cache_.erase(it);
-            } else {
+            else
                 ++it;
-            }
         }
     }
 
@@ -166,11 +155,10 @@ private:
 
         void await_suspend(std::coroutine_handle<> awaiting) noexcept {
             std::lock_guard lock(cb->waiters_mutex);
-            if (cb->state.load(std::memory_order_acquire) == ResourceState::Loading) {
+            if (cb->state.load(std::memory_order_acquire) == ResourceState::Loading)
                 cb->waiters.push_back(awaiting);
-            } else {
+            else
                 awaiting.resume();
-            }
         }
 
         void await_resume() const noexcept {}
@@ -181,9 +169,8 @@ private:
 
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
-        if (it != cache_.end()) {
+        if (it != cache_.end())
             return {it->second.get(), false};
-        }
 
         auto cb = std::make_unique<ResourceControlBlock<T>>();
         cb->state.store(ResourceState::Loading, std::memory_order_release);
@@ -278,10 +265,9 @@ private:
             std::lock_guard lock(cb->waiters_mutex);
             waiters_to_resume = std::move(cb->waiters);
         }
-        for (auto handle : waiters_to_resume) {
+        for (auto handle : waiters_to_resume)
             if (handle)
                 handle.resume();
-        }
     }
 
     mutable std::mutex cache_mutex_;

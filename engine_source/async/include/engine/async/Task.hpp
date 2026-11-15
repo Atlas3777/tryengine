@@ -24,23 +24,27 @@ struct TaskPromiseBase {
     std::coroutine_handle<> continuation;
     Executor* origin_executor = nullptr;
 
-    std::suspend_always initial_suspend() noexcept { return {}; }
+    std::suspend_always initial_suspend() noexcept {
+        return {};
+    }
 
     struct FinalAwaiter {
-        bool await_ready() noexcept { return false; }
+        bool await_ready() noexcept {
+            return false;
+        }
 
         template <typename Promise>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> h) noexcept {
             auto continuation = h.promise().continuation;
-            if (!continuation) {
+            if (!continuation)
                 return std::noop_coroutine();
-            }
 
             Executor* origin_exec = h.promise().origin_executor;
             Executor* current_exec = GetCurrentExecutor();
 
-            TRY_ASSERT(origin_exec != nullptr, "Task completed continuation with unknown origin executor — "
-                                                "some resumption path is missing CurrentExecutorScope");
+            TRY_ASSERT(origin_exec != nullptr,
+                       "Task completed continuation with unknown origin executor — "
+                       "some resumption path is missing CurrentExecutorScope");
 
             if (origin_exec != current_exec) {
                 origin_exec->Schedule(continuation);
@@ -52,7 +56,9 @@ struct TaskPromiseBase {
         void await_resume() noexcept {}
     };
 
-    FinalAwaiter final_suspend() noexcept { return {}; }
+    FinalAwaiter final_suspend() noexcept {
+        return {};
+    }
 };
 
 template <typename T>
@@ -67,9 +73,13 @@ struct TaskPromise final : TaskPromiseBase {
         result.emplace(std::forward<U>(value));
     }
 
-    void return_value(Error error) { result.emplace(std::move(error)); }
+    void return_value(Error error) {
+        result.emplace(std::move(error));
+    }
 
-    void return_value(Result<T> value) { result.emplace(std::move(value)); }
+    void return_value(Result<T> value) {
+        result.emplace(std::move(value));
+    }
 
     void unhandled_exception() noexcept {
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
@@ -92,9 +102,13 @@ struct TaskPromise<void> final : TaskPromiseBase {
 
     Task<void> get_return_object() noexcept;
 
-    void return_value(Error error) { result.emplace(std::move(error)); }
+    void return_value(Error error) {
+        result.emplace(std::move(error));
+    }
 
-    void return_value(Result<void> value) { result.emplace(std::move(value)); }
+    void return_value(Result<void> value) {
+        result.emplace(std::move(value));
+    }
 
     void unhandled_exception() noexcept {
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
@@ -156,7 +170,9 @@ public:
     public:
         explicit Awaiter(std::coroutine_handle<promise_type> handle) noexcept : handle_(handle) {}
 
-        bool await_ready() const noexcept { return false; }
+        bool await_ready() const noexcept {
+            return false;
+        }
 
         std::coroutine_handle<> await_suspend(std::coroutine_handle<> awaiting) noexcept {
             handle_.promise().continuation = awaiting;
@@ -175,16 +191,22 @@ public:
         std::coroutine_handle<promise_type> handle_;
     };
 
-    Awaiter operator co_await() & noexcept { return Awaiter(handle_); }
-    Awaiter operator co_await() && noexcept { return Awaiter(handle_); }
+    Awaiter operator co_await() & noexcept {
+        return Awaiter(handle_);
+    }
 
-    std::coroutine_handle<promise_type> NativeHandle() const noexcept { return handle_; }
+    Awaiter operator co_await() && noexcept {
+        return Awaiter(handle_);
+    }
+
+    std::coroutine_handle<promise_type> NativeHandle() const noexcept {
+        return handle_;
+    }
 
 private:
     void Destroy() {
-        if (handle_) {
+        if (handle_)
             handle_.destroy();
-        }
     }
 
     std::coroutine_handle<promise_type> handle_;
@@ -202,8 +224,14 @@ inline Task<void> detail::TaskPromise<void>::get_return_object() noexcept {
 struct ExecutorSwitch {
     Executor& executor;
 
-    bool await_ready() const noexcept { return false; }
-    void await_suspend(std::coroutine_handle<> handle) const { executor.Schedule(handle); }
+    bool await_ready() const noexcept {
+        return false;
+    }
+
+    void await_suspend(std::coroutine_handle<> handle) const {
+        executor.Schedule(handle);
+    }
+
     void await_resume() const noexcept {}
 };
 

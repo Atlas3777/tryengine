@@ -36,9 +36,8 @@ eastl::string FromStd(std::string_view value) {
 std::filesystem::path AbsolutePath(const std::filesystem::path& path) {
     std::error_code ec;
     std::filesystem::path absolute = std::filesystem::absolute(path, ec);
-    if (ec) {
+    if (ec)
         absolute = path;
-    }
     return absolute.lexically_normal();
 }
 
@@ -49,9 +48,8 @@ eastl::string ToProjectPath(const std::filesystem::path& path) {
     const std::filesystem::path cwd = std::filesystem::current_path(ec);
     if (!ec) {
         const std::filesystem::path relative = path.lexically_relative(cwd);
-        if (!relative.empty() && relative.native().rfind("..", 0) != 0) {
+        if (!relative.empty() && relative.native().rfind("..", 0) != 0)
             return FromStd(relative.generic_string());
-        }
     }
     return FromStd(path.generic_string());
 }
@@ -62,20 +60,17 @@ bool IsUnder(const std::filesystem::path& path, const std::filesystem::path& roo
 }
 
 bool IsUnderAny(const std::filesystem::path& path, const eastl::vector<std::filesystem::path>& roots) {
-    for (const auto& root : roots) {
-        if (IsUnder(path, root)) {
+    for (const auto& root : roots)
+        if (IsUnder(path, root))
             return true;
-        }
-    }
     return false;
 }
 
 void FindEntryPoint(slang::IModule* module, std::initializer_list<const char*> names, ComPtr<slang::IEntryPoint>& out) {
     for (const char* name : names) {
         module->findEntryPointByName(name, out.writeRef());
-        if (out) {
+        if (out)
             return;
-        }
     }
 }
 
@@ -144,16 +139,14 @@ uint64_t MakeSlotKey(uint32_t set, uint32_t binding) {
 
 eastl::hash_set<uint64_t> ExtractActiveSpirvSlots(const eastl::vector<uint8_t>& spirv) {
     eastl::hash_set<uint64_t> active_slots;
-    if (spirv.size() < 20) {
+    if (spirv.size() < 20)
         return active_slots;
-    }
 
     const uint32_t* words = reinterpret_cast<const uint32_t*>(spirv.data());
     const size_t word_count = spirv.size() / sizeof(uint32_t);
 
-    if (words[0] != 0x07230203) {
+    if (words[0] != 0x07230203)
         return active_slots;
-    }
 
     struct IdDecorations {
         uint32_t set = 0;
@@ -161,6 +154,7 @@ eastl::hash_set<uint64_t> ExtractActiveSpirvSlots(const eastl::vector<uint8_t>& 
         bool has_set = false;
         bool has_binding = false;
     };
+
     eastl::hash_map<uint32_t, IdDecorations> decorations;
 
     size_t i = 5;
@@ -169,9 +163,8 @@ eastl::hash_set<uint64_t> ExtractActiveSpirvSlots(const eastl::vector<uint8_t>& 
         const uint16_t opcode = instruction & 0xFFFF;
         const uint16_t length = instruction >> 16;
 
-        if (length == 0 || i + length > word_count) {
+        if (length == 0 || i + length > word_count)
             break;
-        }
 
         if (opcode == 71 && length >= 3) {
             const uint32_t target_id = words[i + 1];
@@ -191,11 +184,9 @@ eastl::hash_set<uint64_t> ExtractActiveSpirvSlots(const eastl::vector<uint8_t>& 
         i += length;
     }
 
-    for (const auto& [id, dec] : decorations) {
-        if (dec.has_set && dec.has_binding) {
+    for (const auto& [id, dec] : decorations)
+        if (dec.has_set && dec.has_binding)
             active_slots.insert(MakeSlotKey(dec.set, dec.binding));
-        }
-    }
 
     return active_slots;
 }
@@ -205,9 +196,8 @@ ShaderReflectionData FilterReflectionByActiveSlots(ShaderReflectionData reflecti
     ShaderReflectionData filtered{};
     for (auto& binding : reflection.bindings) {
         const uint64_t key = MakeSlotKey(binding.set, binding.binding);
-        if (active_slots.find(key) != active_slots.end()) {
+        if (active_slots.find(key) != active_slots.end())
             filtered.bindings.push_back(std::move(binding));
-        }
     }
     return filtered;
 }
@@ -228,14 +218,12 @@ void CountStageResourcesFromReflection(const ShaderReflectionData& reflection, S
 }
 
 bool IsStorageBufferType(slang::TypeReflection* type) {
-    if (!type) {
+    if (!type)
         return false;
-    }
 
     const slang::TypeReflection::Kind kind = type->getKind();
-    if (kind == slang::TypeReflection::Kind::ShaderStorageBuffer) {
+    if (kind == slang::TypeReflection::Kind::ShaderStorageBuffer)
         return true;
-    }
 
     if (kind == slang::TypeReflection::Kind::Resource) {
         const SlangResourceShape base_shape =
@@ -260,33 +248,27 @@ ShaderParamType MapSlangType(slang::TypeReflection* type) {
     }
     if (kind == slang::TypeReflection::Kind::Vector) {
         const uint32_t elem_count = type->getElementCount();
-        if (elem_count == 2) {
+        if (elem_count == 2)
             return ShaderParamType::Vec2;
-        }
-        if (elem_count == 3) {
+        if (elem_count == 3)
             return ShaderParamType::Vec3;
-        }
-        if (elem_count == 4) {
+        if (elem_count == 4)
             return ShaderParamType::Vec4;
-        }
     }
     if (kind == slang::TypeReflection::Kind::Matrix) {
         const uint32_t rows = type->getRowCount();
-        if (rows == 3) {
+        if (rows == 3)
             return ShaderParamType::Mat3;
-        }
-        if (rows == 4) {
+        if (rows == 4)
             return ShaderParamType::Mat4;
-        }
     }
     return ShaderParamType::Float;
 }
 
 ShaderReflectionData ExtractReflection(slang::ProgramLayout* layout) {
     ShaderReflectionData out_reflection{};
-    if (!layout) {
+    if (!layout)
         return out_reflection;
-    }
 
     const uint32_t param_count = layout->getParameterCount();
     for (uint32_t i = 0; i < param_count; ++i) {
@@ -390,19 +372,16 @@ void CollectDependencies(slang::ISession* session, const std::filesystem::path& 
                          eastl::vector<ShaderDependency>& out) {
     eastl::hash_set<eastl::string> seen;
     auto add = [&](const char* name, const char* file) {
-        if (!file || !*file) {
+        if (!file || !*file)
             return;
-        }
 
         const std::filesystem::path absolute = AbsolutePath(std::filesystem::path(file));
-        if (absolute == source_path || !IsUnderAny(absolute, search_roots)) {
+        if (absolute == source_path || !IsUnderAny(absolute, search_roots))
             return;
-        }
 
         eastl::string key = FromStd(absolute.generic_string());
-        if (!seen.insert(key).second) {
+        if (!seen.insert(key).second)
             return;
-        }
 
         ShaderDependency dependency{};
         dependency.name = name && *name ? FromStd(name) : FromStd(absolute.stem().string());
@@ -413,9 +392,8 @@ void CollectDependencies(slang::ISession* session, const std::filesystem::path& 
     const SlangInt module_count = session->getLoadedModuleCount();
     for (SlangInt i = 0; i < module_count; ++i) {
         slang::IModule* module = session->getLoadedModule(i);
-        if (!module) {
+        if (!module)
             continue;
-        }
 
         // Сам исходник в зависимости не попадает: его изменения уже отслеживает штамп
         // (проверка absolute == source_path внутри add).
@@ -424,9 +402,8 @@ void CollectDependencies(slang::ISession* session, const std::filesystem::path& 
         const SlangInt dependency_count = module->getDependencyFileCount();
         for (SlangInt d = 0; d < dependency_count; ++d) {
             const char* file = module->getDependencyFilePath(d);
-            if (file && *file) {
+            if (file && *file)
                 add(nullptr, file);
-            }
         }
     }
 
@@ -443,25 +420,21 @@ struct ShaderCompilerSystem::CompilerContext {
 };
 
 ShaderCompilerSystem::ShaderCompilerSystem(ShaderCompilerConfig config) : config_(eastl::move(config)) {
-    if (config_.context_count == 0) {
+    if (config_.context_count == 0)
         config_.context_count = 1;
-    }
 
     contexts_.reserve(config_.context_count);
-    for (uint32_t i = 0; i < config_.context_count; ++i) {
+    for (uint32_t i = 0; i < config_.context_count; ++i)
         contexts_.push_back(eastl::make_unique<CompilerContext>());
-    }
 }
 
 ShaderCompilerSystem::~ShaderCompilerSystem() = default;
 
 tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const ShaderCompileRequest& request) {
-    if (request.source.empty()) {
+    if (request.source.empty())
         return LogAndMakeError("Slang: source is empty");
-    }
-    if (contexts_.empty()) {
+    if (contexts_.empty())
         return LogAndMakeError("Slang: compiler has no contexts");
-    }
 
     const uint32_t context_index =
         next_context_.fetch_add(1, std::memory_order_relaxed) % static_cast<uint32_t>(contexts_.size());
@@ -469,18 +442,15 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
     std::lock_guard lock(context.mutex);
 
     if (!context.global) {
-        if (SLANG_FAILED(slang::createGlobalSession(context.global.writeRef()))) {
+        if (SLANG_FAILED(slang::createGlobalSession(context.global.writeRef())))
             return LogAndMakeError("Slang: Failed to create global session");
-        }
         context.profile = context.global->findProfile("spirv_1_6");
-        if (context.profile == SLANG_PROFILE_UNKNOWN) {
+        if (context.profile == SLANG_PROFILE_UNKNOWN)
             return LogAndMakeError("Slang: Unknown profile 'spirv_1_6'");
-        }
     }
 
-    if (request.path.empty()) {
+    if (request.path.empty())
         return LogAndMakeError("Slang: source path is empty");
-    }
 
     const std::filesystem::path source_path =
         AbsolutePath(std::filesystem::path(std::string(request.path.data(), request.path.size())));
@@ -492,24 +462,20 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
     auto add_search_path = [&](const std::filesystem::path& path) {
         const std::filesystem::path absolute = AbsolutePath(path);
         const eastl::string text = FromStd(absolute.generic_string());
-        for (const auto& existing : search_paths) {
-            if (existing == text) {
+        for (const auto& existing : search_paths)
+            if (existing == text)
                 return;
-            }
-        }
         search_paths.push_back(text);
         search_roots.push_back(absolute);
     };
     add_search_path(source_path.parent_path());
-    for (const auto& module_search_path : config_.module_search_paths) {
+    for (const auto& module_search_path : config_.module_search_paths)
         add_search_path(std::string(module_search_path.data(), module_search_path.size()));
-    }
 
     eastl::vector<const char*> search_path_ptrs;
     search_path_ptrs.reserve(search_paths.size());
-    for (const auto& path : search_paths) {
+    for (const auto& path : search_paths)
         search_path_ptrs.push_back(path.c_str());
-    }
 
     slang::TargetDesc target_desc{};
     target_desc.format = SLANG_SPIRV;
@@ -522,9 +488,8 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
     session_desc.searchPathCount = static_cast<SlangInt>(search_path_ptrs.size());
 
     ComPtr<slang::ISession> session;
-    if (SLANG_FAILED(context.global->createSession(session_desc, session.writeRef()))) {
+    if (SLANG_FAILED(context.global->createSession(session_desc, session.writeRef())))
         return LogAndMakeError("Slang: Failed to create session");
-    }
 
     const eastl::string source_path_text = FromStd(source_path.generic_string());
     const eastl::string module_name = FromStd(source_path.stem().string());
@@ -649,9 +614,8 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
         result.kind = ShaderAssetKind::Module;
 
         ComPtr<slang::IBlob> module_ir;
-        if (SLANG_FAILED(module->serialize(module_ir.writeRef())) || !module_ir) {
+        if (SLANG_FAILED(module->serialize(module_ir.writeRef())) || !module_ir)
             return LogAndMakeError("Slang: Failed to serialize module '{}'", module_name);
-        }
 
         const auto* bytes = static_cast<const uint8_t*>(module_ir->getBufferPointer());
         result.module_ir.assign(bytes, bytes + module_ir->getBufferSize());

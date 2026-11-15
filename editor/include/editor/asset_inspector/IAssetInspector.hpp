@@ -11,4 +11,4 @@ public:
     virtual void DrawInspector(const std::filesystem::path& asset_path) = 0;
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

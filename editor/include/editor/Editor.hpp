@@ -31,7 +31,9 @@ public:
     bool running = false;
     PlayModeState state;
 
-    [[nodiscard]] AssetPipeline& GetAssetSourceDatabase() const { return *asset_pipeline_; }
+    [[nodiscard]] AssetPipeline& GetAssetSourceDatabase() const {
+        return *asset_pipeline_;
+    }
 
 private:
     tryengine::core::Engine& engine_;

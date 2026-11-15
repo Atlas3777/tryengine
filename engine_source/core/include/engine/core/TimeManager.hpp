@@ -11,8 +11,11 @@
 namespace tryengine::core {
 
 struct RootClock {};
+
 struct GameClock {};
+
 struct GameUIClock {};
+
 struct GameWorldClock {};
 
 class TimeManager {
@@ -69,8 +72,13 @@ public:
         return clocks_[tag_to_clock_id_[type_id]];
     }
 
-    [[nodiscard]] Clock& Root() noexcept { return Get<RootClock>(); }
-    [[nodiscard]] const Clock& Root() const noexcept { return Get<RootClock>(); }
+    [[nodiscard]] Clock& Root() noexcept {
+        return Get<RootClock>();
+    }
+
+    [[nodiscard]] const Clock& Root() const noexcept {
+        return Get<RootClock>();
+    }
 
     void NewFrame() {
         const auto current_time = std::chrono::steady_clock::now();
@@ -95,7 +103,9 @@ public:
         }
     }
 
-    [[nodiscard]] uint32_t FrameCount() const noexcept { return frame_count_; }
+    [[nodiscard]] uint32_t FrameCount() const noexcept {
+        return frame_count_;
+    }
 
 private:
     eastl::vector<Clock> clocks_;  // Плотный массив (топологически отсортирован по факту порядка регистрации)

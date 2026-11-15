@@ -69,9 +69,8 @@ char* GetMaterialSchema(uint64_t shader_guid, das::Context* ctx, LineInfoArg* at
     auto* shader = res_manager->GetPointerExplicit<tryengine::graphics::Shader>(shader_guid);
     if (!shader) {
         static eastl::hash_set<uint64_t> requested_shaders;
-        if (requested_shaders.insert(shader_guid).second) {
+        if (requested_shaders.insert(shader_guid).second)
             res_manager->RequestLoad<tryengine::graphics::Shader>(shader_guid);
-        }
         return nullptr;
     }
 

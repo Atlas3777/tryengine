@@ -4,11 +4,6 @@
 
 namespace tryengine::resources {
 
-enum class IndexFormat : uint8_t {
-    None,
-    UInt8,
-    UInt16,
-    UInt32
-};
+enum class IndexFormat : uint8_t { None, UInt8, UInt16, UInt32 };
 
 }  // namespace tryengine::resources

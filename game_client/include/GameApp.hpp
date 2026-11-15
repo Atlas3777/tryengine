@@ -14,6 +14,7 @@ public:
     void Init();
     void Run();
     void Shutdown() const;
+
 private:
     bool running_;
 

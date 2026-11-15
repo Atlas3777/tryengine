@@ -30,9 +30,14 @@ public:
     PickingPass(const PickingPass&) = delete;
     PickingPass& operator=(const PickingPass&) = delete;
 
-    const char* Name() const override { return "Picking"; }
+    const char* Name() const override {
+        return "Picking";
+    }
+
     // Collect должен запускаться каждый кадр, чтобы вычитывать результаты из GPU readback буфера
-    bool IsActive() const override { return true; }
+    bool IsActive() const override {
+        return true;
+    }
 
     void Collect(tryengine::graphics::CollectContext& ctx) override;
     void Setup(tryengine::graphics::RenderGraphBuilder& builder) override;

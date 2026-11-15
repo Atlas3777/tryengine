@@ -12,21 +12,29 @@ public:
         uint32_t generation = 0;
 
         Key() = default;
+
         Key(uint32_t idx, uint32_t gen) : index(idx), generation(gen) {}
 
         // 1. Автоматическая распаковка из uint64_t
         Key(uint64_t raw)
-            : index(static_cast<uint32_t>(raw >> 32)),
-              generation(static_cast<uint32_t>(raw & 0xFFFFFFFF)) {}
+            : index(static_cast<uint32_t>(raw >> 32)), generation(static_cast<uint32_t>(raw & 0xFFFFFFFF)) {}
 
         // 2. Автоматическая упаковка в uint64_t
         operator uint64_t() const {
             return (static_cast<uint64_t>(index) << 32) | static_cast<uint64_t>(generation);
         }
 
-        explicit operator bool() const { return generation != 0; }
-        bool operator==(const Key& rhs) const { return index == rhs.index && generation == rhs.generation; }
-        bool operator!=(const Key& rhs) const { return !(*this == rhs); }
+        explicit operator bool() const {
+            return generation != 0;
+        }
+
+        bool operator==(const Key& rhs) const {
+            return index == rhs.index && generation == rhs.generation;
+        }
+
+        bool operator!=(const Key& rhs) const {
+            return !(*this == rhs);
+        }
     };
 
 private:
@@ -64,8 +72,13 @@ public:
         return Key{slot_idx, slot.generation};
     }
 
-    Key insert(const T& value) { return emplace(value); }
-    Key insert(T&& value) { return emplace(eastl::move(value)); }
+    Key insert(const T& value) {
+        return emplace(value);
+    }
+
+    Key insert(T&& value) {
+        return emplace(eastl::move(value));
+    }
 
     bool contains(Key key) const {
         if (key.index >= m_slots.size())
@@ -119,14 +132,36 @@ public:
         m_free_slots.clear();
     }
 
-    T* data() { return m_dense.data(); }
-    const T* data() const { return m_dense.data(); }
-    size_t size() const { return m_dense.size(); }
-    bool empty() const { return m_dense.empty(); }
+    T* data() {
+        return m_dense.data();
+    }
 
-    auto begin() { return m_dense.begin(); }
-    auto end() { return m_dense.end(); }
-    auto begin() const { return m_dense.begin(); }
-    auto end() const { return m_dense.end(); }
+    const T* data() const {
+        return m_dense.data();
+    }
+
+    size_t size() const {
+        return m_dense.size();
+    }
+
+    bool empty() const {
+        return m_dense.empty();
+    }
+
+    auto begin() {
+        return m_dense.begin();
+    }
+
+    auto end() {
+        return m_dense.end();
+    }
+
+    auto begin() const {
+        return m_dense.begin();
+    }
+
+    auto end() const {
+        return m_dense.end();
+    }
 };
 }  // namespace tryengine::core

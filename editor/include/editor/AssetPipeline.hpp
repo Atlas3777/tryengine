@@ -47,7 +47,9 @@ public:
     // --- ТОЛЬКО main thread, в начале кадра, ДО отрисовки das-дерева. Единственное место мутаций. ---
     void ApplyPendingTreeChanges();
 
-    ImportSystem& GetImportSystem() { return import_system_; }
+    ImportSystem& GetImportSystem() {
+        return import_system_;
+    }
 
 private:
     struct TreeCommand {
@@ -65,16 +67,14 @@ private:
     void ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTree::Changes& changes);
     void ApplyPathChanges(UiTree::Changes& changes);
 
-    tryengine::async::Task<void> ProcessDomain(const AssetMountPoint& mount,
-                                               ScanResult scan_data,
+    tryengine::async::Task<void> ProcessDomain(const AssetMountPoint& mount, ScanResult scan_data,
                                                tryengine::resources::AsyncFileManager& file_manager,
                                                StorageDomain domain);
 
     tryengine::async::Task<void> ImportOrphanAsset(eastl::string asset_path, AssetMountPoint mount,
                                                    tryengine::resources::AsyncFileManager& file_manager);
 
-    tryengine::async::Task<void> ProcessExistingAsset(DiscoveredAssetPair asset_pair,
-                                                      AssetMountPoint mount,
+    tryengine::async::Task<void> ProcessExistingAsset(DiscoveredAssetPair asset_pair, AssetMountPoint mount,
                                                       tryengine::resources::AsyncFileManager& file_manager);
 
     void RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,

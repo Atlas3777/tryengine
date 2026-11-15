@@ -2,11 +2,9 @@
 
 #include <EASTL/string_view.h>
 
-namespace tryengine::core
-{
+namespace tryengine::core {
 
-enum class ErrorCode
-{
+enum class ErrorCode {
     Unknown,
 
     FileNotFound,
@@ -23,12 +21,10 @@ enum class ErrorCode
 };
 
 [[nodiscard]]
-constexpr eastl::string_view ToString(ErrorCode code) noexcept
-{
+constexpr eastl::string_view ToString(ErrorCode code) noexcept {
     using enum ErrorCode;
 
-    switch (code)
-    {
+    switch (code) {
         case FileNotFound:
             return "File Not Found";
 
@@ -58,4 +54,4 @@ constexpr eastl::string_view ToString(ErrorCode code) noexcept
     }
 }
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

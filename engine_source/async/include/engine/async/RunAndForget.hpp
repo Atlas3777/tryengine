@@ -10,17 +10,25 @@ namespace tryengine::async {
 namespace detail {
 
 struct RunAndForgetPromise {
-    std::suspend_never initial_suspend() noexcept { return {}; }
+    std::suspend_never initial_suspend() noexcept {
+        return {};
+    }
 
     struct FinalAwaiter {
-        bool await_ready() noexcept { return false; }
+        bool await_ready() noexcept {
+            return false;
+        }
 
-        void await_suspend(std::coroutine_handle<RunAndForgetPromise> h) noexcept { h.destroy(); }
+        void await_suspend(std::coroutine_handle<RunAndForgetPromise> h) noexcept {
+            h.destroy();
+        }
 
         void await_resume() noexcept {}
     };
 
-    FinalAwaiter final_suspend() noexcept { return {}; }
+    FinalAwaiter final_suspend() noexcept {
+        return {};
+    }
 
     void return_void() noexcept {}
 
@@ -58,7 +66,5 @@ void RunAndForget(Executor& executor, Task<T> task) {
 // уже виден полный Task<T> (в Executor.hpp он только forward-declared).
 template <typename T>
 void Executor::Execute(tryengine::async::Task<T> task) {
-    Post([task = std::move(task)]() mutable {
-        tryengine::async::detail::RunAndForgetImpl(std::move(task));
-    });
+    Post([task = std::move(task)]() mutable { tryengine::async::detail::RunAndForgetImpl(std::move(task)); });
 }

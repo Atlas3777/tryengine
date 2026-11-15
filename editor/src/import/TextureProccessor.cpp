@@ -2,18 +2,18 @@
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
 
-#include "engine/resources/binary/TextureBinary.hpp"
 #include "editor/BinaryParser.hpp"
 #include "editor/import/TextureProcessor.hpp"
 #include "engine/core/MakeError.hpp"
+#include "engine/resources/binary/TextureBinary.hpp"
 #include "rdo_bc_encoder.h"
 #include "stb_image.h"
 #include "stb_image_resize2.h"
 
 namespace tryeditor {
-using tryengine::resources::TextureHeader;
 using tryengine::resources::MipInfo;
 using tryengine::resources::TextureFormat;
+using tryengine::resources::TextureHeader;
 
 namespace {
 
@@ -182,34 +182,39 @@ uint32_t GetBytesPerBlock(DXGI_FORMAT format) {
     }
 }
 
-
 uint64_t GetCompressedMipSize(uint32_t w, uint32_t h, DXGI_FORMAT format) {
     uint32_t blocks_x = (w + 3) / 4;
     uint32_t blocks_y = (h + 3) / 4;
     return static_cast<uint64_t>(blocks_x) * blocks_y * GetBytesPerBlock(format);
 }
 
-constexpr DXGI_FORMAT ToLinearDXGIFormat(DXGI_FORMAT format) noexcept
-{
-    switch (format)
-    {
+constexpr DXGI_FORMAT ToLinearDXGIFormat(DXGI_FORMAT format) noexcept {
+    switch (format) {
         // Compressed Block Formats
-        case DXGI_FORMAT_BC1_UNORM_SRGB: return DXGI_FORMAT_BC1_UNORM;
-        case DXGI_FORMAT_BC2_UNORM_SRGB: return DXGI_FORMAT_BC2_UNORM;
-        case DXGI_FORMAT_BC3_UNORM_SRGB: return DXGI_FORMAT_BC3_UNORM;
-        case DXGI_FORMAT_BC7_UNORM_SRGB: return DXGI_FORMAT_BC7_UNORM;
+        case DXGI_FORMAT_BC1_UNORM_SRGB:
+            return DXGI_FORMAT_BC1_UNORM;
+        case DXGI_FORMAT_BC2_UNORM_SRGB:
+            return DXGI_FORMAT_BC2_UNORM;
+        case DXGI_FORMAT_BC3_UNORM_SRGB:
+            return DXGI_FORMAT_BC3_UNORM;
+        case DXGI_FORMAT_BC7_UNORM_SRGB:
+            return DXGI_FORMAT_BC7_UNORM;
 
             // Standard RGBA Formats (на случай поддержки несжатых текстур)
-        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
-        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8A8_UNORM;
-        case DXGI_FORMAT_R32G32B32A32_FLOAT:  return DXGI_FORMAT_R32G32B32A32_FLOAT;
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+            return DXGI_FORMAT_R8G8B8A8_UNORM;
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+            return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+            return DXGI_FORMAT_R32G32B32A32_FLOAT;
 
-        default: return format;
+        default:
+            return format;
     }
 }
 
-tryengine::Result<bool> CompressMipLevel(const uint8_t* rgba, uint32_t w, uint32_t h, DXGI_FORMAT dxgi_format, bool perceptual,
-                      uint8_t* outBuffer, uint64_t expected_size) {
+tryengine::Result<bool> CompressMipLevel(const uint8_t* rgba, uint32_t w, uint32_t h, DXGI_FORMAT dxgi_format,
+                                         bool perceptual, uint8_t* outBuffer, uint64_t expected_size) {
     utils::image_u8 src_image(w, h);
     std::memcpy(src_image.get_pixels().data(), rgba, static_cast<size_t>(w) * h * 4);
 
@@ -233,11 +238,9 @@ tryengine::Result<bool> CompressMipLevel(const uint8_t* rgba, uint32_t w, uint32
     if (actualSize != expected_size)
         return LogAndMakeError("mip size mismatch: predicted {}, encoder {}", expected_size, actualSize);
 
-
     std::memcpy(outBuffer, encoder.get_blocks(), actualSize);
     return true;
 }
-
 
 void GenerateNextMip(const uint8_t* src, uint32_t srcW, uint32_t srcH, uint8_t* dst, uint32_t dstW, uint32_t dstH,
                      bool isSrgb) {
@@ -257,9 +260,8 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromEncodedMe
     int w = 0, h = 0, comp = 0;
     stbi_uc* pixels =
         stbi_load_from_memory(encoded_bytes.data(), static_cast<int>(encoded_bytes.size()), &w, &h, &comp, 4);
-    if (!pixels) {
+    if (!pixels)
         return tryengine::core::Error("Failed to decode image memory via stb_image");
-    }
 
     auto result = ProcessFromRawPixels(pixels, static_cast<uint32_t>(w), static_cast<uint32_t>(h), settings);
     stbi_image_free(pixels);
@@ -269,15 +271,13 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromEncodedMe
 
 tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromRawPixels(
     const uint8_t* rgba_data, uint32_t width, uint32_t height, const TextureProcessSettings& settings) {
-    if (!rgba_data || width == 0 || height == 0) {
+    if (!rgba_data || width == 0 || height == 0)
         return LogAndMakeError("ProcessFromRawPixels: null pixel data or zero-sized image");
-    }
 
     DXGI_FORMAT dxgi_format;
     bool is_srgb = false;
-    if (!ResolveCompressionFormat(settings.format, dxgi_format, is_srgb)) {
+    if (!ResolveCompressionFormat(settings.format, dxgi_format, is_srgb))
         return LogAndMakeError("ProcessFromRawPixels: settings.format is not a supported BC compression format");
-    }
 
     // 1. Расчет количества мип-уровней
     uint32_t mip_count = 1;
@@ -315,7 +315,8 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromRawPixels
         uint64_t expected_size = GetCompressedMipSize(temp_w, temp_h, dxgi_format);
 
         eastl::string encode_error;
-        auto res = CompressMipLevel(current_mip_rgba.data(), temp_w, temp_h, dxgi_format, is_srgb, write_ptr, expected_size);
+        auto res =
+            CompressMipLevel(current_mip_rgba.data(), temp_w, temp_h, dxgi_format, is_srgb, write_ptr, expected_size);
         if (!res.has_value())
             return LogAndMakeError("ProcessFromRawPixels: failed to compress mip {}", i);
         write_ptr += expected_size;

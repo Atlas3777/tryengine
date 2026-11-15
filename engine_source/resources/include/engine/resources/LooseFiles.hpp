@@ -18,16 +18,17 @@ inline void RegisterLooseDirectory(AssetRegistry& registry, eastl::string_view r
         AssetRegistry& registry;
         eastl::string_view extension;
 
-        bool OnDirectoryEnter(eastl::string_view, eastl::string_view) { return true; }
+        bool OnDirectoryEnter(eastl::string_view, eastl::string_view) {
+            return true;
+        }
+
         void OnDirectoryLeave() {}
 
         void OnFile(eastl::string_view full_path, eastl::string_view name) {
-            if (name.size() < extension.size()) {
+            if (name.size() < extension.size())
                 return;
-            }
-            if (name.substr(name.size() - extension.size()) != extension) {
+            if (name.substr(name.size() - extension.size()) != extension)
                 return;
-            }
             registry.RegisterLooseArtifact(PathGuid(full_path), eastl::string(full_path.data(), full_path.size()));
         }
     };

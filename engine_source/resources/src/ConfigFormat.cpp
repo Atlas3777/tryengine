@@ -27,36 +27,30 @@ constexpr bool IsIdentifierChar(char ch) {
 }
 
 bool ParseDouble(eastl::string_view token, double& out) {
-    if (!token.empty() && token.front() == '+') {
+    if (!token.empty() && token.front() == '+')
         token.remove_prefix(1);
-    }
-    if (token.empty()) {
+    if (token.empty())
         return false;
-    }
 
     const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
     return ec == std::errc{} && ptr == token.data() + token.size();
 }
 
 bool ParseInt64(eastl::string_view token, int64_t& out) {
-    if (!token.empty() && token.front() == '+') {
+    if (!token.empty() && token.front() == '+')
         token.remove_prefix(1);
-    }
-    if (token.empty()) {
+    if (token.empty())
         return false;
-    }
 
     const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
     return ec == std::errc{} && ptr == token.data() + token.size();
 }
 
 bool ParseUInt64(eastl::string_view token, uint64_t& out) {
-    if (!token.empty() && token.front() == '+') {
+    if (!token.empty() && token.front() == '+')
         token.remove_prefix(1);
-    }
-    if (token.empty() || token.front() == '-') {
+    if (token.empty() || token.front() == '-')
         return false;
-    }
 
     const auto [ptr, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
     return ec == std::errc{} && ptr == token.data() + token.size();
@@ -70,32 +64,32 @@ public:
         ConfigObject root;
         while (true) {
             SkipWhitespaceAndComments();
-            if (AtEnd()) {
+            if (AtEnd())
                 break;
-            }
 
             ConfigField field;
-            if (!ParseField(field)) {
+            if (!ParseField(field))
                 return std::unexpected(Error(eastl::move(error_)));
-            }
             UpsertField(root, eastl::move(field));
         }
 
-        if (!error_.empty()) {
+        if (!error_.empty())
             return std::unexpected(Error(eastl::move(error_)));
-        }
         return root;
     }
 
 private:
-    bool AtEnd() const { return cursor_ >= text_.size(); }
+    bool AtEnd() const {
+        return cursor_ >= text_.size();
+    }
 
-    char Peek() const { return AtEnd() ? '\0' : text_[cursor_]; }
+    char Peek() const {
+        return AtEnd() ? '\0' : text_[cursor_];
+    }
 
     char Get() {
-        if (AtEnd()) {
+        if (AtEnd())
             return '\0';
-        }
 
         const char ch = text_[cursor_++];
         if (ch == '\n') {
@@ -108,9 +102,8 @@ private:
     }
 
     bool Fail(eastl::string_view message) {
-        if (!error_.empty()) {
+        if (!error_.empty())
             return false;
-        }
         error_ = tryengine::fmt::format("{} at {}:{}", message, line_, column_);
         return false;
     }
@@ -122,20 +115,17 @@ private:
                 Get();
                 continue;
             }
-            if (ch != '/') {
+            if (ch != '/')
                 return;
-            }
 
-            if (cursor_ + 1 >= text_.size()) {
+            if (cursor_ + 1 >= text_.size())
                 return;
-            }
             const char next = text_[cursor_ + 1];
             if (next == '/') {
                 Get();
                 Get();
-                while (!AtEnd() && Peek() != '\n') {
+                while (!AtEnd() && Peek() != '\n')
                     Get();
-                }
                 continue;
             }
             if (next == '*') {
@@ -156,12 +146,10 @@ private:
 
     bool Expect(char symbol) {
         SkipWhitespaceAndComments();
-        if (AtEnd()) {
+        if (AtEnd())
             return Fail(tryengine::fmt::format("unexpected end of config, expected '{}'", symbol));
-        }
-        if (Peek() != symbol) {
+        if (Peek() != symbol)
             return Fail(tryengine::fmt::format("unexpected character '{}', expected '{}'", Peek(), symbol));
-        }
         Get();
         return true;
     }
@@ -169,30 +157,25 @@ private:
     bool ReadIdentifier(eastl::string& out) {
         SkipWhitespaceAndComments();
         out.clear();
-        while (!AtEnd() && IsIdentifierChar(Peek())) {
+        while (!AtEnd() && IsIdentifierChar(Peek()))
             out.push_back(Get());
-        }
-        if (out.empty()) {
+        if (out.empty())
             return Fail("expected identifier");
-        }
         return true;
     }
 
     bool ReadQuotedString(eastl::string& out) {
-        if (!Expect('"')) {
+        if (!Expect('"'))
             return false;
-        }
 
         out.clear();
         while (!AtEnd()) {
             char ch = Get();
-            if (ch == '"') {
+            if (ch == '"')
                 return true;
-            }
             if (ch == '\\') {
-                if (AtEnd()) {
+                if (AtEnd())
                     return Fail("unterminated string escape");
-                }
                 const char escaped = Get();
                 switch (escaped) {
                     case 'n':
@@ -226,129 +209,111 @@ private:
         out.clear();
 
         const char first = Peek();
-        if (first != '-' && first != '+' && !IsDigit(first)) {
+        if (first != '-' && first != '+' && !IsDigit(first))
             return Fail("expected number");
-        }
         out.push_back(Get());
 
         while (!AtEnd()) {
             const char ch = Peek();
-            if (IsDigit(ch) || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-') {
+            if (IsDigit(ch) || ch == '.' || ch == 'e' || ch == 'E' || ch == '+' || ch == '-')
                 out.push_back(Get());
-            } else {
+            else
                 break;
-            }
         }
         return true;
     }
 
     template <typename T, size_t N>
     bool ReadFloatVector(ConfigValue& out) {
-        if (!Expect('[')) {
+        if (!Expect('['))
             return false;
-        }
 
         eastl::array<float, N> values{};
         for (size_t i = 0; i < N; ++i) {
             eastl::string token;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
 
             double value = 0.0;
-            if (!ParseDouble(token, value)) {
+            if (!ParseDouble(token, value))
                 return Fail(tryengine::fmt::format("invalid number '{}'", token));
-            }
             values[i] = static_cast<float>(value);
         }
 
-        if (!Expect(']')) {
+        if (!Expect(']'))
             return false;
-        }
         out = values;
         return true;
     }
 
     template <typename T, size_t N>
     bool ReadIntVector(ConfigValue& out) {
-        if (!Expect('[')) {
+        if (!Expect('['))
             return false;
-        }
 
         eastl::array<T, N> values{};
         for (size_t i = 0; i < N; ++i) {
             eastl::string token;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
 
             int64_t value = 0;
-            if (!ParseInt64(token, value)) {
+            if (!ParseInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid number '{}'", token));
-            }
             values[i] = static_cast<T>(value);
         }
 
-        if (!Expect(']')) {
+        if (!Expect(']'))
             return false;
-        }
         out = values;
         return true;
     }
 
     template <typename T, size_t N>
     bool ReadUIntVector(ConfigValue& out) {
-        if (!Expect('[')) {
+        if (!Expect('['))
             return false;
-        }
 
         eastl::array<T, N> values{};
         for (size_t i = 0; i < N; ++i) {
             eastl::string token;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
 
             uint64_t value = 0;
-            if (!ParseUInt64(token, value)) {
+            if (!ParseUInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid number '{}'", token));
-            }
             values[i] = static_cast<T>(value);
         }
 
-        if (!Expect(']')) {
+        if (!Expect(']'))
             return false;
-        }
         out = values;
         return true;
     }
 
     bool ReadObject(ConfigValue& out) {
-        if (!Expect('{')) {
+        if (!Expect('{'))
             return false;
-        }
 
         auto object = eastl::make_unique<ConfigObject>();
         while (true) {
             SkipWhitespaceAndComments();
-            if (AtEnd()) {
+            if (AtEnd())
                 return Fail("unexpected end of config in object");
-            }
             if (Peek() == '}') {
                 Get();
                 break;
             }
 
             ConfigField field;
-            if (!ParseField(field)) {
+            if (!ParseField(field))
                 return false;
-            }
             UpsertField(*object, eastl::move(field));
 
             SkipWhitespaceAndComments();
-            if (Peek() == ',') {
+            if (Peek() == ',')
                 Get();
-            }
         }
 
         out = eastl::move(object);
@@ -359,17 +324,15 @@ private:
         SkipWhitespaceAndComments();
 
         if (type_name.size() >= 2 && type_name.substr(type_name.size() - 2) == "[]") {
-            if (!Expect('[')) {
+            if (!Expect('['))
                 return false;
-            }
 
             auto array = eastl::make_unique<ConfigArray>();
             const eastl::string_view element_type = type_name.substr(0, type_name.size() - 2);
             while (true) {
                 SkipWhitespaceAndComments();
-                if (AtEnd()) {
+                if (AtEnd())
                     return Fail("unexpected end of config in array");
-                }
                 if (Peek() == ']') {
                     Get();
                     break;
@@ -377,76 +340,59 @@ private:
 
                 ConfigField element;
                 element.type_name = eastl::string(element_type.data(), element_type.size());
-                if (!ParseValueByType(element_type, element.value)) {
+                if (!ParseValueByType(element_type, element.value))
                     return false;
-                }
                 array->elements.push_back(eastl::move(element));
 
                 SkipWhitespaceAndComments();
-                if (Peek() == ',') {
+                if (Peek() == ',')
                     Get();
-                }
             }
 
             out = eastl::move(array);
             return true;
         }
 
-        if (type_name == "f32x2") {
+        if (type_name == "f32x2")
             return ReadFloatVector<float, 2>(out);
-        }
-        if (type_name == "f32x3") {
+        if (type_name == "f32x3")
             return ReadFloatVector<float, 3>(out);
-        }
-        if (type_name == "f32x4") {
+        if (type_name == "f32x4")
             return ReadFloatVector<float, 4>(out);
-        }
-        if (type_name == "i32x2") {
+        if (type_name == "i32x2")
             return ReadIntVector<int32_t, 2>(out);
-        }
-        if (type_name == "i32x3") {
+        if (type_name == "i32x3")
             return ReadIntVector<int32_t, 3>(out);
-        }
-        if (type_name == "i32x4") {
+        if (type_name == "i32x4")
             return ReadIntVector<int32_t, 4>(out);
-        }
-        if (type_name == "u32x2") {
+        if (type_name == "u32x2")
             return ReadUIntVector<uint32_t, 2>(out);
-        }
-        if (type_name == "u32x3") {
+        if (type_name == "u32x3")
             return ReadUIntVector<uint32_t, 3>(out);
-        }
-        if (type_name == "u32x4") {
+        if (type_name == "u32x4")
             return ReadUIntVector<uint32_t, 4>(out);
-        }
-        if (type_name == "f32m3x3") {
+        if (type_name == "f32m3x3")
             return ReadFloatVector<float, 9>(out);
-        }
-        if (type_name == "f32m3x4") {
+        if (type_name == "f32m3x4")
             return ReadFloatVector<float, 12>(out);
-        }
-        if (type_name == "f32m4x4") {
+        if (type_name == "f32m4x4")
             return ReadFloatVector<float, 16>(out);
-        }
 
         // Объект может иметь произвольное имя типа (имя структуры из daslang).
-        if (Peek() == '{') {
+        if (Peek() == '{')
             return ReadObject(out);
-        }
 
         if (type_name == "string") {
             eastl::string value;
-            if (!ReadQuotedString(value)) {
+            if (!ReadQuotedString(value))
                 return false;
-            }
             out = eastl::move(value);
             return true;
         }
         if (type_name == "bool") {
             eastl::string value;
-            if (!ReadIdentifier(value)) {
+            if (!ReadIdentifier(value))
                 return false;
-            }
             if (value == "true") {
                 out = true;
                 return true;
@@ -461,48 +407,40 @@ private:
         if (type_name == "u64" || type_name == "uint64") {
             eastl::string token;
             uint64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseUInt64(token, value)) {
+            if (!ParseUInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid u64 value '{}'", token));
-            }
             out = value;
             return true;
         }
         if (type_name == "u32" || type_name == "uint") {
             eastl::string token;
             uint64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseUInt64(token, value)) {
+            if (!ParseUInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid u32 value '{}'", token));
-            }
             out = static_cast<uint32_t>(value);
             return true;
         }
         if (type_name == "u16" || type_name == "uint16") {
             eastl::string token;
             uint64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseUInt64(token, value)) {
+            if (!ParseUInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid u16 value '{}'", token));
-            }
             out = static_cast<uint16_t>(value);
             return true;
         }
         if (type_name == "u8" || type_name == "uint8") {
             eastl::string token;
             uint64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseUInt64(token, value)) {
+            if (!ParseUInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid u8 value '{}'", token));
-            }
             out = static_cast<uint8_t>(value);
             return true;
         }
@@ -510,48 +448,40 @@ private:
         if (type_name == "i64" || type_name == "int64") {
             eastl::string token;
             int64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseInt64(token, value)) {
+            if (!ParseInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid i64 value '{}'", token));
-            }
             out = value;
             return true;
         }
         if (type_name == "i32" || type_name == "int") {
             eastl::string token;
             int64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseInt64(token, value)) {
+            if (!ParseInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid i32 value '{}'", token));
-            }
             out = static_cast<int32_t>(value);
             return true;
         }
         if (type_name == "i16" || type_name == "int16") {
             eastl::string token;
             int64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseInt64(token, value)) {
+            if (!ParseInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid i16 value '{}'", token));
-            }
             out = static_cast<int16_t>(value);
             return true;
         }
         if (type_name == "i8" || type_name == "int8") {
             eastl::string token;
             int64_t value = 0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseInt64(token, value)) {
+            if (!ParseInt64(token, value))
                 return Fail(tryengine::fmt::format("invalid i8 value '{}'", token));
-            }
             out = static_cast<int8_t>(value);
             return true;
         }
@@ -559,24 +489,20 @@ private:
         if (type_name == "f32" || type_name == "float") {
             eastl::string token;
             double value = 0.0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseDouble(token, value)) {
+            if (!ParseDouble(token, value))
                 return Fail(tryengine::fmt::format("invalid f32 value '{}'", token));
-            }
             out = static_cast<float>(value);
             return true;
         }
         if (type_name == "f64" || type_name == "double") {
             eastl::string token;
             double value = 0.0;
-            if (!ReadNumberToken(token)) {
+            if (!ReadNumberToken(token))
                 return false;
-            }
-            if (!ParseDouble(token, value)) {
+            if (!ParseDouble(token, value))
                 return Fail(tryengine::fmt::format("invalid f64 value '{}'", token));
-            }
             out = value;
             return true;
         }
@@ -586,36 +512,29 @@ private:
 
     bool ParseField(ConfigField& out) {
         SkipWhitespaceAndComments();
-        if (AtEnd()) {
+        if (AtEnd())
             return Fail("unexpected end of config, expected field");
-        }
-        if (Peek() == '}') {
+        if (Peek() == '}')
             return Fail("unexpected '}'");
-        }
 
-        if (!ReadIdentifier(out.name)) {
+        if (!ReadIdentifier(out.name))
             return false;
-        }
-        if (!Expect(':')) {
+        if (!Expect(':'))
             return false;
-        }
-        if (!ReadIdentifier(out.type_name)) {
+        if (!ReadIdentifier(out.type_name))
             return false;
-        }
 
         SkipWhitespaceAndComments();
         while (!AtEnd() && Peek() == '[') {
             Get();
-            if (!Expect(']')) {
+            if (!Expect(']'))
                 return false;
-            }
             out.type_name += "[]";
             SkipWhitespaceAndComments();
         }
 
-        if (!Expect('=')) {
+        if (!Expect('='))
             return false;
-        }
         return ParseValueByType(out.type_name, out.value);
     }
 
@@ -637,9 +556,8 @@ private:
 };
 
 void AppendTabs(eastl::string& out, int depth) {
-    for (int i = 0; i < depth; ++i) {
+    for (int i = 0; i < depth; ++i)
         out.push_back('\t');
-    }
 }
 
 void AppendQuotedString(eastl::string& out, eastl::string_view value) {
@@ -673,9 +591,8 @@ template <typename T, size_t N>
 void AppendFloatArray(eastl::string& out, const eastl::array<T, N>& values) {
     out.push_back('[');
     for (size_t i = 0; i < N; ++i) {
-        if (i > 0) {
+        if (i > 0)
             out.push_back(' ');
-        }
         tryengine::fmt::format_append(out, "{}", values[i]);
     }
     out.push_back(']');
@@ -685,9 +602,8 @@ template <typename T, size_t N>
 void AppendIntegerArray(eastl::string& out, const eastl::array<T, N>& values) {
     out.push_back('[');
     for (size_t i = 0; i < N; ++i) {
-        if (i > 0) {
+        if (i > 0)
             out.push_back(' ');
-        }
         tryengine::fmt::format_append(out, "{}", static_cast<int64_t>(values[i]));
     }
     out.push_back(']');
@@ -782,20 +698,16 @@ eastl::string WriteConfig(const ConfigObject& root) {
 }
 
 const ConfigField* FindField(const ConfigObject& object, eastl::string_view name) {
-    for (const ConfigField& field : object.fields) {
-        if (field.name == name) {
+    for (const ConfigField& field : object.fields)
+        if (field.name == name)
             return &field;
-        }
-    }
     return nullptr;
 }
 
 ConfigField* FindField(ConfigObject& object, eastl::string_view name) {
-    for (ConfigField& field : object.fields) {
-        if (field.name == name) {
+    for (ConfigField& field : object.fields)
+        if (field.name == name)
             return &field;
-        }
-    }
     return nullptr;
 }
 
@@ -806,14 +718,12 @@ ConfigValue CloneValue(const ConfigValue& value) {
         [](const auto& alternative) -> ConfigValue {
             using T = eastl::decay_t<decltype(alternative)>;
             if constexpr (eastl::is_same_v<T, eastl::unique_ptr<ConfigObject>>) {
-                if (!alternative) {
+                if (!alternative)
                     return eastl::unique_ptr<ConfigObject>{};
-                }
                 return eastl::make_unique<ConfigObject>(*alternative);
             } else if constexpr (eastl::is_same_v<T, eastl::unique_ptr<ConfigArray>>) {
-                if (!alternative) {
+                if (!alternative)
                     return eastl::unique_ptr<ConfigArray>{};
-                }
                 return eastl::make_unique<ConfigArray>(*alternative);
             } else {
                 return alternative;
@@ -838,36 +748,32 @@ ConfigField& ConfigField::operator=(const ConfigField& other) {
 
 ConfigObject::ConfigObject(const ConfigObject& other) {
     fields.reserve(other.fields.size());
-    for (const ConfigField& field : other.fields) {
+    for (const ConfigField& field : other.fields)
         fields.push_back(field);
-    }
 }
 
 ConfigObject& ConfigObject::operator=(const ConfigObject& other) {
     if (this != &other) {
         fields.clear();
         fields.reserve(other.fields.size());
-        for (const ConfigField& field : other.fields) {
+        for (const ConfigField& field : other.fields)
             fields.push_back(field);
-        }
     }
     return *this;
 }
 
 ConfigArray::ConfigArray(const ConfigArray& other) {
     elements.reserve(other.elements.size());
-    for (const ConfigField& element : other.elements) {
+    for (const ConfigField& element : other.elements)
         elements.push_back(element);
-    }
 }
 
 ConfigArray& ConfigArray::operator=(const ConfigArray& other) {
     if (this != &other) {
         elements.clear();
         elements.reserve(other.elements.size());
-        for (const ConfigField& element : other.elements) {
+        for (const ConfigField& element : other.elements)
             elements.push_back(element);
-        }
     }
     return *this;
 }

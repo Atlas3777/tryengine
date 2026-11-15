@@ -16,10 +16,8 @@ namespace trygame {
 
 class GameRender {
 public:
-    GameRender(tryengine::graphics::VulkanDevice& device,
-               tryengine::graphics::RenderGraph& render_graph,
-               tryengine::graphics::VulkanSwapchain& swapchain,
-               tryengine::graphics::FrameSync& frame_sync);
+    GameRender(tryengine::graphics::VulkanDevice& device, tryengine::graphics::RenderGraph& render_graph,
+               tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync);
     ~GameRender();
 
     void Render(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device);

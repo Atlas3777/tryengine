@@ -21,8 +21,9 @@ public:
     static constexpr uint32_t kEditorScope = 1;
     static constexpr uint32_t kGameScope = 2;
 
-    EditorRender(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device, tryengine::graphics::RenderGraph& render_graph,
-                 tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync);
+    EditorRender(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device,
+                 tryengine::graphics::RenderGraph& render_graph, tryengine::graphics::VulkanSwapchain& swapchain,
+                 tryengine::graphics::FrameSync& frame_sync);
 
     ~EditorRender();
 

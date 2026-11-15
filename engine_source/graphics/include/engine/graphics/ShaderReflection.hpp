@@ -7,8 +7,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "engine/core/Result.hpp"
 #include "engine/core/MakeError.hpp"
+#include "engine/core/Result.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
 
 namespace tryengine::graphics {
@@ -23,13 +23,20 @@ enum class ShaderParamType : uint8_t { Float, Int, Vec2, Vec3, Vec4, Mat3, Mat4 
 
 constexpr uint32_t GetTypeSize(ShaderParamType type) {
     switch (type) {
-        case ShaderParamType::Float: return 4;
-        case ShaderParamType::Int:   return 4;
-        case ShaderParamType::Vec2:  return 8;
-        case ShaderParamType::Vec3:  return 12;
-        case ShaderParamType::Vec4:  return 16;
-        case ShaderParamType::Mat3:  return 36;
-        case ShaderParamType::Mat4:  return 64;
+        case ShaderParamType::Float:
+            return 4;
+        case ShaderParamType::Int:
+            return 4;
+        case ShaderParamType::Vec2:
+            return 8;
+        case ShaderParamType::Vec3:
+            return 12;
+        case ShaderParamType::Vec4:
+            return 16;
+        case ShaderParamType::Mat3:
+            return 36;
+        case ShaderParamType::Mat4:
+            return 64;
     }
     return 0;
 }
@@ -44,11 +51,12 @@ enum class ShaderResourceKind : uint8_t {
 
 // Битовые флаги для стадий шейдера
 using ShaderStageFlags = uint32_t;
+
 namespace ShaderStageFlagBits {
-    constexpr ShaderStageFlags Vertex   = 1 << 0;
-    constexpr ShaderStageFlags Fragment = 1 << 1;
-    constexpr ShaderStageFlags Compute  = 1 << 2;
-}
+constexpr ShaderStageFlags Vertex = 1 << 0;
+constexpr ShaderStageFlags Fragment = 1 << 1;
+constexpr ShaderStageFlags Compute = 1 << 2;
+}  // namespace ShaderStageFlagBits
 
 struct ShaderReflectedParam {
     eastl::string name;
@@ -62,22 +70,36 @@ struct ShaderReflectedBinding {
     eastl::string name;
     RGTag name_hash = 0;
     ShaderResourceKind kind = ShaderResourceKind::UniformBuffer;
-    ShaderStageFlags stage_flags = 0; // Битовые флаги стадий (VS | FS и т.д.)
+    ShaderStageFlags stage_flags = 0;  // Битовые флаги стадий (VS | FS и т.д.)
     uint32_t set = 0;
-    uint32_t binding = 0; // Чистый Vulkan binding (без legacy API slot)
+    uint32_t binding = 0;  // Чистый Vulkan binding (без legacy API slot)
     uint32_t size = 0;
     eastl::vector<ShaderReflectedParam> params;
 
-    [[nodiscard]] BindingScope Scope() const { return static_cast<BindingScope>(set); }
-    [[nodiscard]] bool IsReserved() const { return set != static_cast<uint32_t>(BindingScope::Material); }
-    [[nodiscard]] bool IsPerObj() const { return set == static_cast<uint32_t>(BindingScope::PerObj); }
-    [[nodiscard]] bool IsMaterial() const { return set == static_cast<uint32_t>(BindingScope::Material); }
-    [[nodiscard]] bool IsPass() const { return set == static_cast<uint32_t>(BindingScope::Pass); }
+    [[nodiscard]] BindingScope Scope() const {
+        return static_cast<BindingScope>(set);
+    }
+
+    [[nodiscard]] bool IsReserved() const {
+        return set != static_cast<uint32_t>(BindingScope::Material);
+    }
+
+    [[nodiscard]] bool IsPerObj() const {
+        return set == static_cast<uint32_t>(BindingScope::PerObj);
+    }
+
+    [[nodiscard]] bool IsMaterial() const {
+        return set == static_cast<uint32_t>(BindingScope::Material);
+    }
+
+    [[nodiscard]] bool IsPass() const {
+        return set == static_cast<uint32_t>(BindingScope::Pass);
+    }
 
     [[nodiscard]] const ShaderReflectedParam* FindParamByTag(RGTag tag) const {
-        for (const auto& p : params) {
-            if (p.name_hash == tag) return &p;
-        }
+        for (const auto& p : params)
+            if (p.name_hash == tag)
+                return &p;
         return nullptr;
     }
 
@@ -96,9 +118,9 @@ struct ShaderReflectionData {
     eastl::vector<ShaderReflectedBinding> bindings;
 
     [[nodiscard]] const ShaderReflectedBinding* FindBindingByTag(RGTag tag) const {
-        for (const auto& b : bindings) {
-            if (b.name_hash == tag) return &b;
-        }
+        for (const auto& b : bindings)
+            if (b.name_hash == tag)
+                return &b;
         return nullptr;
     }
 
@@ -107,25 +129,31 @@ struct ShaderReflectionData {
     }
 
     [[nodiscard]] bool HasPassBindings() const {
-        for (const auto& b : bindings) { if (b.IsPass()) return true; }
+        for (const auto& b : bindings)
+            if (b.IsPass())
+                return true;
         return false;
     }
 
     [[nodiscard]] bool HasMaterialBindings() const {
-        for (const auto& b : bindings) { if (b.IsMaterial()) return true; }
+        for (const auto& b : bindings)
+            if (b.IsMaterial())
+                return true;
         return false;
     }
 
     [[nodiscard]] bool HasPerObjBindings() const {
-        for (const auto& b : bindings) { if (b.IsPerObj()) return true; }
+        for (const auto& b : bindings)
+            if (b.IsPerObj())
+                return true;
         return false;
     }
 
     template <typename Fn>
     void ForEachMaterialBinding(Fn&& fn) const {
-        for (const auto& b : bindings) {
-            if (b.IsMaterial()) fn(b);
-        }
+        for (const auto& b : bindings)
+            if (b.IsMaterial())
+                fn(b);
     }
 };
 
@@ -143,7 +171,8 @@ inline void WriteString(eastl::vector<uint8_t>& out, eastl::string_view s) {
 }
 
 inline bool ReadU32(eastl::span<const uint8_t> bytes, size_t& cursor, uint32_t& out) {
-    if (cursor + sizeof(uint32_t) > bytes.size()) return false;
+    if (cursor + sizeof(uint32_t) > bytes.size())
+        return false;
     std::memcpy(&out, bytes.data() + cursor, sizeof(uint32_t));
     cursor += sizeof(uint32_t);
     return true;
@@ -151,8 +180,10 @@ inline bool ReadU32(eastl::span<const uint8_t> bytes, size_t& cursor, uint32_t& 
 
 inline bool ReadString(eastl::span<const uint8_t> bytes, size_t& cursor, eastl::string& out) {
     uint32_t len = 0;
-    if (!ReadU32(bytes, cursor, len)) return false;
-    if (cursor + len > bytes.size()) return false;
+    if (!ReadU32(bytes, cursor, len))
+        return false;
+    if (cursor + len > bytes.size())
+        return false;
     out.assign(reinterpret_cast<const char*>(bytes.data() + cursor), len);
     cursor += len;
     return true;

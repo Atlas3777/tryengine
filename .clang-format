@@ -18,7 +18,7 @@ DerivePointerAlignment: false
 PointerAlignment: Left # int* ptr; вместо int *ptr; (стиль Google/Bjarne)
 
 # Оформление блоков и скобок
-AllowShortFunctionsOnASingleLine: Inline # Разрешает только тривиальные методы в одну строку
+AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 BreakBeforeBraces: Custom
@@ -30,7 +30,7 @@ BraceWrapping:
   AfterStruct: false
   BeforeElse: false
   BeforeCatch: false
-  SplitEmptyFunction: true
+  SplitEmptyFunction: false
 
 # Выравнивание (делает код более табличным и читаемым)
 AlignAfterOpenBracket: Align
@@ -47,3 +47,4 @@ SpaceAfterCStyleCast: true
 SpacesInContainerLiterals: false
 FixNamespaceComments: true # Автоматически добавляет // namespace name в конце
 RemoveBracesLLVM: true
+SeparateDefinitionBlocks: Always

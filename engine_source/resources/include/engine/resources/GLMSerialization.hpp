@@ -27,9 +27,8 @@ template <>
 struct glz::meta<das::float4x4> {
     using T = das::float4x4;
     static constexpr auto read = [](T& m, const std::array<float, 16>& arr) {
-        for (int row = 0; row < 4; ++row) {
+        for (int row = 0; row < 4; ++row)
             m.m[row] = das::float4(arr[row * 4 + 0], arr[row * 4 + 1], arr[row * 4 + 2], arr[row * 4 + 3]);
-        }
     };
     static constexpr auto write = [](const T& m) {
         std::array<float, 16> arr{};

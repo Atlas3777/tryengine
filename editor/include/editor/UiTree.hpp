@@ -37,6 +37,7 @@ public:
         uint64_t old_hash;
         uint64_t new_hash;
     };
+
     using Changes = eastl::vector<PathChange>;
 
     explicit UiTree(tryengine::core::StringTable& strings);
@@ -48,8 +49,13 @@ public:
     void BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, uint64_t>& path_to_guid);
     void Clear();
 
-    const eastl::vector<UiFolder>& Folders() const { return folders_; }
-    uint64_t Version() const { return version_; }
+    const eastl::vector<UiFolder>& Folders() const {
+        return folders_;
+    }
+
+    uint64_t Version() const {
+        return version_;
+    }
 
     uint32_t FindFolder(eastl::string_view path) const;  // kNoFolder, если нет
     uint32_t EnsureFolder(eastl::string_view path);      // создаёт недостающие, если есть корень
@@ -70,7 +76,10 @@ public:
     bool MoveFile(uint32_t from_folder, eastl::string_view name, uint32_t to_folder, Changes* changes = nullptr);
 
 private:
-    bool Alive(uint32_t idx) const { return idx < folders_.size() && folders_[idx].name != nullptr; }
+    bool Alive(uint32_t idx) const {
+        return idx < folders_.size() && folders_[idx].name != nullptr;
+    }
+
     uint32_t NewFolder(uint32_t parent, eastl::string_view name, eastl::string_view path);
     void FreeSubtree(uint32_t idx, Changes* changes);
     void Repath(uint32_t idx, eastl::string_view new_path, Changes* changes);

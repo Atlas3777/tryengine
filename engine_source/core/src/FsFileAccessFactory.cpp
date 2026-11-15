@@ -16,8 +16,7 @@ das::smart_ptr<das::FsFileAccess> MakeFsFileAccess(const char* project_file, con
         if (project_program && !project_program->failed())
             return das::make_smart<das::FsFileAccess>(project_file, project_program);
 
-        LogWarn(LogCategory::Script, "Не удалось загрузить '{}'. Используется стандартный FsFileAccess.",
-                project_file);
+        LogWarn(LogCategory::Script, "Не удалось загрузить '{}'. Используется стандартный FsFileAccess.", project_file);
     }
     return das::make_smart<das::FsFileAccess>();
 }

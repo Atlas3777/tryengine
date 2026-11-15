@@ -2,8 +2,8 @@
 
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
-#include <EASTL/vector.h>
 #include <EASTL/unique_ptr.h>
+#include <EASTL/vector.h>
 #include <cstdint>
 #include <format>
 #include <iterator>
@@ -77,6 +77,7 @@ class ILogSink {
 public:
     virtual ~ILogSink() = default;
     virtual void write(const LogRecord& record) = 0;
+
     virtual void flush() {}
 };
 
@@ -90,11 +91,15 @@ public:
     ILogSink* add_sink(eastl::unique_ptr<ILogSink> sink);
     void remove_sink(ILogSink* sink);
 
-    void set_min_level(LogLevel level) noexcept { m_min_level = level; }
-    LogLevel min_level() const noexcept { return m_min_level; }
+    void set_min_level(LogLevel level) noexcept {
+        m_min_level = level;
+    }
 
-    void log(LogLevel level, LogCategory category, const std::source_location& location,
-              eastl::string_view message);
+    LogLevel min_level() const noexcept {
+        return m_min_level;
+    }
+
+    void log(LogLevel level, LogCategory category, const std::source_location& location, eastl::string_view message);
 
 private:
     Logger() = default;
@@ -134,12 +139,12 @@ eastl::string format(std::format_string<Args...> fmt, Args&&... args) {
     return result;
 }
 
-inline void log_dispatch(LogLevel level, LogCategory category,
-                          const std::source_location& location, eastl::string_view message) {
+inline void log_dispatch(LogLevel level, LogCategory category, const std::source_location& location,
+                         eastl::string_view message) {
     Logger::instance().log(level, category, location, message);
 }
 
-} // namespace detail
+}  // namespace detail
 
 // ---------------------------------------------------------------------------
 // LocFmt — пара (format_string, source_location). Ключевая идея: location
@@ -159,8 +164,7 @@ struct LocFmt {
 
     template <typename S>
         requires std::is_constructible_v<std::format_string<Args...>, const S&>
-    consteval LocFmt(const S& str, std::source_location loc = std::source_location::current())
-        : fmt(str), loc(loc) {}
+    consteval LocFmt(const S& str, std::source_location loc = std::source_location::current()) : fmt(str), loc(loc) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -185,26 +189,25 @@ struct LocFmt {
 // проверить на этапе компиляции.
 // ---------------------------------------------------------------------------
 
-#define TRY_DEFINE_LOG_LEVEL(FuncName, LevelEnumerator)                                                     \
-    inline void FuncName(eastl::string_view message,                                                        \
-                          std::source_location loc = std::source_location::current()) {                     \
-        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, loc, message);           \
-    }                                                                                                        \
-    inline void FuncName(LogCategory category, eastl::string_view message,                                  \
-                          std::source_location loc = std::source_location::current()) {                     \
-        detail::log_dispatch(LogLevel::LevelEnumerator, category, loc, message);                             \
-    }                                                                                                        \
-    template <typename... Args>                                                                             \
-        requires (sizeof...(Args) > 0)                                                                      \
-    void FuncName(LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {                           \
-        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, locFmt.loc,              \
-                              detail::format(locFmt.fmt, std::forward<Args>(args)...));                      \
-    }                                                                                                        \
-    template <typename... Args>                                                                             \
-        requires (sizeof...(Args) > 0)                                                                      \
-    void FuncName(LogCategory category, LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {     \
-        detail::log_dispatch(LogLevel::LevelEnumerator, category, locFmt.loc,                                \
-                              detail::format(locFmt.fmt, std::forward<Args>(args)...));                      \
+#define TRY_DEFINE_LOG_LEVEL(FuncName, LevelEnumerator)                                                            \
+    inline void FuncName(eastl::string_view message, std::source_location loc = std::source_location::current()) { \
+        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, loc, message);                 \
+    }                                                                                                              \
+    inline void FuncName(LogCategory category, eastl::string_view message,                                         \
+                         std::source_location loc = std::source_location::current()) {                             \
+        detail::log_dispatch(LogLevel::LevelEnumerator, category, loc, message);                                   \
+    }                                                                                                              \
+    template <typename... Args>                                                                                    \
+        requires(sizeof...(Args) > 0)                                                                              \
+    void FuncName(LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {                                  \
+        detail::log_dispatch(LogLevel::LevelEnumerator, TRY_LOG_DEFAULT_CATEGORY_Q, locFmt.loc,                    \
+                             detail::format(locFmt.fmt, std::forward<Args>(args)...));                             \
+    }                                                                                                              \
+    template <typename... Args>                                                                                    \
+        requires(sizeof...(Args) > 0)                                                                              \
+    void FuncName(LogCategory category, LocFmt<std::type_identity_t<Args>...> locFmt, Args&&... args) {            \
+        detail::log_dispatch(LogLevel::LevelEnumerator, category, locFmt.loc,                                      \
+                             detail::format(locFmt.fmt, std::forward<Args>(args)...));                             \
     }
 
 TRY_DEFINE_LOG_LEVEL(LogTrace, Trace)
@@ -215,7 +218,7 @@ TRY_DEFINE_LOG_LEVEL(LogCritical, Critical)
 
 #undef TRY_DEFINE_LOG_LEVEL
 
-} // namespace tryengine::core
+}  // namespace tryengine::core
 
 // ---------------------------------------------------------------------------
 // TRY_VARS — псевдо-f-строки. Единственное, что здесь ОБЯЗАНО быть макросом:
@@ -229,23 +232,22 @@ TRY_DEFINE_LOG_LEVEL(LogCritical, Critical)
 //   LogInfo(LogCategory::Physics, TRY_VARS(width, height));
 // ---------------------------------------------------------------------------
 
-#define TRY_VARS_FMT_1(x)          #x " = {}"
-#define TRY_VARS_FMT_2(x, ...)     #x " = {}, " TRY_VARS_FMT_1(__VA_ARGS__)
-#define TRY_VARS_FMT_3(x, ...)     #x " = {}, " TRY_VARS_FMT_2(__VA_ARGS__)
-#define TRY_VARS_FMT_4(x, ...)     #x " = {}, " TRY_VARS_FMT_3(__VA_ARGS__)
-#define TRY_VARS_FMT_5(x, ...)     #x " = {}, " TRY_VARS_FMT_4(__VA_ARGS__)
-#define TRY_VARS_FMT_6(x, ...)     #x " = {}, " TRY_VARS_FMT_5(__VA_ARGS__)
-#define TRY_VARS_FMT_7(x, ...)     #x " = {}, " TRY_VARS_FMT_6(__VA_ARGS__)
-#define TRY_VARS_FMT_8(x, ...)     #x " = {}, " TRY_VARS_FMT_7(__VA_ARGS__)
+#define TRY_VARS_FMT_1(x) #x " = {}"
+#define TRY_VARS_FMT_2(x, ...) #x " = {}, " TRY_VARS_FMT_1(__VA_ARGS__)
+#define TRY_VARS_FMT_3(x, ...) #x " = {}, " TRY_VARS_FMT_2(__VA_ARGS__)
+#define TRY_VARS_FMT_4(x, ...) #x " = {}, " TRY_VARS_FMT_3(__VA_ARGS__)
+#define TRY_VARS_FMT_5(x, ...) #x " = {}, " TRY_VARS_FMT_4(__VA_ARGS__)
+#define TRY_VARS_FMT_6(x, ...) #x " = {}, " TRY_VARS_FMT_5(__VA_ARGS__)
+#define TRY_VARS_FMT_7(x, ...) #x " = {}, " TRY_VARS_FMT_6(__VA_ARGS__)
+#define TRY_VARS_FMT_8(x, ...) #x " = {}, " TRY_VARS_FMT_7(__VA_ARGS__)
 
-#define TRY_VARS_NARG_(_1,_2,_3,_4,_5,_6,_7,_8,N,...) N
-#define TRY_VARS_NARG(...) TRY_VARS_NARG_(__VA_ARGS__, 8,7,6,5,4,3,2,1)
+#define TRY_VARS_NARG_(_1, _2, _3, _4, _5, _6, _7, _8, N, ...) N
+#define TRY_VARS_NARG(...) TRY_VARS_NARG_(__VA_ARGS__, 8, 7, 6, 5, 4, 3, 2, 1)
 
 #define TRY_VARS_CAT_(a, b) a##b
 #define TRY_VARS_CAT(a, b) TRY_VARS_CAT_(a, b)
 
-#define TRY_VARS(...) \
-    TRY_VARS_CAT(TRY_VARS_FMT_, TRY_VARS_NARG(__VA_ARGS__))(__VA_ARGS__), __VA_ARGS__
+#define TRY_VARS(...) TRY_VARS_CAT(TRY_VARS_FMT_, TRY_VARS_NARG(__VA_ARGS__))(__VA_ARGS__), __VA_ARGS__
 
 // ---------------------------------------------------------------------------
 // Короткие имена без tryengine::core:: — именно using-declaration (не
@@ -254,9 +256,9 @@ TRY_DEFINE_LOG_LEVEL(LogCritical, Critical)
 // Logger/LogLevel/LogCategory/ErrorCode и т.д. по-прежнему нужно
 // квалифицировать — но ими пользуются гораздо реже, чем самим логированием.
 // ---------------------------------------------------------------------------
-using tryengine::core::LogTrace;
-using tryengine::core::LogInfo;
-using tryengine::core::LogWarn;
-using tryengine::core::LogError;
-using tryengine::core::LogCritical;
 using tryengine::core::LogCategory;
+using tryengine::core::LogCritical;
+using tryengine::core::LogError;
+using tryengine::core::LogInfo;
+using tryengine::core::LogTrace;
+using tryengine::core::LogWarn;

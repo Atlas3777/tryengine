@@ -120,9 +120,8 @@ eastl::string AttributeFlagsToString(uint32_t attr_flags) {
 
 tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(const RawPrimitiveInput& input,
                                                                           const MeshProcessSettings& settings) {
-    if (!input.positions.data || input.positions.count == 0) {
+    if (!input.positions.data || input.positions.count == 0)
         return LogAndMakeError("MeshProcessor: Position stream is missing or empty");
-    }
 
     const uint32_t v_count = input.positions.count;
 
@@ -221,9 +220,8 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(const 
             float dy = pos[1] - center[1];
             float dz = pos[2] - center[2];
             float dist_sq = dx * dx + dy * dy + dz * dz;
-            if (dist_sq > max_dist_sq) {
+            if (dist_sq > max_dist_sq)
                 max_dist_sq = dist_sq;
-            }
         }
         radius = std::sqrt(max_dist_sq);
     }
@@ -251,28 +249,24 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(const 
             else
                 val = *raw_idx;
 
-
             if (target_index_format == IndexFormat::UInt8)
                 index_buffer[id] = static_cast<uint8_t>(val);
             else if (target_index_format == IndexFormat::UInt16)
                 reinterpret_cast<uint16_t*>(index_buffer.data())[id] = static_cast<uint16_t>(val);
             else
                 reinterpret_cast<uint32_t*>(index_buffer.data())[id] = val;
-
         }
+    } else if (target_index_format == IndexFormat::UInt8) {
+        for (uint32_t id = 0; id < index_count; ++id)
+            index_buffer[id] = static_cast<uint8_t>(id);
+    } else if (target_index_format == IndexFormat::UInt16) {
+        auto* dst = reinterpret_cast<uint16_t*>(index_buffer.data());
+        for (uint32_t id = 0; id < index_count; ++id)
+            dst[id] = static_cast<uint16_t>(id);
     } else {
-        if (target_index_format == IndexFormat::UInt8) {
-            for (uint32_t id = 0; id < index_count; ++id)
-                index_buffer[id] = static_cast<uint8_t>(id);
-        } else if (target_index_format == IndexFormat::UInt16) {
-            auto* dst = reinterpret_cast<uint16_t*>(index_buffer.data());
-            for (uint32_t id = 0; id < index_count; ++id)
-                dst[id] = static_cast<uint16_t>(id);
-        } else {
-            auto* dst = reinterpret_cast<uint32_t*>(index_buffer.data());
-            for (uint32_t id = 0; id < index_count; ++id)
-                dst[id] = id;
-        }
+        auto* dst = reinterpret_cast<uint32_t*>(index_buffer.data());
+        for (uint32_t id = 0; id < index_count; ++id)
+            dst[id] = id;
     }
 
     eastl::string attr_str = AttributeFlagsToString(attr_flags);

@@ -33,7 +33,9 @@ struct ScanResult {
     eastl::vector<ScanEntry> entries;
     eastl::vector<char> blob;
 
-    eastl::string_view Path(const ScanEntry& e) const { return eastl::string_view(blob.data() + e.offset, e.length); }
+    eastl::string_view Path(const ScanEntry& e) const {
+        return eastl::string_view(blob.data() + e.offset, e.length);
+    }
 
     // Кладёт строку в blob (без записи в entries). Возвращает смещение.
     uint32_t Store(eastl::string_view s) {

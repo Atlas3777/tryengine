@@ -19,7 +19,8 @@
 //     [[nodiscard]] std::string GetName() const override { return "TextureImporter"; };
 //     [[nodiscard]] std::string GetAssetType() const override { return "texture"; };
 //
-//     bool GenerateArtifact(const AssetContext& context, AssetMetaHeader& header, const TextureImportSettings& settings) override;
+//     bool GenerateArtifact(const AssetContext& context, AssetMetaHeader& header, const TextureImportSettings&
+//     settings) override;
 //
 // };
 // }  // namespace tryeditor

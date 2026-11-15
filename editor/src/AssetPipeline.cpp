@@ -86,14 +86,12 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
     tasks.reserve(scan_data.matched_assets.size() + scan_data.orphan_assets.size());
 
     // 1. Фаза чтения метафайлов и проверки актуальности существующих ассетов
-    for (auto& pair : scan_data.matched_assets) {
+    for (auto& pair : scan_data.matched_assets)
         tasks.push_back(ProcessExistingAsset(eastl::move(pair), mount, file_manager));
-    }
 
     // 2. Фаза импорта ассетов-сирот (создаются .meta и генерируются валидные GUID)
-    for (auto& orphan : scan_data.orphan_assets) {
+    for (auto& orphan : scan_data.orphan_assets)
         tasks.push_back(ImportOrphanAsset(eastl::move(orphan), mount, file_manager));
-    }
 
     auto expecteds = co_await WhenAll(ThreadPool(), eastl::move(tasks));
 
@@ -135,10 +133,9 @@ uint64_t HashBytes(eastl::span<const uint8_t> bytes) {
 eastl::vector<uint64_t> CollectRuntimeSubGuids(const ImportResult& res) {
     eastl::vector<uint64_t> guids;
     guids.reserve(res.artifacts.size());
-    for (const auto& artifact : res.artifacts) {
+    for (const auto& artifact : res.artifacts)
         if (artifact.target == ArtifactTarget::Runtime)
             guids.push_back(artifact.sub_guid);
-    }
     return guids;
 }
 
@@ -228,10 +225,9 @@ Task<void> WriteArtifacts(const AssetMountPoint& mount, const ImportResult& res,
 
     co_await WaitAllFiles(write_handles);
 
-    for (const auto& write_handle : write_handles) {
+    for (const auto& write_handle : write_handles)
         if (write_handle.IsFailed())
             co_return LogAndMakeError("Не удалось записать артефакт: {}", write_handle.GetPath().data());
-    }
     co_return {};
 }
 
@@ -249,10 +245,9 @@ Task<bool> AllArtifactsExist(const AssetMountPoint& mount, const eastl::vector<e
 
     co_await WaitAllFiles(stat_handles);
 
-    for (const auto& stat_handle : stat_handles) {
+    for (const auto& stat_handle : stat_handles)
         if (stat_handle.IsFailed())
             co_return false;
-    }
     co_return true;
 }
 

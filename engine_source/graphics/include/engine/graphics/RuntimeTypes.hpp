@@ -8,36 +8,42 @@
 #define VK_NO_PROTOTYPES
 #endif
 
-#include <volk.h>
-
 #include <EASTL/fixed_vector.h>
 #include <EASTL/string_view.h>
 #include <cstring>
 #include <utility>
+#include <volk.h>
 
 #include "engine/core/Assert.hpp"
-#include "engine/resources/Vertex.hpp"
 #include "engine/graphics/ShaderReflection.hpp"
 #include "engine/resources/ResourceHandle.hpp"
+#include "engine/resources/Vertex.hpp"
 
 namespace tryengine::graphics {
 
 inline VkDescriptorType MapResourceKindToVkDescriptorType(ShaderResourceKind kind) {
     switch (kind) {
-        case ShaderResourceKind::UniformBuffer:      return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        case ShaderResourceKind::SampledTexture:     return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        case ShaderResourceKind::UniformBuffer:
+            return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        case ShaderResourceKind::SampledTexture:
+            return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         case ShaderResourceKind::StorageBufferRead:
-        case ShaderResourceKind::StorageBufferWrite: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        case ShaderResourceKind::StorageTexture:    return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        case ShaderResourceKind::StorageBufferWrite:
+            return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        case ShaderResourceKind::StorageTexture:
+            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     }
     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }
 
 inline VkShaderStageFlags MapToVkShaderStageFlags(ShaderStageFlags flags) {
     VkShaderStageFlags result = 0;
-    if (flags & ShaderStageFlagBits::Vertex)   result |= VK_SHADER_STAGE_VERTEX_BIT;
-    if (flags & ShaderStageFlagBits::Fragment) result |= VK_SHADER_STAGE_FRAGMENT_BIT;
-    if (flags & ShaderStageFlagBits::Compute)  result |= VK_SHADER_STAGE_COMPUTE_BIT;
+    if (flags & ShaderStageFlagBits::Vertex)
+        result |= VK_SHADER_STAGE_VERTEX_BIT;
+    if (flags & ShaderStageFlagBits::Fragment)
+        result |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (flags & ShaderStageFlagBits::Compute)
+        result |= VK_SHADER_STAGE_COMPUTE_BIT;
     return result != 0 ? result : VK_SHADER_STAGE_ALL_GRAPHICS;
 }
 
@@ -95,7 +101,8 @@ struct Shader {
     }
 
     void Destroy() {
-        if (device_cache == VK_NULL_HANDLE) return;
+        if (device_cache == VK_NULL_HANDLE)
+            return;
 
         if (vertex_shader) {
             vkDestroyShaderEXT(device_cache, vertex_shader, nullptr);
@@ -130,15 +137,15 @@ struct Mesh {
 
     VkBuffer position_buffer = VK_NULL_HANDLE;
     VmaAllocation position_allocation = VK_NULL_HANDLE;
-    VkDeviceAddress position_buffer_addr = 0; // BDA
+    VkDeviceAddress position_buffer_addr = 0;  // BDA
 
     VkBuffer attribute_buffer = VK_NULL_HANDLE;
     VmaAllocation attribute_allocation = VK_NULL_HANDLE;
-    VkDeviceAddress attribute_buffer_addr = 0; // BDA
+    VkDeviceAddress attribute_buffer_addr = 0;  // BDA
 
     VkBuffer index_buffer = VK_NULL_HANDLE;
     VmaAllocation index_allocation = VK_NULL_HANDLE;
-    VkDeviceAddress index_buffer_addr = 0; // BDA
+    VkDeviceAddress index_buffer_addr = 0;  // BDA
 
     uint32_t num_indices = 0;
     resources::MeshAttributeFlags attribute_flags = resources::MeshAttributeFlags::None;
@@ -192,7 +199,8 @@ struct Mesh {
     }
 
     void Destroy() {
-        if (allocator_cache == VK_NULL_HANDLE) return;
+        if (allocator_cache == VK_NULL_HANDLE)
+            return;
 
         if (position_buffer) {
             vmaDestroyBuffer(allocator_cache, position_buffer, position_allocation);
@@ -260,7 +268,8 @@ struct TextureSampler {
 
     void Destroy() {
         if (view != VK_NULL_HANDLE || sampler != VK_NULL_HANDLE) {
-            TRY_ASSERT(device_cache != VK_NULL_HANDLE, "TextureSampler: device_cache is null, cannot destroy ImageView/Sampler!");
+            TRY_ASSERT(device_cache != VK_NULL_HANDLE,
+                       "TextureSampler: device_cache is null, cannot destroy ImageView/Sampler!");
 
             if (view != VK_NULL_HANDLE) {
                 vkDestroyImageView(device_cache, view, nullptr);
@@ -274,7 +283,8 @@ struct TextureSampler {
 
         if (image != VK_NULL_HANDLE) {
             if (allocator_cache != VK_NULL_HANDLE) {
-                TRY_ASSERT(image_allocation != VK_NULL_HANDLE, "TextureSampler: image_allocation is null! VMA memory leak detected!");
+                TRY_ASSERT(image_allocation != VK_NULL_HANDLE,
+                           "TextureSampler: image_allocation is null! VMA memory leak detected!");
                 vmaDestroyImage(allocator_cache, image, image_allocation);
                 image = VK_NULL_HANDLE;
                 image_allocation = VK_NULL_HANDLE;
@@ -304,11 +314,9 @@ struct MaterialBufferBinding {
 inline uint32_t FindMemoryType(VkPhysicalDevice phys_device, uint32_t type_filter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties mem_props;
     vkGetPhysicalDeviceMemoryProperties(phys_device, &mem_props);
-    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-        if ((type_filter & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & properties) == properties) {
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; ++i)
+        if ((type_filter & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & properties) == properties)
             return i;
-        }
-    }
     TRY_ASSERT(false, "Failed to find suitable Vulkan memory type!");
     return 0xFFFFFFFFu;
 }
@@ -328,8 +336,7 @@ struct CachedUBOBinding {
 };
 
 struct Material {
-    explicit Material(resources::ResourceHandle<Shader> shdr_handle)
-        : shader(std::move(shdr_handle)) {}
+    explicit Material(resources::ResourceHandle<Shader> shdr_handle) : shader(std::move(shdr_handle)) {}
 
     Material(const Material&) = delete;
     Material& operator=(const Material&) = delete;
@@ -356,7 +363,9 @@ struct Material {
         return *this;
     }
 
-    ~Material() { DestroyGpuResources(); }
+    ~Material() {
+        DestroyGpuResources();
+    }
 
     resources::ResourceHandle<Shader> shader;
 
@@ -378,31 +387,30 @@ struct Material {
         // 1. Вычисляем общий размер Uniform Buffer из рефлексии шейдера
         uniform_buffer_size = 0;
         shader->reflection.ForEachMaterialBinding([this](const ShaderReflectedBinding& b) {
-            if (b.kind == ShaderResourceKind::UniformBuffer) {
+            if (b.kind == ShaderResourceKind::UniformBuffer)
                 uniform_buffer_size += b.size;
-            }
         });
 
         if (uniform_buffer_size > 0) {
-            VkBufferCreateInfo buffer_info{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+            VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
             buffer_info.size = uniform_buffer_size;
             buffer_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
             buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
             TRY_CHECK(vkCreateBuffer(device, &buffer_info, nullptr, &uniform_buffer) == VK_SUCCESS,
-                       "Failed to create Material Uniform buffer!");
+                      "Failed to create Material Uniform buffer!");
 
             VkMemoryRequirements mem_reqs;
             vkGetBufferMemoryRequirements(device, uniform_buffer, &mem_reqs);
 
-            VkMemoryAllocateInfo alloc_info{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+            VkMemoryAllocateInfo alloc_info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
             alloc_info.allocationSize = mem_reqs.size;
-            alloc_info.memoryTypeIndex = FindMemoryType(
-                phys_device, mem_reqs.memoryTypeBits,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            alloc_info.memoryTypeIndex =
+                FindMemoryType(phys_device, mem_reqs.memoryTypeBits,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
             TRY_CHECK(vkAllocateMemory(device, &alloc_info, nullptr, &uniform_memory) == VK_SUCCESS,
-                       "Failed to allocate Material Uniform memory!");
+                      "Failed to allocate Material Uniform memory!");
 
             vkBindBufferMemory(device, uniform_buffer, uniform_memory, 0);
             vkMapMemory(device, uniform_memory, 0, buffer_info.size, 0, &mapped_uniform_ptr);
@@ -418,21 +426,21 @@ struct Material {
         if (shader->descriptor_set_layouts.size() > kMaterialSetIndex &&
             shader->descriptor_set_layouts[kMaterialSetIndex] != VK_NULL_HANDLE &&
             shader->descriptor_pool != VK_NULL_HANDLE) {
-
-            VkDescriptorSetAllocateInfo alloc_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+            VkDescriptorSetAllocateInfo alloc_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
             alloc_info.descriptorPool = shader->descriptor_pool;
             alloc_info.descriptorSetCount = 1;
             alloc_info.pSetLayouts = &shader->descriptor_set_layouts[kMaterialSetIndex];
 
             TRY_CHECK(vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) == VK_SUCCESS,
-                       "Failed to allocate Material DescriptorSet!");
+                      "Failed to allocate Material DescriptorSet!");
 
             UpdateDescriptors();
         }
     }
 
     void DestroyGpuResources() {
-        if (device_cache == VK_NULL_HANDLE) return;
+        if (device_cache == VK_NULL_HANDLE)
+            return;
 
         if (mapped_uniform_ptr) {
             vkUnmapMemory(device_cache, uniform_memory);
@@ -460,7 +468,8 @@ struct Material {
     }
 
     void SetParamRaw(RGTag tag, const void* data_ptr, uint32_t data_size) {
-        if (!mapped_uniform_ptr || !data_ptr) return;
+        if (!mapped_uniform_ptr || !data_ptr)
+            return;
 
         // Прямой поиск смещения в рефлексии шейдера без промежуточных хэш-таблиц
         uint32_t current_offset = 0;
@@ -468,9 +477,8 @@ struct Material {
             if (b.kind == ShaderResourceKind::UniformBuffer) {
                 if (const auto* param = b.FindParamByTag(tag)) {
                     uint32_t final_offset = current_offset + param->offset;
-                    if (final_offset + data_size <= uniform_buffer_size) {
+                    if (final_offset + data_size <= uniform_buffer_size)
                         std::memcpy(static_cast<uint8_t*>(mapped_uniform_ptr) + final_offset, data_ptr, data_size);
-                    }
                 }
                 current_offset += b.size;
             }
@@ -490,12 +498,12 @@ struct Material {
     }
 
     void SetTexture(eastl::string_view name, resources::ResourceHandle<TextureSampler> tex) {
-        if (const auto* b = shader->reflection.FindBinding(name)) {
+        if (const auto* b = shader->reflection.FindBinding(name))
             SetTexture(b->binding, std::move(tex));
-        }
     }
 
-    void SetStorageBuffer(uint32_t binding, VkBuffer buffer, VkDeviceSize offset = 0, VkDeviceSize range = VK_WHOLE_SIZE) {
+    void SetStorageBuffer(uint32_t binding, VkBuffer buffer, VkDeviceSize offset = 0,
+                          VkDeviceSize range = VK_WHOLE_SIZE) {
         for (auto& bind : storage_buffers) {
             if (bind.binding == binding) {
                 bind.buffer = buffer;
@@ -509,15 +517,16 @@ struct Material {
         UpdateDescriptors();
     }
 
-    void SetStorageBuffer(eastl::string_view name, VkBuffer buffer, VkDeviceSize offset = 0, VkDeviceSize range = VK_WHOLE_SIZE) {
-        if (const auto* b = shader->reflection.FindBinding(name)) {
+    void SetStorageBuffer(eastl::string_view name, VkBuffer buffer, VkDeviceSize offset = 0,
+                          VkDeviceSize range = VK_WHOLE_SIZE) {
+        if (const auto* b = shader->reflection.FindBinding(name))
             SetStorageBuffer(b->binding, buffer, offset, range);
-        }
     }
 
     // Единый метод обновления всех дескрипторов
     void UpdateDescriptors() {
-        if (descriptor_set == VK_NULL_HANDLE || device_cache == VK_NULL_HANDLE) return;
+        if (descriptor_set == VK_NULL_HANDLE || device_cache == VK_NULL_HANDLE)
+            return;
 
         eastl::fixed_vector<VkWriteDescriptorSet, 16, false> writes;
         eastl::fixed_vector<VkDescriptorBufferInfo, 4, false> buffer_infos;
@@ -533,7 +542,7 @@ struct Material {
                     info.range = uniform_buffer_size;
 
                     auto& write = writes.push_back();
-                    write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+                    write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                     write.dstSet = descriptor_set;
                     write.dstBinding = b.binding;
                     write.descriptorCount = 1;
@@ -552,7 +561,7 @@ struct Material {
                 info.sampler = bind.texture->sampler;
 
                 auto& write = writes.push_back();
-                write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+                write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                 write.dstSet = descriptor_set;
                 write.dstBinding = bind.binding;
                 write.descriptorCount = 1;
@@ -570,7 +579,7 @@ struct Material {
                 info.range = bind.range;
 
                 auto& write = writes.push_back();
-                write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+                write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
                 write.dstSet = descriptor_set;
                 write.dstBinding = bind.binding;
                 write.descriptorCount = 1;
@@ -579,9 +588,8 @@ struct Material {
             }
         }
 
-        if (!writes.empty()) {
+        if (!writes.empty())
             vkUpdateDescriptorSets(device_cache, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        }
     }
 };
 

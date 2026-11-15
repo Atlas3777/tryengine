@@ -9,6 +9,7 @@
 namespace tryengine::graphics {
 struct Shader;
 }
+
 namespace tryeditor {
 
 struct DebugLine {
@@ -24,10 +25,16 @@ public:
     explicit DebugPass(tryengine::resources::ResourceHandle<tryengine::graphics::Shader> shader) {
         shader_ = shader;
     };
+
     float thickness = 4.0f;
 
-    const char* Name() const override { return "DebugDraw"; }
-    bool IsActive() const override { return static_cast<bool>(shader_); }
+    const char* Name() const override {
+        return "DebugDraw";
+    }
+
+    bool IsActive() const override {
+        return static_cast<bool>(shader_);
+    }
 
     void Collect(tryengine::graphics::CollectContext& ctx) override;
     void Setup(tryengine::graphics::RenderGraphBuilder& builder) override;

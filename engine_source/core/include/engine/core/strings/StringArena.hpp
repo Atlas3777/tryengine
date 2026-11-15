@@ -16,6 +16,7 @@ public:
     StringArena() = default;
     StringArena(const StringArena&) = delete;
     StringArena& operator=(const StringArena&) = delete;
+
     ~StringArena() {
         for (void* c : chunks_)
             ::operator delete(c);
@@ -58,7 +59,10 @@ private:
     static uint32_t ClassOf(uint32_t s) {
         return s <= 16 ? 0u : static_cast<uint32_t>(std::bit_width(s - 1)) - kMinShift;
     }
-    static uint32_t ClassSize(uint32_t c) { return 16u << c; }
+
+    static uint32_t ClassSize(uint32_t c) {
+        return 16u << c;
+    }
 
     void* Carve(uint32_t sz) {
         if (cur_ == nullptr || cur_ + sz > end_) {

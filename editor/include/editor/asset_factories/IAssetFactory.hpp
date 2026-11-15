@@ -30,9 +30,8 @@ public:
         std::filesystem::path asset_path = directory / (name + GetExtension());
 
         // Авто-инкремент имени, если файл существует
-        for (int i = 1; std::filesystem::exists(asset_path); ++i) {
+        for (int i = 1; std::filesystem::exists(asset_path); ++i)
             asset_path = directory / (name + "_" + std::to_string(i) + GetExtension());
-        }
 
         // SaveSource(asset_path, asset);
 
@@ -52,9 +51,8 @@ public:
         std::filesystem::path asset_path = directory / (name + GetExtension());
 
         // Авто-инкремент имени, если файл существует
-        for (int i = 1; std::filesystem::exists(asset_path); ++i) {
+        for (int i = 1; std::filesystem::exists(asset_path); ++i)
             asset_path = directory / (name + "_" + std::to_string(i) + GetExtension());
-        }
 
         TAsset default_asset = CreateDefaultAsset();
         // SaveSource(asset_path, default_asset);

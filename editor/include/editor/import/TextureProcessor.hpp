@@ -11,9 +11,8 @@
 namespace tryeditor {
 
 inline tryengine::resources::VkFilter MapGltfMagFilter(const int gltf_filter) {
-    if (gltf_filter == TG3_TEXTURE_FILTER_NEAREST) {
+    if (gltf_filter == TG3_TEXTURE_FILTER_NEAREST)
         return tryengine::resources::VkFilter::VK_FILTER_NEAREST;
-    }
     return tryengine::resources::VkFilter::VK_FILTER_LINEAR;
 }
 
@@ -24,7 +23,7 @@ inline tryengine::resources::VkFilter MapGltfMinFilter(const int gltf_filter) {
         case TG3_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
             return tryengine::resources::VkFilter::VK_FILTER_NEAREST;
         default:
-            return tryengine::resources::VkFilter::VK_FILTER_LINEAR; // 9729, 9985, 9987
+            return tryengine::resources::VkFilter::VK_FILTER_LINEAR;  // 9729, 9985, 9987
     }
 }
 
@@ -61,8 +60,8 @@ struct ProcessedTextureResult {
 
 class TextureProcessor {
 public:
-    static tryengine::Result<eastl::vector<uint8_t>> ProcessFromEncodedMemory(
-        eastl::span<const uint8_t> encoded_bytes, const TextureProcessSettings& settings);
+    static tryengine::Result<eastl::vector<uint8_t>> ProcessFromEncodedMemory(eastl::span<const uint8_t> encoded_bytes,
+                                                                              const TextureProcessSettings& settings);
 
     static tryengine::Result<eastl::vector<uint8_t>> ProcessFromRawPixels(const uint8_t* rgba_data, uint32_t width,
                                                                           uint32_t height,

@@ -146,9 +146,8 @@ VkDescriptorSet ImGuiPass::GetTexture(tryengine::graphics::ScopeId scope, tryeng
 
     VkImageView view = rg_.GetPhysicalImageView(viewport_handle);
 
-    if (!view) {
+    if (!view)
         return VK_NULL_HANDLE;
-    }
 
     auto it = texture_cache_.find(view);
     if (it != texture_cache_.end())
@@ -169,9 +168,8 @@ VkDescriptorSet ImGuiPass::GetEditorViewportTexture() {
 
 void ImGuiPass::ClearTextureCache() {
     device_.WaitIdle();
-    for (auto [view, ds] : texture_cache_) {
+    for (auto [view, ds] : texture_cache_)
         ImGui_ImplVulkan_RemoveTexture(ds);
-    }
     LogInfo("ImGuiPass: ClearTextureCache");
     texture_cache_.clear();
 }

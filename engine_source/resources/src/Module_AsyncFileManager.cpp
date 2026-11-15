@@ -31,10 +31,21 @@ struct FileHandleAnnotation : ManagedStructureAnnotation<FileHandle, false, true
         addProperty<DAS_BIND_MANAGED_PROP(GetFileSize)>("GetFileSize", "GetFileSize");
     }
 
-    bool isLocal() const override { return true; }
-    bool canMove() const override { return true; }
-    bool canCopy() const override { return false; }
-    bool hasNonTrivialDtor() const override { return true; }
+    bool isLocal() const override {
+        return true;
+    }
+
+    bool canMove() const override {
+        return true;
+    }
+
+    bool canCopy() const override {
+        return false;
+    }
+
+    bool hasNonTrivialDtor() const override {
+        return true;
+    }
 };
 
 namespace {
@@ -43,9 +54,8 @@ namespace {
 AsyncFileManager* GetAsyncFileManager(Context* ctx) {
     auto* try_ctx = static_cast<TryengineContext*>(ctx);
     auto* manager = try_ctx ? try_ctx->engine.TryGet<AsyncFileManager>() : nullptr;
-    if (!manager) {
+    if (!manager)
         LogError("AsyncFileManager not found in TryengineContext");
-    }
     return manager;
 }
 

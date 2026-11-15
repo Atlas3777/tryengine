@@ -97,10 +97,9 @@ uint64_t GetMipSize(uint32_t w, uint32_t h, uint32_t d, TextureFormat format) {
     return static_cast<uint64_t>(w) * h * d * details.bytes_per_block;
 }
 
-} // namespace
+}  // namespace
 
-eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header,
-                                           eastl::span<const uint8_t> full_data) {
+eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header, eastl::span<const uint8_t> full_data) {
     uint32_t mip_count = header.mip_count;
 
     // Смещение ровно 96 байт (кратно 8)
@@ -153,9 +152,8 @@ eastl::vector<uint8_t> TextureBinary::Pack(const TextureHeader& header,
 }
 
 Result<UnpackedTextureView> TextureBinary::UnpackFull(eastl::span<const uint8_t> raw_bytes) {
-    if (raw_bytes.size() < sizeof(TextureHeader)) {
+    if (raw_bytes.size() < sizeof(TextureHeader))
         return LogAndMakeError("Raw bytes too small for TextureHeader");
-    }
 
     UnpackedTextureView view;
     std::memcpy(&view.header, raw_bytes.data(), sizeof(TextureHeader));
@@ -210,4 +208,4 @@ Result<UnpackedTextureView> TextureBinary::UnpackFull(eastl::span<const uint8_t>
     return view;
 }
 
-} // namespace tryengine::resources
+}  // namespace tryengine::resources

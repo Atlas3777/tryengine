@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+
 #include "ResourceControlBlock.hpp"
 #include "engine/core/Assert.hpp"
 #include "engine/core/Inline.hpp"
@@ -12,17 +13,14 @@ class ResourceHandle {
 public:
     ResourceHandle() = default;
 
-    explicit ResourceHandle(ResourceControlBlock<T>* control_block)
-        : control_block_(control_block) {
-        if (control_block_) {
+    explicit ResourceHandle(ResourceControlBlock<T>* control_block) : control_block_(control_block) {
+        if (control_block_)
             control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
-        }
     }
 
     ResourceHandle(const ResourceHandle& other) : control_block_(other.control_block_) {
-        if (control_block_) {
+        if (control_block_)
             control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
-        }
     }
 
     ResourceHandle(ResourceHandle&& other) noexcept : control_block_(other.control_block_) {
@@ -33,9 +31,8 @@ public:
         if (this != &other) {
             Reset();
             control_block_ = other.control_block_;
-            if (control_block_) {
+            if (control_block_)
                 control_block_->ref_count.fetch_add(1, std::memory_order_relaxed);
-            }
         }
         return *this;
     }
@@ -53,8 +50,13 @@ public:
         Reset();
     }
 
-    TRY_INLINE bool operator==(const ResourceHandle& other) const noexcept { return control_block_ == other.control_block_; }
-    TRY_INLINE bool operator!=(const ResourceHandle& other) const noexcept { return control_block_ != other.control_block_; }
+    TRY_INLINE bool operator==(const ResourceHandle& other) const noexcept {
+        return control_block_ == other.control_block_;
+    }
+
+    TRY_INLINE bool operator!=(const ResourceHandle& other) const noexcept {
+        return control_block_ != other.control_block_;
+    }
 
     TRY_INLINE bool IsReady() const noexcept {
         return control_block_ && control_block_->state.load(std::memory_order_acquire) == ResourceState::Ready;
@@ -68,7 +70,9 @@ public:
         return control_block_ ? control_block_->state.load(std::memory_order_acquire) : ResourceState::Empty;
     }
 
-    TRY_INLINE explicit operator bool() const noexcept { return IsReady(); }
+    TRY_INLINE explicit operator bool() const noexcept {
+        return IsReady();
+    }
 
     TRY_INLINE T& operator*() const {
         TRY_ASSERT(IsReady(), "Attempted to dereference a resource that is not ready!");
@@ -80,7 +84,9 @@ public:
         return control_block_->data;
     }
 
-    TRY_INLINE T* Get() const noexcept { return IsReady() ? control_block_->data : nullptr; }
+    TRY_INLINE T* Get() const noexcept {
+        return IsReady() ? control_block_->data : nullptr;
+    }
 
     void Reset() noexcept {
         if (control_block_) {
@@ -93,7 +99,9 @@ public:
         return control_block_ ? control_block_->ref_count.load(std::memory_order_relaxed) : 0;
     }
 
-    ResourceControlBlock<T>* GetControlBlock() const noexcept { return control_block_; }
+    ResourceControlBlock<T>* GetControlBlock() const noexcept {
+        return control_block_;
+    }
 
 private:
     ResourceControlBlock<T>* control_block_{nullptr};

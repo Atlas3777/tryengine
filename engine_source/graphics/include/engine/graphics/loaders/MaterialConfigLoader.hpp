@@ -14,14 +14,12 @@ namespace tryengine::graphics {
 class MaterialConfigLoader {
 public:
     async::Task<MaterialConfig> Parse(eastl::span<const uint8_t> bytes) const {
-        if (bytes.empty()) {
+        if (bytes.empty())
             co_return core::Error("Buffer empty");
-        }
 
         auto result = ParseMaterialConfig(bytes);
-        if (!result.has_value()) {
+        if (!result.has_value())
             co_return LogAndMakeError("Material config: {}", result.error());
-        }
 
         co_return eastl::move(*result);
     }

@@ -61,15 +61,14 @@ das::string FromPakName(const eastl::string& n) {
     return das::string(n.c_str());
 }
 
-Result<ScriptPak> CollectScriptPak(das::FileAccess& access, das::ModuleGroup& group,
-                                   const das::string& entry,
+Result<ScriptPak> CollectScriptPak(das::FileAccess& access, das::ModuleGroup& group, const das::string& entry,
                                    const eastl::vector<das::string>& extra = {}) {
     eastl::vector<das::string> names;
     names.push_back(entry);
     for (auto* mod : group.getModules())
         if (!mod->fileName.empty())
             names.push_back(mod->fileName);
-    for (const auto& e : extra)          // дубликаты отсеет hash_set seen
+    for (const auto& e : extra)  // дубликаты отсеет hash_set seen
         names.push_back(e);
 
     ScriptPak pak;

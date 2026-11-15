@@ -1,9 +1,9 @@
 #pragma once
 
-#include <mutex>
-#include <vector>
 #include <coroutine>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 #include "engine/async/Executor.hpp"
 
@@ -33,12 +33,10 @@ public:
 
         CurrentExecutorScope scope(this);
 
-        for (auto& work : local_closures) {
+        for (auto& work : local_closures)
             work();
-        }
-        for (auto handle : local_handles) {
+        for (auto handle : local_handles)
             handle.resume();
-        }
     }
 
 private:

@@ -9,7 +9,9 @@ class BlitPass : public IRenderPass {
 public:
     BlitPass() {}
 
-    [[nodiscard]] const char* Name() const override { return "BlitPass"; }
+    [[nodiscard]] const char* Name() const override {
+        return "BlitPass";
+    }
 
     void Setup(RenderGraphBuilder& builder) override {
         data_.scene_color_read = builder.Read(tryengine::graphics::RGTag_v<"ForwardColor">, RGUsageHint::TransferSrc);
@@ -24,7 +26,6 @@ public:
 
         auto& scene = ctx.GetTextureDesc(data_.scene_color_read);
         auto& swap = ctx.GetTextureDesc(data_.swapchain_target);
-
 
         if (!src_image || !dst_image) {
             TRY_ASSERT(false, "!src_image || !dst_image");

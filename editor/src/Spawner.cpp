@@ -28,22 +28,26 @@
 //     auto asset_map = *asset;
 //
 //     std::unordered_map<uint64_t, tryengine::resources::ResourceHandle<tryengine::graphics::Mesh>> loaded_meshes;
-//     std::unordered_map<uint64_t, tryengine::resources::ResourceHandle<tryengine::graphics::Material>> loaded_materials;
+//     std::unordered_map<uint64_t, tryengine::resources::ResourceHandle<tryengine::graphics::Material>>
+//     loaded_materials;
 //
 //     for (const auto& node_data : asset_map->nodes) {
 //         if (node_data.mesh_id != 0 && node_data.material_id != 0) {
 //             if (!loaded_meshes.contains(node_data.mesh_id)) {
-//                 auto mesh_resource = co_await resource_manager.GetAsync<tryengine::graphics::Mesh>(node_data.mesh_id);
-//                 if (!mesh_resource.has_value()) {
+//                 auto mesh_resource = co_await
+//                 resource_manager.GetAsync<tryengine::graphics::Mesh>(node_data.mesh_id); if
+//                 (!mesh_resource.has_value()) {
 //                     co_return tryengine::core::LogError("mesh resource: mesh_id {} not found", node_data.mesh_id);
 //                 }
 //                 loaded_meshes.emplace(node_data.mesh_id, std::move(*mesh_resource));
 //             }
 //
 //             if (!loaded_materials.contains(node_data.material_id)) {
-//                 auto material_resource = co_await resource_manager.GetAsync<tryengine::graphics::Material>(node_data.material_id);
-//                 if (!material_resource.has_value()) {
-//                     co_return tryengine::core::LogError("material resource: material_id {} not found", node_data.material_id);
+//                 auto material_resource = co_await
+//                 resource_manager.GetAsync<tryengine::graphics::Material>(node_data.material_id); if
+//                 (!material_resource.has_value()) {
+//                     co_return tryengine::core::LogError("material resource: material_id {} not found",
+//                     node_data.material_id);
 //                 }
 //                 loaded_materials.emplace(node_data.material_id, std::move(*material_resource));
 //             }

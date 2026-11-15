@@ -2,8 +2,8 @@
 
 #include <utility>
 
-#include "engine/core/Inline.hpp"
 #include "engine/core/Assert.hpp"
+#include "engine/core/Inline.hpp"
 #include "engine/core/TypeRegistry.hpp"
 
 namespace tryengine::core {
@@ -13,12 +13,15 @@ public:
     static constexpr uint32_t MAX_SYSTEMS = 32;
 
     Engine() = default;
-    ~Engine() { Shutdown(); }
 
-    Engine(const Engine&)            = delete;
+    ~Engine() {
+        Shutdown();
+    }
+
+    Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
-    Engine(Engine&&)                 = delete;
-    Engine& operator=(Engine&&)      = delete;
+    Engine(Engine&&) = delete;
+    Engine& operator=(Engine&&) = delete;
 
     template <typename T, typename... Args>
     T& RegisterSystem(Args&&... args) {
@@ -28,7 +31,7 @@ public:
 
         T* system = new T(std::forward<Args>(args)...);
 
-        instances_[id]  = system;
+        instances_[id] = system;
         destroyers_[id] = [](void* p) { delete static_cast<T*>(p); };
         return *system;
     }
@@ -47,26 +50,26 @@ public:
         TRY_ASSERT(static_cast<T*>(instances_[id]), "System not registered");
         return *static_cast<T*>(instances_[id]);
     }
+
 private:
     void DestroyAt(uint32_t id) noexcept {
         if (instances_[id] == nullptr)
             return;
         TRY_ASSERT(destroyers_[id] != nullptr, "Instance without destructor!");
         destroyers_[id](instances_[id]);
-        instances_[id]  = nullptr;
+        instances_[id] = nullptr;
         destroyers_[id] = nullptr;
     }
 
     void Shutdown() noexcept {
-        for (uint32_t i = ScopedTypeCounter<EngineSystemCounter>::counter; i > 0; --i) {
+        for (uint32_t i = ScopedTypeCounter<EngineSystemCounter>::counter; i > 0; --i)
             DestroyAt(i - 1);
-        }
     }
 
-    struct EngineSystemCounter; // Чтобы никто из вне не мог сломать индексацию
+    struct EngineSystemCounter;  // Чтобы никто из вне не мог сломать индексацию
 
     void* instances_[MAX_SYSTEMS] = {};
     void (*destroyers_[MAX_SYSTEMS])(void*) = {};
 };
 
-} // namespace tryengine::core
+}  // namespace tryengine::core

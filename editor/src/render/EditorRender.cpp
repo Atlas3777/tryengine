@@ -55,9 +55,8 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(device.GetWindow(), &w, &h);
 
-    if (w == 0 || h == 0) {
+    if (w == 0 || h == 0)
         return;
-    }
 
     const VkExtent2D current_extent = swapchain_.GetExtent();
     if (static_cast<uint32_t>(w) != current_extent.width || static_cast<uint32_t>(h) != current_extent.height) {
@@ -81,9 +80,8 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     auto& script = engine.Get<tryengine::core::ScriptSystem>();
     auto size_res = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
     VkExtent2D scene_viewport{1, 1};
-    if (size_res.has_value()) {
+    if (size_res.has_value())
         scene_viewport = {std::max(1u, (uint32_t) size_res->x), std::max(1u, (uint32_t) size_res->y)};
-    }
 
     if (scene_viewport.width != last_viewport_size_.width || scene_viewport.height != last_viewport_size_.height) {
         rg_.Invalidate();
@@ -92,9 +90,8 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
 
     auto size_game_res = script.SimpleReturnUnsafe<das::float2>("GetGameViewportSize");
     VkExtent2D scene_game_viewport{1, 1};
-    if (size_game_res.has_value()) {
+    if (size_game_res.has_value())
         scene_game_viewport = {std::max(1u, (uint32_t) size_game_res->x), std::max(1u, (uint32_t) size_game_res->y)};
-    }
 
     if (scene_game_viewport.width != last_game_viewport_size_.width ||
         scene_game_viewport.height != last_game_viewport_size_.height) {
@@ -124,9 +121,8 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     rg_.Compile();
     rg_.Execute(cmd);
 
-    if (!frame_sync_.EndFrameAndPresent(device, swapchain_, image_index)) {
+    if (!frame_sync_.EndFrameAndPresent(device, swapchain_, image_index))
         RecreateSwapchain(w, h, device);
-    }
 }
 
 void EditorRender::ImportSwapchain(uint32_t image_index) const {

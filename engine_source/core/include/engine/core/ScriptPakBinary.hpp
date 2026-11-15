@@ -1,13 +1,12 @@
 #pragma once
 
+#include <EASTL/span.h>
+#include <EASTL/string.h>
+#include <EASTL/vector.h>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
-
-#include <EASTL/span.h>
-#include <EASTL/string.h>
-#include <EASTL/vector.h>
 
 #include "engine/core/Result.hpp"
 
@@ -30,7 +29,7 @@ inline constexpr uint32_t kScriptPakVersion = 1;
 struct ScriptPakHeader {
     uint32_t magic;
     uint32_t version;
-    uint32_t total_size;   // размер всего файла
+    uint32_t total_size;  // размер всего файла
     uint32_t file_count;
     uint32_t table_off;    // от начала файла
     uint32_t blob_off;     // от начала файла
@@ -76,7 +75,9 @@ struct ScriptPak {
     eastl::vector<ScriptPakFile> files;
     uint32_t entry_index = 0;
 
-    const eastl::string& Entry() const { return files[entry_index].name; }
+    const eastl::string& Entry() const {
+        return files[entry_index].name;
+    }
 };
 
 uint32_t Fnv1a32(eastl::span<const uint8_t> bytes);

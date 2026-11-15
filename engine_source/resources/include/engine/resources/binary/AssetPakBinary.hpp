@@ -10,7 +10,7 @@
 
 namespace tryengine::resources {
 
-constexpr uint32_t PAK_MAGIC = 0x4B415054; // 'TPAK'
+constexpr uint32_t PAK_MAGIC = 0x4B415054;  // 'TPAK'
 constexpr uint32_t PAK_VERSION = 1;
 
 struct ResourceLayout {
@@ -46,4 +46,4 @@ public:
     static eastl::vector<uint8_t> Pack(AssetPak& pak);
 };
 
-} // namespace tryengine::resources
+}  // namespace tryengine::resources

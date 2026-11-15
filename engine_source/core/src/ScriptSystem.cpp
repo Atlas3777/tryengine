@@ -55,7 +55,7 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
     }
 
     // for (auto* mod : program->thisModuleGroup->getModules())
-        // LogInfo(LogCategory::Script, "LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
+    // LogInfo(LogCategory::Script, "LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
 
     auto* new_ctx = config_.create_context(program->getContextStackSize());
     if (!program->simulate(*new_ctx, tout)) {
@@ -64,7 +64,7 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
     }
 
     // for (auto* mod : program->thisModuleGroup->getModules())
-        // LogInfo(LogCategory::Script, "After simul LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
+    // LogInfo(LogCategory::Script, "After simul LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
 
     if (das_ctx_)
         delete das_ctx_;

@@ -19,9 +19,8 @@ constexpr VkImageViewType TextureViewTo(resources::TextureViewType type) {
 }
 
 constexpr VkFilter FilterTo(resources::VkFilter filter) {
-    if (filter == resources::VkFilter::VK_FILTER_CUBIC_EXT) {
+    if (filter == resources::VkFilter::VK_FILTER_CUBIC_EXT)
         return VK_FILTER_CUBIC_EXT;
-    }
     return static_cast<VkFilter>(filter);
 }
 

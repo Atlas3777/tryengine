@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <EASTL/string.h>
 #include <EASTL/variant.h>
+#include <cstdint>
 
 namespace tryengine::resources {
 
@@ -22,4 +22,4 @@ struct PakChunkLocation {
 
 using AssetLocation = eastl::variant<LooseFileLocation, PakChunkLocation>;
 
-} // namespace tryengine::resources
+}  // namespace tryengine::resources

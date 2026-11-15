@@ -1,7 +1,8 @@
 #include "editor/AssetScanner.hpp"
-#include "engine/platform/Directory.hpp"
 
 #include <EASTL/sort.h>
+
+#include "engine/platform/Directory.hpp"
 
 namespace tryeditor {
 
@@ -24,7 +25,9 @@ struct Frame {
 
 class ScanVisitor {
 public:
-    explicit ScanVisitor(ScanResult& result) : result_(result) { frames_.emplace_back(); }
+    explicit ScanVisitor(ScanResult& result) : result_(result) {
+        frames_.emplace_back();
+    }
 
     bool OnDirectoryEnter(eastl::string_view full, eastl::string_view) {
         result_.AddEntry(full, true);
@@ -45,7 +48,9 @@ public:
         frames_.back().files.push_back(FileRef{offset, static_cast<uint32_t>(full.size()), is_meta, false});
     }
 
-    void Finish() { Resolve(frames_.front()); }
+    void Finish() {
+        Resolve(frames_.front());
+    }
 
 private:
     eastl::string_view View(const FileRef& f) const {

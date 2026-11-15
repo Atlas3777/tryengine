@@ -42,12 +42,14 @@ struct SyncWaitTask {
     using promise_type = SyncWaitPromise<T>;
 
     explicit SyncWaitTask(std::coroutine_handle<promise_type> h) noexcept : handle_(h) {}
+
     SyncWaitTask(SyncWaitTask&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
+
     SyncWaitTask(const SyncWaitTask&) = delete;
+
     ~SyncWaitTask() {
-        if (handle_) {
+        if (handle_)
             handle_.destroy();
-        }
     }
 
     void Start(SyncWaitEvent& event) {
@@ -73,10 +75,14 @@ struct SyncWaitPromise {
         return SyncWaitTask<T>{std::coroutine_handle<SyncWaitPromise>::from_promise(*this)};
     }
 
-    std::suspend_always initial_suspend() noexcept { return {}; }
+    std::suspend_always initial_suspend() noexcept {
+        return {};
+    }
 
     struct FinalAwaiter {
-        bool await_ready() noexcept { return false; }
+        bool await_ready() noexcept {
+            return false;
+        }
 
         void await_suspend(std::coroutine_handle<SyncWaitPromise> h) noexcept {
             // Последнее прикосновение к фрейму с этой стороны — сразу за этим
@@ -87,9 +93,13 @@ struct SyncWaitPromise {
         void await_resume() noexcept {}
     };
 
-    FinalAwaiter final_suspend() noexcept { return {}; }
+    FinalAwaiter final_suspend() noexcept {
+        return {};
+    }
 
-    void return_value(Result<T> value) { result = std::move(value); }
+    void return_value(Result<T> value) {
+        result = std::move(value);
+    }
 
     void unhandled_exception() noexcept {
         try {

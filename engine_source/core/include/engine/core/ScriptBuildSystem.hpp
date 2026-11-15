@@ -31,7 +31,9 @@ public:
 
     Result<eastl::vector<uint8_t>> BuildPak(eastl::string_view path);
 
-    das::Context* GetContext() const { return das_ctx_; }
+    das::Context* GetContext() const {
+        return das_ctx_;
+    }
 
 private:
     ScriptBuildConfig config_;

@@ -38,12 +38,14 @@ inline Executor* GetCurrentExecutor() noexcept {
 
 struct CurrentExecutorScope {
     Executor* prev_;
+
     explicit CurrentExecutorScope(Executor* exec) noexcept : prev_(g_current_executor) {
         g_current_executor = exec;
     }
+
     ~CurrentExecutorScope() {
         g_current_executor = prev_;
     }
 };
 
-} // namespace tryengine::async
+}  // namespace tryengine::async

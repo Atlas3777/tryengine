@@ -4,12 +4,12 @@
 #define VK_NO_PROTOTYPES
 #endif
 
-#include <volk.h>
+#include <EASTL/string_view.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
-#include <EASTL/string_view.h>
+#include <volk.h>
 
 namespace tryengine::graphics {
 
@@ -23,22 +23,49 @@ public:
     VulkanDevice(VulkanDevice&&) = delete;
     VulkanDevice& operator=(VulkanDevice&&) = delete;
 
-    [[nodiscard]] SDL_Window* GetWindow() const { return window_; }
-    [[nodiscard]] VkInstance GetInstance() const { return instance_; }
-    [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const { return physical_device_; }
-    [[nodiscard]] VkDevice GetDevice() const { return device_; }
-    [[nodiscard]] VkSurfaceKHR GetSurface() const { return surface_; }
-    [[nodiscard]] VmaAllocator GetAllocator() const { return allocator_; }
+    [[nodiscard]] SDL_Window* GetWindow() const {
+        return window_;
+    }
 
-    [[nodiscard]] VkQueue GetGraphicsQueue() const { return graphics_queue_; }
-    [[nodiscard]] uint32_t GetGraphicsQueueFamily() const { return graphics_queue_family_; }
-    [[nodiscard]] VkQueue GetPresentQueue() const { return present_queue_; }
-    [[nodiscard]] uint32_t GetPresentQueueFamily() const { return present_queue_family_; }
+    [[nodiscard]] VkInstance GetInstance() const {
+        return instance_;
+    }
+
+    [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() const {
+        return physical_device_;
+    }
+
+    [[nodiscard]] VkDevice GetDevice() const {
+        return device_;
+    }
+
+    [[nodiscard]] VkSurfaceKHR GetSurface() const {
+        return surface_;
+    }
+
+    [[nodiscard]] VmaAllocator GetAllocator() const {
+        return allocator_;
+    }
+
+    [[nodiscard]] VkQueue GetGraphicsQueue() const {
+        return graphics_queue_;
+    }
+
+    [[nodiscard]] uint32_t GetGraphicsQueueFamily() const {
+        return graphics_queue_family_;
+    }
+
+    [[nodiscard]] VkQueue GetPresentQueue() const {
+        return present_queue_;
+    }
+
+    [[nodiscard]] uint32_t GetPresentQueueFamily() const {
+        return present_queue_family_;
+    }
 
     void WaitIdle() const {
-        if (device_) {
+        if (device_)
             vkDeviceWaitIdle(device_);
-        }
     }
 
 private:

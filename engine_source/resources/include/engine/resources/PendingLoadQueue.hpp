@@ -10,7 +10,9 @@ namespace tryengine::resources {
 
 class PendingLoadQueue final : public IAssetMissHandler {
 public:
-    explicit PendingLoadQueue(AssetRegistry& registry) : registry_(registry) { registry_.SetMissHandler(this); }
+    explicit PendingLoadQueue(AssetRegistry& registry) : registry_(registry) {
+        registry_.SetMissHandler(this);
+    }
 
     bool Defer(uint64_t guid, eastl::function<void()> retry) override {
         {
@@ -45,4 +47,4 @@ private:
     eastl::hash_map<uint64_t, eastl::vector<eastl::function<void()>>> pending_;
 };
 
-}  // namespace tryeditor
+}  // namespace tryengine::resources

@@ -8,12 +8,7 @@
 
 namespace tryeditor {
 
-enum class FileChangeKind {
-    Created,
-    Modified,
-    Removed,
-    Renamed
-};
+enum class FileChangeKind { Created, Modified, Removed, Renamed };
 
 struct FileChangeEvent {
     eastl::string path;
@@ -25,13 +20,14 @@ using ReimportCallback = std::function<void(const FileChangeEvent&)>;
 class FileWatcher {
 public:
     eastl::vector<FileChangeEvent> file_watcher_events;  // тоже заглушка
+
     void WatchDirrectory(eastl::string path) {
-        //fanotify
+        // fanotify
     }
+
     // [[nodiscard]] bool IsRunning() const noexcept { return running_.load(std::memory_order_relaxed); }
 
 private:
-
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

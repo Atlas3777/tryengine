@@ -51,11 +51,9 @@ PickingPass::PickingPass(tryengine::graphics::VulkanDevice& device,
 }
 
 PickingPass::~PickingPass() {
-    for (auto& rb : readback_) {
-        if (rb.buffer != VK_NULL_HANDLE) {
+    for (auto& rb : readback_)
+        if (rb.buffer != VK_NULL_HANDLE)
             vmaDestroyBuffer(device_.GetAllocator(), rb.buffer, rb.allocation);
-        }
-    }
 }
 
 void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
@@ -144,11 +142,9 @@ void PickingPass::Execute(tryengine::graphics::RGExecuteContext& ctx) {
 
     // 1. Отбор валидных мешей из OpaquePass
     eastl::vector<tryengine::graphics::MeshDrawCall> valid_draws;
-    for (const auto& draw : opaque_->DrawQueue()) {
-        if (draw.mesh && draw.mesh->position_buffer_addr && draw.mesh->index_buffer) {
+    for (const auto& draw : opaque_->DrawQueue())
+        if (draw.mesh && draw.mesh->position_buffer_addr && draw.mesh->index_buffer)
             valid_draws.push_back(draw);
-        }
-    }
     if (valid_draws.empty())
         return;
 

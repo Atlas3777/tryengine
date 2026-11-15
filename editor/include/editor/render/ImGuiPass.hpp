@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vk_mem_alloc.h>
 #include <EASTL/hash_map.h>
+#include <vk_mem_alloc.h>
 
 #include "engine/graphics/rg/IRenderPass.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
@@ -9,11 +9,15 @@
 namespace tryengine::graphics {
 class VulkanSwapchain;
 }
+
 namespace tryeditor {
 
 class ImGuiPass : public tryengine::graphics::IRenderPass {
 public:
-    const char* Name() const override {return "ImGUI";};
+    const char* Name() const override {
+        return "ImGUI";
+    };
+
     struct SetupData {
         tryengine::graphics::RGResourceHandle editor_scene_color;
         tryengine::graphics::RGResourceHandle game_scene_color;
@@ -56,4 +60,4 @@ private:
     SetupData data_{};
 };
 
-} // namespace tryeditor
+}  // namespace tryeditor

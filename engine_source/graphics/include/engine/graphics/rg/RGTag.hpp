@@ -16,12 +16,15 @@ constexpr ScopeId kGlobalScope = 0;
 
 // Упаковываем View и Tag в 64 бита для молниеносного хэширования
 using RGTagKey = uint64_t;
+
 inline constexpr RGTagKey MakeTagKey(ScopeId view, RGTag tag) {
     return (static_cast<uint64_t>(view) << 32) | static_cast<uint64_t>(tag);
 }
+
 inline constexpr RGTag GetTagFromKey(RGTagKey key) {
     return static_cast<RGTag>(key & 0xFFFFFFFF);
 }
+
 inline constexpr ScopeId GetViewFromKey(RGTagKey key) {
     return static_cast<ScopeId>(key >> 32);
 }
@@ -30,6 +33,7 @@ struct RGScopedTag {
     RGTag tag;
     ScopeId view;
 };
+
 inline constexpr RGScopedTag At(RGTag tag, ScopeId view) {
     return {tag, view};
 }
@@ -46,7 +50,10 @@ constexpr RGTag RGHashFNV1a(eastl::string_view s) {
 template <size_t N>
 struct FixedString {
     char data[N]{};
-    constexpr FixedString(const char (&s)[N]) { std::copy_n(s, N, data); }
+
+    constexpr FixedString(const char (&s)[N]) {
+        std::copy_n(s, N, data);
+    }
 };
 
 #ifndef NDEBUG
@@ -55,14 +62,17 @@ inline auto& GetRGTagRegistry() {
     static eastl::unordered_map<RGTag, eastl::string> registry;
     return registry;
 }
+
 inline std::mutex& GetRGTagMutex() {
     static std::mutex mutex;
     return mutex;
 }
+
 inline void RegisterRGTag(RGTag tag, eastl::string_view name) {
     std::lock_guard<std::mutex> lock(GetRGTagMutex());
     GetRGTagRegistry()[tag] = eastl::string(name.data(), name.size());
 }
+
 template <FixedString S>
 struct TagRegistrar {
     static inline const RGTag tag = [] {
@@ -78,9 +88,8 @@ inline eastl::string_view GetRGTagName(RGTag tag) {
     std::lock_guard<std::mutex> lock(detail::GetRGTagMutex());
     auto& reg = detail::GetRGTagRegistry();
     auto it = reg.find(tag);
-    if (it != reg.end()) {
+    if (it != reg.end())
         return eastl::string_view(it->second.data(), it->second.size());
-    }
     return "Unknown Tag";
 }
 #else

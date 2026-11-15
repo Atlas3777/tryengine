@@ -45,9 +45,8 @@ Result<AssetPakManifest> AssetPakBinary::UnpackManifest(eastl::span<const uint8_
         return LogAndMakeError("PAK metadata offsets out of buffer bounds");
     }
 
-    if (meta.header.resource_layout_size % sizeof(ResourceLayout) != 0) {
+    if (meta.header.resource_layout_size % sizeof(ResourceLayout) != 0)
         return LogAndMakeError("PAK resource layout size is not a multiple of ResourceLayout");
-    }
 
     // 2. Распаковка зависимостей (с проверками границ на каждом шаге).
     if (meta.header.dependencies_size > 0) {
@@ -168,16 +167,14 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
     eastl::vector<uint8_t> result(static_cast<size_t>(header.data_offset + header.data_size));
     std::memcpy(result.data(), &header, sizeof(header));
 
-    if (!deps_bytes.empty()) {
+    if (!deps_bytes.empty())
         std::memcpy(result.data() + header.dependencies_offset, deps_bytes.data(), deps_bytes.size());
-    }
     if (!layout.empty()) {
         std::memcpy(result.data() + header.resource_layout_offset, layout.data(),
                     static_cast<size_t>(header.resource_layout_size));
     }
-    if (!data_buffer.empty()) {
+    if (!data_buffer.empty())
         std::memcpy(result.data() + header.data_offset, data_buffer.data(), data_buffer.size());
-    }
 
     return result;
 }

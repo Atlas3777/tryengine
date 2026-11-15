@@ -11,14 +11,18 @@ namespace tryengine::graphics {
 
 class OpaquePass final : public IRenderPass {
 public:
-    const char* Name() const override { return "Opaque"; }
+    const char* Name() const override {
+        return "Opaque";
+    }
 
     void Collect(CollectContext& ctx) override;
     void Setup(RenderGraphBuilder& builder) override;
     void Execute(RGExecuteContext& ctx) override;
 
     // Очередь отсортирована в Collect; Picking переиспользует её без повторного сбора.
-    [[nodiscard]] eastl::span<const MeshDrawCall> DrawQueue() const { return draw_queue_; }
+    [[nodiscard]] eastl::span<const MeshDrawCall> DrawQueue() const {
+        return draw_queue_;
+    }
 
 private:
     void RecordDraws(RGExecuteContext& ctx);

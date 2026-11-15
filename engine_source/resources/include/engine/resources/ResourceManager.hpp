@@ -17,7 +17,9 @@ public:
     ResourceManager(AsyncFileManager& file_manager, AssetRegistry& registry)
         : file_manager_(file_manager), registry_(registry) {}
 
-    ~ResourceManager() { LogInfo("Resource manager destructor"); };
+    ~ResourceManager() {
+        LogInfo("Resource manager destructor");
+    };
 
     template <typename T, typename Loader>
     void RegisterType(Loader&& loader) {
@@ -94,30 +96,28 @@ public:
     template <typename T>
     void Release(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
-        if (cache) {
+        if (cache)
             cache->Release(guid);
-        }
     }
 
     void Purge() {
         std::lock_guard lock(mutex_);
-        for (auto& cache : caches_) {
-            if (cache) {
+        for (auto& cache : caches_)
+            if (cache)
                 cache->Purge();
-            }
-        }
     }
 
-    AssetRegistry& GetAssetRegistry() { return registry_; }
+    AssetRegistry& GetAssetRegistry() {
+        return registry_;
+    }
 
 private:
     template <typename T>
     IResourceCache<T>* GetTypedCache() {
         std::lock_guard lock(mutex_);
         auto type_id = core::ScopedTypeId<ResourceManager, T>::Value();
-        if (type_id < caches_.size()) {
+        if (type_id < caches_.size())
             return static_cast<IResourceCache<T>*>(caches_[type_id].get());
-        }
         return nullptr;
     }
 

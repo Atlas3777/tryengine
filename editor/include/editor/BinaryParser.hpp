@@ -24,7 +24,8 @@ eastl::optional<T> BinaryDeserialize(const eastl::span<const uint8_t> buffer) {
     static_assert(std::is_trivially_copyable_v<T>, "BinaryDeserialize: Type must be trivially copyable");
 
     if (buffer.size() < sizeof(T)) {
-        LogError("Ошибка при бинарной десериализации: недостаточный размер буфера (ожидалось {} байт, получено {})", sizeof(T), buffer.size());
+        LogError("Ошибка при бинарной десериализации: недостаточный размер буфера (ожидалось {} байт, получено {})",
+                 sizeof(T), buffer.size());
         return eastl::nullopt;
     }
 
