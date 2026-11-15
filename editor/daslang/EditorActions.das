@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module EditorActions shared public
 

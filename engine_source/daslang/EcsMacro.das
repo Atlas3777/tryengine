@@ -1,3 +1,6 @@
+options gen2
+options relaxed_assign = false
+
 module EcsMacro shared public
 
 require daslib/ast

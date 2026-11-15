@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module AssetBrowser shared public
 
@@ -198,7 +199,7 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
 // ---------------------------------------------------------------------
 def DrawSearchResults() {
     // Индексы берём из кеша запросов: обход дерева повторяется только при смене ревизии.
-    let refs = FindFiles(current_domain, EXT_ANY)
+    let refs <- FindFiles(current_domain, EXT_ANY)
     assume folders = get_folders(current_domain)
 
     text("Search results across root:")

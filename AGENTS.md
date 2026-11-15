@@ -176,8 +176,7 @@ daslang -dry-run -no-lint \
 
 ## 6. Правила daslang
 
-- Синтаксис gen2 (фигурные скобки). Новые файлы начинаются с `options gen2`; gen1 не
-  пишем.
+- Синтаксис gen2 (фигурные скобки). Новые файлы начинаются с `options gen2` и `options relaxed_assign = false`;
 - Резолвинг модулей — `project.das_project` → `module_get`: `tryengine/...` указывает на
   `engine_source/daslang`, `tryeditor/...` — на `editor/daslang`, `trygame/...` — на
   `game/scripts`, плюс `imgui/`, `llvm/`, `daslib/`, `live/`. `DAS_PAK_ROOT` абсолютный.

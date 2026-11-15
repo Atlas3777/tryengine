@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 options no_global_variables = false
 options indenting = 4
 options strict_smart_pointers = true
@@ -495,7 +496,7 @@ def private parse_field(var reader : ConfigReader; var error : string&) : Struct
 
 def read_config(text : string implicit; var error : string&) : StructField? {
     error = ""
-    var reader = make_reader(text)
+    var reader <- make_reader(text)
     var rootObj : table<string; StructField?>
 
     while (!is_eof(reader)) {
@@ -515,7 +516,7 @@ def read_config(text : string implicit; var error : string&) : StructField? {
 
 def read_config(text : array<uint8>; var error : string&) : StructField? {
     error = ""
-    var reader = make_reader(text)
+    var reader <- make_reader(text)
     var rootObj : table<string; StructField?>
 
     while (!is_eof(reader)) {

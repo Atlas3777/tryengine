@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module Material shared public
 
@@ -58,7 +59,7 @@ var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
 var private follow_state = ToggleState(value = true)
 
-var private MATERIAL_PATH = InputTextState()
+var private MATERIAL_PATH <- InputTextState()
 var private material_path_initialized = false
 var private auto_load_done = false
 
@@ -229,50 +230,50 @@ def private ParseSchema(text : string; var out : array<MaterialParam>) : bool {
 
 def private NewValue(type_name : string) : ConfigValue {
     if (type_name == "f32") {
-        return ConfigValue(_float = 0.0f)
+        return <- ConfigValue(_float = 0.0f)
     } elif (type_name == "i32") {
-        return ConfigValue(_int = 0)
+        return <- ConfigValue(_int = 0)
     } elif (type_name == "u32") {
-        return ConfigValue(_uint = 0u)
+        return <- ConfigValue(_uint = 0u)
     } elif (type_name == "i64") {
-        return ConfigValue(_int64 = 0l)
+        return <- ConfigValue(_int64 = 0l)
     } elif (type_name == "u64") {
-        return ConfigValue(_uint64 = 0ul)
+        return <- ConfigValue(_uint64 = 0ul)
     } elif (type_name == "f32x2") {
-        return ConfigValue(_float2 = float2(0.0f))
+        return <- ConfigValue(_float2 = float2(0.0f))
     } elif (type_name == "f32x3") {
-        return ConfigValue(_float3 = float3(0.0f))
+        return <- ConfigValue(_float3 = float3(0.0f))
     } elif (type_name == "f32x4") {
-        return ConfigValue(_float4 = float4(0.0f))
+        return <- ConfigValue(_float4 = float4(0.0f))
     } elif (type_name == "i32x2") {
-        return ConfigValue(_int2 = int2(0))
+        return <- ConfigValue(_int2 = int2(0))
     } elif (type_name == "i32x3") {
-        return ConfigValue(_int3 = int3(0))
+        return <- ConfigValue(_int3 = int3(0))
     } elif (type_name == "i32x4") {
-        return ConfigValue(_int4 = int4(0))
+        return <- ConfigValue(_int4 = int4(0))
     } elif (type_name == "u32x2") {
-        return ConfigValue(_uint2 = uint2(0u))
+        return <- ConfigValue(_uint2 = uint2(0u))
     } elif (type_name == "u32x3") {
-        return ConfigValue(_uint3 = uint3(0u))
+        return <- ConfigValue(_uint3 = uint3(0u))
     } elif (type_name == "u32x4") {
-        return ConfigValue(_uint4 = uint4(0u))
+        return <- ConfigValue(_uint4 = uint4(0u))
     } elif (type_name == "f32m3x3") {
-        return ConfigValue(_float3x3 = float3x3())
+        return <- ConfigValue(_float3x3 = float3x3())
     } elif (type_name == "f32m3x4") {
-        return ConfigValue(_float3x4 = float3x4())
+        return <- ConfigValue(_float3x4 = float3x4())
     } elif (type_name == "f32m4x4") {
-        return ConfigValue(_float4x4 = float4x4())
+        return <- ConfigValue(_float4x4 = float4x4())
     } elif (type_name == "texture") {
-        return ConfigValue(_uint64 = 0ul)
+        return <- ConfigValue(_uint64 = 0ul)
     }
-    return ConfigValue(_float = 0.0f)
+    return <- ConfigValue(_float = 0.0f)
 }
 
 def private EnsureParamIn(var target : table<string; StructField?>; p : MaterialParam) {
     if (key_exists(target, p.name)) {
         return
     }
-    var new_value = NewValue(p.value_type)
+    var new_value <- NewValue(p.value_type)
     target[p.name] = new StructField(name = p.name, typeName = p.value_type, value <- new_value)
 }
 

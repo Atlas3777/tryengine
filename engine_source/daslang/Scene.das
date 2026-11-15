@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module Scene shared public
 
@@ -50,7 +51,7 @@ def UnloadActiveScene(){
     for (mesh in active_scene.requireMeshs){
         ReleaseMeshResource(mesh)
     }
-    active_scene = Scene()
+    active_scene <- Scene()
     decs::restart()
 }
 
@@ -210,7 +211,7 @@ def private save_scene_to_config() : string {
     }
 
     // 3. Формируем временный DTO для рефлексии CF()
-    var dto = SaveSceneDTO(
+    var dto <- SaveSceneDTO(
         requireMeshs := active_scene.requireMeshs,
         requireMaterials := active_scene.requireMaterials,
         entities <- entities_list
@@ -478,7 +479,7 @@ def GetSceneHeader(let path : string -const) : SceneHeader {
         return false
     let root_obj & = root.value as _object
 
-    var header = SceneHeader()
+    var header <- SceneHeader()
     header.name = (path |> last_index_of("/")) >= 0 ? slice(path, (path |> last_index_of("/")) + 1) : path
     header.requireMeshs <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
     header.requireMaterials <- parse_uint64_array(root_obj?["requireMaterials"] ?? null)

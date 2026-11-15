@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module QuadTree shared public
 
@@ -126,7 +127,7 @@ def public is_node_in_frustum(center : float2; halfSize : float; eye : float2; a
 def public create_quadtree(var config : QuadTreeConfig&) : QuadTree {
     init_config(config)
 
-    var tree : QuadTree = QuadTree()
+    var tree : QuadTree <- QuadTree()
 
     // Корень всегда создан и загружен по умолчанию
     tree.nodes |> emplace(QuadNode(

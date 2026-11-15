@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 options gc = true
 options persistent_heap
 options intern_strings

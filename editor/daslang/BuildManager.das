@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module BuildManager shared public
 
@@ -27,7 +28,10 @@ struct BuildDependent {
 
 var private build : BuildDependent
 
-var private cache_scenes = array<AssetItem>()
+// Сцены держим ссылками на дерево, а не копиями AssetItem: строки AssetItem заимствованы
+// из дерева, и пересборка (Refresh) их освобождает. Ревизия — та, при которой список снят.
+var private cache_scenes : array<AssetFileRef>
+var private cache_scene_revision : uint64 = 0ul
 var private build_dir : string
 var private build_status : string
 var private create_status : string
@@ -36,6 +40,17 @@ let private SCRIPT_ENTRY = "./game/scripts/Game.das"
 
 var private CHECKBOX_STATE : table<int; ToggleState -const>
 
+
+// Список сцен следует за деревом content: кнопка обновляет его принудительно, а ревизия —
+// сама, поэтому пересборка дерева не оставляет в списке висячие ссылки.
+def private EnsureSceneList(force : bool) {
+    let revision = get_tree_revision(StorageDomain.Content)
+    if (!force && revision == cache_scene_revision) {
+        return
+    }
+    cache_scene_revision = revision
+    cache_scenes <- FindFiles(StorageDomain.Content, EXT_SCENE)
+}
 
 def private ScriptPakPath() : string {
     if (build_dir.empty()) {
@@ -137,8 +152,9 @@ def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
         // Сцены — композиции из авторитетного корня content: .meta и guid у них нет.
         if (button(UPDATE_SCENE, (text = "Update Scene List"))){
-            cache_scenes <- ContentScenes()
+            EnsureSceneList(force = true)
         }
+        EnsureSceneList(force = false)
         if (!build_dir.empty()){
             text("{build_dir}");
         }
@@ -168,7 +184,7 @@ def DrawBuildManager(){
         }
 
         for (i in range(length(cache_scenes))) {
-            assume scene = cache_scenes[i]
+            let scene <- TreeFile(StorageDomain.Content, cache_scenes[i])
             checkbox(CHECKBOX_STATE[i], (text = "{scene.name}"))
         }
 
@@ -177,7 +193,7 @@ def DrawBuildManager(){
 
             let str = build_string()$(var writer){
                 for (i in range(length(cache_scenes))){
-                    assume scene = cache_scenes[i]
+                    let scene <- TreeFile(StorageDomain.Content, cache_scenes[i])
                     if (CHECKBOX_STATE[i].value){
                         writer.write(scene.name)
                         writer.write(" ")

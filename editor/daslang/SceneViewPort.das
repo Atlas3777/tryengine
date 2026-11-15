@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 options _allow_imgui_legacy = true
 
 module SceneViewPort shared

@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module EditorUI shared public
 
@@ -43,7 +44,7 @@ def DrawMainMenu() {
                         title = "Open Scene",
                         mode = FileDialogMode.open,
                         start_dir = "game/content",
-                        filters = file_filters("Scene Files|scene|All Files|")
+                        filters <- file_filters("Scene Files|scene|All Files|")
                     ),
                     @(path : string; ctx : string) : void {
                         let name = get_file_name_without_extension(path)
@@ -60,7 +61,7 @@ def DrawMainMenu() {
                             mode = FileDialogMode.save,
                             default_name = "new_scene.scene",
                             start_dir = "game/content",
-                            filters = file_filters("Scene Files|scene|All Files|")
+                            filters <- file_filters("Scene Files|scene|All Files|")
                         ),
                         @(path : string; ctx : string) : void {
                             SetScenePath(get_file_name_without_extension(path), path)

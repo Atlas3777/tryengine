@@ -1,4 +1,5 @@
 options gen2
+options relaxed_assign = false
 
 module FileSystemUtils shared public
 
@@ -55,32 +56,16 @@ def public FindFiles(domain : StorageDomain; ext_key : uint64) : array<AssetFile
         }
     }
 
-    g_query_cache[key] = FilesQuery(revision = revision, files <- found)
+    g_query_cache[key] <- FilesQuery(revision = revision, files <- found)
     return <- clone(g_query_cache[key].files)
 }
 
-// Файлы домена по расширению строкой (".mat") или просто именем типа ("mat").
-def public FilesByExt(domain : StorageDomain; ext : string) : array<AssetItem> {
-    let refs = FindFiles(domain, asset_ext_key(ext))
+// Файл по ссылке из FindFiles. Строки берутся из живого дерева, поэтому значение годится
+// только сразу: держать его дольше, чем жив узел, нельзя — копию не делаем намеренно.
+def public TreeFile(domain : StorageDomain; ref : AssetFileRef) : AssetItem {
     assume folders = get_folders(domain)
-
-    var items : array<AssetItem>
-    items.reserve(length(refs))
-    for (r in refs) {
-        let f = folders[r.folder].files[r.file]
-        items |> push(AssetItem(name = f.name, path = f.path, guid = f.guid, ext = f.ext))
-    }
-    return <- items
-}
-
-// Все материалы авторитетного корня data: у них нет .meta и guid, ссылка строится по пути.
-def public DataMaterials() : array<AssetItem> {
-    return <- FilesByExt(StorageDomain.Data, ".mat")
-}
-
-// Сцены и префабы — композиции из content.
-def public ContentScenes() : array<AssetItem> {
-    return <- FilesByExt(StorageDomain.Content, ".scene")
+    let f = folders[ref.folder].files[ref.file]
+    return <- AssetItem(name = f.name, path = f.path, guid = f.guid, ext = f.ext)
 }
 
 // Сбросить кеш запросов (например, после пересборки деревьев).

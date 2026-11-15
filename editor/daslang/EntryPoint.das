@@ -3,6 +3,7 @@ options gen2
 options gc = true
 options persistent_heap
 options intern_strings
+options relaxed_assign = false
 
 require tryengine/Render
 require tryeditor/EditorUI
