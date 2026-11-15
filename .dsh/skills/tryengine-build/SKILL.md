@@ -30,7 +30,7 @@ description: 'Сборка и проверка tryengine: каталоги build
 tools/agent/build.sh editor                  # Debug, основной таргет
 tools/agent/build.sh game_client             # Debug
 tools/agent/build.sh game_client --release   # Release
-tools/agent/build.sh modules                 # tryengine_shared + tryeditor_shared, ВСЕГДА Release
+tools/agent/build.sh modules                 # все *_shared биндинги, ВСЕГДА Release
 tools/agent/build.sh all                     # editor + game_client
 ```
 
@@ -38,22 +38,32 @@ tools/agent/build.sh all                     # editor + game_client
 
 ## Модули-биндинги: только Release
 
-`tryengine_shared` и `tryeditor_shared` — это C++-модули daslang (`Module_Renderer`,
-`Module_Resources`, `Module_Input`, `Module_AsyncFileManager`, `Module_TryEditor`). Они
-нужны редактору и `daslang` CLI для подсветки и проверки кастомных типов.
+Каждый C++-модуль daslang — это отдельный файл и отдельная библиотека:
+
+| Файл | Модуль | Цель CMake | Папка |
+| --- | --- | --- | --- |
+| `engine_source/graphics/src/Module_Renderer.cpp` | `tryRenderer` | `tryRenderer_shared` | `modules/tryRenderer/` |
+| `engine_source/graphics/src/Module_Resources.cpp` | `tryResources` | `tryResources_shared` | `modules/tryResources/` |
+| `engine_source/graphics/src/Module_Input.cpp` | `tryInput` | `tryInput_shared` | `modules/tryInput/` |
+| `engine_source/graphics/src/Module_AsyncFileManager.cpp` | `tryAsyncFile` | `tryAsyncFile_shared` | `modules/tryAsyncFile/` |
+| `editor/src/Module_TryEditor.cpp` | `TryEditor` | `tryeditor_shared` | `modules/tryeditor/` |
+
+Библиотеки нужны внешнему `daslang` (CLI-гейт, подсветка кастомных типов); в самих
+приложениях те же `.cpp` линкуются статически. Цели заводит
+`tryengine_add_das_module()` из `cmake/DasModule.cmake`, агрегат — `das_modules`.
 
 Оба профиля пишут **один и тот же файл** `modules/<имя>/<имя>.shared_module`, поэтому
 Debug-сборка затирает Release-модуль. Отсюда правило: модули собираются только из
 `build-release`.
 
 Пересобирай модули после правок в:
-- `engine_source/graphics/src/Module_Renderer.cpp` (регистрирует `tryRenderer`,
-  `tryResources`, `tryInput`, `tryAsyncFile`), `editor/src/Module_TryEditor.cpp`;
+- файлах `Module_*.cpp` и `editor/src/Module_TryEditor.cpp`;
 - `engine_source/core/include/engine/core/GameScriptSetup.hpp`,
   `editor/include/editor/EditorScriptSetup.hpp` (`DECLARE_MODULE`/`PULL_MODULE`);
 - любом коде, который регистрирует типы/функции для `.das` (`addExtern`, `MAKE_TYPE_FACTORY`).
 
-Модули и их `.das_module.manifest` не хранятся в git (генерируются). После свежего клона —
+`.shared_module` и `.das_module.manifest` генерируются и не хранятся в git; дескрипторы
+`modules/<имя>/.das_module` наоборот лежат в git. После свежего клона —
 `tools/agent/build.sh modules` один раз.
 
 ## Гейт `.das`
@@ -69,7 +79,10 @@ tools/agent/das-check.sh editor/daslang/Editor.das
 ```bash
 daslang -dry-run -no-lint \
   -project project.das_project \
-  -load_module "$PWD/modules/tryengine" \
+  -load_module "$PWD/modules/tryRenderer" \
+  -load_module "$PWD/modules/tryResources" \
+  -load_module "$PWD/modules/tryInput" \
+  -load_module "$PWD/modules/tryAsyncFile" \
   -load_module "$PWD/modules/tryeditor" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
@@ -110,7 +123,7 @@ daslang -dry-run -no-lint \
 
 | Симптом | Причина | Что делать |
 | --- | --- | --- |
-| `error[20605] missing prerequisite 'tryInput'` | нет `-load_module` для `modules/tryengine` | запускать через `das-check.sh`, не собирать флаги руками |
+| `error[20605] missing prerequisite 'tryInput'` | нет `-load_module` для `modules/tryInput` | запускать через `das-check.sh`; список каталогов — `DAS_MODULES` в `env.sh` |
 | `LLVM JIT: the emitter module ... did not load` | нет `-load_module /opt/daslang/modules/dasLLVM` | добавить модуль (уже в скрипте) |
 | `ninja: warning: build log version is too old` | запускали системный `ninja` вместо `cmake --build` | не повторять; сборка теперь может быть полной |
 | `ccache: error: Read-only file system` | сборка без `CCACHE_DIR` внутри репо | запускать через `tools/agent/build.sh` |

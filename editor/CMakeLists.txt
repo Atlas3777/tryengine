@@ -139,15 +139,7 @@ target_link_libraries(editor_core PUBLIC
 add_executable(editor src/main.cpp)
 target_link_libraries(editor PRIVATE editor_core)
 
-add_library(tryeditor_shared SHARED src/Module_TryEditor.cpp)
-target_link_libraries(tryeditor_shared PRIVATE editor_core)
-
-set_target_properties(tryeditor_shared PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryeditor"
-        SUFFIX ".shared_module"
-        PREFIX ""
-        OUTPUT_NAME "tryeditor"
-)
+tryengine_add_das_module(tryeditor_shared tryeditor src/Module_TryEditor.cpp editor_core)
 
 set_target_properties(editor tryeditor_shared PROPERTIES
         BUILD_RPATH "${slang_SOURCE_DIR}/lib"

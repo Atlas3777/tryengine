@@ -20,7 +20,7 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | Путь | Содержимое |
 | --- | --- |
 | `engine_source/core` | `Engine` (реестр систем), `Result`/`Error`, логи, `ScriptSystem`, script pak, `SlotMap`/`TypeRegistry` |
-| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; здесь же регистрируются нативные модули `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile` (`src/Module_Renderer.cpp`) |
+| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; здесь же лежат биндинги нативных модулей `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile` (`src/Module_*.cpp`, по файлу на модуль) |
 | `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры |
 | `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики |
 | `engine_source/async` | корутины `Task<T>`, пул потоков и главный исполнитель, pollable-хендлы |
@@ -31,7 +31,7 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | `game_server` | headless-заглушка; в сборку пока не добавлена |
 | `game/scripts`, `game/assets`, `game/artifacts` | игровая логика и контент |
 | `engine_content` | поставляемый с движком контент и его артефакты |
-| `modules/` | сгенерированные дескрипторы daslang-модулей и shared-модули |
+| `modules/` | по папке на daslang-модуль: дескриптор `.das_module` (в git) и собранный `.shared_module` |
 | `build-debug`, `build-release` | каталоги сборки CMake (генерируются) |
 | `tools/agent/`, `.dsh/skills/` | скрипты и скиллы для агентов |
 | `cmake/`, `3rdparty/` | кеш пакетов CPM и CMake-обвязка (кеш не редактировать) |
@@ -71,17 +71,31 @@ cmake --build build-debug --target editor -j "$(nproc)"
   кешем компилирует всё; расположение меняется через `TRY_CCACHE_DIR`, параллелизм — через
   `TRY_JOBS` (по умолчанию `nproc`, но не больше 8).
 
-### Модули-биндинги daslang (`tryengine_shared`, `tryeditor_shared`)
+### Модули-биндинги daslang (`das_modules`)
 
+- Один C++-модуль = один файл (`engine_source/graphics/src/Module_Input.cpp`,
+  `Module_Resources.cpp`, `Module_Renderer.cpp`, `Module_AsyncFileManager.cpp`,
+  `editor/src/Module_TryEditor.cpp`) = одна shared-библиотека
+  `modules/<имя модуля>/<имя модуля>.shared_module`.
+- Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
+  `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
+- Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
+  `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
+  `tryeditor_shared`; агрегат для всех — `das_modules` (`tools/agent/build.sh modules`).
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
-- Пересобирай модули после правок кода биндингов:
-  `engine_source/graphics/src/Module_Renderer.cpp`, `editor/src/Module_TryEditor.cpp`,
-  `DECLARE_MODULE`/`PULL_MODULE` в `engine_source/core/include/engine/core/GameScriptSetup.hpp`
-  и `editor/include/editor/EditorScriptSetup.hpp`, а также любого `addExtern` /
+- В приложениях те же `.cpp` линкуются статически (`engine_graphics`/`editor_core`), модули
+  регистрируются через `DECLARE_MODULE`/`PULL_MODULE` в
+  `engine_source/core/include/engine/core/GameScriptSetup.hpp` и
+  `editor/include/editor/EditorScriptSetup.hpp`. Shared-копии нужны внешнему daslang: CLI-гейту
+  и редактору скриптов.
+- Пересобирай модули после правок файла модуля, setup-файлов и любого `addExtern` /
   регистрации типов, видимых из `.das`.
-- Shared-модули и их `.das_module.manifest` генерируются и не хранятся в git. После
+- Новый модуль: файл `Module_X.cpp`, вызов `tryengine_add_das_module()` в CMake,
+  `modules/<имя>/.das_module` с `register_dynamic_module`, `DECLARE_MODULE`/`PULL_MODULE` в
+  setup-файлах и имя каталога в `DAS_MODULES` (`tools/agent/env.sh`).
+- `.shared_module` и `.das_module.manifest` генерируются и не хранятся в git. После
   свежего клона один раз запусти `tools/agent/build.sh modules`.
 
 ## 4. Проверка изменений
@@ -99,7 +113,10 @@ tools/agent/verify.sh --tidy     # ещё и clang-tidy по изменённы�
 ```bash
 daslang -dry-run -no-lint \
   -project project.das_project \
-  -load_module "$PWD/modules/tryengine" \
+  -load_module "$PWD/modules/tryRenderer" \
+  -load_module "$PWD/modules/tryResources" \
+  -load_module "$PWD/modules/tryInput" \
+  -load_module "$PWD/modules/tryAsyncFile" \
   -load_module "$PWD/modules/tryeditor" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
@@ -110,8 +127,9 @@ daslang -dry-run -no-lint \
 - `-project project.das_project` резолвит пути модулей `tryengine/`, `tryeditor/`,
   `trygame/`, `imgui/`, `llvm/`, `daslib/`; без него проект не компилируется вообще.
 - `-load_module` всё равно нужен: нативные модули (`tryInput`, `tryRenderer`, ...)
-  регистрируются дескрипторами `modules/*/.das_module`, и без них `-project` даёт
-  `error[20605] missing prerequisite 'tryInput'`.
+  регистрируются дескрипторами `modules/<имя>/.das_module`, и без них `-project` даёт
+  `error[20605] missing prerequisite 'tryInput'`. Список каталогов живёт в `DAS_MODULES`
+  (`tools/agent/env.sh`) — добавляешь модуль, добавь его и туда.
 - `/opt/daslang/modules/dasLLVM` нужен потому, что `engine_source/daslang/Engine.das`
   требует `daslib/just_in_time`; без модуля LLVM симуляция падает с
   `LLVM JIT: the emitter module llvm/daslib/llvm_macro did not load`.

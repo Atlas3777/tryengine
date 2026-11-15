@@ -22,6 +22,7 @@ if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
 endif()
 set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/3rdparty" CACHE PATH "Shared third-party sources")
 include(cmake/get_cpm.cmake)
+include(cmake/DasModule.cmake)
 
 # Кеш
 find_program(CCACHE_PROGRAM ccache)
@@ -65,3 +66,6 @@ endif()
 add_subdirectory(engine_source)
 add_subdirectory(editor)
 add_subdirectory(game_client)
+
+# Все shared-биндинги daslang разом: cmake --build <dir> --target das_modules
+tryengine_add_das_module_all()

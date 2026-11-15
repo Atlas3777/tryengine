@@ -2,7 +2,7 @@
 # Build one or more CMake targets.
 #
 #   tools/agent/build.sh <target> [--release] [--debug]
-#   tools/agent/build.sh modules          # tryengine_shared + tryeditor_shared, always Release
+#   tools/agent/build.sh modules          # every *_shared daslang binding, always Release
 #   tools/agent/build.sh all [--release]  # editor + game_client
 #
 # Debug is the default configuration. The daslang binding modules are always built in
@@ -18,7 +18,9 @@ usage: build.sh <target> [--release|--debug]
        build.sh all [--release]
 
 targets: editor, game_client, engine_core, engine_graphics, engine_platform,
-         engine_resources, engine_async, editor_core, tryengine_shared, tryeditor_shared
+         engine_resources, engine_async, editor_core, das_modules,
+         tryRenderer_shared, tryResources_shared, tryInput_shared,
+         tryAsyncFile_shared, tryeditor_shared
 EOF
 }
 
@@ -39,7 +41,7 @@ done
 
 case $target in
     modules)
-        targets=(tryengine_shared tryeditor_shared)
+        targets=(das_modules)
         release=1
         ;;
     all)
@@ -57,7 +59,7 @@ esac
 # Module targets are Release-only regardless of the flag.
 for t in "${targets[@]}"; do
     case $t in
-        tryengine_shared|tryeditor_shared)
+        das_modules|*_shared)
             if (( ! release )); then
                 log "${C_YELLOW}note:${C_RESET} $t is built in Release only (shared modules are a single output path)"
             fi

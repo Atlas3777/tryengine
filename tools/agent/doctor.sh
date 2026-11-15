@@ -65,7 +65,7 @@ newest_src="$(
         -printf '%T@\n' 2>/dev/null | sort -n | tail -1 || true
 )"
 newest_src="${newest_src%%.*}"
-for mod in tryengine tryeditor; do
+for mod in "${DAS_MODULES[@]}"; do
     so="$ROOT/modules/$mod/$mod.shared_module"
     if [[ ! -f "$so" ]]; then
         bad "missing modules/$mod/$mod.shared_module (run: tools/agent/build.sh modules)"

@@ -70,3 +70,15 @@
 - Один material UBO на сет 1 работает; несколько UBO в сете 1 пока разделяют один буфер
   (дескриптор у каждого смотрит в offset 0) — это стоит поправить до появления второго
   cbuffer'а в шейдере.
+
+## Биндинги daslang
+
+- По файлу на нативный модуль: `src/Module_Input.cpp` (`tryInput`),
+  `src/Module_Resources.cpp` (`tryResources`), `src/Module_Renderer.cpp` (`tryRenderer`),
+  `src/Module_AsyncFileManager.cpp` (`tryAsyncFile`). Общий файл на несколько модулей не
+  собирай: каждый модуль — своя shared-библиотека `modules/<имя>/` (см.
+  `tryengine_add_das_module()` в `cmake/DasModule.cmake`).
+- Эти же `.cpp` попадают в статическую `engine_graphics` (glob `src/*.cpp`), поэтому
+  редактор и игра получают модули через `PULL_MODULE`, без загрузки dll.
+- `REGISTER_MODULE`/`REGISTER_DYN_MODULE` и `MAKE_TYPE_FACTORY` живут вместе с модулем;
+  `DAS_BASE_BIND_ENUM` по-прежнему обязан идти до `using namespace das`.

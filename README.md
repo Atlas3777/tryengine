@@ -50,7 +50,7 @@
 ├── game_server/            # headless-заглушка, в сборку пока не входит
 ├── game/                   # игровые скрипты, ассеты и артефакты
 ├── engine_content/         # базовые ресурсы движка и их артефакты
-├── modules/                # сгенерированные .das_module и shared_module
+├── modules/                # по папке на биндинг: .das_module (в git) + shared_module
 ├── tools/agent/            # скрипты сборки и проверки для агентов
 ├── build-debug/            # CMake Debug (генерируется)
 └── build-release/          # CMake Release (генерируется)
@@ -76,7 +76,7 @@
 cmake --build build-debug --target editor game_client -j "$(nproc)"
 
 # Модули-биндинги daslang (нужны редактору и CLI для нативных типов) — только Release
-cmake --build build-release --target tryengine_shared tryeditor_shared -j "$(nproc)"
+cmake --build build-release --target das_modules -j "$(nproc)"
 
 # Запуск — строго из корня репозитория
 ./build-debug/bin/editor
@@ -84,9 +84,10 @@ cmake --build build-release --target tryengine_shared tryeditor_shared -j "$(npr
 ```
 
 Те же команды через обёртку: `tools/agent/build.sh editor`, `tools/agent/build.sh modules`.
-Модули `tryengine_shared`/`tryeditor_shared` собираются только в Release: обе конфигурации
-пишут один и тот же `modules/<имя>/<имя>.shared_module`, поэтому Debug-сборка затирает
-Release-модуль.
+Биндинги собираются только в Release: каждый C++-модуль (`tryRenderer`, `tryResources`,
+`tryInput`, `tryAsyncFile`, `tryeditor`) — это отдельная библиотека
+`modules/<имя>/<имя>.shared_module`, и обе конфигурации пишут её в один и тот же файл,
+поэтому Debug-сборка затирает Release-модуль. Цель `das_modules` собирает их все.
 
 `script_pak` собирается в редакторе в окне `BuildSettings` (кнопка `Build Scripts` или
 `Z`) и кладётся в корень выбранной папки билда — рядом с `content/`, а не в корень

@@ -113,12 +113,16 @@ target_link_libraries(engine_graphics PUBLIC
 
 target_compile_definitions(engine_graphics PUBLIC VK_NO_PROTOTYPES)
 
-add_library(tryengine_shared SHARED src/Module_Renderer.cpp)
-target_link_libraries(tryengine_shared PRIVATE engine::core engine::graphics)
+# C++-биндинги daslang: один модуль — один файл и одна shared-библиотека
+# modules/<имя модуля>/. Те же .cpp уже собраны в engine_graphics выше — там они
+# регистрируются статически (PULL_MODULE), а shared-копии читает внешний daslang.
+tryengine_add_das_module(tryRenderer_shared tryRenderer src/Module_Renderer.cpp engine::core)
 
-set_target_properties(tryengine_shared PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/modules/tryengine"
-        SUFFIX ".shared_module"
-        PREFIX ""
-        OUTPUT_NAME "tryengine"
-)
+tryengine_add_das_module(tryResources_shared tryResources src/Module_Resources.cpp
+        engine::core engine::graphics)
+
+tryengine_add_das_module(tryInput_shared tryInput src/Module_Input.cpp
+        engine::core engine::platform)
+
+tryengine_add_das_module(tryAsyncFile_shared tryAsyncFile src/Module_AsyncFileManager.cpp
+        engine::core engine::resources)

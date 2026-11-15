@@ -74,13 +74,15 @@ abs_path() {
 
 # daslang gate flags shared by every .das check.
 # -project resolves the module paths, -load_module registers the native binding modules
-# and the LLVM emitter that daslib/just_in_time needs at simulate time.
-DAS_GATE=(
-    -project "$DAS_PROJECT"
-    -load_module "$ROOT/modules/tryengine"
-    -load_module "$ROOT/modules/tryeditor"
-    -load_module "$DASLLVM"
-)
+# and the LLVM emitter that daslib/just_in_time needs at simulate time. Each native module
+# lives in its own folder modules/<name>/ with a .das_module descriptor.
+DAS_MODULES=(tryRenderer tryResources tryInput tryAsyncFile tryeditor)
+DAS_GATE=(-project "$DAS_PROJECT")
+for _das_module in "${DAS_MODULES[@]}"; do
+    DAS_GATE+=(-load_module "$ROOT/modules/$_das_module")
+done
+DAS_GATE+=(-load_module "$DASLLVM")
+unset _das_module
 
 ensure_tmp() { mkdir -p "$TMP_DIR"; }
 

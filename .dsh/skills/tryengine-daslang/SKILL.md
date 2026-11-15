@@ -36,8 +36,7 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 | `engine_source/daslang/*.das` | API движка: `Engine`, `Render`, `Input`, `Scene`, `Types`, `EcsMacro`, `Serializable`, `QuadTree`, `ConfigFormat` |
 | `editor/daslang/*.das` | редактор: `EntryPoint`, `Editor`, `EditorUI`, `Hierarchy`, `Inspector`, `SceneViewPort`, `AssetBrowser`, `BuildManager`, `EditorActions` |
 | `game/scripts/Game.das` | игра: `GameStart`, `GameUpdate`, спавн сущностей |
-| `modules/tryengine/.das_module` | дескриптор нативных модулей движка для CLI/редактора |
-| `modules/tryeditor/.das_module` | дескриптор `Module_TryEditor` |
+| `modules/<имя>/.das_module` | дескриптор нативного модуля для CLI/редактора: `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile`, `tryeditor` |
 | `project.das_project` | резолвер модулей (`module_get`) и абсолютный `DAS_PAK_ROOT` |
 
 ## Точки входа и вызовы
@@ -68,8 +67,10 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
    паттерны `MAKE_TYPE_FACTORY`/`addExtern` из соседних `Module_*.cpp`.
 2. Добавь модуль в `DECLARE_MODULE`/`PULL_MODULE` в глобальном namespace оба setup-файла
    (игровой и редакторский), если он нужен обоим хостам.
-3. Обнови `modules/tryengine/.das_module` (или `tryeditor`) — `register_dynamic_module`
-   с тем же именем класса, что в `DECLARE_MODULE`.
+3. Заведи папку `modules/<имя>/.das_module` — `register_dynamic_module` с тем же именем
+   класса, что в `DECLARE_MODULE`, плюс `tryengine_add_das_module()` в CMake и имя папки в
+   `DAS_MODULES` (`tools/agent/env.sh`). Логика в приложении статическая: файл модуля всё
+   равно собирается в `engine_graphics`/`editor_core`.
 4. Собери модули **в Release**: `tools/agent/build.sh modules`.
 5. Напиши/поправь `.das`-обёртку в `engine_source/daslang` или `editor/daslang`.
 6. Проверь: `tools/agent/das-check.sh <файл.das>` (компиляция + симуляция).
@@ -137,7 +138,10 @@ ast-grep), `cpp_compile_check`, `cpp_build_info`, `cpp_status`.
 {
   "project": "/home/artem/tryengine/project.das_project",
   "load_modules": [
-    "/home/artem/tryengine/modules/tryengine",
+    "/home/artem/tryengine/modules/tryRenderer",
+    "/home/artem/tryengine/modules/tryResources",
+    "/home/artem/tryengine/modules/tryInput",
+    "/home/artem/tryengine/modules/tryAsyncFile",
     "/home/artem/tryengine/modules/tryeditor",
     "/opt/daslang/modules/dasLLVM"
   ]
