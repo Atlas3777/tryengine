@@ -154,7 +154,7 @@ inline bool ApplyMaterialConfigLive(resources::ResourceManager& rm, uint64_t mat
             continue;
 
         auto texture = rm.Get<TextureSampler>(texture_id);
-        if (!texture.has_value()) {
+        if (!texture.has_value() || !texture->IsReady()) {
             LogWarn("Material '{}': texture '{}' is not loaded yet, live rebind skipped", config.name.c_str(),
                     field.name.c_str());
             continue;
@@ -220,6 +220,10 @@ public:
 
         if (material.textures.empty())
             LogWarn("Material '{}' loaded with 0 textures", config.name.c_str());
+
+        // Материал уходит в кадр только после этого: дескрипторы больше не меняются
+        // на месте, live-правка выделит новый набор.
+        material.FinalizeDescriptors();
 
         co_return eastl::move(material);
     }

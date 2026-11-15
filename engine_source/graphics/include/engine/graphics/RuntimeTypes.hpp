@@ -10,11 +10,14 @@
 
 #include <EASTL/fixed_vector.h>
 #include <EASTL/string_view.h>
+#include <EASTL/vector.h>
 #include <cstring>
+#include <mutex>
 #include <utility>
 #include <volk.h>
 
 #include "engine/core/Assert.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/graphics/ShaderReflection.hpp"
 #include "engine/resources/ResourceHandle.hpp"
 #include "engine/resources/Vertex.hpp"
@@ -335,6 +338,13 @@ struct CachedUBOBinding {
     uint32_t size = 0;
 };
 
+// vkAllocateDescriptorSets/vkFreeDescriptorSets требуют внешней синхронизации на пуле,
+// а материалы грузятся на пуле потоков и правятся из редактора на главном.
+inline std::mutex& MaterialDescriptorMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
 struct Material {
     explicit Material(resources::ResourceHandle<Shader> shdr_handle) : shader(std::move(shdr_handle)) {}
 
@@ -354,6 +364,8 @@ struct Material {
             storage_buffers = std::move(other.storage_buffers);
 
             descriptor_set = std::exchange(other.descriptor_set, VK_NULL_HANDLE);
+            retired_descriptor_sets = std::move(other.retired_descriptor_sets);
+            descriptors_finalized = other.descriptors_finalized;
             uniform_buffer = std::exchange(other.uniform_buffer, VK_NULL_HANDLE);
             uniform_memory = std::exchange(other.uniform_memory, VK_NULL_HANDLE);
             mapped_uniform_ptr = std::exchange(other.mapped_uniform_ptr, nullptr);
@@ -374,12 +386,23 @@ struct Material {
     eastl::fixed_vector<MaterialBufferBinding, 2, false> storage_buffers;
 
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+    // Наборы, которые уже могли попасть в записанные command buffer. Не освобождаем их
+    // до уничтожения материала: живой материал меняет только указатель descriptor_set.
+    eastl::vector<VkDescriptorSet> retired_descriptor_sets;
+    bool descriptors_finalized = false;
+
     VkBuffer uniform_buffer = VK_NULL_HANDLE;
     VkDeviceMemory uniform_memory = VK_NULL_HANDLE;
     void* mapped_uniform_ptr = nullptr;
     uint32_t uniform_buffer_size = 0;
 
     VkDevice device_cache = VK_NULL_HANDLE;
+
+    // Загрузчик вызывает после того, как все текстуры привязаны. С этого момента
+    // изменение дескрипторов идёт только через новый набор, а не in-place.
+    void FinalizeDescriptors() {
+        descriptors_finalized = true;
+    }
 
     void InitGpuResources(VkDevice device, VkPhysicalDevice phys_device) {
         device_cache = device;
@@ -422,20 +445,9 @@ struct Material {
         }
 
         // 2. Выделяем Set 1
-        constexpr uint32_t kMaterialSetIndex = static_cast<uint32_t>(BindingScope::Material);
-        if (shader->descriptor_set_layouts.size() > kMaterialSetIndex &&
-            shader->descriptor_set_layouts[kMaterialSetIndex] != VK_NULL_HANDLE &&
-            shader->descriptor_pool != VK_NULL_HANDLE) {
-            VkDescriptorSetAllocateInfo alloc_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-            alloc_info.descriptorPool = shader->descriptor_pool;
-            alloc_info.descriptorSetCount = 1;
-            alloc_info.pSetLayouts = &shader->descriptor_set_layouts[kMaterialSetIndex];
-
-            TRY_CHECK(vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) == VK_SUCCESS,
-                      "Failed to allocate Material DescriptorSet!");
-
+        descriptor_set = AllocateDescriptorSet();
+        if (descriptor_set != VK_NULL_HANDLE)
             UpdateDescriptors();
-        }
     }
 
     void DestroyGpuResources() {
@@ -454,12 +466,40 @@ struct Material {
             vkFreeMemory(device_cache, uniform_memory, nullptr);
             uniform_memory = VK_NULL_HANDLE;
         }
-        if (descriptor_set && shader->descriptor_pool) {
-            vkFreeDescriptorSets(device_cache, shader->descriptor_pool, 1, &descriptor_set);
-            descriptor_set = VK_NULL_HANDLE;
+        if (shader->descriptor_pool) {
+            std::lock_guard lock(MaterialDescriptorMutex());
+            if (descriptor_set) {
+                vkFreeDescriptorSets(device_cache, shader->descriptor_pool, 1, &descriptor_set);
+                descriptor_set = VK_NULL_HANDLE;
+            }
+            for (VkDescriptorSet retired : retired_descriptor_sets)
+                if (retired)
+                    vkFreeDescriptorSets(device_cache, shader->descriptor_pool, 1, &retired);
         }
+        retired_descriptor_sets.clear();
+        descriptors_finalized = false;
 
         device_cache = VK_NULL_HANDLE;
+    }
+
+    VkDescriptorSet AllocateDescriptorSet() {
+        constexpr uint32_t kMaterialSetIndex = static_cast<uint32_t>(BindingScope::Material);
+        if (device_cache == VK_NULL_HANDLE || shader->descriptor_set_layouts.size() <= kMaterialSetIndex ||
+            shader->descriptor_set_layouts[kMaterialSetIndex] == VK_NULL_HANDLE ||
+            shader->descriptor_pool == VK_NULL_HANDLE) {
+            return VK_NULL_HANDLE;
+        }
+
+        VkDescriptorSetAllocateInfo alloc_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        alloc_info.descriptorPool = shader->descriptor_pool;
+        alloc_info.descriptorSetCount = 1;
+        alloc_info.pSetLayouts = &shader->descriptor_set_layouts[kMaterialSetIndex];
+
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        std::lock_guard lock(MaterialDescriptorMutex());
+        if (vkAllocateDescriptorSets(device_cache, &alloc_info, &set) != VK_SUCCESS)
+            return VK_NULL_HANDLE;
+        return set;
     }
 
     template <typename T>
@@ -488,6 +528,10 @@ struct Material {
     void SetTexture(uint32_t binding, resources::ResourceHandle<TextureSampler> tex) {
         for (auto& bind : textures) {
             if (bind.binding == binding) {
+                // Live-правка каждый кадр переустанавливает те же текстуры: без этой
+                // проверки descriptor set перезаписывался бы на каждом изменении параметра.
+                if (bind.texture == tex)
+                    return;
                 bind.texture = std::move(tex);
                 UpdateDescriptors();
                 return;
@@ -506,6 +550,8 @@ struct Material {
                           VkDeviceSize range = VK_WHOLE_SIZE) {
         for (auto& bind : storage_buffers) {
             if (bind.binding == binding) {
+                if (bind.buffer == buffer && bind.offset == offset && bind.range == range)
+                    return;
                 bind.buffer = buffer;
                 bind.offset = offset;
                 bind.range = range;
@@ -523,11 +569,28 @@ struct Material {
             SetStorageBuffer(b->binding, buffer, offset, range);
     }
 
-    // Единый метод обновления всех дескрипторов
+    // Обновление дескрипторов созданного материала. До FinalizeDescriptors набор ещё
+    // никому не отдан, поэтому его можно менять на месте. После — старый набор мог
+    // попасть в записанный command buffer, и по VUID-vkUpdateDescriptorSets-None-03047
+    // трогать его нельзя: выделяем новый и переносим привязки туда.
     void UpdateDescriptors() {
         if (descriptor_set == VK_NULL_HANDLE || device_cache == VK_NULL_HANDLE)
             return;
 
+        if (descriptors_finalized) {
+            VkDescriptorSet new_set = AllocateDescriptorSet();
+            if (new_set == VK_NULL_HANDLE) {
+                LogError("Material: failed to allocate a descriptor set for a live update");
+                return;
+            }
+            retired_descriptor_sets.push_back(descriptor_set);
+            descriptor_set = new_set;
+        }
+
+        WriteDescriptors(descriptor_set);
+    }
+
+    void WriteDescriptors(VkDescriptorSet set) {
         eastl::fixed_vector<VkWriteDescriptorSet, 16, false> writes;
         eastl::fixed_vector<VkDescriptorBufferInfo, 4, false> buffer_infos;
         eastl::fixed_vector<VkDescriptorImageInfo, 8, false> image_infos;
@@ -543,7 +606,7 @@ struct Material {
 
                     auto& write = writes.push_back();
                     write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                    write.dstSet = descriptor_set;
+                    write.dstSet = set;
                     write.dstBinding = b.binding;
                     write.descriptorCount = 1;
                     write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -562,7 +625,7 @@ struct Material {
 
                 auto& write = writes.push_back();
                 write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                write.dstSet = descriptor_set;
+                write.dstSet = set;
                 write.dstBinding = bind.binding;
                 write.descriptorCount = 1;
                 write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -580,7 +643,7 @@ struct Material {
 
                 auto& write = writes.push_back();
                 write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-                write.dstSet = descriptor_set;
+                write.dstSet = set;
                 write.dstBinding = bind.binding;
                 write.descriptorCount = 1;
                 write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
