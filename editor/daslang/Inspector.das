@@ -657,17 +657,16 @@ def private draw_leaf(ptr : void?; type_name : string; display_name : string; id
             }
             let has_picker = !empty(ui.asset_kind) && HasAssetPickerKind(ui.asset_kind)
             if (has_picker) {
-                // Оставляем место справа под кнопку "...".
-                SetNextItemWidth(-40.0f)
+                // Кнопка слева от input: даже если поле растянется, она не уедет за край панели.
+                if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
+                    OpenAssetPicker(ui.asset_kind, current_val, id_key)
+                }
+                same_line()
             }
             if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
                 *reinterpret<string?>(ptr) = W_STRING[id_key].value
             }
             if (has_picker) {
-                same_line()
-                if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
-                    OpenAssetPicker(ui.asset_kind, current_val, id_key)
-                }
                 var picked = ""
                 if (DrawAssetPickerPopup(id_key, picked)) {
                     *reinterpret<string?>(ptr) = picked

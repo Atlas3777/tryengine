@@ -18,6 +18,7 @@ require tryeditor/SceneViewPort
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
+require tryeditor/PickerTest
 require tryeditor/EditorActions
 
 require imgui

@@ -77,7 +77,7 @@
 - Схема полей `[DecsSerializable]`-структур приходит из `apply` (`tryengine/Serializable`),
   вместе с аннотациями. Инспектор понимает `@hide`, `@title`, `@min`, `@max`, `@speed`,
   `@readonly` и `@asset = "<kind>"`.
-- `@asset` на string-поле рисует рядом с input кнопку `...`. Она открывает
+- `@asset` на string-поле рисует слева от input кнопку `...`. Она открывает
   `tryeditor/AssetPicker`: список файлов зарегистрированного вида, поиск и подтверждение.
   Виды регистрируются в `AssetPicker.das` (`RegisterAssetPickerKind`): `kind` -> домен
   дерева + ключ расширения. Сейчас есть `material` (game/data, `.mat`), `scene` и
@@ -86,6 +86,8 @@
 - Динамические компоненты без схемы (`materialRef`, `tag`, `meshGuid`, ...) не могут нести
   аннотацию поля. Для них вид picker'а регистрируется по имени компонента:
   `RegisterComponentAssetPicker("materialRef", "material")` (делает `Material.das`).
+- Для ручной проверки picker'а есть компонент `PickerDemo` (`editor/daslang/PickerTest.das`):
+  `Add component` -> `PickerDemo`, у поля `material` стоит `@asset = "material"`.
 - Удаление рисуется кнопкой в теле каждого компонента. Для зарегистрированных компонентов
   и шаблонов вызывается `EcsCompName.cmp_remover`; для динамических имён — прямой
   `decs::remove`. Удаление откладывается до конца обхода архетипа: `commit()` меняет
