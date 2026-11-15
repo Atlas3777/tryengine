@@ -173,8 +173,13 @@ def private WriteMaterial(var m : MaterialConfig) : string {
         root["shader"] = shader_field
     }
 
+    // CF для таблицы забирает её по move. Без промежуточной копии WriteMaterial
+    // опустошал бы material.params/material.textures, и следующий кадр создавал бы
+    // поля заново через EnsureParam — с дефолтными значениями.
     if (length(m.params) > 0) {
-        var params_cf = CF(m.params)
+        var params_copy : table<string; StructField?>
+        params_copy := m.params
+        var params_cf = CF(params_copy)
         if (params_cf != null) {
             params_cf.name = "params"
             params_cf.typeName = "Params"
@@ -182,7 +187,9 @@ def private WriteMaterial(var m : MaterialConfig) : string {
         }
     }
     if (length(m.textures) > 0) {
-        var textures_cf = CF(m.textures)
+        var textures_copy : table<string; StructField?>
+        textures_copy := m.textures
+        var textures_cf = CF(textures_copy)
         if (textures_cf != null) {
             textures_cf.name = "textures"
             textures_cf.typeName = "Textures"
