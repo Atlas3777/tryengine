@@ -72,6 +72,25 @@
   `RegisterLooseDirectory` в `EditorApp` больше нет — регистрация следует за сканированием
   домена, а не за списком расширений.
 
+## Инспектор: аннотации, asset picker, удаление компонентов
+
+- Схема полей `[DecsSerializable]`-структур приходит из `apply` (`tryengine/Serializable`),
+  вместе с аннотациями. Инспектор понимает `@hide`, `@title`, `@min`, `@max`, `@speed`,
+  `@readonly` и `@asset = "<kind>"`.
+- `@asset` на string-поле рисует рядом с input кнопку `...`. Она открывает
+  `tryeditor/AssetPicker`: список файлов зарегистрированного вида, поиск и подтверждение.
+  Виды регистрируются в `AssetPicker.das` (`RegisterAssetPickerKind`): `kind` -> домен
+  дерева + ключ расширения. Сейчас есть `material` (game/data, `.mat`), `scene` и
+  `prefab` (game/content). Список строится через `FileSystemUtils.ForEachFile`, то есть по
+  кешу ревизии дерева, без обхода на каждый кадр.
+- Динамические компоненты без схемы (`materialRef`, `tag`, `meshGuid`, ...) не могут нести
+  аннотацию поля. Для них вид picker'а регистрируется по имени компонента:
+  `RegisterComponentAssetPicker("materialRef", "material")` (делает `Material.das`).
+- Удаление рисуется кнопкой в теле каждого компонента. Для зарегистрированных компонентов
+  и шаблонов вызывается `EcsCompName.cmp_remover`; для динамических имён — прямой
+  `decs::remove`. Удаление откладывается до конца обхода архетипа: `commit()` меняет
+  архетип, и нельзя продолжать читать старый `arch_idx`.
+
 ## Деревья ресурсов (Asset Browser)
 
 - Корень дерева — домен `tryeditor::StorageDomain`; каталоги собраны в одной таблице

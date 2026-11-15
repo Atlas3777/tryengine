@@ -15,6 +15,7 @@ require tryengine/ConfigFormatBoost
 require tryengine/Types
 require tryengine/EcsMacro
 require tryeditor/Hierarchy
+require tryeditor/Inspector
 
 require imgui
 require imgui/imgui_widgets_builtin
@@ -59,6 +60,13 @@ var private material_ref = ""
 var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
 var private follow_state = ToggleState(value = true)
+
+// materialRef — динамический компонент без [DecsSerializable]-схемы, поэтому аннотацию
+// @asset к нему не прикрепить. Регистрируем picker по имени компонента.
+[init]
+def private RegisterMaterialInspectorPicker() {
+    RegisterComponentAssetPicker("materialRef", "material")
+}
 
 var private MATERIAL_PATH <- InputTextState()
 var private material_path_initialized = false

@@ -16,6 +16,7 @@ require daslib/decs_boost
 require strings
 require math
 require tryeditor/Hierarchy
+require tryeditor/AssetPicker
 require tryengine/EcsMacro
 require tryengine/Serializable
 require daslib/rtti
@@ -44,12 +45,27 @@ def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index :
 var W_BOOL   : table<string; ToggleState>
 var W_STRING : table<string; InputTextState>
 
+// Компоненты без [DecsSerializable]-схемы (например materialRef) не могут нести
+// аннотации полей. Для них тип asset picker'а регистрируется по имени компонента.
+var private g_component_asset_kinds : table<string; string>
+
+def public RegisterComponentAssetPicker(component_name : string; kind : string) {
+    g_component_asset_kinds[component_name] = kind
+}
+
+// Удаление откладывается до конца обхода компонентов: commit() меняет архетип,
+// а цикл ещё читает decsState.allArchetypes[arch_idx].
+var private g_pending_remove : string = ""
+var private g_pending_remove_group : bool = false
+var private g_pending_remove_arch : int = -1
+
 // Переменная для отслеживания смены фокуса
 var last_selected_eid : EntityId = INVALID_ENTITY_ID
 
 def clear_inspector_states() {
     clear(W_BOOL)
     clear(W_STRING)
+    CloseAssetPicker()
 }
 
 // ---------------------------------------------------------------------
@@ -71,6 +87,9 @@ def draw_component_value(comp : Component; index : int64; display_name : string)
         } else {
             var ui : FieldUi
             ui.title = display_name
+            if (key_exists(g_component_asset_kinds, comp.name)) {
+                ui.asset_kind = g_component_asset_kinds[comp.name]
+            }
             draw_leaf(ptr, type_name, display_name, id_key, ui)
         }
     }
@@ -134,6 +153,7 @@ def private split_component_name(name : string; var out_prefix : string&; var ou
 def DrawInspector() {
     if (selected_eid != last_selected_eid) {
         clear_inspector_states()
+        g_pending_remove = ""
         last_selected_eid = selected_eid
     }
 
@@ -177,6 +197,12 @@ def DrawInspector() {
 
                 with_id("{prefix}{selected_eid.id}") {
                     collapsing_header(BASIC_CHR, (text = prefix, closable = false, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
+                        if (button(BT_REMOVE_CMP, (text = "Remove component"))) {
+                            g_pending_remove = prefix
+                            g_pending_remove_group = true
+                            g_pending_remove_arch = arch_idx
+                        }
+                        separator()
                         // Проверяем оверрайд для префикса всей структуры
                         if (key_exists(g_overrides, prefix)) {
                             g_overrides[prefix] |> invoke(selected_eid)
@@ -196,6 +222,12 @@ def DrawInspector() {
             } else {
                 with_id("{comp.name}{selected_eid.id}") {
                     collapsing_header(BASIC_CHR, (text = comp.name, closable = false, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
+                        if (button(BT_REMOVE_CMP, (text = "Remove component"))) {
+                            g_pending_remove = comp.name
+                            g_pending_remove_group = false
+                            g_pending_remove_arch = arch_idx
+                        }
+                        separator()
                         if (key_exists(g_overrides, comp.name)) {
                             g_overrides[comp.name] |> invoke(selected_eid)
                         } else {
@@ -205,8 +237,55 @@ def DrawInspector() {
                 }
             }
         }
-        AddComponent(selected_eid)
+
+        if (empty(g_pending_remove)) {
+            AddComponent(selected_eid)
+        } else {
+            RemoveInspectorComponent(selected_eid, g_pending_remove_arch, g_pending_remove, g_pending_remove_group)
+            g_pending_remove = ""
+            clear_inspector_states()
+        }
     }
+}
+
+// ---------------------------------------------------------------------
+// Удаление компонента. Для зарегистрированных шаблонов/компонентов используем
+// сгенерированный cmp_remover; для динамических компонентов без регистрации
+// (tag, materialRef, meshGuid, ...) удаляем по имени напрямую.
+// ---------------------------------------------------------------------
+def private RemoveInspectorComponent(target_eid : EntityId; arch_idx : int; name : string; group : bool) {
+    if (key_exists(ecs_component_table, name)) {
+        ecs_component_table[name].cmp_remover(target_eid)
+        return
+    }
+
+    var names : array<string>
+    if (group) {
+        let prefix = "{name}_"
+        if (arch_idx >= 0 && arch_idx < length(decsState.allArchetypes)) {
+            for (comp in decsState.allArchetypes[arch_idx].components) {
+                if (starts_with(comp.name, prefix)) {
+                    names |> push(comp.name)
+                }
+            }
+        }
+    } else {
+        names |> push(name)
+    }
+
+    if (empty(names)) {
+        return
+    }
+
+    // names захватывается блоком по move; для массива это требует unsafe.
+    unsafe {
+        update_entity(target_eid) @(eid, cmp) {
+            for (n in names) {
+                decs::remove(cmp, n)
+            }
+        }
+    }
+    commit()
 }
 
 // ---------------------------------------------------------------------
@@ -252,18 +331,21 @@ def private AddComponent(target_eid : EntityId) {
 //   @title = "..."   — подпись вместо имени поля;
 //   @min / @max      — границы значения (можно задавать по одной);
 //   @speed = 0.1     — шаг drag-виджета;
-//   @readonly        — значение показывается текстом, без редактирования.
+//   @readonly        — значение показывается текстом, без редактирования;
+//   @asset = "..."   — для string-поля: кнопка выбора ассета зарегистрированного
+//                      вида ("material", "scene", "prefab", ...; см. AssetPicker).
 // Неизвестные аннотации игнорируются: их могут читать другие потребители.
 // ---------------------------------------------------------------------
 struct FieldUi {
-    hidden    : bool
-    readonly  : bool
-    title     : string
-    has_min   : bool
-    has_max   : bool
-    min_value : double
-    max_value : double
-    speed     : float
+    hidden     : bool
+    readonly   : bool
+    title      : string
+    has_min    : bool
+    has_max    : bool
+    min_value  : double
+    max_value  : double
+    speed      : float
+    asset_kind : string
 }
 
 def private annotation_number(data : RttiValue; var out : double&) : bool {
@@ -298,6 +380,8 @@ def private parse_field_ui(field_name : string; annotations : array<tuple<name :
             ui.readonly = ann.data is tBool ? (ann.data as tBool) : true
         } elif (ann.name == "title" && ann.data is tString) {
             ui.title = ann.data as tString
+        } elif (ann.name == "asset" && ann.data is tString) {
+            ui.asset_kind = ann.data as tString
         } elif (ann.name == "speed") {
             var v : double
             if (annotation_number(ann.data, v)) {
@@ -571,8 +655,24 @@ def private draw_leaf(ptr : void?; type_name : string; display_name : string; id
             if (!key_exists(W_STRING, id_key) || W_STRING[id_key].value != current_val) {
                 init_input_text(W_STRING[id_key], current_val)
             }
+            let has_picker = !empty(ui.asset_kind) && HasAssetPickerKind(ui.asset_kind)
+            if (has_picker) {
+                // Оставляем место справа под кнопку "...".
+                SetNextItemWidth(-40.0f)
+            }
             if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
                 *reinterpret<string?>(ptr) = W_STRING[id_key].value
+            }
+            if (has_picker) {
+                same_line()
+                if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
+                    OpenAssetPicker(ui.asset_kind, current_val, id_key)
+                }
+                var picked = ""
+                if (DrawAssetPickerPopup(id_key, picked)) {
+                    *reinterpret<string?>(ptr) = picked
+                    init_input_text(W_STRING[id_key], picked)
+                }
             }
         }
     } elif (type_name == "uint2" || type_name == "uint3" || type_name == "uint4") {
