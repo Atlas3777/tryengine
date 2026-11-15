@@ -19,17 +19,35 @@ constexpr uint64_t Hash64(eastl::string_view s) noexcept {
     return h;
 }
 
-// Ключ ресурса. '\' == '/', регистр ASCII не важен.
-// ОДНА функция и в редакторе, и в рантайме билда.
-// constexpr: `constexpr uint64_t k = PathHash("textures/a.png");` — строки в бинарнике нет.
-constexpr uint64_t PathHash(eastl::string_view s) noexcept {
-    uint64_t h = kFnvOffset;
-    for (size_t i = 0; i < s.size(); ++i) {
-        char c = s[i];
-        if (c == '\\')
-            c = '/';
-        else if (c >= 'A' && c <= 'Z')
-            c = static_cast<char>(c + 32);
+// Идентификатор ресурса из пути. ОДНА функция и в редакторе, и в рантайме билда.
+// Нормализация: '\' == '/', подряд идущие '/' схлопываются, ведущий "./" и хвостовой '/'
+// отбрасываются. Регистр значим: на Linux "Foo.mat" и "foo.mat" — разные файлы.
+// Значения совпадают с прежним PathGuid, поэтому уже сохранённые ссылки на .mat живут.
+// constexpr: `constexpr uint64_t k = PathId("textures/a.png");` — строки в бинарнике нет.
+constexpr uint64_t kPathIdBasis = 1469598103934665603ull;
+constexpr uint64_t kPathIdSalt = 0x9E3779B97F4A7C15ull;
+
+constexpr uint64_t PathId(eastl::string_view s) noexcept {
+    size_t start = 0;
+    while (start + 1 < s.size() && s[start] == '.' && (s[start + 1] == '/' || s[start + 1] == '\\'))
+        start += 2;
+
+    uint64_t h = kPathIdBasis;
+    h ^= kPathIdSalt;
+    h *= kFnvPrime;
+
+    bool slash_pending = false;
+    for (size_t i = start; i < s.size(); ++i) {
+        const char c = s[i];
+        if (c == '/' || c == '\\') {
+            slash_pending = true;
+            continue;
+        }
+        if (slash_pending) {
+            h ^= static_cast<uint8_t>('/');
+            h *= kFnvPrime;
+            slash_pending = false;
+        }
         h ^= static_cast<uint8_t>(c);
         h *= kFnvPrime;
     }

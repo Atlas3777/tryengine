@@ -12,7 +12,7 @@ require tryengine/Engine
 require math
 
 let mesh_id_1 = 3081795527557720915ul
-let mat_id_1 = 17036954862819815981ul
+let mat_ref_1 = "guid:17036954862819815981"
 
 // === конвенция движка ===
 let right_raw = float3(1.0f, 0.0f, 0.0f)   // локальная X (вправо)
@@ -72,7 +72,7 @@ def GameStart(){
     print("request mesh GAME\n")
     RequestLoadMesh(mesh_id_1)
     print("request mat GAME\n")
-    RequestLoadMaterial(mat_id_1)
+    RequestLoadMaterial(ResolveAssetRef(mat_ref_1))
 
     SpawnGame()
 }
@@ -140,7 +140,7 @@ def SpawnGame() {
         cmp.speed := float(3)
 
         cmp.meshGuid := mesh_id_1
-        cmp.materialGuid := mat_id_1
+        cmp.materialRef := mat_ref_1
         apply_decs_template(cmp, Relationship())
     }
 
@@ -166,7 +166,7 @@ def create_mesh_entity_game(tag : string, pos : float3) {
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
         cmp.meshGuid := mesh_id_1
-        cmp.materialGuid := mat_id_1
+        cmp.materialRef := mat_ref_1
         apply_decs_template(cmp, Relationship())
     }
 }

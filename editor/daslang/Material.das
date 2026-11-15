@@ -55,6 +55,7 @@ var private material_loaded = false
 var private schema_pending = false
 var private status = ""
 var private material_guid : uint64 = 0ul
+var private material_ref = ""
 var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
 var private follow_state = ToggleState(value = true)
@@ -453,14 +454,10 @@ def private RequestSchema() {
     schema_pending = false
 }
 
-// Материал из artifacts/ создан импортером: это производный файл, руками его не правим.
-def private IsArtifactPath(path : string) : bool {
-    return find(path, "artifacts/") != -1
-}
-
-// Открывает материал по пути. guid — id, под которым материал живёт в кеше ресурсов:
-// у авторитетного файла это PathGuid(путь), у артефакта glTF — его собственный id.
-def private LoadMaterialAt(path : string; guid : uint64) {
+// Открывает материал по пути. guid — id, под которым материал живёт в кеше ресурсов;
+// asset_ref — авторская ссылка, которая уйдёт в компонент при Apply: путь для авторитетного
+// файла, "guid:<id>" для импортированного.
+def private LoadMaterialAt(path : string; guid : uint64; asset_ref : string) {
     material_path = path
     InitInputText(MATERIAL_PATH, path)
 
@@ -479,8 +476,9 @@ def private LoadMaterialAt(path : string; guid : uint64) {
     }
 
     material_loaded = true
-    material_readonly = IsArtifactPath(path)
+    material_readonly = IsImportedAsset(guid)
     material_guid = guid
+    material_ref = asset_ref
     clear(schema)
     RequestSchema()
     if (material_readonly) {
@@ -491,10 +489,11 @@ def private LoadMaterialAt(path : string; guid : uint64) {
 }
 
 def private LoadMaterial() {
-    LoadMaterialAt(material_path, RegisterMaterialFile(material_path))
+    let asset_ref = material_path
+    LoadMaterialAt(asset_ref, RegisterMaterialFile(asset_ref), asset_ref)
 }
 
-// Материал выбранной сущности: компонент materialGuid -> путь из реестра -> файл.
+// Материал выбранной сущности: компонент materialRef -> id и путь из реестра -> файл.
 // false — путь ещё не известен (реестр ассетов заполняется асинхронно на старте),
 // панель повторит попытку на следующем кадре.
 def private SyncFromSelected() : bool {
@@ -502,15 +501,30 @@ def private SyncFromSelected() : bool {
         return true
     }
 
-    var guid : uint64 = 0ul
+    var asset_ref = ""
     var has_material = false
-    query(selected_eid) $(let materialGuid : uint64) {
-        guid = materialGuid
+    query(selected_eid) $(let materialRef : string) {
+        asset_ref = materialRef
         has_material = true
     }
-    if (!has_material || guid == 0ul) {
+    if (!has_material || empty(asset_ref)) {
         status = "entity [{selected_eid.id:d}] has no material"
         return true
+    }
+
+    let guid = ResolveAssetRef(asset_ref)
+    if (guid == 0ul) {
+        // Реестр заполняется асинхронно: не считаем ссылку битой, повторим на следующем кадре.
+        status = "material '{asset_ref}': unresolved reference"
+        return false
+    }
+
+    // Канонизируем ссылку: авторитетный материал — путь, импортированный — guid.
+    // Так Apply переводит старый guid на путь, а не тиражирует его дальше.
+    let canonical = AssetRefOf(guid)
+    var resolved_ref = asset_ref
+    if (!empty(canonical)) {
+        resolved_ref = canonical
     }
 
     let path = GetAssetFilePath(guid)
@@ -519,9 +533,10 @@ def private SyncFromSelected() : bool {
         return false
     }
     if (path == material_path && guid == material_guid && material_loaded) {
+        material_ref = resolved_ref
         return true
     }
-    LoadMaterialAt(path, guid)
+    LoadMaterialAt(path, guid, resolved_ref)
     return true
 }
 
@@ -608,13 +623,13 @@ def private ApplyMaterial() {
     }
 
     update_entity(selected_eid) @(eid, cmp) {
-        cmp |> set("materialGuid", material_guid)
+        cmp |> set("materialRef", material_ref)
         if (has_pointer) {
             decs::remove(cmp, "material")
         }
     }
     commit()
-    status = "applied to entity [{selected_eid.id:d}], guid {material_guid:d}"
+    status = "applied to entity [{selected_eid.id:d}], ref {material_ref}"
 }
 
 // ---------------------------------------------------------------------------

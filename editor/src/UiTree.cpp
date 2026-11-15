@@ -8,7 +8,7 @@
 namespace tryeditor {
 
 using eastl::string_view;
-using tryengine::core::PathHash;
+using tryengine::core::PathId;
 using tryengine::core::StringTable;
 using tryengine::core::ToView;
 
@@ -86,7 +86,7 @@ void UiTree::BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, u
         } else {
             uint64_t guid = 0;
             if (path_to_guid) {
-                auto it = path_to_guid->find(PathHash(path));
+                auto it = path_to_guid->find(PathId(path));
                 if (it != path_to_guid->end())
                     guid = it->second;
             }
@@ -107,7 +107,7 @@ void UiTree::BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, u
 // ---------------------------------------------------------------- поиск
 
 uint32_t UiTree::FindFolder(string_view path) const {
-    auto it = folder_by_path_.find(PathHash(path));
+    auto it = folder_by_path_.find(PathId(path));
     return it == folder_by_path_.end() ? kNoFolder : it->second;
 }
 
@@ -203,7 +203,7 @@ uint32_t UiTree::NewFolder(uint32_t parent, string_view name, string_view path) 
     f.name = strings_.Intern(name);
     f.path = strings_.Intern(path);
     f.parent = parent;
-    folder_by_path_[PathHash(path)] = idx;
+    folder_by_path_[PathId(path)] = idx;
     return idx;
 }
 
@@ -214,11 +214,11 @@ void UiTree::FreeSubtree(uint32_t idx, Changes* changes) {
     UiFolder& f = folders_[idx];
     for (UiFile& file : f.files) {
         if (changes)
-            changes->push_back({PathHash(V(file.path)), 0});
+            changes->push_back({PathId(V(file.path)), 0});
         strings_.Release(file.name);
         strings_.Release(file.path);
     }
-    folder_by_path_.erase(PathHash(V(f.path)));
+    folder_by_path_.erase(PathId(V(f.path)));
     strings_.Release(f.name);
     strings_.Release(f.path);
     f = UiFolder{};
@@ -229,11 +229,11 @@ void UiTree::FreeSubtree(uint32_t idx, Changes* changes) {
 void UiTree::Repath(uint32_t idx, string_view new_path, Changes* changes) {
     {
         UiFolder& f = folders_[idx];
-        folder_by_path_.erase(PathHash(V(f.path)));
+        folder_by_path_.erase(PathId(V(f.path)));
         const char* np = strings_.Intern(new_path);
         strings_.Release(f.path);
         f.path = np;
-        folder_by_path_[PathHash(new_path)] = idx;
+        folder_by_path_[PathId(new_path)] = idx;
     }
 
     for (UiFile& file : folders_[idx].files) {
@@ -242,7 +242,7 @@ void UiTree::Repath(uint32_t idx, string_view new_path, Changes* changes) {
         if (np.empty())
             continue;
         if (changes)
-            changes->push_back({PathHash(V(file.path)), PathHash(np)});
+            changes->push_back({PathId(V(file.path)), PathId(np)});
         const char* interned = strings_.Intern(np);
         strings_.Release(file.path);
         file.path = interned;
@@ -372,7 +372,7 @@ bool UiTree::RemoveFile(uint32_t folder, string_view name, Changes* changes) {
     auto& files = folders_[folder].files;
     const UiFile file = files[pos];
     if (changes)
-        changes->push_back({PathHash(V(file.path)), 0});
+        changes->push_back({PathId(V(file.path)), 0});
     strings_.Release(file.name);
     strings_.Release(file.path);
     files.erase(files.begin() + pos);
@@ -399,7 +399,7 @@ bool UiTree::RenameFile(uint32_t folder, string_view old_name, string_view new_n
     auto& files = folders_[folder].files;
     UiFile file = files[pos];
     if (changes)
-        changes->push_back({PathHash(V(file.path)), PathHash(path)});
+        changes->push_back({PathId(V(file.path)), PathId(path)});
 
     const char* nn = strings_.Intern(new_name);
     const char* np = strings_.Intern(path);
@@ -435,7 +435,7 @@ bool UiTree::MoveFile(uint32_t from_folder, string_view name, uint32_t to_folder
         return false;
 
     if (changes)
-        changes->push_back({PathHash(V(file.path)), PathHash(path)});
+        changes->push_back({PathId(V(file.path)), PathId(path)});
     const char* np = strings_.Intern(path);
     strings_.Release(file.path);
     file.path = np;  // имя переезжает вместе с файлом, refcount не меняется

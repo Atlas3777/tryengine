@@ -100,7 +100,7 @@ private:
     tryengine::core::StringTable& strings_;
     eastl::vector<UiFolder> folders_;  // [0] = корень
     eastl::vector<uint32_t> free_slots_;
-    eastl::hash_map<uint64_t, uint32_t> folder_by_path_;  // PathHash(path) -> idx
+    eastl::hash_map<uint64_t, uint32_t> folder_by_path_;  // PathId(path) -> idx
     uint64_t version_ = 0;
 };
 

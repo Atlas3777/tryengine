@@ -121,7 +121,7 @@ private:
                                const eastl::vector<uint64_t>& sub_assets) const;
 
     mutable std::mutex db_mutex_;
-    eastl::hash_map<uint64_t, uint64_t> path_to_guid_;  // ключ: PathHash(путь)
+    eastl::hash_map<uint64_t, uint64_t> path_to_guid_;  // ключ: PathId(путь)
 
     // ВАЖНО: порядок объявления. strings_ должна быть раньше деревьев (умирает позже них).
     tryengine::core::StringTable strings_;

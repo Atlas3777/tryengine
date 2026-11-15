@@ -21,7 +21,6 @@
 #include "engine/graphics/loaders/ShaderLoader.hpp"
 #include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
-#include "engine/resources/LooseFiles.hpp"
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/PendingLoadQueue.hpp"
 #include "engine/resources/ResourceManager.hpp"
@@ -56,10 +55,6 @@ void EditorApp::Init() {
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
-
-    // Авторитетные материалы (game/data) не имеют .meta: регистрируем их по пути, чтобы
-    // ссылки из сцен (id = PathGuid(путь)) находились и после перезапуска редактора.
-    RegisterLooseDirectory(registry, "game/data", ".mat");
 
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
 

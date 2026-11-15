@@ -88,6 +88,34 @@ void ReleaseMaterialResource(uint64_t guid, das::Context* ctx) {
         res_manager->Release<tryengine::graphics::Material>(guid);
 }
 
+// Авторская ссылка -> id. Возвращает 0 для битой ссылки; сцена и редактор считают это
+// ошибкой, а не «ещё не загрузилось».
+uint64_t ResolveAssetRef(const char* ref, das::Context* ctx) {
+    if (!ref || !*ref)
+        return 0;
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return 0;
+    const auto id = res_manager->GetAssetRegistry().ResolveRef(ref);
+    return id.has_value() ? *id : 0;
+}
+
+// id -> каноническая авторская ссылка (путь для авторитетного файла, guid: для остальных).
+char* AssetRefOf(uint64_t id, das::Context* ctx, LineInfoArg* at) {
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return nullptr;
+    const auto ref = res_manager->GetAssetRegistry().AssetRefOf(id);
+    if (!ref.has_value())
+        return nullptr;
+    return ctx->allocateString(ref->c_str(), ref->size(), at);
+}
+
+bool IsImportedAsset(uint64_t id, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->GetAssetRegistry().IsImported(id) : false;
+}
+
 class Module_Resources : public das::Module {
 public:
     Module_Resources() : Module("tryResources") {
@@ -128,6 +156,15 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetMaterialSchema)>(*this, lib, "GetMaterialSchema", das::SideEffects::accessGlobal,
                                                         "GetMaterialSchema");
+
+        das::addExtern<DAS_BIND_FUN(ResolveAssetRef)>(*this, lib, "ResolveAssetRef", das::SideEffects::accessGlobal,
+                                                      "ResolveAssetRef");
+
+        das::addExtern<DAS_BIND_FUN(AssetRefOf)>(*this, lib, "AssetRefOf", das::SideEffects::accessGlobal,
+                                                 "AssetRefOf");
+
+        das::addExtern<DAS_BIND_FUN(IsImportedAsset)>(*this, lib, "IsImportedAsset", das::SideEffects::accessGlobal,
+                                                      "IsImportedAsset");
 
         verifyAotReady();
     }

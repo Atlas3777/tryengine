@@ -9,8 +9,13 @@ namespace tryengine::resources {
 using PakHandle = uint32_t;
 constexpr PakHandle INVALID_PAK_HANDLE = UINT32_MAX;
 
+// Откуда пришёл loose-ресурс. У авторитетного файла id выведен из пути, у импортируемого —
+// это guid из .meta; редактору это нужно, чтобы решить, можно ли править материал.
+enum class AssetOrigin : uint8_t { Authoritative = 0, Imported = 1 };
+
 struct LooseFileLocation {
     eastl::string path;
+    AssetOrigin origin{AssetOrigin::Imported};
 };
 
 struct PakChunkLocation {

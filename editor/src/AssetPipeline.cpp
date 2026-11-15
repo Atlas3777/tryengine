@@ -20,7 +20,7 @@ namespace tryeditor {
 using namespace tryengine::resources;
 using namespace tryengine::async;
 using tryengine::core::Error;
-using tryengine::core::PathHash;
+using tryengine::core::PathId;
 using tryengine::core::StringTable;
 using tryengine::core::ToView;
 
@@ -61,6 +61,13 @@ uint64_t AssetPipeline::GetTreeRevision(StorageDomain domain) const {
 
 void AssetPipeline::BuildTreeFromDisk(StorageDomain domain) {
     ScanResult scan = AssetScanner::ScanDirectory(RootOf(domain).dir);
+    if (!IsAssetDomain(domain)) {
+        // Авторитетный файл не импортируется: его идентичность — путь. Регистрируем все
+        // файлы домена, чтобы ссылка из сцены резолвилась через AssetRegistry.
+        for (const ScanEntry& entry : scan.entries)
+            if (!entry.is_dir)
+                registry_.RegisterAuthoritative(scan.Path(entry));
+    }
     std::lock_guard lock(db_mutex_);
     // У авторитетных файлов нет guid: карта путей в дерево не передаётся.
     Tree(domain).BuildFrom(scan, IsAssetDomain(domain) ? &path_to_guid_ : nullptr);
@@ -440,7 +447,7 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
 
     {
         std::lock_guard lock(db_mutex_);
-        path_to_guid_[PathHash(ToView(asset_path))] = res.main_guid;
+        path_to_guid_[PathId(ToView(asset_path))] = res.main_guid;
     }
 
     LogInfo(LogCategory::Importer, "Ассет-сирота успешно импортирован: {}", asset_path.c_str());
@@ -476,7 +483,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
 
     {
         std::lock_guard lock(db_mutex_);
-        path_to_guid_[PathHash(ToView(asset_path))] = header.guid;
+        path_to_guid_[PathId(ToView(asset_path))] = header.guid;
     }
 
     RegisterArtifactPaths(mount, header.guid, header.sub_assets);
@@ -578,7 +585,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
 
     {
         std::lock_guard lock(db_mutex_);
-        path_to_guid_[PathHash(ToView(asset_path))] = res.main_guid;
+        path_to_guid_[PathId(ToView(asset_path))] = res.main_guid;
     }
 
     RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
@@ -688,7 +695,7 @@ void AssetPipeline::ApplyDeleted(eastl::string_view path, UiTree::Changes& chang
 void AssetPipeline::ApplyRenamed(eastl::string_view old_path, eastl::string_view new_path, UiTree::Changes& changes) {
     const PathParts from = SplitPath(old_path);
     const PathParts to = SplitPath(new_path);
-    const bool same_parent = PathHash(from.parent) == PathHash(to.parent);
+    const bool same_parent = PathId(from.parent) == PathId(to.parent);
 
     UiTree* tree = nullptr;
     uint32_t idx = kNoFolder;
@@ -724,7 +731,7 @@ void AssetPipeline::ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTr
             continue;
         t->AddFile(folder, p.name, guid);
         std::lock_guard lock(db_mutex_);
-        path_to_guid_[PathHash(path)] = guid;
+        path_to_guid_[PathId(path)] = guid;
         return;
     }
 }

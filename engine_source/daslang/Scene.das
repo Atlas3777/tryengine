@@ -164,9 +164,40 @@ def private parse_uint64_array(cf : StructField?) : array<uint64> {
     return <- res
 }
 
+// requireMaterials: новый формат — строки-ссылки ("путь" или "guid:<id>"), старый — u64.
+// Оба приводятся к id, чтобы загрузчик сцены и билд не знали про формат ссылки.
+def private parse_asset_ref_array(cf : StructField?) : array<uint64> {
+    var res : array<uint64>
+    if (cf == null || !(cf.value is _array))
+        return <- res
+
+    assume arr = cf.value as _array
+    for (elem in arr) {
+        if (elem == null)
+            continue
+
+        var id : uint64 = 0ul
+        if (elem.value is _string) {
+            id = ResolveAssetRef(elem.value as _string)
+        } elif (elem.value is _uint64) {
+            id = elem.value as _uint64
+        } elif (elem.value is _int64) {
+            id = uint64(elem.value as _int64)
+        } elif (elem.value is _uint) {
+            id = uint64(elem.value as _uint)
+        } elif (elem.value is _int) {
+            id = uint64(elem.value as _int)
+        }
+
+        if (id != 0ul && !res.contains(id))
+            res |> push(id)
+    }
+    return <- res
+}
+
 struct private SaveSceneDTO {
     requireMeshs : array<uint64>
-    requireMaterials : array<uint64>
+    requireMaterials : array<string>
     entities : array<StructField?>
 }
 
@@ -205,15 +236,22 @@ def private save_scene_to_config() : string {
         if (!active_scene.requireMeshs.contains(meshGuid))
             active_scene.requireMeshs |> push(meshGuid)
     }
-    query() $(materialGuid : uint64) {
-        if (!active_scene.requireMaterials.contains(materialGuid))
-            active_scene.requireMaterials |> push(materialGuid)
+
+    // В сцену пишем авторские ссылки, а не id: у авторитетного материала это путь,
+    // у импортированного — guid. active_scene держит уже разрешённые id для выгрузки.
+    var material_refs : array<string>
+    query() $(materialRef : string) {
+        if (!empty(materialRef) && !material_refs.contains(materialRef))
+            material_refs |> push(materialRef)
+        let material_id = ResolveAssetRef(materialRef)
+        if (material_id != 0ul && !active_scene.requireMaterials.contains(material_id))
+            active_scene.requireMaterials |> push(material_id)
     }
 
     // 3. Формируем временный DTO для рефлексии CF()
     var dto <- SaveSceneDTO(
         requireMeshs := active_scene.requireMeshs,
-        requireMaterials := active_scene.requireMaterials,
+        requireMaterials <- material_refs,
         entities <- entities_list
     )
 
@@ -251,6 +289,17 @@ def private parse_and_apply_field(var cmp : ComponentMap;
         print("[SCENE WARNING] Entity '{entity_tag}': Field '{target_name}' is null. Skipped.\n")
         out_warnings++
         return false
+    }
+
+    // Старый формат: materialGuid: u64. Новый — materialRef: string; превращаем id в
+    // каноническую ссылку, чтобы сцена не зависела от того, чем этот id был раньше.
+    if (field_name == "materialGuid") {
+        if (cf.value is _uint64) {
+            let ref = AssetRefOf(cf.value as _uint64)
+            if (!empty(ref))
+                cmp |> set("materialRef", ref)
+        }
+        return true
     }
 
     if (decsState.componentTypeCheck |> key_exists(target_name)) {
@@ -378,7 +427,7 @@ def load_scene_from_config(config_text : string; renames : table<string; string>
 
     // Считываем списки ресурсов, сохраняем их в active_scene и запрашиваем их загрузку
     active_scene.requireMeshs <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
-    active_scene.requireMaterials <- parse_uint64_array(root_obj?["requireMaterials"] ?? null)
+    active_scene.requireMaterials <- parse_asset_ref_array(root_obj?["requireMaterials"] ?? null)
 
     for (mesh_id in active_scene.requireMeshs) {
         RequestLoadMesh(mesh_id)
@@ -482,7 +531,7 @@ def GetSceneHeader(let path : string -const) : SceneHeader {
     var header <- SceneHeader()
     header.name = (path |> last_index_of("/")) >= 0 ? slice(path, (path |> last_index_of("/")) + 1) : path
     header.requireMeshs <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
-    header.requireMaterials <- parse_uint64_array(root_obj?["requireMaterials"] ?? null)
+    header.requireMaterials <- parse_asset_ref_array(root_obj?["requireMaterials"] ?? null)
 
     yield <- header
 }

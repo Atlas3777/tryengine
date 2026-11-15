@@ -40,11 +40,13 @@
   glTF-импортёр пишет суб-ассеты тем же `WriteMaterialConfig`. Меняется содержимое
   артефактов — поднимай `GltfImporter::GetVersion()`, иначе старые JSON-артефакты
   останутся на диске.
-- Материал в `data/` — файл без `.meta`/GUID. `tryengine::resources::PathGuid` даёт
-  стабильный id из пути. `RegisterMaterialFile` / `ReloadMaterialFile` регистрируют `.mat`
-  как loose-артефакт, поэтому `ResourceManager` грузит его по тому же пути, без записи GUID
-  в файл. `Invalidate` откладывает старый ресурс в retired: указатели, уже отданные в кадр,
-  не повисают.
+- Материал в `data/` — файл без `.meta`/GUID. Его id — `core::PathId(путь)`: одна
+  функция нормализации и FNV для редактора и рантайма. Все файлы авторитетных доменов
+  регистрирует `AssetPipeline::BuildTreeFromDisk` (`AssetRegistry::RegisterAuthoritative`),
+  поэтому `ResolvePath` находит материал без ручной регистрации. `RegisterMaterialFile` /
+  `ReloadMaterialFile` резолвят путь (fallback — регистрация) и грузят `.mat`;
+  `Invalidate` откладывает старый ресурс в retired: указатели, уже отданные в кадр, не
+  повисают.
 - `MaterialConfig` зарегистрирован и как ресурс (`MaterialConfigLoader`): `BuildSystem`
   берёт из него GUID'ы шейдера и текстур для пака, не разбирая файл повторно.
 - Схему материала редактор получает строкой: `GetMaterialSchema(shader)` возвращает
@@ -54,17 +56,21 @@
   функция отдаёт `null`.
 - Панель — `editor/daslang/Material.das`. При старте сама загружает
   `game/data/materials/standard.mat`, дальше следует за выделением (галка Follow
-  selection): компонент `materialGuid` -> путь из `AssetRegistry` (`GetAssetFilePath`) ->
-  файл. Путь внутри `artifacts/` значит материал создан импортёром: такой файл
-  показывается как read-only и не пишется.
+  selection): компонент `materialRef` (`"путь"` или `"guid:<id>"`) -> `ResolveAssetRef` ->
+  путь из `AssetRegistry` (`GetAssetFilePath`) -> файл. `IsImportedAsset(id)` отличает
+  артефакт импортёра от авторитетного файла: импортированный показывается read-only и не
+  пишется.
 - Правка применяется сразу в живой `Material`: `ApplyMaterialConfigText` парсит тот же
   ConfigFormat, который записал бы Save, и пишет значения через `SetParamRaw` в замапленный
   UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). GPU-ресурсы не пересоздаются, файл
   пишется по Save. После Save перезагружать материал нельзя: указатель в компоненте
   сущности станет висячим (для смены текстур live-путь перепривязывает уже загруженные).
-- Авторитетные материалы не имеют `.meta`: на старте редактора
-  `RegisterLooseDirectory(registry, "game/data", ".mat")` регистрирует их под
-  id = `PathGuid(путь)`, поэтому ссылка из сцены находится и после перезапуска.
+  Apply пишет в компонент `materialRef`, а не id: путь для `.mat`, `guid:<id>` для
+  импортированного материала.
+- Авторитетные файлы не имеют `.meta`: при построении деревьев `AssetPipeline`
+  регистрирует их в `AssetRegistry` под id = `PathId(путь)`. Отдельного
+  `RegisterLooseDirectory` в `EditorApp` больше нет — регистрация следует за сканированием
+  домена, а не за списком расширений.
 
 ## Деревья ресурсов (Asset Browser)
 

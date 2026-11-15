@@ -14,7 +14,6 @@
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
-#include "engine/resources/PathGuid.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 // Биндинг домена дерева — ДО using namespace das (иначе коллизии имён)
@@ -171,9 +170,9 @@ bool TestCompileScriptPak(const das::TArray<uint8_t>& data, das::Context* ctx) {
     return true;
 }
 
-// Регистрирует .mat-файл как loose-ресурс: у материала нет .meta/GUID, но движку для
-// кеша нужен id. PathGuid даёт одинаковый id между запусками, поэтому ссылка на материал
-// в сцене остаётся стабильной.
+// Регистрирует .mat-файл как авторитетный ресурс: у материала нет .meta/GUID, его id —
+// PathId(путь). Файл уже зарегистрирован сканером деревьев; ResolvePath — обычный путь,
+// RegisterAuthoritative остаётся запасным для файла, появившегося после сканирования.
 uint64_t RegisterMaterialFile(const char* path, das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     if (!try_ctx || !path || !*path)
@@ -184,14 +183,15 @@ uint64_t RegisterMaterialFile(const char* path, das::Context* ctx) {
         return 0;
     }
 
-    const uint64_t guid = tryengine::resources::PathGuid(path);
-    res_manager->GetAssetRegistry().RegisterLooseArtifact(guid, path);
-    res_manager->RequestLoad<tryengine::graphics::Material>(guid);
-    return guid;
+    auto& registry = res_manager->GetAssetRegistry();
+    const auto resolved = registry.ResolvePath(path);
+    const uint64_t id = resolved.has_value() ? *resolved : registry.RegisterAuthoritative(path);
+    res_manager->RequestLoad<tryengine::graphics::Material>(id);
+    return id;
 }
 
 // Перечитывает .mat после сохранения: старый ресурс уходит в отставку, по тому же
-// guid создаётся новый.
+// id создаётся новый.
 uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     if (!try_ctx || !path || !*path)
@@ -202,11 +202,12 @@ uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
         return 0;
     }
 
-    const uint64_t guid = tryengine::resources::PathGuid(path);
-    res_manager->Invalidate<tryengine::graphics::Material>(guid);
-    res_manager->GetAssetRegistry().RegisterLooseArtifact(guid, path);
-    res_manager->RequestLoad<tryengine::graphics::Material>(guid);
-    return guid;
+    auto& registry = res_manager->GetAssetRegistry();
+    const auto resolved = registry.ResolvePath(path);
+    const uint64_t id = resolved.has_value() ? *resolved : registry.RegisterAuthoritative(path);
+    res_manager->Invalidate<tryengine::graphics::Material>(id);
+    res_manager->RequestLoad<tryengine::graphics::Material>(id);
+    return id;
 }
 
 // Путь loose-файла по его id. Для артефактов (glTF-суб-ассеты) путь ведёт в artifacts,
