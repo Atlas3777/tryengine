@@ -13,7 +13,6 @@ require daslib/async_boost
 require daslib/array_boost
 require daslib/linq
 
-require daslib/rtti
 require strings
 require tryengine/FileReader
 require tryengine/Types
@@ -179,10 +178,15 @@ def private save_scene_to_config() : string {
             var entity_obj : table<string; StructField?>
 
             for (comp in arch.components) {
+                // Указатели (mesh/material) — runtime-ссылки, в сцену они не пишутся.
                 if (comp.info.basicType == Type.tPointer)
                     continue
 
                 var cf_val = ComponentToCF(comp, i)
+                if (cf_val == null) {
+                    print("[SCENE WARNING] Component '{comp.name}' of type '{comp.info.fullName}' is not registered for saving; skipped. Mark the struct [DecsSerializable].\n")
+                    continue
+                }
                 cf_val.name = comp.name
                 entity_obj[comp.name] = cf_val
             }
@@ -216,116 +220,16 @@ def private save_scene_to_config() : string {
 }
 
 
+// Значение компонента пишется apply-based writer'ом, зарегистрированным для его типа
+// (CF), поэтому аннотации полей обрабатываются так же, как при обычной сериализации.
 def private ComponentToCF(comp : Component&; index : int64) : StructField? {
     let offset = index * int64(comp.stride)
     unsafe {
-        let ptr = addr(comp.data[offset])
-        if (comp.info.basicType == Type.tStructure){
-            print("Пытаемся {comp.name} структуру сериализовать \n")
-            return SerializeStruct(reinterpret<void?>(ptr), comp.info.mkTypeInfo().firstType.structType)
-        } elif (comp.info.basicType == Type.none){
-            print("comp.info.basicType == Type.none")
-            return CF("Type.none")
-        } else {
-            return SerializeBase(ptr, comp.info.basicType)
-        }
+        let ptr = reinterpret<void?>(addr(comp.data[offset]))
+        return DecsWriteComponent(ptr, comp.info.fullName, comp.name)
     }
 }
 
-def private SerializeStruct(ptr : void?; candidate : StructInfo const?) : StructField? {
-    if (ptr == null){
-        print("ptr govno\n")
-        return null
-    }
-    if (candidate == null){
-        print("candidate govno\n")
-        return null
-    }
-
-    unsafe {
-        print("start STRUCT \n")
-
-        var map : table<string; StructField?>
-
-        if (candidate.fields != null) {
-            var pp = candidate.fields
-            for (c in range(candidate.count)) {
-                let current = *pp
-                pp++
-                if (current == null)
-                    continue
-
-                let fieldPtr = reinterpret<void?>(reinterpret<uint64>(ptr) + uint64(current.offset))
-                var fieldNode = current.basicType == Type.tStructure ? SerializeStruct(fieldPtr, current.structType) : SerializeBase(fieldPtr, current.basicType)
-                // print("c={c} ptr={intptr(current):d} offset={current.offset:d} bt={current.basicType}\n")
-
-                if (fieldNode != null) {
-                    fieldNode.name = current.name
-                    map |> insert(current.name, fieldNode)
-                }
-            }
-
-        }
-        print("END struct\n")
-        return CF(map, candidate.name)
-    }
-
-    return null
-}
-
-def private SerializeBase(p : void?; t : Type) : StructField? {
-    unsafe{
-        if (t == Type.tFloat){
-            return CF(*reinterpret<float?>(p))
-        } elif (t == Type.tFloat2) {
-            return CF(*reinterpret<float2?>(p))
-        } elif (t == Type.tFloat3) {
-            return CF(*reinterpret<float3?>(p))
-        } elif (t == Type.tFloat4) {
-            return CF(*reinterpret<float4?>(p))
-        } elif (t == Type.tInt){
-            return CF(*reinterpret<int?>(p))
-        } elif (t == Type.tInt2) {
-            return CF(*reinterpret<int2?>(p))
-        } elif (t == Type.tInt3) {
-            return CF(*reinterpret<int3?>(p))
-        } elif (t == Type.tInt4) {
-            return CF(*reinterpret<int4?>(p))
-        } elif (t == Type.tUInt){
-            return CF(*reinterpret<uint?>(p))
-        } elif (t == Type.tUInt2) {
-            return CF(*reinterpret<uint2?>(p))
-        } elif (t == Type.tUInt3) {
-            return CF(*reinterpret<uint3?>(p))
-        } elif (t == Type.tUInt4) {
-            return CF(*reinterpret<uint4?>(p))
-        } elif (t == Type.tInt64){
-            return CF(*reinterpret<int64?>(p))
-        } elif (t == Type.tUInt64){
-            return CF(*reinterpret<uint64?>(p))
-        } elif (t == Type.tString){
-            return CF(*reinterpret<string?>(p))
-        } elif (t == Type.tDouble) {
-            return CF(*reinterpret<double?>(p))
-        } elif (t == Type.tBool) {
-            return CF(*reinterpret<bool?>(p))
-        } elif (t == Type.tString) {
-            return CF(*reinterpret<string?>(p))
-        } elif (t == Type.tInt8){
-            return CF(*reinterpret<int8?>(p))
-        } elif (t == Type.tUInt8){
-            return CF(*reinterpret<uint8?>(p))
-        } elif (t == Type.tUInt16){
-            return CF(*reinterpret<uint16?>(p))
-        } elif (t == Type.tInt16){
-            return CF(*reinterpret<int16?>(p))
-        } elif (t == Type.none){
-            print("current.basicType NONE \n")
-        }
-        print("не смогли обработать {t}\n")
-        return CF("fallback")
-    }
-}
 
 def private parse_and_apply_field(var cmp : ComponentMap;
                                   entity_tag : string;

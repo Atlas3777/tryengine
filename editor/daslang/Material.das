@@ -333,7 +333,7 @@ def private DrawParam(p : MaterialParam) {
             var v = 0ul
             if (field.value is _uint64) { v = field.value as _uint64 }
             var changed = false
-            unsafe { changed = edit_drag_scalar(addr(v), (id = "tex", text = title, speed = 1.0f)) }
+            unsafe { changed = edit_drag_scalar(addr(v), (id = "tex", text = title, speed = 1.0f, v_min = 0ul, v_max = 0ul, format = "%llu")) }
             if (changed) { SetParam(p, ConfigValue(_uint64 = v)) }
 
         } elif (p.value_type == "f32") {
@@ -361,14 +361,14 @@ def private DrawParam(p : MaterialParam) {
             var v = 0l
             if (field.value is _int64) { v = field.value as _int64 }
             var changed = false
-            unsafe { changed = edit_drag_scalar(addr(v), (id = "i64", text = title, speed = 1.0f)) }
+            unsafe { changed = edit_drag_scalar(addr(v), (id = "i64", text = title, speed = 1.0f, v_min = 0l, v_max = 0l, format = "%lld")) }
             if (changed) { SetParam(p, ConfigValue(_int64 = v)) }
 
         } elif (p.value_type == "u64") {
             var v = 0ul
             if (field.value is _uint64) { v = field.value as _uint64 }
             var changed = false
-            unsafe { changed = edit_drag_scalar(addr(v), (id = "u64", text = title, speed = 1.0f)) }
+            unsafe { changed = edit_drag_scalar(addr(v), (id = "u64", text = title, speed = 1.0f, v_min = 0ul, v_max = 0ul, format = "%llu")) }
             if (changed) { SetParam(p, ConfigValue(_uint64 = v)) }
 
         } elif (p.value_type == "f32x2") {
@@ -539,9 +539,9 @@ def private LiveApply() {
 def private ValueToString(val : ConfigValue) : string {
     if (val is _float) { return "{val as _float}" }
     if (val is _int) { return "{val as _int}" }
-    if (val is _uint) { return "{val as _uint}" }
-    if (val is _int64) { return "{val as _int64}" }
-    if (val is _uint64) { return "{val as _uint64}" }
+    if (val is _uint) { return "{val as _uint:d}" }
+    if (val is _int64) { return "{val as _int64:d}" }
+    if (val is _uint64) { return "{val as _uint64:d}" }
     if (val is _float2) {
         let v = val as _float2
         return "{v.x} {v.y}"

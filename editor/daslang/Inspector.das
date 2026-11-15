@@ -16,6 +16,8 @@ require strings
 require math
 require tryeditor/Hierarchy
 require tryengine/EcsMacro
+require tryengine/Serializable
+require daslib/rtti
 
 // ---------------------------------------------------------------------
 // Поиск сущности в decsState
@@ -50,21 +52,25 @@ def clear_inspector_states() {
 }
 
 // ---------------------------------------------------------------------
-// Отрисовка значения компонента. Если это структура — рекурсивно
-// обходим её поля. Иначе — рисуем скаляр/вектор/чекбокс/строку.
+// Отрисовка значения компонента. Поля структуры обходит схема, сгенерированная
+// через apply на этапе компиляции (см. tryengine/Serializable): runtime reflection
+// по StructInfo не нужен, а аннотации полей (@hide, @title, @min, @max, @speed,
+// @readonly) попадают прямо в UI.
 // ---------------------------------------------------------------------
 def draw_component_value(comp : Component; index : int64; display_name : string) {
     let offset = int(index) * comp.stride
     let id_key = "{selected_eid.id}_{comp.name}"
+    let type_name = NormalizeTypeName(comp.info.fullName)
 
     unsafe {
-        let ptr = addr(comp.data[offset])
+        let ptr = reinterpret<void?>(addr(comp.data[offset]))
 
         if (comp.info.basicType == Type.tStructure) {
-            let ti = comp.info.mkTypeInfo()
-            draw_struct_fields(reinterpret<void?>(ptr), ti.firstType.structType, id_key)
+            draw_struct_fields(ptr, type_name, id_key)
         } else {
-            draw_value_at_ptr(reinterpret<void?>(ptr), comp.info.basicType, display_name, id_key)
+            var ui : FieldUi
+            ui.title = display_name
+            draw_leaf(ptr, type_name, display_name, id_key, ui)
         }
     }
 }
@@ -173,7 +179,7 @@ def DrawInspector() {
                         // Проверяем оверрайд для префикса всей структуры
                         if (key_exists(g_overrides, prefix)) {
                             g_overrides[prefix] |> invoke(selected_eid)
-                        } else {
+                        } elif (!draw_template_group(arch_idx, rec_index, prefix, "{prefix}{selected_eid.id}")) {
                             for (sub_comp in decsState.allArchetypes[arch_idx].components) {
                                 var sub_prefix = ""
                                 var sub_field = ""
@@ -240,69 +246,326 @@ def private AddComponent(target_eid : EntityId) {
     }
 }
 // ---------------------------------------------------------------------
-// Отрисовка значения по "сырому" указателю (без привязки к Component).
-// Аналог SerializeBase из сохранения.
+// Аннотации полей, которые понимает инспектор (3-й аргумент apply):
+//   @hide            — поле не рисуется;
+//   @title = "..."   — подпись вместо имени поля;
+//   @min / @max      — границы значения (можно задавать по одной);
+//   @speed = 0.1     — шаг drag-виджета;
+//   @readonly        — значение показывается текстом, без редактирования.
+// Неизвестные аннотации игнорируются: их могут читать другие потребители.
 // ---------------------------------------------------------------------
-def private draw_value_at_ptr(ptr : void?; t : Type; display_name : string; id_key : string) {
+struct FieldUi {
+    hidden    : bool
+    readonly  : bool
+    title     : string
+    has_min   : bool
+    has_max   : bool
+    min_value : double
+    max_value : double
+    speed     : float
+}
+
+def private annotation_number(data : RttiValue; var out : double&) : bool {
+    if (data is tFloat) {
+        out = double(data as tFloat)
+        return true
+    } elif (data is tDouble) {
+        out = data as tDouble
+        return true
+    } elif (data is tInt) {
+        out = double(data as tInt)
+        return true
+    } elif (data is tInt64) {
+        out = double(data as tInt64)
+        return true
+    } elif (data is tUInt64) {
+        out = double(data as tUInt64)
+        return true
+    }
+    return false
+}
+
+def private parse_field_ui(field_name : string; annotations : array<tuple<name : string; data : RttiValue>>) : FieldUi {
+    var ui : FieldUi
+    ui.title = field_name
+    var has_min = false
+    var has_max = false
+    for (ann in annotations) {
+        if (ann.name == "hide") {
+            ui.hidden = ann.data is tBool ? (ann.data as tBool) : true
+        } elif (ann.name == "readonly") {
+            ui.readonly = ann.data is tBool ? (ann.data as tBool) : true
+        } elif (ann.name == "title" && ann.data is tString) {
+            ui.title = ann.data as tString
+        } elif (ann.name == "speed") {
+            var v : double
+            if (annotation_number(ann.data, v)) {
+                ui.speed = float(v)
+            }
+        } elif (ann.name == "min") {
+            var v : double
+            if (annotation_number(ann.data, v)) {
+                has_min = true
+                ui.min_value = v
+            }
+        } elif (ann.name == "max") {
+            var v : double
+            if (annotation_number(ann.data, v)) {
+                has_max = true
+                ui.max_value = v
+            }
+        }
+    }
+    ui.has_min = has_min
+    ui.has_max = has_max
+    return <- ui
+}
+
+//! Текстовое представление значения — для @readonly и неподдерживаемых типов.
+def private value_text(ptr : void?; type_name : string) : string {
+    if (ptr == null) {
+        return "<null>"
+    }
     unsafe {
-        // Скаляры (float, double, int, uint, int64, uint64)
-        if (t == Type.tFloat) {
-            edit_drag_scalar(reinterpret<float?>(ptr), (id = "drag_float", text = display_name, speed = 0.01f))
+        if (type_name == "float") return "{*reinterpret<float?>(ptr)}"
+        elif (type_name == "double") return "{*reinterpret<double?>(ptr)}"
+        elif (type_name == "int") return "{*reinterpret<int?>(ptr):d}"
+        elif (type_name == "uint") return "{*reinterpret<uint?>(ptr):d}"
+        elif (type_name == "int8") return "{*reinterpret<int8?>(ptr):d}"
+        elif (type_name == "uint8") return "{*reinterpret<uint8?>(ptr):d}"
+        elif (type_name == "int16") return "{*reinterpret<int16?>(ptr):d}"
+        elif (type_name == "uint16") return "{*reinterpret<uint16?>(ptr):d}"
+        elif (type_name == "int64") return "{*reinterpret<int64?>(ptr):d}"
+        elif (type_name == "uint64") return "{*reinterpret<uint64?>(ptr):d}"
+        elif (type_name == "bool") return "{*reinterpret<bool?>(ptr)}"
+        elif (type_name == "string") return "*reinterpret<string?>(ptr)"
+        elif (type_name == "float2") return "{*reinterpret<float2?>(ptr)}"
+        elif (type_name == "float3") return "{*reinterpret<float3?>(ptr)}"
+        elif (type_name == "float4") return "{*reinterpret<float4?>(ptr)}"
+        elif (type_name == "int2") {
+            let v = *reinterpret<int2?>(ptr)
+            return "{v.x:d} {v.y:d}"
+        } elif (type_name == "int3") {
+            let v = *reinterpret<int3?>(ptr)
+            return "{v.x:d} {v.y:d} {v.z:d}"
+        } elif (type_name == "int4") {
+            let v = *reinterpret<int4?>(ptr)
+            return "{v.x:d} {v.y:d} {v.z:d} {v.w:d}"
+        } elif (type_name == "uint2") {
+            let v = *reinterpret<uint2?>(ptr)
+            return "{v.x:d} {v.y:d}"
+        } elif (type_name == "uint3") {
+            let v = *reinterpret<uint3?>(ptr)
+            return "{v.x:d} {v.y:d} {v.z:d}"
+        } elif (type_name == "uint4") {
+            let v = *reinterpret<uint4?>(ptr)
+            return "{v.x:d} {v.y:d} {v.z:d} {v.w:d}"
+        }
+    }
+    return "<{type_name}>"
+}
 
-        } elif (t == Type.tInt) {
-            edit_drag_scalar(reinterpret<int?>(ptr), (id = "drag_int", text = display_name, speed = 1.0f))
+// ---------------------------------------------------------------------
+// Ограничения @min/@max. ImGui-обёртка edit_drag_scalar принимает границы
+// только парой (v_min != v_max), а Ctrl+Click ввод не ограничивает вовсе,
+// поэтому после изменения значения дожимаем его сами. Правим только при
+// реальной правке: загруженные значения вне диапазона не трогаем.
+// ---------------------------------------------------------------------
+def private clamp_signed(var v : int64&; ui : FieldUi) {
+    if (ui.has_min && v < int64(ui.min_value)) {
+        v = int64(ui.min_value)
+    }
+    if (ui.has_max && v > int64(ui.max_value)) {
+        v = int64(ui.max_value)
+    }
+}
 
-        } elif (t == Type.tUInt) {
-            edit_drag_scalar(reinterpret<uint?>(ptr), (id = "drag_uint", text = display_name, speed = 1.0f))
+def private clamp_unsigned(var v : uint64&; ui : FieldUi) {
+    if (ui.has_min) {
+        let lo = ui.min_value > 0.0lf ? uint64(ui.min_value) : 0ul
+        if (v < lo) {
+            v = lo
+        }
+    }
+    if (ui.has_max) {
+        let hi = ui.max_value > 0.0lf ? uint64(ui.max_value) : 0ul
+        if (v > hi) {
+            v = hi
+        }
+    }
+}
 
-        } elif (t == Type.tInt64) {
-            edit_drag_scalar(reinterpret<int64?>(ptr), (id = "drag_int64", text = display_name, speed = 1.0f))
+def private clamp_number(ptr : void?; type_name : string; ui : FieldUi) {
+    if (ptr == null || !(ui.has_min || ui.has_max)) {
+        return
+    }
+    unsafe {
+        if (type_name == "float") {
+            var v = *reinterpret<float?>(ptr)
+            if (ui.has_min && v < float(ui.min_value)) { v = float(ui.min_value) }
+            if (ui.has_max && v > float(ui.max_value)) { v = float(ui.max_value) }
+            *reinterpret<float?>(ptr) = v
+        } elif (type_name == "double") {
+            var v = *reinterpret<double?>(ptr)
+            if (ui.has_min && v < ui.min_value) { v = ui.min_value }
+            if (ui.has_max && v > ui.max_value) { v = ui.max_value }
+            *reinterpret<double?>(ptr) = v
+        } elif (type_name == "int") {
+            var v = int64(*reinterpret<int?>(ptr))
+            clamp_signed(v, ui)
+            *reinterpret<int?>(ptr) = int(v)
+        } elif (type_name == "uint") {
+            var v = uint64(*reinterpret<uint?>(ptr))
+            clamp_unsigned(v, ui)
+            *reinterpret<uint?>(ptr) = uint(v)
+        } elif (type_name == "int8") {
+            var v = int64(*reinterpret<int8?>(ptr))
+            clamp_signed(v, ui)
+            *reinterpret<int8?>(ptr) = int8(v)
+        } elif (type_name == "uint8") {
+            var v = uint64(*reinterpret<uint8?>(ptr))
+            clamp_unsigned(v, ui)
+            *reinterpret<uint8?>(ptr) = uint8(v)
+        } elif (type_name == "int16") {
+            var v = int64(*reinterpret<int16?>(ptr))
+            clamp_signed(v, ui)
+            *reinterpret<int16?>(ptr) = int16(v)
+        } elif (type_name == "uint16") {
+            var v = uint64(*reinterpret<uint16?>(ptr))
+            clamp_unsigned(v, ui)
+            *reinterpret<uint16?>(ptr) = uint16(v)
+        } elif (type_name == "int64") {
+            var v = *reinterpret<int64?>(ptr)
+            clamp_signed(v, ui)
+            *reinterpret<int64?>(ptr) = v
+        } elif (type_name == "uint64") {
+            var v = *reinterpret<uint64?>(ptr)
+            clamp_unsigned(v, ui)
+            *reinterpret<uint64?>(ptr) = v
+        }
+    }
+}
 
-        } elif (t == Type.tUInt64) {
-            edit_drag_scalar(reinterpret<uint64?>(ptr), (id = "drag_uint64", text = display_name, speed = 1.0f))
-
-        } elif (t == Type.tDouble) {
-            edit_drag_scalar(reinterpret<double?>(ptr), (id = "drag_double", text = display_name, speed = 0.01f))
-
-        // Векторы Float
-        } elif (t == Type.tFloat2) {
+//! Виджет одного поля по имени типа daslang (его даёт apply-схема или CTypeInfo).
+def private draw_leaf(ptr : void?; type_name : string; display_name : string; id_key : string; ui : FieldUi) {
+    if (ui.readonly) {
+        text("{display_name}: {value_text(ptr, type_name)}")
+    } elif (ends_with(type_name, "?")) {
+        text("{display_name}: pointer {type_name}")
+    } elif (type_name == "float") {
+        let speed = ui.speed > 0.0f ? ui.speed : 0.01f
+        unsafe {
+            var changed = false
+            if (ui.has_min && ui.has_max) {
+                var lo = float(ui.min_value)
+                var hi = float(ui.max_value)
+                changed = edit_drag_scalar(reinterpret<float?>(ptr), (id = "drag_float", text = display_name, speed = speed, v_min = lo, v_max = hi))
+            } else {
+                changed = edit_drag_scalar(reinterpret<float?>(ptr), (id = "drag_float", text = display_name, speed = speed))
+            }
+            if (changed) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "double") {
+        let speed = ui.speed > 0.0f ? ui.speed : 0.01f
+        unsafe {
+            if (edit_drag_scalar(reinterpret<double?>(ptr), (id = "drag_double", text = display_name, speed = speed))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "int") {
+        let speed = ui.speed > 0.0f ? ui.speed : 1.0f
+        unsafe {
+            var changed = false
+            if (ui.has_min && ui.has_max) {
+                var lo = int(ui.min_value)
+                var hi = int(ui.max_value)
+                changed = edit_drag_scalar(reinterpret<int?>(ptr), (id = "drag_int", text = display_name, speed = speed, v_min = lo, v_max = hi))
+            } else {
+                changed = edit_drag_scalar(reinterpret<int?>(ptr), (id = "drag_int", text = display_name, speed = speed))
+            }
+            if (changed) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "uint") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<uint?>(ptr), (id = "drag_uint", text = display_name, speed = 1.0f))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "int8") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<int8?>(ptr), (id = "drag_int8", text = display_name, speed = 1.0f))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "uint8") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<uint8?>(ptr), (id = "drag_uint8", text = display_name, speed = 1.0f))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "int16") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<int16?>(ptr), (id = "drag_int16", text = display_name, speed = 1.0f))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "uint16") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<uint16?>(ptr), (id = "drag_uint16", text = display_name, speed = 1.0f))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "int64") {
+        // У ImGui формат по умолчанию для 64-битных — %lld/%llu. dasImgui подставляет
+        // "%d"/"%u", и DragScalar печатает только младшие 32 бита, поэтому задаём явно.
+        unsafe {
+            if (edit_drag_scalar(reinterpret<int64?>(ptr), (id = "drag_int64", text = display_name, speed = 1.0f, v_min = 0l, v_max = 0l, format = "%lld"))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "uint64") {
+        unsafe {
+            if (edit_drag_scalar(reinterpret<uint64?>(ptr), (id = "drag_uint64", text = display_name, speed = 1.0f, v_min = 0ul, v_max = 0ul, format = "%llu"))) {
+                clamp_number(ptr, type_name, ui)
+            }
+        }
+    } elif (type_name == "float2") {
+        unsafe {
             edit_drag_float2(reinterpret<float2?>(ptr), (id = "drag_float2", text = display_name, speed = 0.01f))
-
-        } elif (t == Type.tFloat3) {
+        }
+    } elif (type_name == "float3") {
+        unsafe {
             edit_drag_float3(reinterpret<float3?>(ptr), (id = "drag_float3", text = display_name, speed = 0.01f))
-
-        } elif (t == Type.tFloat4) {
+        }
+    } elif (type_name == "float4") {
+        unsafe {
             edit_drag_float4(reinterpret<float4?>(ptr), (id = "drag_float4", text = display_name, speed = 0.01f))
-
-        // Векторы Int
-        } elif (t == Type.tInt2) {
+        }
+    } elif (type_name == "int2") {
+        unsafe {
             edit_drag_int2(reinterpret<int2?>(ptr), (id = "drag_int2", text = display_name, speed = 1.0f))
-
-        } elif (t == Type.tInt3) {
+        }
+    } elif (type_name == "int3") {
+        unsafe {
             edit_drag_int3(reinterpret<int3?>(ptr), (id = "drag_int3", text = display_name, speed = 1.0f))
-
-        } elif (t == Type.tInt4) {
+        }
+    } elif (type_name == "int4") {
+        unsafe {
             edit_drag_int4(reinterpret<int4?>(ptr), (id = "drag_int4", text = display_name, speed = 1.0f))
-
-        // Векторы UInt
-        } elif (t == Type.tUInt2) {
-            edit_drag_int2(reinterpret<int2?>(ptr), (id = "drag_uint2", text = display_name, speed = 1.0f))
-
-        } elif (t == Type.tUInt3) {
-            edit_drag_int3(reinterpret<int3?>(ptr), (id = "drag_uint3", text = display_name, speed = 1.0f))
-
-        } elif (t == Type.tUInt4) {
-            edit_drag_int4(reinterpret<int4?>(ptr), (id = "drag_uint4", text = display_name, speed = 1.0f))
-
-        // Чекбокс
-        } elif (t == Type.tBool) {
+        }
+    } elif (type_name == "bool") {
+        unsafe {
             W_BOOL[id_key].value = *reinterpret<bool?>(ptr)
             if (checkbox(W_BOOL[id_key], (text = display_name))) {
                 *reinterpret<bool?>(ptr) = W_BOOL[id_key].value
             }
-
-        // Текст
-        } elif (t == Type.tString) {
+        }
+    } elif (type_name == "string") {
+        unsafe {
             let current_val = *reinterpret<string?>(ptr)
             if (!key_exists(W_STRING, id_key) || W_STRING[id_key].value != current_val) {
                 init_input_text(W_STRING[id_key], current_val)
@@ -310,49 +573,100 @@ def private draw_value_at_ptr(ptr : void?; t : Type; display_name : string; id_k
             if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
                 *reinterpret<string?>(ptr) = W_STRING[id_key].value
             }
+        }
+    } elif (type_name == "uint2" || type_name == "uint3" || type_name == "uint4") {
+        // Виджетов под uint-векторы в dasImgui нет; показываем значение текстом.
+        text("{display_name}: {value_text(ptr, type_name)}")
+    } elif (type_name == "float3x3" || type_name == "float3x4" || type_name == "float4x4") {
+        text("{display_name}: matrix editing is not implemented yet")
+    } else {
+        text("{display_name}: no editor for type {type_name}")
+    }
+}
 
-        } elif (t == Type.none) {
-            text("{display_name}: none type")
+// ---------------------------------------------------------------------
+// Схема полей структуры: имена, типы, смещения и аннотации приходят из
+// apply-сгенерированной таблицы, значения читаются/пишутся по указателю.
+// ---------------------------------------------------------------------
+def private draw_struct_fields(ptr : void?; type_name : string; id_prefix : string) {
+    if (ptr == null) {
+        return
+    }
 
+    var fields : array<InspectField>
+    if (!DecsInspectFields(type_name, fields)) {
+        text("{type_name}: no inspector schema, mark the struct [DecsSerializable]")
+        return
+    }
+
+    for (field in fields) {
+        var ui = parse_field_ui(field.name, field.annotations)
+        if (ui.hidden) {
+            continue
+        }
+
+        unsafe {
+            let field_ptr = reinterpret<void?>(reinterpret<uint64>(ptr) + field.offset)
+            draw_schema_field(field_ptr, field, ui, id_prefix)
+        }
+    }
+}
+
+//! Одно поле по описанию из apply-схемы: виджет, вложенная структура или текст.
+def private draw_schema_field(ptr : void?; field : InspectField; ui : FieldUi; id_prefix : string) {
+    with_id(field.name) {
+        if (ui.readonly) {
+            text("{ui.title}: {value_text(ptr, field.typeName)}")
+        } elif (DecsHasInspectSchema(field.typeName)) {
+            tree_node(BASIC_TREE, (text = ui.title, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
+                draw_struct_fields(ptr, field.typeName, "{id_prefix}_{field.name}")
+            }
         } else {
-            text("{display_name}: not found drawer for this type ({t})")
+            draw_leaf(ptr, field.typeName, ui.title, "{id_prefix}_{field.name}", ui)
         }
     }
 }
 
 // ---------------------------------------------------------------------
-// Рекурсивная отрисовка полей структуры (аналог SerializeStruct).
-// Обходит VarInfo?? внутри StructInfo, вычисляет offset каждого поля
-// и либо рекурсивно спускается в tStructure, либо рисует скаляр/вектор.
+// Группа префиксных компонентов шаблона DECS (Transform_position, ...).
+// Порядок полей, типы и аннотации берём из схемы шаблона; значение — из
+// компонента "<префикс>_<поле>". false — схемы нет (рисуем старый фолбэк).
 // ---------------------------------------------------------------------
-def private draw_struct_fields(ptr : void?; si : StructInfo const?; id_prefix : string) {
-    if (ptr == null || si == null) {
-        return
+def private draw_template_group(arch_idx : int; rec_index : int64; prefix : string; id_key : string) : bool {
+    var fields : array<InspectField>
+    if (!DecsInspectFields(prefix, fields)) {
+        return false
     }
 
-    unsafe {
-        if (si.fields != null) {
-            var pp = si.fields   // VarInfo??
-            for (_ in range(si.count)) {
-                let current = *pp
-                pp++
-                if (current == null) {
-                    continue
-                }
-
-                let field_ptr = reinterpret<void?>(reinterpret<uint64>(ptr) + uint64(current.offset))
-                let field_key = "{id_prefix}_{current.name}"
-
-                with_id(current.name) {
-                    if (current.basicType == Type.tStructure) {
-                        tree_node(BASIC_TREE, (text = current.name, flags = ImGuiTreeNodeFlags.DefaultOpen)) {
-                            draw_struct_fields(field_ptr, current.structType, field_key)
-                        }
-                    } else {
-                        draw_value_at_ptr(field_ptr, current.basicType, current.name, field_key)
-                    }
-                }
-            }
+    for (field in fields) {
+        var ui = parse_field_ui(field.name, field.annotations)
+        if (ui.hidden) {
+            continue
         }
+        let ci = component_index(arch_idx, "{prefix}_{field.name}")
+        if (ci < 0) {
+            continue
+        }
+        unsafe {
+            let ptr = reinterpret<void?>(component_value_ptr(arch_idx, rec_index, ci))
+            draw_schema_field(ptr, field, ui, id_key)
+        }
+    }
+    return true
+}
+
+def private component_index(arch_idx : int; comp_name : string) : int {
+    for (i in range(length(decsState.allArchetypes[arch_idx].components))) {
+        if (decsState.allArchetypes[arch_idx].components[i].name == comp_name) {
+            return i
+        }
+    }
+    return -1
+}
+
+def private component_value_ptr(arch_idx : int; rec_index : int64; comp_index : int) : uint64 {
+    unsafe {
+        var comp & = decsState.allArchetypes[arch_idx].components[comp_index]
+        return reinterpret<uint64>(addr(comp.data[int(rec_index) * comp.stride]))
     }
 }
