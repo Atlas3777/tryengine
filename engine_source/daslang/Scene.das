@@ -213,6 +213,9 @@ def private save_scene_to_config() : string {
                 // Указатели (mesh/material) — runtime-ссылки, в сцену они не пишутся.
                 if (comp.info.basicType == Type.tPointer)
                     continue
+                // Компоненты с "_" — runtime-only (маркеры загрузки ресурсов и т.п.).
+                if (starts_with(comp.name, "_"))
+                    continue
 
                 var cf_val = ComponentToCF(comp, i)
                 if (cf_val == null) {
@@ -478,6 +481,8 @@ def load_scene_from_config(config_text : string; renames : table<string; string>
                 print("create entity name = {entity_tag}\n")
                 assume cur_ent_obj = ent_cf.value as _object
                 for (field_name in keys(cur_ent_obj)) {
+                    if (starts_with(field_name, "_"))
+                        continue
                     let cf = cur_ent_obj?[field_name] ?? null
                     // print("field name = {field_name}\n")
                     parse_and_apply_field(cmp, entity_tag, field_name, cf, renames_captured, warnings_count, cf.typeName)

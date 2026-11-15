@@ -182,7 +182,7 @@ def DrawInspector() {
         var processed_groups : table<string; bool>
 
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            if (comp.name == "eid" || !passes_filter(W_FILTER, comp.name)) {
+            if (comp.name == "eid" || starts_with(comp.name, "_") || !passes_filter(W_FILTER, comp.name)) {
                 continue
             }
 
@@ -667,8 +667,8 @@ def private draw_leaf(ptr : void?; type_name : string; display_name : string; id
                 *reinterpret<string?>(ptr) = W_STRING[id_key].value
             }
             if (has_picker) {
-                var picked = ""
-                if (DrawAssetPickerPopup(id_key, picked)) {
+                if (DrawAssetPickerPopup(id_key)) {
+                    let picked = AssetPickerSelection()
                     *reinterpret<string?>(ptr) = picked
                     init_input_text(W_STRING[id_key], picked)
                 }

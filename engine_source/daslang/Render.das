@@ -49,6 +49,10 @@ def get_render_obj() : array<DrawCall>? {
     dcs.clear()
 
     query() <| $(eid : EntityId, transform : Transform, mesh : TryMesh?, material : TryMat?) {
+        // Пока новый материал грузится, указателя может не быть — не отдаём полупустой draw call.
+        if (mesh == null || material == null) {
+            return
+        }
         let id = unsafe(reinterpret<uint64>(eid))
         dcs.push(DrawCall(
             mesh_id = mesh,
@@ -119,15 +123,119 @@ def GetGameCamera(viewport_size : float2) : CameraC? {
 
 
 def start_load(){
-    query() $[REQUIRE_NOT(mesh, material)] (eid : EntityId, let transform : Transform, let meshGuid : uint64, let materialRef : string){
-        let material_guid = ResolveAssetRef(materialRef)
-        if (material_guid != 0ul && ResourceIsReadyMesh(meshGuid) && ResourceIsReadyMaterial(material_guid)){
-            var mesh_ptr = GetMeshPointer(meshGuid)
-            var mat_ptr = GetMaterialPointer(material_guid)
+    // Загрузка меша и материала разведена: материал не ждёт готовности меша.
+    // _meshLoadGuid/_materialLoadGuid — runtime-only компоненты (имя с "_" не
+    // сохраняется в сцену и не показывается в инспекторе). Они хранят guid,
+    // для которого загрузка уже запрошена, чтобы не дёргать RequestLoad каждый кадр.
+    query() $(eid : EntityId, let meshGuid : uint64) {
+        let guid = meshGuid
+        var has_mesh = false
+        query(eid) $(let mesh : TryMesh?) {
+            has_mesh = mesh != null
+        }
+        var load_guid = 0ul
+        var has_load = false
+        query(eid) $(let _meshLoadGuid : uint64) {
+            load_guid = _meshLoadGuid
+            has_load = true
+        }
+
+        if (guid == 0ul) {
+            if (has_mesh || has_load) {
+                update_entity(eid) @(eid, cmp) {
+                    decs::remove(cmp, "mesh")
+                    decs::remove(cmp, "_meshLoadGuid")
+                }
+            }
+            return
+        }
+
+        // Старый указатель без маркера: считаем, что он соответствует meshGuid.
+        if (has_mesh && !has_load) {
             update_entity(eid) @(eid, cmp) {
+                cmp |> set("_meshLoadGuid", guid)
+            }
+            return
+        }
+        if (has_mesh && has_load && load_guid == guid) {
+            return
+        }
+
+        let changed = has_load && load_guid != guid
+        let requested = has_load && load_guid == guid
+        let ready = ResourceIsReadyMesh(guid)
+        var mesh_ptr : TryMesh? = null
+        if (ready) {
+            mesh_ptr = GetMeshPointer(guid)
+        }
+        update_entity(eid) @(eid, cmp) {
+            if (changed) {
+                decs::remove(cmp, "mesh")
+            }
+            cmp |> set("_meshLoadGuid", guid)
+            if (ready) {
                 cmp |> set("mesh", mesh_ptr)
+            }
+        }
+        if (!ready && !requested) {
+            RequestLoadMesh(guid)
+        }
+    }
+
+    query() $(eid : EntityId, let materialRef : string) {
+        let material_guid = ResolveAssetRef(materialRef)
+        var has_material = false
+        query(eid) $(let material : TryMat?) {
+            has_material = material != null
+        }
+        var load_guid = 0ul
+        var has_load = false
+        query(eid) $(let _materialLoadGuid : uint64) {
+            load_guid = _materialLoadGuid
+            has_load = true
+        }
+
+        if (material_guid == 0ul) {
+            if (has_material || has_load) {
+                update_entity(eid) @(eid, cmp) {
+                    decs::remove(cmp, "material")
+                    decs::remove(cmp, "_materialLoadGuid")
+                }
+            }
+            return
+        }
+
+        // Старый указатель без маркера: считаем, что он соответствует materialRef.
+        if (has_material && !has_load) {
+            update_entity(eid) @(eid, cmp) {
+                cmp |> set("_materialLoadGuid", material_guid)
+            }
+            return
+        }
+        if (has_material && has_load && load_guid == material_guid) {
+            return
+        }
+
+        // Новый материал: старый указатель снимаем сразу, чтобы кадр не рисовал
+        // прошлый материал; новый подставится, когда ResourceIsReadyMaterial.
+        let changed = has_load && load_guid != material_guid
+        let requested = has_load && load_guid == material_guid
+        let ready = ResourceIsReadyMaterial(material_guid)
+        var mat_ptr : TryMat? = null
+        if (ready) {
+            mat_ptr = GetMaterialPointer(material_guid)
+        }
+        update_entity(eid) @(eid, cmp) {
+            if (changed) {
+                decs::remove(cmp, "material")
+            }
+            cmp |> set("_materialLoadGuid", material_guid)
+            if (ready) {
                 cmp |> set("material", mat_ptr)
             }
+        }
+        if (!ready && !requested) {
+            RequestLoadMaterial(material_guid)
         }
     }
 

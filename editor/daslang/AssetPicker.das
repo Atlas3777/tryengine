@@ -85,8 +85,8 @@ def public CloseAssetPicker() {
 }
 
 // Рисует popup, если его открыло поле owner_key. true — пользователь подтвердил выбор;
-// out_ref содержит путь (пустая строка означает "очистить поле").
-def public DrawAssetPickerPopup(owner_key : string; var out_ref : string) : bool {
+// сам выбор читается через AssetPickerSelection (пустая строка — очистить поле).
+def public DrawAssetPickerPopup(owner_key : string) : bool {
     if (!g_state.active || g_state.owner_key != owner_key) {
         return false
     }
@@ -117,7 +117,6 @@ def public DrawAssetPickerPopup(owner_key : string; var out_ref : string) : bool
                     if (selectable_label(g_rows[file.path], file.path, g_state.selected_path == file.path)) {
                         g_state.selected_path = file.path
                         if (IsMouseDoubleClicked(ImGuiMouseButton.Left)) {
-                            out_ref = file.path
                             picked = true
                         }
                     }
@@ -132,12 +131,11 @@ def public DrawAssetPickerPopup(owner_key : string; var out_ref : string) : bool
         if (empty(g_state.selected_path)) {
             text_disabled("Select a file")
         } elif (button(BT_ASSET_SELECT, (text = "Select"))) {
-            out_ref = g_state.selected_path
             picked = true
         }
         same_line()
         if (button(BT_ASSET_CLEAR, (text = "Clear"))) {
-            out_ref = ""
+            g_state.selected_path = ""
             picked = true
         }
         same_line()
@@ -152,4 +150,9 @@ def public DrawAssetPickerPopup(owner_key : string; var out_ref : string) : bool
         g_popup.pending_close = true
     }
     return picked
+}
+
+// Выбранный путь после DrawAssetPickerPopup вернул true.
+def public AssetPickerSelection() : string {
+    return g_state.selected_path
 }
