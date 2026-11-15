@@ -198,8 +198,8 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
 // Поиск по всему корню
 // ---------------------------------------------------------------------
 def DrawSearchResults() {
-    // Индексы берём из кеша запросов: обход дерева повторяется только при смене ревизии.
-    let refs <- FindFiles(current_domain, EXT_ANY)
+    // Обход идёт по кешу запросов: массив не копируется, дерево пересканируется только при
+    // смене ревизии. Строки берём из живого дерева, пока узел жив.
     assume folders = get_folders(current_domain)
 
     text("Search results across root:")
@@ -209,11 +209,11 @@ def DrawSearchResults() {
     let item_size = float2(avail_w, 22.0f)
     var visible_count = 0
 
-    for (r in refs) {
+    ForEachFile(current_domain, EXT_ANY) $(r) {
         assume folder = folders[r.folder]
         assume file = folder.files[r.file]
         if (!passes_filter(W_SEARCH_FILTER, file.name)) {
-            continue
+            return
         }
 
         let is_selected = (selected_file_folder_idx == r.folder && selected_file_idx == r.file)

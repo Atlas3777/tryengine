@@ -15,34 +15,35 @@ let EXT_PREFAB = asset_ext_key(".prefab")
 // Без фильтра по типу: все файлы корня.
 let EXT_ANY : uint64 = 0ul
 
-// Файл в дереве: индексы папки и файла в get_folders(domain). В кеше нет ни строк, ни
-// указателей — имя и путь всегда читаются из живого дерева, поэтому запись кеша не может
-// пережить свой узел: ревизия дерева меняется вместе с узлами.
+// Файл в дереве: индексы папки и файла в get_folders(domain). Ссылка, а не значение: имя и
+// путь всегда читаются из живого дерева, поэтому такая запись не может пережить свой узел.
 struct AssetFileRef {
     folder : int
     file : int
 }
 
+// Результат обхода дерева и ревизия, при которой он снят.
 struct FilesQuery {
     revision : uint64
-    files : array<AssetFileRef>
+    refs : array<AssetFileRef>
 }
 
-var private g_query_cache : table<string; FilesQuery>
+// Кеш: по таблице на домен (индекс — int(StorageDomain)), ключ — ключ расширения.
+// Ни строк в ключе, ни аллокаций на попадание в кеш.
+var private g_query_cache : array<table<uint64; FilesQuery>>
 
-def private QueryKey(domain : StorageDomain; ext_key : uint64) : string {
-    return "{int(domain)}:{ext_key:d}"
+[init]
+def private InitQueryCache() {
+    resize(g_query_cache, 4)  // engine, game, content, data
 }
 
-// Индексы всех файлов домена с данным расширением (EXT_ANY — все файлы). Обход
-// повторяется только при смене ревизии дерева: кеш помнит ревизию, с которой посчитан,
-// поэтому "все материалы в data" — это один обход на изменение дерева, а не на кадр.
-def public FindFiles(domain : StorageDomain; ext_key : uint64) : array<AssetFileRef> {
-    let key = QueryKey(domain, ext_key)
+// Наполняет кеш, если для этой ревизии дерева обхода ещё не было.
+def private EnsureQuery(domain : StorageDomain; ext_key : uint64) {
+    let d = int(domain)
     let revision = get_tree_revision(domain)
 
-    if (key_exists(g_query_cache, key) && g_query_cache[key].revision == revision) {
-        return <- clone(g_query_cache[key].files)
+    if (key_exists(g_query_cache[d], ext_key) && g_query_cache[d][ext_key].revision == revision) {
+        return
     }
 
     var found : array<AssetFileRef>
@@ -56,12 +57,27 @@ def public FindFiles(domain : StorageDomain; ext_key : uint64) : array<AssetFile
         }
     }
 
-    g_query_cache[key] <- FilesQuery(revision = revision, files <- found)
-    return <- clone(g_query_cache[key].files)
+    g_query_cache[d][ext_key] <- FilesQuery(revision = revision, refs <- found)
 }
 
-// Файл по ссылке из FindFiles. Строки берутся из живого дерева, поэтому значение годится
-// только сразу: держать его дольше, чем жив узел, нельзя — копию не делаем намеренно.
+// Обход файлов домена по кешу: блок получает ссылку, массив не копируется, аллокаций нет.
+// Обход дерева повторяется только при смене ревизии, дальше это чтение готового массива.
+def public ForEachFile(domain : StorageDomain; ext_key : uint64; blk : block<(ref : AssetFileRef) : void>) {
+    EnsureQuery(domain, ext_key)
+    for (r in g_query_cache[int(domain)][ext_key].refs) {
+        invoke(blk, r)
+    }
+}
+
+// Тот же результат списком — когда его надо придержать между кадрами (BuildManager).
+// Отдаём копию массива индексов: 8 байт на файл, строк в нём нет.
+def public FindFiles(domain : StorageDomain; ext_key : uint64) : array<AssetFileRef> {
+    EnsureQuery(domain, ext_key)
+    return <- clone(g_query_cache[int(domain)][ext_key].refs)
+}
+
+// Файл по ссылке из ForEachFile/FindFiles. Строки берутся из живого дерева, поэтому значение
+// годится только сразу: держать его дольше, чем жив узел, нельзя — копию не делаем намеренно.
 def public TreeFile(domain : StorageDomain; ref : AssetFileRef) : AssetItem {
     assume folders = get_folders(domain)
     let f = folders[ref.folder].files[ref.file]
@@ -70,12 +86,14 @@ def public TreeFile(domain : StorageDomain; ref : AssetFileRef) : AssetItem {
 
 // Сбросить кеш запросов (например, после пересборки деревьев).
 def public InvalidateFileCache() {
-    clear(g_query_cache)
+    for (i in range(length(g_query_cache))) {
+        clear(g_query_cache[i])
+    }
 }
 
 // Полная пересборка деревьев из диска: пока файлового вотчера нет, это единственный способ
-// увидеть новые файлы. После неё ревизии другие, а старые ключи кеша никому не нужны.
+// увидеть новые файлы. После неё ревизии другие, а старые записи кеша никому не нужны.
 def public RefreshAssetTrees() {
     rebuild_asset_trees()
-    clear(g_query_cache)
+    InvalidateFileCache()
 }

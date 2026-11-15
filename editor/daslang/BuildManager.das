@@ -43,9 +43,9 @@ var private CHECKBOX_STATE : table<int; ToggleState -const>
 
 // Список сцен следует за деревом content: кнопка обновляет его принудительно, а ревизия —
 // сама, поэтому пересборка дерева не оставляет в списке висячие ссылки.
-def private EnsureSceneList(force : bool) {
+def private EnsureSceneList() {
     let revision = get_tree_revision(StorageDomain.Content)
-    if (!force && revision == cache_scene_revision) {
+    if (revision == cache_scene_revision) {
         return
     }
     cache_scene_revision = revision
@@ -150,11 +150,7 @@ def private CreateBuildAction() {
 
 def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
-        // Сцены — композиции из авторитетного корня content: .meta и guid у них нет.
-        if (button(UPDATE_SCENE, (text = "Update Scene List"))){
-            EnsureSceneList(force = true)
-        }
-        EnsureSceneList(force = false)
+        EnsureSceneList()
         if (!build_dir.empty()){
             text("{build_dir}");
         }
