@@ -17,3 +17,8 @@ target_link_libraries(engine_resources PUBLIC
         engine::async
         glaze::glaze
 )
+
+# Биндинг daslang: асинхронный ввод-вывод (модуль tryAsyncFile). В редакторе и игре он
+# регистрируется статически из этой же библиотеки, shared-копия нужна внешнему daslang.
+tryengine_add_das_module(tryAsyncFile_shared tryAsyncFile src/Module_AsyncFileManager.cpp
+        engine::core engine::resources)

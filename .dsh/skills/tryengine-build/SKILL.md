@@ -44,12 +44,13 @@ tools/agent/build.sh all                     # editor + game_client
 | --- | --- | --- | --- |
 | `engine_source/graphics/src/Module_Renderer.cpp` | `tryRenderer` | `tryRenderer_shared` | `modules/tryRenderer/` |
 | `engine_source/graphics/src/Module_Resources.cpp` | `tryResources` | `tryResources_shared` | `modules/tryResources/` |
-| `engine_source/graphics/src/Module_Input.cpp` | `tryInput` | `tryInput_shared` | `modules/tryInput/` |
-| `engine_source/graphics/src/Module_AsyncFileManager.cpp` | `tryAsyncFile` | `tryAsyncFile_shared` | `modules/tryAsyncFile/` |
+| `engine_source/platform/src/Module_Input.cpp` | `tryInput` | `tryInput_shared` | `modules/tryInput/` |
+| `engine_source/resources/src/Module_AsyncFileManager.cpp` | `tryAsyncFile` | `tryAsyncFile_shared` | `modules/tryAsyncFile/` |
 | `editor/src/Module_TryEditor.cpp` | `TryEditor` | `tryeditor_shared` | `modules/tryeditor/` |
 
-Библиотеки нужны внешнему `daslang` (CLI-гейт, подсветка кастомных типов); в самих
-приложениях те же `.cpp` линкуются статически. Цели заводит
+Файл модуля лежит в том слое, чьи типы он отдаёт в скрипт. Библиотеки нужны внешнему
+`daslang` (CLI-гейт, подсветка кастомных типов); в самих приложениях те же `.cpp` линкуются
+статически. Цели заводит
 `tryengine_add_das_module()` из `cmake/DasModule.cmake`, агрегат — `das_modules`.
 
 Оба профиля пишут **один и тот же файл** `modules/<имя>/<имя>.shared_module`, поэтому

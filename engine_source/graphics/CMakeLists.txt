@@ -116,13 +116,9 @@ target_compile_definitions(engine_graphics PUBLIC VK_NO_PROTOTYPES)
 # C++-биндинги daslang: один модуль — один файл и одна shared-библиотека
 # modules/<имя модуля>/. Те же .cpp уже собраны в engine_graphics выше — там они
 # регистрируются статически (PULL_MODULE), а shared-копии читает внешний daslang.
+# Здесь только те модули, что привязаны к графическим типам: tryInput живёт в platform,
+# tryAsyncFile — в resources.
 tryengine_add_das_module(tryRenderer_shared tryRenderer src/Module_Renderer.cpp engine::core)
 
 tryengine_add_das_module(tryResources_shared tryResources src/Module_Resources.cpp
         engine::core engine::graphics)
-
-tryengine_add_das_module(tryInput_shared tryInput src/Module_Input.cpp
-        engine::core engine::platform)
-
-tryengine_add_das_module(tryAsyncFile_shared tryAsyncFile src/Module_AsyncFileManager.cpp
-        engine::core engine::resources)

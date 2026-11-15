@@ -73,11 +73,13 @@
 
 ## Биндинги daslang
 
-- По файлу на нативный модуль: `src/Module_Input.cpp` (`tryInput`),
-  `src/Module_Resources.cpp` (`tryResources`), `src/Module_Renderer.cpp` (`tryRenderer`),
-  `src/Module_AsyncFileManager.cpp` (`tryAsyncFile`). Общий файл на несколько модулей не
-  собирай: каждый модуль — своя shared-библиотека `modules/<имя>/` (см.
-  `tryengine_add_das_module()` в `cmake/DasModule.cmake`).
+- По файлу на нативный модуль, и файл лежит в слое, чьи типы он отдаёт в скрипт: здесь
+  `src/Module_Renderer.cpp` (`tryRenderer`) и `src/Module_Resources.cpp` (`tryResources`,
+  ему нужны `Mesh`/`Material`/`Shader`). `tryInput` живёт в `engine_source/platform`,
+  `tryAsyncFile` — в `engine_source/resources`: их биндинги не должны переезжать сюда
+  только потому, что тут когда-то лежал общий файл.
+- Общий файл на несколько модулей не собирай: каждый модуль — своя shared-библиотека
+  `modules/<имя>/` (см. `tryengine_add_das_module()` в `cmake/DasModule.cmake`).
 - Эти же `.cpp` попадают в статическую `engine_graphics` (glob `src/*.cpp`), поэтому
   редактор и игра получают модули через `PULL_MODULE`, без загрузки dll.
 - `REGISTER_MODULE`/`REGISTER_DYN_MODULE` и `MAKE_TYPE_FACTORY` живут вместе с модулем;

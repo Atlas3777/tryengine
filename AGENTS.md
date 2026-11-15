@@ -20,9 +20,9 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | Путь | Содержимое |
 | --- | --- |
 | `engine_source/core` | `Engine` (реестр систем), `Result`/`Error`, логи, `ScriptSystem`, script pak, `SlotMap`/`TypeRegistry` |
-| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; здесь же лежат биндинги нативных модулей `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile` (`src/Module_*.cpp`, по файлу на модуль) |
-| `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры |
-| `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики |
+| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; биндинги `tryRenderer` и `tryResources` (`src/Module_Renderer.cpp`, `Module_Resources.cpp`) |
+| `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры; биндинг `tryInput` (`src/Module_Input.cpp`) |
+| `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики; биндинг `tryAsyncFile` (`src/Module_AsyncFileManager.cpp`) |
 | `engine_source/async` | корутины `Task<T>`, пул потоков и главный исполнитель, pollable-хендлы |
 | `engine_source/daslang` | исходники API движка для `.das` (`require tryengine/...`) |
 | `editor/src`, `editor/include` | приложение редактора, панели ImGui, импортеры (glTF, Slang, текстуры), asset pipeline, `Module_TryEditor` |
@@ -73,10 +73,12 @@ cmake --build build-debug --target editor -j "$(nproc)"
 
 ### Модули-биндинги daslang (`das_modules`)
 
-- Один C++-модуль = один файл (`engine_source/graphics/src/Module_Input.cpp`,
-  `Module_Resources.cpp`, `Module_Renderer.cpp`, `Module_AsyncFileManager.cpp`,
-  `editor/src/Module_TryEditor.cpp`) = одна shared-библиотека
-  `modules/<имя модуля>/<имя модуля>.shared_module`.
+- Один C++-модуль = один файл = одна shared-библиотека
+  `modules/<имя модуля>/<имя модуля>.shared_module`. Файл лежит в том слое, чьи типы он
+  отдаёт в скрипт: `engine_source/platform/src/Module_Input.cpp`,
+  `engine_source/resources/src/Module_AsyncFileManager.cpp`,
+  `engine_source/graphics/src/Module_Renderer.cpp` и `Module_Resources.cpp`,
+  `editor/src/Module_TryEditor.cpp`.
 - Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
