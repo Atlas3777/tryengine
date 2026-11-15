@@ -19,6 +19,33 @@ class AssetRegistry;
 
 namespace tryeditor {
 
+// Корни, которые редактор показывает деревьями. Домен — это корень, а не тип файла.
+enum class StorageDomain : uint8_t { Engine = 0, Game = 1, Content = 2, Data = 3 };
+
+// Ассеты (engine, game): у файла есть .meta с guid и артефакт импорта, на диск он попадает
+// через конвейер. Авторитетные файлы (content, data) — сами по себе: .meta, guid и
+// артефактов у них нет, поэтому их деревья строятся одним сканированием.
+inline constexpr bool IsAssetDomain(StorageDomain domain) {
+    return domain == StorageDomain::Engine || domain == StorageDomain::Game;
+}
+
+// Где лежит корень домена. artifacts_dir == nullptr => артефактов нет.
+struct StorageRoot {
+    StorageDomain domain;
+    const char* dir;
+    const char* artifacts_dir;
+};
+
+inline constexpr StorageRoot kStorageRoots[] = {
+    {StorageDomain::Engine, "engine_content/assets", "engine_content/artifacts"},
+    {StorageDomain::Game, "game/assets", "game/artifacts"},
+    {StorageDomain::Content, "game/content", nullptr},  // префабы и сцены: композиции
+    {StorageDomain::Data, "game/data", nullptr},        // атомы: материалы и прочее
+};
+
+// Корень домена. Таблица выше — единственное место, где домен связан с каталогом.
+const StorageRoot& RootOf(StorageDomain domain);
+
 struct AssetMountPoint {
     eastl::string name;
     eastl::string assets_dir;
@@ -27,13 +54,23 @@ struct AssetMountPoint {
 
 class AssetPipeline {
 public:
-    enum class StorageDomain : uint8_t { Engine = 0, Game = 1 };
-
     AssetPipeline(tryengine::resources::AssetRegistry& registry);
     ~AssetPipeline() = default;
 
     const eastl::vector<UiFolder>& GetFolders(StorageDomain domain) const;
     const UiTree& GetTree(StorageDomain domain) const;
+
+    // Ревизия дерева домена: поднимается на любом его изменении. daslang по ней решает,
+    // повторять ли обход (кеш запросов "все материалы в data").
+    uint64_t GetTreeRevision(StorageDomain domain) const;
+
+    // Деревья авторитетных доменов (content, data). Ни мет, ни guid, ни артефактов нет,
+    // поэтому это одно сканирование диска без конвейера импорта. main thread.
+    void BuildAuthoritativeTrees();
+
+    // Полная пересборка всех деревьев из диска — пока файлового вотчера нет, это
+    // единственный способ увидеть новые файлы. main thread, до отрисовки дерева.
+    void RebuildTrees();
 
     tryengine::async::Task<void> ImportEngineContent(tryengine::resources::AsyncFileManager& file_manager);
     tryengine::async::Task<void> ImportGameContent(tryengine::resources::AsyncFileManager& file_manager);
@@ -67,6 +104,9 @@ private:
     void ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTree::Changes& changes);
     void ApplyPathChanges(UiTree::Changes& changes);
 
+    UiTree& Tree(StorageDomain domain);
+    void BuildTreeFromDisk(StorageDomain domain);
+
     tryengine::async::Task<void> ProcessDomain(const AssetMountPoint& mount, ScanResult scan_data,
                                                tryengine::resources::AsyncFileManager& file_manager,
                                                StorageDomain domain);
@@ -87,6 +127,8 @@ private:
     tryengine::core::StringTable strings_;
     UiTree engine_tree_{strings_};
     UiTree game_tree_{strings_};
+    UiTree content_tree_{strings_};
+    UiTree data_tree_{strings_};
 
     std::mutex pending_mutex_;
     eastl::vector<TreeCommand> pending_;

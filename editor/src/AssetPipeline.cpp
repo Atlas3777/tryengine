@@ -26,12 +26,54 @@ using tryengine::core::ToView;
 
 const char* meta_ext = ".meta";
 
+const StorageRoot& RootOf(StorageDomain domain) {
+    for (const StorageRoot& root : kStorageRoots)
+        if (root.domain == domain)
+            return root;
+    return kStorageRoots[0];  // домены и таблица объявлены рядом; сюда попасть нельзя
+}
+
+UiTree& AssetPipeline::Tree(StorageDomain domain) {
+    switch (domain) {
+        case StorageDomain::Engine:
+            return engine_tree_;
+        case StorageDomain::Game:
+            return game_tree_;
+        case StorageDomain::Content:
+            return content_tree_;
+        case StorageDomain::Data:
+            return data_tree_;
+    }
+    return engine_tree_;
+}
+
 const UiTree& AssetPipeline::GetTree(StorageDomain domain) const {
-    return domain == StorageDomain::Engine ? engine_tree_ : game_tree_;
+    return const_cast<AssetPipeline*>(this)->Tree(domain);
 }
 
 const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) const {
     return GetTree(domain).Folders();
+}
+
+uint64_t AssetPipeline::GetTreeRevision(StorageDomain domain) const {
+    return GetTree(domain).Version();
+}
+
+void AssetPipeline::BuildTreeFromDisk(StorageDomain domain) {
+    ScanResult scan = AssetScanner::ScanDirectory(RootOf(domain).dir);
+    std::lock_guard lock(db_mutex_);
+    // У авторитетных файлов нет guid: карта путей в дерево не передаётся.
+    Tree(domain).BuildFrom(scan, IsAssetDomain(domain) ? &path_to_guid_ : nullptr);
+}
+
+void AssetPipeline::BuildAuthoritativeTrees() {
+    BuildTreeFromDisk(StorageDomain::Content);
+    BuildTreeFromDisk(StorageDomain::Data);
+}
+
+void AssetPipeline::RebuildTrees() {
+    for (const StorageRoot& root : kStorageRoots)
+        BuildTreeFromDisk(root.domain);
 }
 
 AssetPipeline::AssetPipeline(AssetRegistry& registry) : registry_(registry) {}
@@ -52,8 +94,8 @@ void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t
 }
 
 Task<void> AssetPipeline::ImportEngineContent(AsyncFileManager& file_manager) {
-    AssetMountPoint engine_mount{
-        .name = "engine", .assets_dir = "engine_content/assets", .artifacts_dir = "engine_content/artifacts"};
+    const StorageRoot& root = RootOf(StorageDomain::Engine);
+    AssetMountPoint engine_mount{.name = "engine", .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
 
     LogInfo(LogCategory::Importer, "EngineContent scanning...");
     ScanResult scan_data = AssetScanner::ScanDirectory(engine_mount.assets_dir.c_str());
@@ -66,7 +108,8 @@ Task<void> AssetPipeline::ImportEngineContent(AsyncFileManager& file_manager) {
 }
 
 Task<void> AssetPipeline::ImportGameContent(AsyncFileManager& file_manager) {
-    AssetMountPoint game_mount{.name = "game", .assets_dir = "game/assets", .artifacts_dir = "game/artifacts"};
+    const StorageRoot& root = RootOf(StorageDomain::Game);
+    AssetMountPoint game_mount{.name = "game", .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
 
     LogInfo(LogCategory::Importer, "GameContent scanning...");
     ScanResult scan_data = AssetScanner::ScanDirectory(game_mount.assets_dir.c_str());
@@ -102,8 +145,7 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
     // Первичная загрузка: вызывать, пока das не рисует это дерево (старт редактора).
     {
         std::lock_guard lock(db_mutex_);
-        UiTree& tree = (domain == StorageDomain::Engine) ? engine_tree_ : game_tree_;
-        tree.BuildFrom(scan_data, path_to_guid_);
+        Tree(domain).BuildFrom(scan_data, &path_to_guid_);
     }
 
     co_return {};
@@ -619,7 +661,7 @@ void AssetPipeline::ApplyPendingTreeChanges() {
 }
 
 bool AssetPipeline::LocateFolder(eastl::string_view path, UiTree*& tree, uint32_t& idx) {
-    for (UiTree* t : {&game_tree_, &engine_tree_}) {
+    for (UiTree* t : {&game_tree_, &engine_tree_, &content_tree_, &data_tree_}) {
         const uint32_t i = t->FindFolder(path);
         if (i != kNoFolder) {
             tree = t;
@@ -675,6 +717,7 @@ void AssetPipeline::ApplyRenamed(eastl::string_view old_path, eastl::string_view
 
 void AssetPipeline::ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTree::Changes&) {
     const PathParts p = SplitPath(path);
+    // Только ассеты: у авторитетных файлов (content, data) нет guid.
     for (UiTree* t : {&game_tree_, &engine_tree_}) {
         const uint32_t folder = t->EnsureFolder(p.parent);  // kNoFolder, если путь не из этого дерева
         if (folder == kNoFolder)

@@ -3,6 +3,8 @@
 #include <EASTL/sort.h>
 #include <cstring>
 
+#include "editor/AssetExt.hpp"
+
 namespace tryeditor {
 
 using eastl::string_view;
@@ -56,7 +58,7 @@ void UiTree::Clear() {
     ++version_;
 }
 
-void UiTree::BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, uint64_t>& path_to_guid) {
+void UiTree::BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, uint64_t>* path_to_guid) {
     Clear();
     if (scan.entries.empty())
         return;
@@ -82,9 +84,13 @@ void UiTree::BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, u
             const uint32_t idx = NewFolder(parent, name, path);
             folders_[parent].subfolders.push_back(idx);
         } else {
-            auto it = path_to_guid.find(PathHash(path));
-            folders_[parent].files.push_back(
-                UiFile{it != path_to_guid.end() ? it->second : 0, strings_.Intern(name), strings_.Intern(path)});
+            uint64_t guid = 0;
+            if (path_to_guid) {
+                auto it = path_to_guid->find(PathHash(path));
+                if (it != path_to_guid->end())
+                    guid = it->second;
+            }
+            folders_[parent].files.push_back(UiFile{guid, ExtKey(name), strings_.Intern(name), strings_.Intern(path)});
         }
     }
 
@@ -351,7 +357,7 @@ bool UiTree::AddFile(uint32_t folder, string_view name, uint64_t guid) {
     if (path.empty())
         return false;
 
-    InsertFile(folder, UiFile{guid, strings_.Intern(name), strings_.Intern(path)});
+    InsertFile(folder, UiFile{guid, ExtKey(name), strings_.Intern(name), strings_.Intern(path)});
     ++version_;
     return true;
 }

@@ -80,6 +80,10 @@ void EditorApp::Init() {
 
     editor_ = std::make_unique<Editor>(*engine_, *vulkan_device_);
 
+    // Авторитетные корни (game/content, game/data) — одно сканирование диска: у их файлов
+    // нет ни .meta, ни guid, ни артефактов, конвейер импорта им не нужен.
+    editor_->GetAssetSourceDatabase().BuildAuthoritativeTrees();
+
     auto& script_system = engine_->RegisterSystem<ScriptSystem>(GetEditorScriptConfig(*engine_, *editor_));
 
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");

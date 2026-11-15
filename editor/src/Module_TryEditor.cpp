@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <thread>
 
+#include "editor/AssetExt.hpp"
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/TryEditorContext.hpp"
@@ -16,6 +17,9 @@
 #include "engine/resources/PathGuid.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
+// Биндинг домена дерева — ДО using namespace das (иначе коллизии имён)
+DAS_BASE_BIND_ENUM(tryeditor::StorageDomain, StorageDomain, Engine, Game, Content, Data)
+
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
 using Uint32Vector = eastl::vector<uint32_t>;
@@ -27,14 +31,28 @@ MAKE_TYPE_FACTORY(UiFolderVector, UiFolderVector);
 MAKE_TYPE_FACTORY(UiFileVector, UiFileVector);
 MAKE_TYPE_FACTORY(Uint32Vector, Uint32Vector);
 
-const UiFolderVector& GetEngineFolders(das::Context* ctx) {
+const UiFolderVector& GetFolders(tryeditor::StorageDomain domain, das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Engine);
+    return try_ctx->editor.GetAssetSourceDatabase().GetFolders(domain);
 }
 
-const UiFolderVector& GetGameFolders(das::Context* ctx) {
+// Ревизия дерева: daslang кеширует по ней результаты обхода ("все .mat в data").
+uint64_t GetTreeRevision(tryeditor::StorageDomain domain, das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
-    return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Game);
+    return try_ctx->editor.GetAssetSourceDatabase().GetTreeRevision(domain);
+}
+
+// Полная пересборка всех деревьев из диска. Пока файлового вотчера нет, это единственный
+// способ увидеть новые файлы; вызывается из UI.
+void RebuildAssetTrees(das::Context* ctx) {
+    auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    try_ctx->editor.GetAssetSourceDatabase().RebuildTrees();
+}
+
+// Ключ расширения (8 байт) — тот же, что лежит в узле дерева: скрипт ищет файлы по типу,
+// не трогая строки.
+uint64_t AssetExtKey(const char* name) {
+    return tryeditor::ExtKey(name ? eastl::string_view(name) : eastl::string_view());
 }
 
 struct SceneDTODas {
@@ -257,6 +275,7 @@ using namespace das;
 struct UiFileAnnotation : ManagedStructureAnnotation<tryeditor::UiFile, false> {
     UiFileAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("AssetItem", ml) {
         addField<DAS_BIND_MANAGED_FIELD(guid)>("guid", "guid");
+        addField<DAS_BIND_MANAGED_FIELD(ext)>("ext", "ext");
         addField<DAS_BIND_MANAGED_FIELD(name)>("name", "name");
         addField<DAS_BIND_MANAGED_FIELD(path)>("path", "path");
     }
@@ -275,6 +294,8 @@ class Module_TryEditor : public das::Module {
 public:
     Module_TryEditor() : das::Module("TryEditor") {
         das::ModuleLibrary lib(this);
+
+        addEnumeration(new EnumerationStorageDomain());
 
         addAnnotation(new UiFileAnnotation(lib));
 
@@ -305,11 +326,15 @@ public:
         das::addExtern<DAS_BIND_FUN(ApplyMaterialConfigText)>(
             *this, lib, "ApplyMaterialConfigText", das::SideEffects::accessGlobal, "ApplyMaterialConfigText");
 
-        das::addExtern<DAS_BIND_FUN(GetEngineFolders)>(*this, lib, "get_engine_folders", das::SideEffects::none,
-                                                       "GetEngineFolders");
+        das::addExtern<DAS_BIND_FUN(GetFolders)>(*this, lib, "get_folders", das::SideEffects::none, "GetFolders");
 
-        das::addExtern<DAS_BIND_FUN(GetGameFolders)>(*this, lib, "get_game_folders", das::SideEffects::none,
-                                                     "GetGameFolders");
+        das::addExtern<DAS_BIND_FUN(GetTreeRevision)>(*this, lib, "get_tree_revision", das::SideEffects::accessGlobal,
+                                                      "GetTreeRevision");
+
+        das::addExtern<DAS_BIND_FUN(RebuildAssetTrees)>(*this, lib, "rebuild_asset_trees",
+                                                        das::SideEffects::accessGlobal, "RebuildAssetTrees");
+
+        das::addExtern<DAS_BIND_FUN(AssetExtKey)>(*this, lib, "asset_ext_key", das::SideEffects::none, "AssetExtKey");
 
         das::addExtern<DAS_BIND_FUN(CreateBuild)>(*this, lib, "CreateBuild", das::SideEffects::accessGlobal,
                                                   "CreateBuild");

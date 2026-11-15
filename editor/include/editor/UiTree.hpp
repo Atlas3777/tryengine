@@ -14,7 +14,8 @@ inline constexpr uint32_t kNoFolder = 0xFFFFFFFFu;
 
 // POD-структуры, которые видит daslang. Строки принадлежат StringTable и живут, пока узел в дереве.
 struct UiFile {
-    uint64_t guid;
+    uint64_t guid;  // 0 у авторитетных файлов (content, data): у них нет .meta
+    uint64_t ext;   // ключ расширения, см. AssetExt.hpp
     const char* name;
     const char* path;
 };
@@ -45,14 +46,17 @@ public:
     UiTree(const UiTree&) = delete;
     UiTree& operator=(const UiTree&) = delete;
 
-    // Полная пересборка (первичная загрузка) из результата сканирования.
-    void BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, uint64_t>& path_to_guid);
+    // Полная пересборка (первичная загрузка) из результата сканирования. path_to_guid ==
+    // nullptr — у файлов домена нет guid (авторитетные content/data).
+    void BuildFrom(const ScanResult& scan, const eastl::hash_map<uint64_t, uint64_t>* path_to_guid);
     void Clear();
 
     const eastl::vector<UiFolder>& Folders() const {
         return folders_;
     }
 
+    // Поднимается на любом изменении дерева. По нему daslang решает, надо ли повторять
+    // обход (кеш запросов "все материалы" и т.п.).
     uint64_t Version() const {
         return version_;
     }

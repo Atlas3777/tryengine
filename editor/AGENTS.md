@@ -65,3 +65,21 @@
 - Авторитетные материалы не имеют `.meta`: на старте редактора
   `RegisterLooseDirectory(registry, "game/data", ".mat")` регистрирует их под
   id = `PathGuid(путь)`, поэтому ссылка из сцены находится и после перезапуска.
+
+## Деревья ресурсов (Asset Browser)
+
+- Корень дерева — домен `tryeditor::StorageDomain`; каталоги собраны в одной таблице
+  `kStorageRoots` (`editor/include/editor/AssetPipeline.hpp`). Ассеты: `game/assets` и
+  `engine_content/assets` — `.meta` с guid, артефакты импорта. Авторитетные файлы:
+  `game/content` (сцены, префабы) и `game/data` (материалы и прочие атомы) — у них нет ни
+  `.meta`, ни guid, ни артефактов, дерево строится одним `AssetScanner::ScanDirectory` без
+  конвейера импорта.
+- Узел-файл хранит `UiFile::ext` — ключ расширения на 8 байт (`editor/include/editor/AssetExt.hpp`).
+  Расширение строкой не хранится: поиск "все `.mat` в `data`" — одно сравнение `uint64` на
+  файл. Ключ считает `ExtKey`, он же отдаётся скрипту как `asset_ext_key`.
+- `UiTree::Version()` — ревизия дерева, растёт на любом изменении. Скрипты кешируют обход
+  по ней: `FileSystemUtils.das` (`FindFiles` -> `array<AssetFileRef>`) помнит ревизию
+  запроса и в кеше держит только индексы узлов, поэтому кеш не может пережить свои строки.
+- Файлового вотчера ещё нет (`FileWatcher` — заглушка): новые файлы появляются в деревьях
+  только после `rebuild_asset_trees()` (кнопка Refresh в Asset Browser, обёртка
+  `RefreshAssetTrees()`), которая заново сканирует все четыре корня.

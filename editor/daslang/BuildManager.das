@@ -135,8 +135,9 @@ def private CreateBuildAction() {
 
 def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
+        // Сцены — композиции из авторитетного корня content: .meta и guid у них нет.
         if (button(UPDATE_SCENE, (text = "Update Scene List"))){
-            cache_scenes <- FindFilesByExt(".scene")
+            cache_scenes <- ContentScenes()
         }
         if (!build_dir.empty()){
             text("{build_dir}");

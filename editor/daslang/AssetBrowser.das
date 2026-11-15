@@ -18,9 +18,9 @@ require math
 
 // Настройки темы Asset Browser
 let AB_WINDOW_PADDING = float2(4.0f, 4.0f)
-let AB_FRAME_PADDING  = float2(4.0f, 2.0f)
-let AB_ITEM_SPACING   = float2(4.0f, 2.0f)
-let AB_INDENT         = 10.0f
+let AB_FRAME_PADDING = float2(4.0f, 2.0f)
+let AB_ITEM_SPACING = float2(4.0f, 2.0f)
+let AB_INDENT = 10.0f
 
 // Универсальная стилизация элементов ресурсов (папки и файлы)
 def AssetStyle(selected : bool; is_dir : bool; blk : block) {
@@ -43,12 +43,18 @@ def AssetStyle(selected : bool; is_dir : bool; blk : block) {
 var FOLDER_TREE_NODE : TreeNodeState
 var W_SEARCH_FILTER : TextFilterState
 
+// Корень, который сейчас показан. Домен — это корень: game/assets и engine_content/assets
+// содержат ассеты (.meta + guid), game/content и game/data — авторитетные файлы.
+var current_domain : StorageDomain = StorageDomain.Game
 var current_folder_idx : int = 0
 var selected_file_folder_idx : int = -1
 var selected_file_idx : int = -1
 
+// Payload перетаскивания. Поля и порядок совпадают с AssetItem: на принимающей стороне
+// (SceneViewPort) буфер читается как AssetItem, поэтому layout менять нельзя.
 struct AssetDrag {
     guid : uint64
+    ext : uint64
     name : string
     path : string
 }
@@ -62,12 +68,15 @@ def public DrawAssetBrowser() {
         (ImGuiStyleVar.ItemSpacing, AB_ITEM_SPACING),
         (ImGuiStyleVar.IndentSpacing, AB_INDENT)) {
         window(ASSET_BROWSER_WIN, (text = "Asset Browser", closable = false, flags = ImGuiWindowFlags.None)) {
-            checkbox(FOLDER_IDENT, (text = "EngineContent"))
+            DrawRootSelector()
 
-            assume folders = FOLDER_IDENT.value ? get_engine_folders() : get_game_folders()
+            assume folders = get_folders(current_domain)
             if (length(folders) == 0) {
-                text("No asset folders loaded.")
+                text("No folders under this root.")
                 return
+            }
+            if (current_folder_idx >= length(folders)) {
+                current_folder_idx = 0
             }
 
             text_filter(W_SEARCH_FILTER, "Search", 200f)
@@ -93,12 +102,56 @@ def public DrawAssetBrowser() {
 
                 // Содержимое выбранной папки (справа)
                 child(FolderContentRegion, (text = "FolderContentRegion", size = float2(0.0f, 0.0f), child_flags = ImGuiChildFlags.Borders, window_flags = ImGuiWindowFlags.None)) {
-                    DrawFolderContent(current_folder_idx, folders)
+                    DrawFolderContent(folders, current_folder_idx)
                 }
 
                 columns_close()
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Выбор корня и пересборка деревьев
+// ---------------------------------------------------------------------
+def private ResetSelection() {
+    current_folder_idx = 0
+    selected_file_folder_idx = -1
+    selected_file_idx = -1
+}
+
+def private SelectDomain(domain : StorageDomain) {
+    if (current_domain == domain) {
+        return
+    }
+    current_domain = domain
+    ResetSelection()
+}
+
+def private DrawDomainButton(domain : StorageDomain; text : string) {
+    with_id("domain_{int(domain)}") {
+        AssetStyle(current_domain == domain, false) {
+            if (button(BT_DOMAIN, (text = text))) {
+                SelectDomain(domain)
+            }
+        }
+    }
+}
+
+def private DrawRootSelector() {
+    DrawDomainButton(StorageDomain.Game, "Game")
+    same_line()
+    DrawDomainButton(StorageDomain.Engine, "Engine")
+    same_line()
+    DrawDomainButton(StorageDomain.Content, "Content")
+    same_line()
+    DrawDomainButton(StorageDomain.Data, "Data")
+    same_line()
+
+    // Полная пересборка деревьев: пока нет файлового вотчера, новые файлы видны только так.
+    if (button(BT_REFRESH_TREE, (text = "Refresh"))) {
+        RefreshAssetTrees()
+        ResetSelection()
     }
 }
 
@@ -141,53 +194,55 @@ def DrawFolderTreeNode(folder_idx : int; let folders) {
 }
 
 // ---------------------------------------------------------------------
-// Поиск по всему проекту
+// Поиск по всему корню
 // ---------------------------------------------------------------------
-def DrawSearchResults(let folders) {
-    text("Search results across project:")
+def DrawSearchResults() {
+    // Индексы берём из кеша запросов: обход дерева повторяется только при смене ревизии.
+    let refs = FindFiles(current_domain, EXT_ANY)
+    assume folders = get_folders(current_domain)
+
+    text("Search results across root:")
     separator(WI_SEP_1)
 
     let avail_w = GetContentRegionAvail().x
     let item_size = float2(avail_w, 22.0f)
     var visible_count = 0
 
-    for (f_idx in range(length(folders))) {
-        assume folder = folders[f_idx]
-        let file_count = length(folder.files)
+    for (r in refs) {
+        assume folder = folders[r.folder]
+        assume file = folder.files[r.file]
+        if (!passes_filter(W_SEARCH_FILTER, file.name)) {
+            continue
+        }
 
-        for (i in range(file_count)) {
-            assume file = folder.files[i]
-            if (!passes_filter(W_SEARCH_FILTER, file.name)) {
-                continue
-            }
+        let is_selected = (selected_file_folder_idx == r.folder && selected_file_idx == r.file)
 
-            let is_selected = (selected_file_folder_idx == f_idx && selected_file_idx == i)
+        with_id("file_{r.folder}_{r.file}") {
+            group(FILE_GRP) {
+                AssetStyle(is_selected, false) {
+                    let btn_text = "  [FILE] {file.name}  ({folder.name})"
+                    if (button(BT_GO, (text = btn_text, size = item_size))) {
+                        selected_file_folder_idx = r.folder
+                        selected_file_idx = r.file
+                    }
 
-            with_id("file_{f_idx}_{i}") {
-                group(FILE_GRP) {
-                    AssetStyle(is_selected, false) {
-                        let btn_text = "  [FILE] {file.name}  ({folder.name})"
-                        if (button(BT_GO, (text = btn_text, size = item_size))) {
-                            selected_file_folder_idx = f_idx
-                            selected_file_idx = i
+                    drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
+                        // Строки дерева принадлежат пайплайну; в payload копируем свои.
+                        PAYLOAD_VALUE.name = "{file.name}"
+                        PAYLOAD_VALUE.path = "{file.path}"
+                        PAYLOAD_VALUE.guid = file.guid
+                        PAYLOAD_VALUE.ext = file.ext
+                        unsafe {
+                            SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
+                                uint64(typeinfo sizeof(PAYLOAD_VALUE)),
+                                ImGuiCond.Once)
                         }
-
-                        drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
-                            PAYLOAD_VALUE.name = file.name
-                            PAYLOAD_VALUE.path = file.path
-                            PAYLOAD_VALUE.guid = file.guid
-                            unsafe {
-                                SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
-                                    uint64(typeinfo sizeof(PAYLOAD_VALUE)),
-                                    ImGuiCond.Once)
-                            }
-                            text("Dragging asset: {PAYLOAD_VALUE.name}\nGUID: {PAYLOAD_VALUE.guid}\nPath: {PAYLOAD_VALUE.path}")
-                        }
+                        text("Dragging asset: {PAYLOAD_VALUE.name}\nGUID: {PAYLOAD_VALUE.guid}\nPath: {PAYLOAD_VALUE.path}")
                     }
                 }
             }
-            visible_count++
         }
+        visible_count++
     }
 
     if (visible_count == 0) {
@@ -198,7 +253,7 @@ def DrawSearchResults(let folders) {
 // ---------------------------------------------------------------------
 // Содержимое директории (правая панель)
 // ---------------------------------------------------------------------
-def DrawFolderContent(folder_idx : int; let folders) {
+def DrawFolderContent(let folders; folder_idx : int) {
     if (folder_idx < 0 || folder_idx >= length(folders)) {
         text("Select a directory")
         return
@@ -210,14 +265,14 @@ def DrawFolderContent(folder_idx : int; let folders) {
         selected_file_idx = -1
     }
 
-    // --- РЕЖИМ ГЛОБАЛЬНОГО ПОИСКА ПО ВСЕМУ ПРОЕКТУ ---
+    // --- РЕЖИМ ГЛОБАЛЬНОГО ПОИСКА ПО ТЕКУЩЕМУ КОРНЮ ---
     if (is_active(W_SEARCH_FILTER)) {
-        DrawSearchResults(folders)
+        DrawSearchResults()
         return
     }
 
     // --- ОБЫЧНЫЙ РЕЖИМ (ОТОБРАЖЕНИЕ ТОЛЬКО ТЕКУЩЕЙ ПАПКИ) ---
-    text("Directory: {folders[folder_idx].name}")
+    text("Directory: {folders[folder_idx].path}")
     separator(WI_SEP_1)
 
     let sub_count = length(folders[folder_idx].subfolders)
@@ -273,9 +328,11 @@ def DrawFolderContent(folder_idx : int; let folders) {
                     }
 
                     drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
-                        PAYLOAD_VALUE.name = file.name
-                        PAYLOAD_VALUE.path = file.path
+                        // Строки дерева принадлежат пайплайну; в payload копируем свои.
+                        PAYLOAD_VALUE.name = "{file.name}"
+                        PAYLOAD_VALUE.path = "{file.path}"
                         PAYLOAD_VALUE.guid = file.guid
+                        PAYLOAD_VALUE.ext = file.ext
                         unsafe {
                             SetDragDropPayload("Asset", addr(PAYLOAD_VALUE),
                                 uint64(typeinfo sizeof(PAYLOAD_VALUE)),
