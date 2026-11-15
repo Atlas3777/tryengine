@@ -1,3 +1,4 @@
+#include <cstring>
 #include <daScript/daScript.h>
 #include <imgui.h>
 #include <thread>
@@ -8,8 +9,12 @@
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
+#include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
+#include "engine/resources/PathGuid.hpp"
+#include "engine/resources/ResourceManager.hpp"
 
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
@@ -27,19 +32,16 @@ const UiFolderVector& GetEngineFolders(das::Context* ctx) {
     return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Engine);
 }
 
-
 const UiFolderVector& GetGameFolders(das::Context* ctx) {
     auto try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     return try_ctx->editor.GetAssetSourceDatabase().GetFolders(tryeditor::AssetPipeline::StorageDomain::Game);
 }
-
 
 struct SceneDTODas {
     const char* name;
     das::Array meshes;
     das::Array mats;
 };
-
 
 eastl::vector<tryeditor::SceneDTO> scene_dtos;
 
@@ -151,6 +153,91 @@ bool TestCompileScriptPak(const das::TArray<uint8_t>& data, das::Context* ctx) {
     return true;
 }
 
+// Регистрирует .mat-файл как loose-ресурс: у материала нет .meta/GUID, но движку для
+// кеша нужен id. PathGuid даёт одинаковый id между запусками, поэтому ссылка на материал
+// в сцене остаётся стабильной.
+uint64_t RegisterMaterialFile(const char* path, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || !path || !*path) {
+        return 0;
+    }
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager) {
+        LogError("Resource Manager not found");
+        return 0;
+    }
+
+    const uint64_t guid = tryengine::resources::PathGuid(path);
+    res_manager->GetAssetRegistry().RegisterLooseArtifact(guid, path);
+    res_manager->RequestLoad<tryengine::graphics::Material>(guid);
+    return guid;
+}
+
+// Перечитывает .mat после сохранения: старый ресурс уходит в отставку, по тому же
+// guid создаётся новый.
+uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || !path || !*path) {
+        return 0;
+    }
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager) {
+        LogError("Resource Manager not found");
+        return 0;
+    }
+
+    const uint64_t guid = tryengine::resources::PathGuid(path);
+    res_manager->Invalidate<tryengine::graphics::Material>(guid);
+    res_manager->GetAssetRegistry().RegisterLooseArtifact(guid, path);
+    res_manager->RequestLoad<tryengine::graphics::Material>(guid);
+    return guid;
+}
+
+// Путь loose-файла по его id. Для артефактов (glTF-суб-ассеты) путь ведёт в artifacts,
+// у авторитетных файлов — в game/data; по пути редактор решает, можно ли материал править.
+char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx) {
+        return nullptr;
+    }
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager) {
+        return nullptr;
+    }
+
+    const auto location = res_manager->GetAssetRegistry().GetAssetLocation(guid);
+    if (!location.has_value()) {
+        return nullptr;
+    }
+    const auto* loose = eastl::get_if<tryengine::resources::LooseFileLocation>(&*location);
+    if (!loose) {
+        return nullptr;
+    }
+    return ctx->allocateString(loose->path.c_str(), static_cast<uint32_t>(loose->path.size()), at);
+}
+
+// Live-правка материала: текст материала применяется к уже загруженному Material без
+// пересоздания GPU-ресурсов, поэтому изменения видны в том же кадре.
+bool ApplyMaterialConfigText(uint64_t material_guid, const char* text, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || !material_guid || !text) {
+        return false;
+    }
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager) {
+        return false;
+    }
+
+    const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+    const auto config = tryengine::graphics::ParseMaterialConfig(eastl::span<const uint8_t>(bytes, std::strlen(text)));
+    if (!config.has_value()) {
+        LogWarn("ApplyMaterialConfigText: {}", config.error());
+        return false;
+    }
+
+    return tryengine::graphics::ApplyMaterialConfigLive(*res_manager, material_guid, *config);
+}
+
 void* GetEditorImGuiContext() {
     return ImGui::GetCurrentContext();
 }
@@ -211,8 +298,20 @@ public:
         das::addExtern<DAS_BIND_FUN(GetGameCameraViewImage)>(*this, lib, "GetGameCameraViewImage",
                                                              das::SideEffects::none, "GetGameCameraViewImage");
 
-        das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "GetEditorImGuiContext",
-                                                            das::SideEffects::none, "GetEditorImGuiContext");
+        das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "GetEditorImGuiContext", das::SideEffects::none,
+                                                            "GetEditorImGuiContext");
+
+        das::addExtern<DAS_BIND_FUN(RegisterMaterialFile)>(*this, lib, "RegisterMaterialFile",
+                                                           das::SideEffects::accessGlobal, "RegisterMaterialFile");
+
+        das::addExtern<DAS_BIND_FUN(ReloadMaterialFile)>(*this, lib, "ReloadMaterialFile",
+                                                         das::SideEffects::accessGlobal, "ReloadMaterialFile");
+
+        das::addExtern<DAS_BIND_FUN(GetAssetFilePath)>(*this, lib, "GetAssetFilePath", das::SideEffects::accessGlobal,
+                                                       "GetAssetFilePath");
+
+        das::addExtern<DAS_BIND_FUN(ApplyMaterialConfigText)>(
+            *this, lib, "ApplyMaterialConfigText", das::SideEffects::accessGlobal, "ApplyMaterialConfigText");
 
         das::addExtern<DAS_BIND_FUN(GetEngineFolders)>(*this, lib, "get_engine_folders", das::SideEffects::none,
                                                        "GetEngineFolders");

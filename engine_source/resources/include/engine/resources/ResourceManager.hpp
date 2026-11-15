@@ -17,9 +17,7 @@ public:
     ResourceManager(AsyncFileManager& file_manager, AssetRegistry& registry)
         : file_manager_(file_manager), registry_(registry) {}
 
-    ~ResourceManager() {
-        LogInfo("Resource manager destructor");
-    };
+    ~ResourceManager() { LogInfo("Resource manager destructor"); };
 
     template <typename T, typename Loader>
     void RegisterType(Loader&& loader) {
@@ -30,8 +28,8 @@ public:
         if (type_id >= caches_.size())
             caches_.resize(type_id + 1);
 
-        caches_[type_id] = std::make_unique<ResourceCache<T, std::decay_t<Loader>>>(
-            file_manager_, registry_, std::forward<Loader>(loader));
+        caches_[type_id] = std::make_unique<ResourceCache<T, std::decay_t<Loader>>>(file_manager_, registry_,
+                                                                                    std::forward<Loader>(loader));
     }
 
     template <typename T>
@@ -83,6 +81,14 @@ public:
 
         void* raw_ptr = cache->GetRawPointer(guid);
         return static_cast<T*>(raw_ptr);
+    }
+
+    // Сбрасывает закешированный ресурс, не разрушая старые данные. Следующий
+    // RequestLoad/GetAsync создаст ресурс заново (редактор, горячая перезагрузка).
+    template <typename T>
+    bool Invalidate(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->Invalidate(guid) : false;
     }
 
     template <typename T>

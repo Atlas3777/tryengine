@@ -1,0 +1,10 @@
+name: string = "Standard"
+shader: u64 = 13732156250205846749
+params: Params = {
+	albedo_color: f32x4 = [1 1 1 1]
+	roughness: f32 = 0
+	metallic: f32 = 0
+}
+textures: Textures = {
+	albedo_map: u64 = 12632691863048436524
+}

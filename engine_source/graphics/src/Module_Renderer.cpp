@@ -1,7 +1,9 @@
+#include <EASTL/hash_set.h>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
 #include "engine/core/TryengineContext.hpp"
+#include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/platform/InputState.hpp"
@@ -128,6 +130,30 @@ tryengine::graphics::Mesh* GetMeshPointer(uint64_t guid, das::Context* ctx) {
     return res_manager->GetPointerExplicit<tryengine::graphics::Mesh>(guid);
 }
 
+// Схема параметров материала для редактора. Возвращаем `char*` из кучи контекста
+// daslang: на стороне скрипта это обычный `string`, промежуточный файл не нужен.
+// Шейдер грузится лениво: первый вызов только запускает загрузку и отдаёт null.
+char* GetMaterialSchema(uint64_t shader_guid, das::Context* ctx, LineInfoArg* at) {
+    tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager) {
+        LogError("GetMaterialSchema: resource manager not found");
+        return nullptr;
+    }
+
+    auto* shader = res_manager->GetPointerExplicit<tryengine::graphics::Shader>(shader_guid);
+    if (!shader) {
+        static eastl::hash_set<uint64_t> requested_shaders;
+        if (requested_shaders.insert(shader_guid).second) {
+            res_manager->RequestLoad<tryengine::graphics::Shader>(shader_guid);
+        }
+        return nullptr;
+    }
+
+    const eastl::string schema = tryengine::graphics::BuildMaterialSchemaConfig(shader->reflection);
+    return ctx->allocateString(schema.c_str(), schema.size(), at);
+}
+
 tryengine::graphics::Material* GetMaterialPointer(uint64_t guid, das::Context* ctx) {
     tryengine::core::TryengineContext* try_ctx = static_cast<tryengine::core::TryengineContext*>(ctx);
     auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
@@ -167,7 +193,8 @@ public:
         addAnnotation(new DummyTypeAnnotation("TryMesh", "tryengine::graphics::Mesh", sizeof(tryengine::graphics::Mesh),
                                               alignof(tryengine::graphics::Mesh)));
 
-        addAnnotation(new DummyTypeAnnotation("TryMat", "tryengine::graphics::Material", sizeof(tryengine::graphics::Material),
+        addAnnotation(new DummyTypeAnnotation("TryMat", "tryengine::graphics::Material",
+                                              sizeof(tryengine::graphics::Material),
                                               alignof(tryengine::graphics::Material)));
 
         das::addExtern<DAS_BIND_FUN(RequestLoadMaterial)>(*this, lib, "RequestLoadMaterial",
@@ -193,6 +220,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(*this, lib, "GetMaterialPointer",
                                                          das::SideEffects::accessGlobal, "GetMaterialPointer");
+
+        das::addExtern<DAS_BIND_FUN(GetMaterialSchema)>(*this, lib, "GetMaterialSchema", das::SideEffects::accessGlobal,
+                                                        "GetMaterialSchema");
 
         verifyAotReady();
     }  // das::SimNode_ExtFuncCallAndCopyOrMove

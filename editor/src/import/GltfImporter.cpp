@@ -4,15 +4,15 @@
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot_builtin_matrix.h>
 
-#include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/import/MeshProcessor.hpp"
 #include "editor/import/TextureImporter.hpp"
 #include "editor/import/TextureProcessor.hpp"
 #include "editor/meta/ModelAssetMap.hpp"
 #include "engine/core/FormatUtils.h"
 #include "engine/core/Random.hpp"
-#include "engine/graphics/AssetTypes.hpp"
+#include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetTypes.hpp"
+#include "engine/resources/ConfigFormat.hpp"
 #include "engine/resources/Content.hpp"
 #include "engine/resources/Json.hpp"
 #include "engine/resources/TextureTypes.hpp"
@@ -21,6 +21,33 @@
 
 namespace tryeditor {
 namespace {
+
+using tryengine::resources::ConfigField;
+using tryengine::resources::ConfigFloat4;
+
+ConfigField MakeFloatField(const char* name, float value) {
+    ConfigField field;
+    field.name = name;
+    field.type_name = "f32";
+    field.value = value;
+    return field;
+}
+
+ConfigField MakeFloat4Field(const char* name, float x, float y, float z, float w) {
+    ConfigField field;
+    field.name = name;
+    field.type_name = "f32x4";
+    field.value = ConfigFloat4{x, y, z, w};
+    return field;
+}
+
+ConfigField MakeU64Field(const char* name, uint64_t value) {
+    ConfigField field;
+    field.name = name;
+    field.type_name = "u64";
+    field.value = value;
+    return field;
+}
 
 int FindAttribute(const tg3_primitive& prim, const char* name) {
     for (uint32_t i = 0; i < prim.attributes_count; ++i) {
@@ -62,19 +89,20 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
         uint64_t mat_sub_id = tryengine::core::random::CombineID(main_uuid, mat_name);
         material_guids.push_back(mat_sub_id);
 
-        tryengine::graphics::MaterialAsset mat_data;
+        // Материал — тот же ConfigFormat, что и материал из data/: один формат на всю
+        // цепочку (импорт → C++-загрузчик → редактор). Поля Standard.slang:
+        // albedo_color, roughness, metallic (UBO) и albedo_map (сэмплер).
+        tryengine::graphics::MaterialConfig mat_data;
         mat_data.name = mat_name;
-        mat_data.shader_asset_id = tryengine::resources::assets::DEFAULT_PBR_SHADER;
+        mat_data.shader = tryengine::resources::assets::DEFAULT_PBR_SHADER;
 
         const auto& pbr = gltf_mat.pbr_metallic_roughness;
 
-        // Поля MaterialUBO в Standard.slang: albedo_color, roughness, metallic
-        mat_data.scalar_params["albedo_color"] = {
-            static_cast<float>(pbr.base_color_factor[0]), static_cast<float>(pbr.base_color_factor[1]),
-            static_cast<float>(pbr.base_color_factor[2]), static_cast<float>(pbr.base_color_factor[3])};
-
-        mat_data.scalar_params["roughness"] = {static_cast<float>(pbr.roughness_factor)};
-        mat_data.scalar_params["metallic"] = {static_cast<float>(pbr.metallic_factor)};
+        mat_data.params.fields.push_back(MakeFloat4Field(
+            "albedo_color", static_cast<float>(pbr.base_color_factor[0]), static_cast<float>(pbr.base_color_factor[1]),
+            static_cast<float>(pbr.base_color_factor[2]), static_cast<float>(pbr.base_color_factor[3])));
+        mat_data.params.fields.push_back(MakeFloatField("roughness", static_cast<float>(pbr.roughness_factor)));
+        mat_data.params.fields.push_back(MakeFloatField("metallic", static_cast<float>(pbr.metallic_factor)));
 
         // Обработка текстуры albedo
         if (pbr.base_color_texture.index >= 0 && pbr.base_color_texture.index < static_cast<int>(m->textures_count)) {
@@ -88,21 +116,17 @@ eastl::vector<uint64_t> ProcessMaterials(ImportResult& result, const tg3_model* 
 
                 uint64_t expected_tex_guid = tryengine::core::random::CombineID(main_uuid, tex_name);
 
-                mat_data.texture_params["albedo_map"] = tryengine::graphics::TextureBindingAssets(expected_tex_guid);
+                mat_data.textures.fields.push_back(MakeU64Field("albedo_map", expected_tex_guid));
             }
         }
 
-        auto serialized_mat = tryengine::resources::Json::Serialize(mat_data);
-        if (!serialized_mat.has_value()) {
-            LogCritical("Failed to serialize material {}", mat_name.c_str());
-            continue;
-        }
+        const eastl::string serialized_mat = tryengine::graphics::WriteMaterialConfig(mat_data);
 
         ProducedArtifact mat_artifact;
         mat_artifact.sub_guid = mat_sub_id;
         mat_artifact.target = ArtifactTarget::Runtime;
-        mat_artifact.extension = ".matbin";
-        mat_artifact.bytes = std::move(*serialized_mat);
+        mat_artifact.extension = ".mat";
+        mat_artifact.bytes.assign(serialized_mat.begin(), serialized_mat.end());
 
         result.artifacts.push_back(std::move(mat_artifact));
         asset_map.sub_assets.push_back({mat_sub_id, tryengine::fmt::format("{}", mat_sub_id)});

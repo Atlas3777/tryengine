@@ -17,10 +17,19 @@ struct ProducedArtifact {
     eastl::vector<uint8_t> bytes;
 };
 
+struct ImportDependencyRef {
+    eastl::string name;
+    eastl::string path;
+};
+
 struct ImportResult {
     uint64_t main_guid = 0;
     eastl::vector<ProducedArtifact> artifacts;
     eastl::vector<uint8_t> meta_bytes;
+    // Файлы, прочитанные импортёром помимо исходника (модули Slang, include и т.п.).
+    // AssetPipeline превращает их в зависимости штампа: изменение такого файла
+    // переимпортирует ассет.
+    eastl::vector<ImportDependencyRef> dependencies;
 };
 
 struct ImportContext {

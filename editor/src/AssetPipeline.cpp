@@ -150,6 +150,71 @@ eastl::vector<eastl::string> CollectArtifactPaths(const ImportResult& res) {
     return paths;
 }
 
+// Stat внешних зависимостей импорта (модулей Slang, include-файлов). Ошибка stat не
+// фатальна: зависимость останется в штампе с нулевым размером, и следующий запуск
+// переимпортирует ассет.
+Task<eastl::vector<ImportDependency>> CollectDependencyStats(const eastl::vector<ImportDependencyRef>& refs,
+                                                             AsyncFileManager& file_manager) {
+    eastl::vector<ImportDependency> dependencies;
+    dependencies.reserve(refs.size());
+    if (refs.empty())
+        co_return dependencies;
+
+    eastl::vector<FileHandle> stat_handles;
+    stat_handles.reserve(refs.size());
+    for (const auto& ref : refs)
+        stat_handles.push_back(file_manager.GetStatAsyncCopy(ref.path));
+
+    co_await WaitAllFiles(stat_handles);
+
+    for (size_t i = 0; i < refs.size(); ++i) {
+        ImportDependency dependency{};
+        dependency.name = refs[i].name;
+        dependency.path = refs[i].path;
+
+        if (stat_handles[i].IsFailed()) {
+            LogWarn(LogCategory::Importer, "Не удалось получить stat зависимости {}", dependency.path.c_str());
+        } else {
+            dependency.size = stat_handles[i].GetFileSize();
+            const FileTime mtime = stat_handles[i].GetMtime();
+            dependency.mtime_sec = mtime.sec;
+            dependency.mtime_nsec = mtime.nsec;
+        }
+
+        dependencies.push_back(eastl::move(dependency));
+    }
+
+    co_return dependencies;
+}
+
+// Проверяет, что внешние зависимости не изменились с момента импорта.
+Task<bool> DependenciesMatch(const ImportStamp& stamp, AsyncFileManager& file_manager) {
+    if (stamp.dependencies.empty())
+        co_return true;
+
+    eastl::vector<FileHandle> stat_handles;
+    stat_handles.reserve(stamp.dependencies.size());
+    for (const auto& dependency : stamp.dependencies)
+        stat_handles.push_back(file_manager.GetStatAsyncCopy(dependency.path));
+
+    co_await WaitAllFiles(stat_handles);
+
+    for (size_t i = 0; i < stamp.dependencies.size(); ++i) {
+        if (stat_handles[i].IsFailed())
+            co_return false;
+
+        const ImportDependency& dependency = stamp.dependencies[i];
+        if (stat_handles[i].GetFileSize() != dependency.size)
+            co_return false;
+
+        const FileTime mtime = stat_handles[i].GetMtime();
+        if (mtime.sec != dependency.mtime_sec || mtime.nsec != dependency.mtime_nsec)
+            co_return false;
+    }
+
+    co_return true;
+}
+
 // Записывает все артефакты импорта и дожидается их завершения.
 Task<void> WriteArtifacts(const AssetMountPoint& mount, const ImportResult& res, AsyncFileManager& file_manager) {
     eastl::vector<FileHandle> write_handles;
@@ -230,7 +295,7 @@ bool StampMatches(const ImportStamp& stamp, const IAssetImporter& importer, cons
 }
 
 ImportStamp MakeStamp(const IAssetImporter& importer, uint64_t source_size, FileTime source_mtime, uint64_t meta_hash,
-                      const ImportResult& res) {
+                      const ImportResult& res, eastl::vector<ImportDependency> dependencies) {
     ImportStamp stamp;
     stamp.format_version = kImportStampVersion;
     stamp.importer = eastl::string(importer.GetName().data(), importer.GetName().size());
@@ -240,6 +305,7 @@ ImportStamp MakeStamp(const IAssetImporter& importer, uint64_t source_size, File
     stamp.source_mtime_nsec = source_mtime.nsec;
     stamp.meta_hash = meta_hash;
     stamp.artifacts = CollectArtifactPaths(res);
+    stamp.dependencies = eastl::move(dependencies);
     return stamp;
 }
 
@@ -318,8 +384,12 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     // 6. Штамп импорта — запись о том, что именно лежит на диске. Порядок записей не важен:
     //    в следующий раз штамп сравнивается по содержимому, а не по mtime.
     if (meta_written) {
-        const ImportStamp stamp =
-            MakeStamp(*importer, stat_handle.GetFileSize(), stat_handle.GetMtime(), meta_hash, res);
+        auto dependencies_result = co_await CollectDependencyStats(res.dependencies, file_manager);
+        if (!dependencies_result.has_value())
+            co_return eastl::move(dependencies_result.error());
+
+        const ImportStamp stamp = MakeStamp(*importer, stat_handle.GetFileSize(), stat_handle.GetMtime(), meta_hash,
+                                            res, eastl::move(*dependencies_result));
         auto stamp_result = co_await WriteStamp(mount, res.main_guid, stamp, file_manager);
         if (!stamp_result.has_value())
             co_return eastl::move(stamp_result.error());
@@ -402,6 +472,15 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
         if (!*artifacts_exist_result) {
             need_reimport = true;
             LogInfo(LogCategory::Importer, "Reimport {}: не хватает артефакта", asset_path.c_str());
+        } else {
+            auto dependencies_match = co_await DependenciesMatch(*stamp, file_manager);
+            if (!dependencies_match.has_value())
+                co_return eastl::move(dependencies_match.error());
+
+            if (!*dependencies_match) {
+                need_reimport = true;
+                LogInfo(LogCategory::Importer, "Reimport {}: изменилась внешняя зависимость", asset_path.c_str());
+            }
         }
     }
 
@@ -450,7 +529,12 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
 
     // 6. Штамп. Хеш меты — тот, что теперь лежит на диске. Штамп сравнивается по
     //    содержимому, поэтому порядок его записи относительно артефактов и меты не важен.
-    const ImportStamp new_stamp = MakeStamp(*importer, asset_stat.GetFileSize(), asset_stat.GetMtime(), meta_hash, res);
+    auto dependencies_result = co_await CollectDependencyStats(res.dependencies, file_manager);
+    if (!dependencies_result.has_value())
+        co_return eastl::move(dependencies_result.error());
+
+    const ImportStamp new_stamp = MakeStamp(*importer, asset_stat.GetFileSize(), asset_stat.GetMtime(), meta_hash, res,
+                                            eastl::move(*dependencies_result));
     auto stamp_write_result = co_await WriteStamp(mount, res.main_guid, new_stamp, file_manager);
     if (!stamp_write_result.has_value())
         co_return eastl::move(stamp_write_result.error());

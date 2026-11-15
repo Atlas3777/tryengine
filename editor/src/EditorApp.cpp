@@ -7,6 +7,7 @@
 #include "editor/EditorInputFilter.hpp"
 #include "editor/EditorScriptSetup.hpp"
 #include "editor/render/EditorRender.hpp"
+#include "editor/shader/ShaderCompilerSystem.hpp"
 #include "engine/async/GlobalExecutors.hpp"
 #include "engine/async/PollHandle.hpp"
 #include "engine/core/Engine.hpp"
@@ -21,6 +22,7 @@
 #include "engine/graphics/loaders/ShaderLoader.hpp"
 #include "engine/graphics/loaders/TextureLoader.hpp"
 #include "engine/platform/InputService.hpp"
+#include "engine/resources/LooseFiles.hpp"
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
@@ -55,7 +57,18 @@ void EditorApp::Init() {
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
 
+    // Авторитетные материалы (game/data) не имеют .meta: регистрируем их по пути, чтобы
+    // ссылки из сцен (id = PathGuid(путь)) находились и после перезапуска редактора.
+    RegisterLooseDirectory(registry, "game/data", ".mat");
+
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
+
+    // Компилятор шейдеров живёт столько же, сколько редактор: global session Slang
+    // создаётся один раз на контекст, а не на каждый импортируемый .slang.
+    engine_->RegisterSystem<ShaderCompilerSystem>(ShaderCompilerConfig{
+        .module_search_paths = {"engine_content/assets/shaders", "game/assets/shaders"},
+        .context_count = 2,
+    });
 
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
 

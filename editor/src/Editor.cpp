@@ -2,16 +2,15 @@
 
 #include "editor/AssetPipeline.hpp"
 #include "editor/asset_factories/AssetsFactoryManager.hpp"
-#include "editor/asset_factories/MaterialAssetFactory.hpp"
 #include "editor/asset_factories/ShaderAssetFactory.hpp"
 #include "editor/asset_inspector/AssetInspectorManager.hpp"
-#include "editor/asset_inspector/MaterialAssetInspector.hpp"
 #include "editor/asset_inspector/ShaderAssetInspector.hpp"
 #include "editor/asset_inspector/TextureAssetInspector.hpp"
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/import/SlangImporter.hpp"
-#include "engine/graphics/loaders/JsonLoader.hpp"
+#include "editor/shader/ShaderCompilerSystem.hpp"
+#include "engine/graphics/loaders/MaterialConfigLoader.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderLoader.hpp"
@@ -36,9 +35,9 @@ Editor::Editor(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevic
 }
 
 void Editor::RegisterAssetsImporters() const {
-    auto& import_system_ = asset_pipeline_->GetImportSystem();
-    import_system_.RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"});
-    import_system_.RegisterImporter<SlangImporter, SlangImportSettings>({".slang"});
+    auto& import_system = asset_pipeline_->GetImportSystem();
+    import_system.RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"});
+    import_system.RegisterImporter<SlangImporter, SlangImportSettings>({".slang"}, engine_.Get<ShaderCompilerSystem>());
 }
 
 void Editor::RegisterResourceLoaders() const {
@@ -48,12 +47,11 @@ void Editor::RegisterResourceLoaders() const {
     //     JsonLoader<ModelAssetMap>(),
     //     EditorArtifactLocator{"game/artifacts", static_cast<uint32_t>(tryengine::EditorArtifactGuid::AssetMap)});
 
-    rm.RegisterType<tryengine::graphics::MaterialAsset>(JsonLoader<tryengine::graphics::MaterialAsset>());
+    rm.RegisterType<tryengine::graphics::MaterialConfig>(tryengine::graphics::MaterialConfigLoader());
 }
 
 void Editor::RegisterAssetsFactories() const {
     // assets_factory_->RegisterFactory<ShaderAssetFactory>(*import_system_);
-    // assets_factory_->RegisterFactory<MaterialAssetFactory>(*import_system_);
     // assets_factory_->RegisterFactory<SceneAssetFactory>(*import_system_,
     //                                                     engine_.Get<tryengine::core::ComponentRegistry>());
     // assets_factory_->RegisterFactory<AddressablesGroupFactory>(*import_system_);
@@ -63,7 +61,6 @@ void Editor::RegisterAssetsFactories() const {
 void Editor::RegisterAssetsInspector() const {
     // asset_inspector_manager_->RegisterInspector<ShaderAssetInspector>("shader", *import_system_);
     // asset_inspector_manager_->RegisterInspector<TextureAssetInspector>("texture", *import_system_);
-    // asset_inspector_manager_->RegisterInspector<MaterialAssetInspector>("material", *import_system_);
 }
 
 }  // namespace tryeditor

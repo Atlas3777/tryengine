@@ -8,7 +8,18 @@ namespace tryeditor {
 
 // Версия схемы штампа. Поднимай, когда меняется смысл его полей: старые штампы
 // перестанут совпадать, и ассеты один раз переимпортируются.
-inline constexpr uint32_t kImportStampVersion = 1;
+inline constexpr uint32_t kImportStampVersion = 2;
+
+// Файл, прочитанный импортёром помимо исходника: модуль Slang, include и т.п.
+// Храним size+mtime, как и для исходника: этого достаточно, чтобы заметить правку,
+// и не нужно хешировать содержимое на каждом старте.
+struct ImportDependency {
+    eastl::string name;  // имя модуля, если оно есть (иначе stem файла)
+    eastl::string path;
+    uint64_t size = 0;
+    int64_t mtime_sec = 0;
+    uint64_t mtime_nsec = 0;
+};
 
 // Штамп импорта — запись о том, из чего собран артефакт. Лежит рядом с артефактами
 // ({artifacts_dir}/stamps/<guid>.json) и сравнивается по содержимому, а не по mtime.
@@ -37,6 +48,10 @@ struct ImportStamp {
     // Пути всех записанных артефактов относительно artifacts_dir ("runtime/<main>/<sub>").
     // По ним проверяется, что на диске лежит ровно то, что собрал импорт.
     eastl::vector<eastl::string> artifacts;
+
+    // Внешние зависимости импорта (модули Slang, include-файлы). Правка любой из них
+    // делает штамп несовпадающим.
+    eastl::vector<ImportDependency> dependencies;
 };
 
 }  // namespace tryeditor

@@ -16,6 +16,7 @@ require tryeditor/AssetBrowser
 require tryeditor/SceneViewPort
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
+require tryeditor/Material
 require tryeditor/EditorActions
 
 require imgui
@@ -104,6 +105,7 @@ def DrawMainMenu() {
             menu_label(WIN_SCENE_VIEW, (text = "Scene Viewport", selected = true))
             menu_label(WIN_QUADTREE, (text = "QuadTree Debug", selected = true))
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
+            menu_label(WIN_MATERIAL, (text = "Material", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
 
@@ -209,6 +211,7 @@ def DrawEditor() {
     DrawSceneViewPort()
     DrawGameSceneViewPort()
     DrawBuildManager()
+    DrawMaterialEditor()
     // DrawQuadTreeDebug()
 
     ProcessFileDialog()

@@ -7,7 +7,7 @@
 #include <type_traits>
 
 #include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
-#include "engine/graphics/AssetTypes.hpp"
+#include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetPak.hpp"
 
 namespace tryeditor {
@@ -55,14 +55,12 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     // Контейнер для хранения хэндлов. Используем type-erasure, чтобы не знать точный тип хэндла.
     // Когда active_handles выйдет из скоупа в конце билда, кастомный делитер корректно удалит
     // скопированные хэндлы, что автоматически отпустит ресурсы из кэша ResourceManager.
-    eastl::vector<eastl::unique_ptr<void, void(*)(void*)>> active_handles;
+    eastl::vector<eastl::unique_ptr<void, void (*)(void*)>> active_handles;
     auto store_handle = [&](auto&& handle_opt) {
         if (handle_opt.has_value()) {
             using H = std::decay_t<decltype(*handle_opt)>;
-            active_handles.push_back(eastl::unique_ptr<void, void(*)(void*)>(
-                new H(*handle_opt),
-                [](void* p){ delete static_cast<H*>(p); }
-            ));
+            active_handles.push_back(eastl::unique_ptr<void, void (*)(void*)>(
+                new H(*handle_opt), [](void* p) { delete static_cast<H*>(p); }));
         }
     };
 
@@ -75,18 +73,19 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     for (size_t i = 0; i < scenes.size(); ++i) {
         const auto& s = scenes[i];
         for (uint64_t mat : s.mats) {
-            // Загружаем MaterialAsset, чтобы достать GUID'ы шейдеров и текстур
-            auto mat_res = co_await res_m_.GetAsync<tryengine::graphics::MaterialAsset>(mat);
-            store_handle(mat_res); // Сохраняем хэндл, чтобы ресурс не выгрузился из кэша
+            // Загружаем данные материала (ConfigFormat), чтобы достать GUID'ы шейдера и текстур
+            auto mat_res = co_await res_m_.GetAsync<tryengine::graphics::MaterialConfig>(mat);
+            store_handle(mat_res);  // Сохраняем хэндл, чтобы ресурс не выгрузился из кэша
 
             if (mat_res.has_value()) {
                 const auto& asset_data = *mat_res;
-                if (asset_data->shader_asset_id != 0) {
-                    per_scene_shaders[i].push_back(asset_data->shader_asset_id);
+                if (asset_data->shader != 0) {
+                    per_scene_shaders[i].push_back(asset_data->shader);
                 }
-                for (const auto& [name, tex_bind] : asset_data->texture_params) {
-                    if (tex_bind.texture_id != 0) {
-                        per_scene_textures[i].push_back(tex_bind.texture_id);
+                for (const auto& field : asset_data->textures.fields) {
+                    if (const auto* texture_id = eastl::get_if<uint64_t>(&field.value);
+                        texture_id && *texture_id != 0) {
+                        per_scene_textures[i].push_back(*texture_id);
                     }
                 }
             }
@@ -118,10 +117,14 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     auto common_textures = ExtractAndRemoveShared(eastl::span(texture_lists));
 
     LogInfo("ExtractAndRemoveShared end");
-    for (auto& mat_guid : common_mats) LogInfo("COMMON GUID MAT {}", mat_guid);
-    for (auto& mesh_guid : common_meshes) LogInfo("COMMON MESH {}", mesh_guid);
-    for (auto& shader_guid : common_shaders) LogInfo("COMMON SHADER {}", shader_guid);
-    for (auto& tex_guid : common_textures) LogInfo("COMMON TEXTURE {}", tex_guid);
+    for (auto& mat_guid : common_mats)
+        LogInfo("COMMON GUID MAT {}", mat_guid);
+    for (auto& mesh_guid : common_meshes)
+        LogInfo("COMMON MESH {}", mesh_guid);
+    for (auto& shader_guid : common_shaders)
+        LogInfo("COMMON SHADER {}", shader_guid);
+    for (auto& tex_guid : common_textures)
+        LogInfo("COMMON TEXTURE {}", tex_guid);
 
     SceneDTO common_dto;
     common_dto.meshes = eastl::move(common_meshes);
@@ -163,10 +166,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 }
 
 tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
-    const SceneDTO& scene,
-    const eastl::vector<uint64_t>& shaders,
-    const eastl::vector<uint64_t>& textures) const
-{
+    const SceneDTO& scene, const eastl::vector<uint64_t>& shaders, const eastl::vector<uint64_t>& textures) const {
     LogInfo("CreatePak enter, scene_name={}", scene.name);
 
     tryengine::resources::AssetPak pak;
