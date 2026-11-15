@@ -59,6 +59,7 @@ var private material_guid : uint64 = 0ul
 var private material_ref = ""
 var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
+var private last_synced_ref = ""
 var private follow_state = ToggleState(value = true)
 
 // materialRef — динамический компонент без [DecsSerializable]-схемы, поэтому аннотацию
@@ -501,6 +502,19 @@ def private LoadMaterial() {
     LoadMaterialAt(asset_ref, RegisterMaterialFile(asset_ref), asset_ref)
 }
 
+// materialRef выделенной сущности. Нужен, чтобы панель замечала не только смену
+// выделения, но и выбор материала через инспектор.
+def private SelectedMaterialRef() : string {
+    if (selected_eid == INVALID_ENTITY_ID) {
+        return ""
+    }
+    var asset_ref = ""
+    query(selected_eid) $(let materialRef : string) {
+        asset_ref = materialRef
+    }
+    return asset_ref
+}
+
 // Материал выбранной сущности: компонент materialRef -> id и путь из реестра -> файл.
 // false — путь ещё не известен (реестр ассетов заполняется асинхронно на старте),
 // панель повторит попытку на следующем кадре.
@@ -673,9 +687,13 @@ def DrawMaterialEditor() {
         same_line()
         checkbox(follow_state, "Follow selection")
 
-        if (follow_state.value && selected_eid != last_synced_eid) {
-            if (SyncFromSelected()) {
-                last_synced_eid = selected_eid
+        if (follow_state.value) {
+            let current_ref = SelectedMaterialRef()
+            if (selected_eid != last_synced_eid || current_ref != last_synced_ref) {
+                if (SyncFromSelected()) {
+                    last_synced_eid = selected_eid
+                    last_synced_ref = current_ref
+                }
             }
         }
 

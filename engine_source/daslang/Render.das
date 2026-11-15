@@ -196,10 +196,15 @@ def start_load(){
         }
 
         if (material_guid == 0ul) {
-            if (has_material || has_load) {
-                update_entity(eid) @(eid, cmp) {
-                    decs::remove(cmp, "material")
-                    decs::remove(cmp, "_materialLoadGuid")
+            // Пустая ссылка — материал снят. Непустая, но не резолвится (реестр ещё
+            // сканируется или в поле вписан неизвестный путь): оставляем прошлый
+            // материал и повторяем на следующем кадре, иначе объект навсегда исчезнет.
+            if (length(materialRef) == 0) {
+                if (has_material || has_load) {
+                    update_entity(eid) @(eid, cmp) {
+                        decs::remove(cmp, "material")
+                        decs::remove(cmp, "_materialLoadGuid")
+                    }
                 }
             }
             return

@@ -57,16 +57,20 @@
 - Панель — `editor/daslang/Material.das`. При старте сама загружает
   `game/data/materials/standard.mat`, дальше следует за выделением (галка Follow
   selection): компонент `materialRef` (`"путь"` или `"guid:<id>"`) -> `ResolveAssetRef` ->
-  путь из `AssetRegistry` (`GetAssetFilePath`) -> файл. `IsImportedAsset(id)` отличает
-  артефакт импортёра от авторитетного файла: импортированный показывается read-only и не
-  пишется.
+  путь из `AssetRegistry` (`GetAssetFilePath`) -> файл. Follow selection реагирует не
+  только на смену `selected_eid`, но и на изменение `materialRef` у той же сущности:
+  иначе после выбора материала через инспектор панель продолжала показывать и править
+  прошлый материал. `IsImportedAsset(id)` отличает артефакт импортёра от авторитетного
+  файла: импортированный показывается read-only и не пишется.
 - Правка применяется сразу в живой `Material`: `ApplyMaterialConfigText` парсит тот же
   ConfigFormat, который записал бы Save, и пишет значения через `SetParamRaw` в замапленный
-  UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). GPU-ресурсы не пересоздаются, файл
-  пишется по Save. После Save перезагружать материал нельзя: указатель в компоненте
-  сущности станет висячим (для смены текстур live-путь перепривязывает уже загруженные).
-  Apply пишет в компонент `materialRef`, а не id: путь для `.mat`, `guid:<id>` для
-  импортированного материала.
+  UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). UBO и текстуры не пересоздаются,
+  файл пишется по Save. Live-смена текстуры заменяет только `VkDescriptorSet` (старый
+  остаётся в `retired_descriptor_sets` материала), иначе обновление набора, который уже
+  используется записанным command buffer, даёт
+  `VUID-vkUpdateDescriptorSets-None-03047`. После Save перезагружать материал нельзя:
+  указатель в компоненте сущности станет висячим. Apply пишет в компонент `materialRef`,
+  а не id: путь для `.mat`, `guid:<id>` для импортированного материала.
 - Авторитетные файлы не имеют `.meta`: при построении деревьев `AssetPipeline`
   регистрирует их в `AssetRegistry` под id = `PathId(путь)`. Отдельного
   `RegisterLooseDirectory` в `EditorApp` больше нет — регистрация следует за сканированием
