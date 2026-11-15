@@ -446,7 +446,9 @@ struct Material {
 
         // 2. Выделяем Set 1
         descriptor_set = AllocateDescriptorSet();
-        if (descriptor_set != VK_NULL_HANDLE)
+        if (descriptor_set == VK_NULL_HANDLE)
+            LogError("Material: failed to allocate the initial descriptor set");
+        else
             UpdateDescriptors();
     }
 
