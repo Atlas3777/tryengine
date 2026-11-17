@@ -56,12 +56,13 @@
   функция отдаёт `null`.
 - Панель — `editor/daslang/Material.das`. При старте сама загружает
   `game/data/materials/standard.mat`, дальше следует за выделением (галка Follow
-  selection): компонент `materialRef` (`"путь"` или `"guid:<id>"`) -> `ResolveAssetRef` ->
-  путь из `AssetRegistry` (`GetAssetFilePath`) -> файл. Follow selection реагирует не
-  только на смену `selected_eid`, но и на изменение `materialRef` у той же сущности:
-  иначе после выбора материала через инспектор панель продолжала показывать и править
-  прошлый материал. `IsImportedAsset(id)` отличает артефакт импортёра от авторитетного
-  файла: импортированный показывается read-only и не пишется.
+  selection): компонент `materialRef` — обёртка `MaterialRef(path)` (`"путь"` или
+  `"guid:<id>"`) -> `ResolveAssetRef` -> путь из `AssetRegistry` (`GetAssetFilePath`) ->
+  файл. Follow selection реагирует не только на смену `selected_eid`, но и на изменение
+  `materialRef.path` у той же сущности: иначе после выбора материала через инспектор
+  панель продолжала показывать и править прошлый материал. `IsImportedAsset(id)`
+  отличает артефакт импортёра от авторитетного файла: импортированный показывается
+  read-only и не пишется.
 - Правка применяется сразу в живой `Material`: `ApplyMaterialConfigText` парсит тот же
   ConfigFormat, который записал бы Save, и пишет значения через `SetParamRaw` в замапленный
   UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). UBO и текстуры не пересоздаются,
@@ -69,8 +70,8 @@
   остаётся в `retired_descriptor_sets` материала), иначе обновление набора, который уже
   используется записанным command buffer, даёт
   `VUID-vkUpdateDescriptorSets-None-03047`. После Save перезагружать материал нельзя:
-  указатель в компоненте сущности станет висячим. Apply пишет в компонент `materialRef`,
-  а не id: путь для `.mat`, `guid:<id>` для импортированного материала.
+  указатель в компоненте сущности станет висячим. Apply пишет в `materialRef.path`, а не
+  id: путь для `.mat`, `guid:<id>` для импортированного материала.
 - `CF(table)` забирает таблицу по move (`_object <- v`). В `WriteMaterial` поэтому
   `params` и `textures` сначала копируются в промежуточную таблицу (`copy := m.params`),
   и только она уходит в `CF`. Без копии `LiveApply`/`Save` опустошали глобальный
@@ -85,18 +86,25 @@
 
 - Схема полей `[DecsSerializable]`-структур приходит из `apply` (`tryengine/Serializable`),
   вместе с аннотациями. Инспектор понимает `@hide`, `@title`, `@min`, `@max`, `@speed`,
-  `@readonly` и `@asset = "<kind>"`.
-- `@asset` на string-поле рисует слева от input кнопку `...`. Она открывает
-  `tryeditor/AssetPicker`: список файлов зарегистрированного вида, поиск и подтверждение.
-  Виды регистрируются в `AssetPicker.das` (`RegisterAssetPickerKind`): `kind` -> домен
-  дерева + ключ расширения. Сейчас есть `material` (game/data, `.mat`), `scene` и
-  `prefab` (game/content). Список строится через `FileSystemUtils.ForEachFile`, то есть по
-  кешу ревизии дерева, без обхода на каждый кадр.
-- Динамические компоненты без схемы (`materialRef`, `tag`, `meshGuid`, ...) не могут нести
-  аннотацию поля. Для них вид picker'а регистрируется по имени компонента:
-  `RegisterComponentAssetPicker("materialRef", "material")` (делает `Material.das`).
-- Для ручной проверки picker'а есть компонент `PickerDemo` (`editor/daslang/PickerTest.das`):
-  `Add component` -> `PickerDemo`, у поля `material` стоит `@asset = "material"`.
+  `@readonly`. Asset picker задаётся не аннотацией поля, а типом значения.
+- Обёртка ассета — структура с полем `path` и аннотацией
+  `[asset(kind = "data", title = "Material", ext = ".mat")]` (`tryengine/AssetKind`).
+  `kind` — это домен хранения (`engine`/`game`/`content`/`data`), а не подпапка:
+  `ext` фильтрует всё дерево домена, поэтому сцены и префабы ищутся по всему `content`.
+  `title` — только подпись popup'а, можно не указывать (тогда берётся расширение).
+  Инспектор находит обёртку по имени типа поля/компонента и рисует слева от input кнопку
+  `...`, которая открывает `tryeditor/AssetPicker`. Отдельного реестра видов и привязки
+  «имя компонента -> kind» больше нет; `AssetPicker` берёт домен и расширение из
+  аннотации типа. `MaterialRef` лежит в `tryengine/Types` (его читает `Render.das`),
+  `SceneRef`/`PrefabRef` — в `editor/daslang/FileSystemUtils.das`.
+- Типизированный обход дерева — `FileSystemUtils.ForEachAsset<T>`: `static_let` внутри
+  generic-функции держит кеш и ревизию по одному на тип, поэтому вызывающий код не хранит
+  ни список файлов, ни версию дерева. Пример — `BuildManager.DrawBuildManager`.
+  Для произвольного домена без типа остаётся `ForEachFile(domain, ext_key)`.
+- `materialRef` теперь структура `MaterialRef(path)`, поэтому picker работает и для
+  динамического компонента без отдельной регистрации. Для ручной проверки есть компонент
+  `PickerDemo` (`editor/daslang/PickerTest.das`): `Add component` -> `PickerDemo`, поле
+  `material` имеет тип `MaterialRef`.
 - Удаление рисуется кнопкой в теле каждого компонента. Для зарегистрированных компонентов
   и шаблонов вызывается `EcsCompName.cmp_remover`; для динамических имён — прямой
   `decs::remove`. Удаление откладывается до конца обхода архетипа: `commit()` меняет
@@ -114,8 +122,10 @@
   Расширение строкой не хранится: поиск "все `.mat` в `data`" — одно сравнение `uint64` на
   файл. Ключ считает `ExtKey`, он же отдаётся скрипту как `asset_ext_key`.
 - `UiTree::Version()` — ревизия дерева, растёт на любом изменении. Скрипты кешируют обход
-  по ней: `FileSystemUtils.das` (`FindFiles` -> `array<AssetFileRef>`) помнит ревизию
-  запроса и в кеше держит только индексы узлов, поэтому кеш не может пережить свои строки.
+  по ней: `FileSystemUtils.das` (`ForEachFile`/`ForEachAsset` -> `AssetFileRef`) помнит
+  ревизию запроса и в кеше держит только индексы узлов, поэтому кеш не может пережить свои
+  строки. `ForEachAsset<T>` дополнительно сверяет эпоху `RefreshAssetTrees`, потому что
+  его `static_let`-кеш живёт по одному на тип и снаружи не очищается.
 - Файлового вотчера ещё нет (`FileWatcher` — заглушка): новые файлы появляются в деревьях
   только после `rebuild_asset_trees()` (кнопка Refresh в Asset Browser, обёртка
   `RefreshAssetTrees()`), которая заново сканирует все четыре корня.

@@ -16,7 +16,6 @@ require tryengine/Types
 require tryengine/Profiling
 require tryengine/EcsMacro
 require tryeditor/Hierarchy
-require tryeditor/Inspector
 
 require imgui
 require imgui/imgui_widgets_builtin
@@ -62,13 +61,6 @@ var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
 var private last_synced_ref = ""
 var private follow_state = ToggleState(value = true)
-
-// materialRef — динамический компонент без [DecsSerializable]-схемы, поэтому аннотацию
-// @asset к нему не прикрепить. Регистрируем picker по имени компонента.
-[init]
-def private RegisterMaterialInspectorPicker() {
-    RegisterComponentAssetPicker("materialRef", "material")
-}
 
 var private MATERIAL_PATH <- InputTextState()
 var private material_path_initialized = false
@@ -517,8 +509,8 @@ def private SelectedMaterialRef() : string {
         return ""
     }
     var asset_ref = ""
-    query(selected_eid) $(let materialRef : string) {
-        asset_ref = materialRef
+    query(selected_eid) $(let materialRef : MaterialRef) {
+        asset_ref = materialRef.path
     }
     return asset_ref
 }
@@ -533,8 +525,8 @@ def private SyncFromSelected() : bool {
 
     var asset_ref = ""
     var has_material = false
-    query(selected_eid) $(let materialRef : string) {
-        asset_ref = materialRef
+    query(selected_eid) $(let materialRef : MaterialRef) {
+        asset_ref = materialRef.path
         has_material = true
     }
     if (!has_material || empty(asset_ref)) {
@@ -653,7 +645,7 @@ def private ApplyMaterial() {
     }
 
     update_entity(selected_eid) @(eid, cmp) {
-        cmp |> set("materialRef", material_ref)
+        cmp |> set("materialRef", MaterialRef(path = material_ref))
         if (has_pointer) {
             decs::remove(cmp, "material")
         }

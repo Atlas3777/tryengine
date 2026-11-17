@@ -182,8 +182,8 @@ def start_load(){
         }
     }
 
-    query() $(eid : EntityId, let materialRef : string) {
-        let material_guid = ResolveAssetRef(materialRef)
+    query() $(eid : EntityId, let materialRef : MaterialRef) {
+        let material_guid = ResolveAssetRef(materialRef.path)
         var has_material = false
         query(eid) $(let material : TryMat?) {
             has_material = material != null
@@ -199,7 +199,7 @@ def start_load(){
             // Пустая ссылка — материал снят. Непустая, но не резолвится (реестр ещё
             // сканируется или в поле вписан неизвестный путь): оставляем прошлый
             // материал и повторяем на следующем кадре, иначе объект навсегда исчезнет.
-            if (length(materialRef) == 0) {
+            if (length(materialRef.path) == 0) {
                 if (has_material || has_load) {
                     update_entity(eid) @(eid, cmp) {
                         decs::remove(cmp, "material")

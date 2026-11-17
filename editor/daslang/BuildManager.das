@@ -29,10 +29,6 @@ struct BuildDependent {
 
 var private build : BuildDependent
 
-// Сцены держим ссылками на дерево, а не копиями AssetItem: строки AssetItem заимствованы
-// из дерева, и пересборка (Refresh) их освобождает. Ревизия — та, при которой список снят.
-var private cache_scenes : array<AssetFileRef>
-var private cache_scene_revision : uint64 = 0ul
 var private build_dir : string
 var private build_status : string
 var private create_status : string
@@ -41,17 +37,6 @@ let private SCRIPT_ENTRY = "./game/scripts/Game.das"
 
 var private CHECKBOX_STATE : table<int; ToggleState -const>
 
-
-// Список сцен следует за деревом content: кнопка обновляет его принудительно, а ревизия —
-// сама, поэтому пересборка дерева не оставляет в списке висячие ссылки.
-def private EnsureSceneList() {
-    let revision = get_tree_revision(StorageDomain.Content)
-    if (revision == cache_scene_revision) {
-        return
-    }
-    cache_scene_revision = revision
-    cache_scenes <- FindFiles(StorageDomain.Content, EXT_SCENE)
-}
 
 def private ScriptPakPath() : string {
     if (build_dir.empty()) {
@@ -152,7 +137,6 @@ def private CreateBuildAction() {
 [profile]
 def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
-        EnsureSceneList()
         if (!build_dir.empty()){
             text("{build_dir}");
         }
@@ -181,24 +165,28 @@ def DrawBuildManager(){
             text("{build_status}");
         }
 
-        for (i in range(length(cache_scenes))) {
-            let scene <- TreeFile(StorageDomain.Content, cache_scenes[i])
-            checkbox(CHECKBOX_STATE[i], (text = "{scene.name}"))
+        var scene_row = 0
+        ForEachAsset(type<SceneRef>) $(r) {
+            let scene <- TreeFile(StorageDomain.Content, r)
+            checkbox(CHECKBOX_STATE[scene_row], (text = "{scene.name}"))
+            scene_row++
         }
 
         if (button(BUILD_PREVIEW, (text = "Build preview"))){
             var arr : array<string>
 
             let str = build_string()$(var writer){
-                for (i in range(length(cache_scenes))){
-                    let scene <- TreeFile(StorageDomain.Content, cache_scenes[i])
-                    if (CHECKBOX_STATE[i].value){
+                var preview_row = 0
+                ForEachAsset(type<SceneRef>) $(r) {
+                    let scene <- TreeFile(StorageDomain.Content, r)
+                    if (CHECKBOX_STATE[preview_row].value){
                         writer.write(scene.name)
                         writer.write(" ")
                         writer.write(scene.guid)
                         writer.write(" ")
                         arr.push(scene.path)
                     }
+                    preview_row++
                 }
             }
 

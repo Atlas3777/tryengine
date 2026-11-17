@@ -5,15 +5,19 @@ module AssetPicker shared public
 
 // Универсальный выбор ассета для полей инспектора и других редакторских панелей.
 //
-// Тип ассета — это зарегистрированный "kind": домен дерева (game/data, game/content, ...)
-// и ключ расширения. Список строится через FileSystemUtils.FindFiles/ForEachFile, поэтому
-// обход дерева выполняется только при смене его ревизии, а не на каждый кадр.
+// Тип ассета задаёт сам тип значения: поле — это структура-обёртка с аннотацией
+//   [asset(kind = "data", title = "Material", ext = ".mat")]
+//   struct MaterialRef { path : string }
+// kind — домен хранения, ext фильтрует всё дерево домена (не подпапку).
+// Инспектор находит такую обёртку по имени типа поля, поэтому отдельный реестр видов
+// и привязка "имя компонента -> kind" больше не нужны.
 //
-// Инспектор открывает picker по аннотации поля @asset = "material" или (для компонентов
-// без схемы, как materialRef) через RegisterComponentAssetPicker.
+// Список строится через FileSystemUtils.ForEachFile, то есть по кешу ревизии дерева;
+// сам picker не хранит ни список файлов, ни версию дерева.
 
 require TryEditor
 require tryeditor/FileSystemUtils
+require tryengine/AssetKind
 require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
@@ -21,52 +25,36 @@ require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
 require imgui/imgui_boost_v2
-require strings
-
-struct AssetPickerKind {
-    title   : string
-    domain  : StorageDomain
-    ext_key : uint64
-}
 
 struct AssetPickerState {
     active        : bool
     owner_key     : string
-    kind          : string
+    title         : string
+    domain        : StorageDomain
+    ext_key       : uint64
     current_ref   : string
     selected_path : string
 }
 
-var private g_kinds : table<string; AssetPickerKind>
 var private g_rows : table<string; ClickState>
 var private g_filter : TextFilterState
 var private g_popup : PopupState
 var private g_state : AssetPickerState
 
-def public RegisterAssetPickerKind(name : string; title : string; domain : StorageDomain; ext_key : uint64) {
-    g_kinds[name] = AssetPickerKind(title = title, domain = domain, ext_key = ext_key)
-}
-
-def public HasAssetPickerKind(name : string) : bool {
-    return key_exists(g_kinds, name)
-}
-
-[init]
-def private RegisterBuiltinAssetPickerKinds() {
-    RegisterAssetPickerKind("material", "Material", StorageDomain.Data, EXT_MAT)
-    RegisterAssetPickerKind("scene", "Scene", StorageDomain.Content, EXT_SCENE)
-    RegisterAssetPickerKind("prefab", "Prefab", StorageDomain.Content, EXT_PREFAB)
-}
-
+// type_name — имя структуры-обёртки, а не зарегистрированный строковый kind.
 // owner_key — идентификатор поля, открывшего picker: popup рисуется только под ним,
 // поэтому один и тот же state не конфликтует между полями.
-def public OpenAssetPicker(kind : string; current_ref : string; owner_key : string) {
-    if (!key_exists(g_kinds, kind)) {
+def public OpenAssetPicker(type_name : string; current_ref : string; owner_key : string) {
+    var info : AssetTypeInfo
+    if (!GetAssetTypeInfo(type_name, info)) {
         return
     }
+
     g_state.active = true
     g_state.owner_key = owner_key
-    g_state.kind = kind
+    g_state.title = AssetTitleOf(info)
+    g_state.domain = AssetDomainOfKind(info.kind)
+    g_state.ext_key = asset_ext_key(info.ext)
     g_state.current_ref = current_ref
     g_state.selected_path = ""
     g_filter.value = ""
@@ -91,10 +79,9 @@ def public DrawAssetPickerPopup(owner_key : string) : bool {
         return false
     }
 
-    let kind = g_kinds[g_state.kind]
     var picked = false
 
-    popup(g_popup, (text = "Select {kind.title}", flags = ImGuiWindowFlags.None)) {
+    popup(g_popup, (text = "Select {g_state.title}", flags = ImGuiWindowFlags.None)) {
         if (empty(g_state.current_ref)) {
             text("Current: none")
         } else {
@@ -107,8 +94,8 @@ def public DrawAssetPickerPopup(owner_key : string) : bool {
         child(PICKER_LIST, (text = "asset_picker_list", size = float2(480.0f, 320.0f),
          child_flags = ImGuiChildFlags.Borders, window_flags = ImGuiWindowFlags.None)) {
             var shown = 0
-            ForEachFile(kind.domain, kind.ext_key) $(r) {
-                let file = TreeFile(kind.domain, r)
+            ForEachFile(g_state.domain, g_state.ext_key) $(r) {
+                let file = TreeFile(g_state.domain, r)
                 if (!passes_filter(g_filter, file.path)) {
                     return
                 }
@@ -153,6 +140,4 @@ def public DrawAssetPickerPopup(owner_key : string) : bool {
 }
 
 // Выбранный путь после DrawAssetPickerPopup вернул true.
-def public AssetPickerSelection() : string {
-    return g_state.selected_path
-}
+def public AssetPickerSelection() : string => g_state.selected_path

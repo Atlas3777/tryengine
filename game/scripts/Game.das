@@ -141,7 +141,7 @@ def SpawnGame() {
         cmp.speed := float(3)
 
         cmp.meshGuid := mesh_id_1
-        cmp.materialRef := mat_ref_1
+        decs::set(cmp, "materialRef", MaterialRef(path = mat_ref_1))
         apply_decs_template(cmp, Relationship())
     }
 
@@ -167,7 +167,7 @@ def create_mesh_entity_game(tag : string, pos : float3) {
             scale = float3(1.0f, 1.0f, 1.0f)
         ))
         cmp.meshGuid := mesh_id_1
-        cmp.materialRef := mat_ref_1
+        decs::set(cmp, "materialRef", MaterialRef(path = mat_ref_1))
         apply_decs_template(cmp, Relationship())
     }
 }

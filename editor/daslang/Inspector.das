@@ -20,6 +20,7 @@ require tryeditor/AssetPicker
 require tryengine/EcsMacro
 require tryengine/Profiling
 require tryengine/Serializable
+require tryengine/AssetKind
 require daslib/rtti
 
 // ---------------------------------------------------------------------
@@ -46,13 +47,9 @@ def get_entity_location(eid : EntityId; var out_arch_idx : int&; var out_index :
 var W_BOOL   : table<string; ToggleState>
 var W_STRING : table<string; InputTextState>
 
-// Компоненты без [DecsSerializable]-схемы (например materialRef) не могут нести
-// аннотации полей. Для них тип asset picker'а регистрируется по имени компонента.
-var private g_component_asset_kinds : table<string; string>
-
-def public RegisterComponentAssetPicker(component_name : string; kind : string) {
-    g_component_asset_kinds[component_name] = kind
-}
+// Поля и компоненты, тип которых помечен [asset(kind, ext)], рисуются asset picker'ом.
+// Реестр имён компонентов больше не нужен: метаданные лежат на типе-обёртке
+// (см. tryengine/AssetKind и tryeditor/AssetPicker).
 
 // Удаление откладывается до конца обхода компонентов: commit() меняет архетип,
 // а цикл ещё читает decsState.allArchetypes[arch_idx].
@@ -83,14 +80,14 @@ def draw_component_value(comp : Component; index : int64; display_name : string)
     unsafe {
         let ptr = reinterpret<void?>(addr(comp.data[offset]))
 
-        if (comp.info.basicType == Type.tStructure) {
+        var asset_info : AssetTypeInfo
+        if (comp.info.basicType == Type.tStructure && GetAssetTypeInfo(type_name, asset_info)) {
+            draw_asset_ref(ptr, type_name, display_name, id_key, false)
+        } elif (comp.info.basicType == Type.tStructure) {
             draw_struct_fields(ptr, type_name, id_key)
         } else {
             var ui : FieldUi
             ui.title = display_name
-            if (key_exists(g_component_asset_kinds, comp.name)) {
-                ui.asset_kind = g_component_asset_kinds[comp.name]
-            }
             draw_leaf(ptr, type_name, display_name, id_key, ui)
         }
     }
@@ -333,10 +330,9 @@ def private AddComponent(target_eid : EntityId) {
 //   @title = "..."   — подпись вместо имени поля;
 //   @min / @max      — границы значения (можно задавать по одной);
 //   @speed = 0.1     — шаг drag-виджета;
-//   @readonly        — значение показывается текстом, без редактирования;
-//   @asset = "..."   — для string-поля: кнопка выбора ассета зарегистрированного
-//                      вида ("material", "scene", "prefab", ...; см. AssetPicker).
-// Неизвестные аннотации игнорируются: их могут читать другие потребители.
+//   @readonly        — значение показывается текстом, без редактирования.
+// Asset picker задаётся не аннотацией поля, а типом значения: структура-обёртка
+// помечена [asset(kind, ext)] (см. tryengine/AssetKind).
 // ---------------------------------------------------------------------
 struct FieldUi {
     hidden     : bool
@@ -347,7 +343,6 @@ struct FieldUi {
     min_value  : double
     max_value  : double
     speed      : float
-    asset_kind : string
 }
 
 def private annotation_number(data : RttiValue; var out : double&) : bool {
@@ -382,8 +377,6 @@ def private parse_field_ui(field_name : string; annotations : array<tuple<name :
             ui.readonly = ann.data is tBool ? (ann.data as tBool) : true
         } elif (ann.name == "title" && ann.data is tString) {
             ui.title = ann.data as tString
-        } elif (ann.name == "asset" && ann.data is tString) {
-            ui.asset_kind = ann.data as tString
         } elif (ann.name == "speed") {
             var v : double
             if (annotation_number(ann.data, v)) {
@@ -533,8 +526,67 @@ def private clamp_number(ptr : void?; type_name : string; ui : FieldUi) {
     }
 }
 
+//! Поле-обёртка [asset(kind, ext)]: рисуем picker по её полю path. Схема обёртки
+//! (offset поля path) приходит из [DecsSerializable], поэтому layout не захардкожен.
+def private draw_asset_ref(ptr : void?; type_name : string; display_name : string; id_key : string; readonly : bool) {
+    if (ptr == null) {
+        return
+    }
+
+    var fields : array<InspectField>
+    if (!DecsInspectFields(type_name, fields)) {
+        text("{display_name}: {type_name} has no inspector schema")
+        return
+    }
+
+    var path_offset : uint64 = 0ul
+    var found = false
+    for (f in fields) {
+        if (f.name == "path") {
+            path_offset = f.offset
+            found = true
+            break
+        }
+    }
+    if (!found) {
+        text("{display_name}: {type_name} has no 'path' field")
+        return
+    }
+
+    unsafe {
+        var path_ptr = reinterpret<string?>(reinterpret<void?>(reinterpret<uint64>(ptr) + path_offset))
+        if (readonly) {
+            text("{display_name}: {*path_ptr}")
+            return
+        }
+
+        let current_val = *path_ptr
+        if (!key_exists(W_STRING, id_key) || W_STRING[id_key].value != current_val) {
+            init_input_text(W_STRING[id_key], current_val)
+        }
+        if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
+            OpenAssetPicker(type_name, current_val, id_key)
+        }
+        same_line()
+        if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
+            *path_ptr = W_STRING[id_key].value
+        }
+        if (DrawAssetPickerPopup(id_key)) {
+            let picked = AssetPickerSelection()
+            *path_ptr = picked
+            init_input_text(W_STRING[id_key], picked)
+        }
+    }
+}
+
 //! Виджет одного поля по имени типа daslang (его даёт apply-схема или CTypeInfo).
 def private draw_leaf(ptr : void?; type_name : string; display_name : string; id_key : string; ui : FieldUi) {
+    var asset_info : AssetTypeInfo
+    if (GetAssetTypeInfo(type_name, asset_info)) {
+        draw_asset_ref(ptr, type_name, display_name, id_key, ui.readonly)
+        return
+    }
+
     if (ui.readonly) {
         text("{display_name}: {value_text(ptr, type_name)}")
     } elif (ends_with(type_name, "?")) {
@@ -657,23 +709,8 @@ def private draw_leaf(ptr : void?; type_name : string; display_name : string; id
             if (!key_exists(W_STRING, id_key) || W_STRING[id_key].value != current_val) {
                 init_input_text(W_STRING[id_key], current_val)
             }
-            let has_picker = !empty(ui.asset_kind) && HasAssetPickerKind(ui.asset_kind)
-            if (has_picker) {
-                // Кнопка слева от input: даже если поле растянется, она не уедет за край панели.
-                if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
-                    OpenAssetPicker(ui.asset_kind, current_val, id_key)
-                }
-                same_line()
-            }
             if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {
                 *reinterpret<string?>(ptr) = W_STRING[id_key].value
-            }
-            if (has_picker) {
-                if (DrawAssetPickerPopup(id_key)) {
-                    let picked = AssetPickerSelection()
-                    *reinterpret<string?>(ptr) = picked
-                    init_input_text(W_STRING[id_key], picked)
-                }
             }
         }
     } elif (type_name == "uint2" || type_name == "uint3" || type_name == "uint4") {

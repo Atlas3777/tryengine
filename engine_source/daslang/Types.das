@@ -7,6 +7,15 @@ require daslib/decs_boost
 require tryengine/EcsMacro
 require tryengine/ConfigFormatBoost
 require tryengine/Serializable
+require tryengine/AssetKind
+
+// Authoring reference to a material file. The wrapper (instead of a bare string) carries
+// the asset-kind annotation, so the inspector can draw a picker from the field type alone.
+// `path` is either a project path or "guid:<id>" for an imported material.
+[asset(kind = "data", title = "Material", ext = ".mat"), DecsSerializable]
+struct MaterialRef {
+    path : string
+}
 
 %ecs~("HP", type<uint>) %%
 %ecs~("Mana", type<int?>) %%

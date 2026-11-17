@@ -243,10 +243,10 @@ def private save_scene_to_config() : string {
     // В сцену пишем авторские ссылки, а не id: у авторитетного материала это путь,
     // у импортированного — guid. active_scene держит уже разрешённые id для выгрузки.
     var material_refs : array<string>
-    query() $(materialRef : string) {
-        if (!empty(materialRef) && !material_refs.contains(materialRef))
-            material_refs |> push(materialRef)
-        let material_id = ResolveAssetRef(materialRef)
+    query() $(materialRef : MaterialRef) {
+        if (!empty(materialRef.path) && !material_refs.contains(materialRef.path))
+            material_refs |> push(materialRef.path)
+        let material_id = ResolveAssetRef(materialRef.path)
         if (material_id != 0ul && !active_scene.requireMaterials.contains(material_id))
             active_scene.requireMaterials |> push(material_id)
     }
@@ -294,14 +294,21 @@ def private parse_and_apply_field(var cmp : ComponentMap;
         return false
     }
 
-    // Старый формат: materialGuid: u64. Новый — materialRef: string; превращаем id в
-    // каноническую ссылку, чтобы сцена не зависела от того, чем этот id был раньше.
+    // Старый формат: materialGuid: u64. Превращаем id в каноническую ссылку, чтобы
+    // сцена не зависела от того, чем этот id был раньше.
     if (field_name == "materialGuid") {
         if (cf.value is _uint64) {
             let ref = AssetRefOf(cf.value as _uint64)
             if (!empty(ref))
-                cmp |> set("materialRef", ref)
+                cmp |> set("materialRef", MaterialRef(path = ref))
         }
+        return true
+    }
+
+    // Старый формат materialRef: string. Новый — обёртка MaterialRef(path): обновляем
+    // старые сцены на лету, чтобы Render.das видел один и тот же тип компонента.
+    if (field_name == "materialRef" && cf.value is _string) {
+        cmp |> set("materialRef", MaterialRef(path = cf.value as _string))
         return true
     }
 

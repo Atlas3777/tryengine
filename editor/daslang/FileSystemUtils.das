@@ -5,12 +5,23 @@ module FileSystemUtils shared public
 
 require TryEditor
 require strings
+require daslib/decs
+require daslib/static_let
+require tryengine/AssetKind
+require tryengine/Serializable
+require tryengine/ConfigFormatBoost
 
-// Ключи расширений: в узле дерева лежит тот же 8-байтовый ключ, поэтому поиск по типу —
-// одно сравнение uint64 на файл, без ends_with по строке.
-let EXT_MAT = asset_ext_key(".mat")
-let EXT_SCENE = asset_ext_key(".scene")
-let EXT_PREFAB = asset_ext_key(".prefab")
+// Editor-side asset wrappers. MaterialRef lives in tryengine/Types because the renderer
+// reads it; scene/prefab wrappers are only picker metadata here.
+[asset(kind = "content", title = "Scene", ext = ".scene"), DecsSerializable]
+struct SceneRef {
+    path : string
+}
+
+[asset(kind = "content", title = "Prefab", ext = ".prefab"), DecsSerializable]
+struct PrefabRef {
+    path : string
+}
 
 // Без фильтра по типу: все файлы корня.
 let EXT_ANY : uint64 = 0ul
@@ -37,6 +48,48 @@ def private InitQueryCache() {
     resize(g_query_cache, 4)  // engine, game, content, data
 }
 
+// Ревизия этого счётчика меняется при RefreshAssetTrees. Типизированные кеши ниже живут
+// в static_let-переменных по одному на тип и не могут быть очищены снаружи, поэтому они
+// сверяют ещё и эпоху, а не только ревизию конкретного дерева.
+var private g_asset_cache_epoch : uint64 = 0ul
+
+// kind — это домен хранения (engine/game/content/data), а не подпапка. Фильтр по
+// расширению применяется ко всем папкам домена, поэтому сцены и префабы ищутся по
+// всему content, а не только в content/scenes.
+def public AssetDomainOfKind(kind : string) : StorageDomain {
+    if (kind == "engine") {
+        return StorageDomain.Engine
+    } elif (kind == "game") {
+        return StorageDomain.Game
+    } elif (kind == "content") {
+        return StorageDomain.Content
+    }
+    return StorageDomain.Data
+}
+
+// Заголовок popup'а: явный title из аннотации, иначе имя расширения без точки.
+def public AssetTitleOf(info : AssetTypeInfo) : string {
+    if (!empty(info.title)) {
+        return info.title
+    }
+    let dot = find(info.ext, ".")
+    return dot >= 0 ? slice(info.ext, dot + 1, length(info.ext)) : info.ext
+}
+
+// Один обход дерева для обоих кешей: и доменного, и типизированного.
+def private FillQuery(domain : StorageDomain; ext_key : uint64; var refs : array<AssetFileRef>) {
+    clear(refs)
+    assume folders = get_folders(domain)
+    for (f in range(length(folders))) {
+        for (i in range(length(folders[f].files))) {
+            if (ext_key != EXT_ANY && folders[f].files[i].ext != ext_key) {
+                continue
+            }
+            refs |> push(AssetFileRef(folder = f, file = i))
+        }
+    }
+}
+
 // Наполняет кеш, если для этой ревизии дерева обхода ещё не было.
 def private EnsureQuery(domain : StorageDomain; ext_key : uint64) {
     let d = int(domain)
@@ -47,16 +100,7 @@ def private EnsureQuery(domain : StorageDomain; ext_key : uint64) {
     }
 
     var found : array<AssetFileRef>
-    assume folders = get_folders(domain)
-    for (f in range(length(folders))) {
-        for (i in range(length(folders[f].files))) {
-            if (ext_key != EXT_ANY && folders[f].files[i].ext != ext_key) {
-                continue
-            }
-            found |> push(AssetFileRef(folder = f, file = i))
-        }
-    }
-
+    FillQuery(domain, ext_key, found)
     g_query_cache[d][ext_key] <- FilesQuery(revision = revision, refs <- found)
 }
 
@@ -69,15 +113,58 @@ def public ForEachFile(domain : StorageDomain; ext_key : uint64; blk : block<(re
     }
 }
 
-// Тот же результат списком — когда его надо придержать между кадрами (BuildManager).
-// Отдаём копию массива индексов: 8 байт на файл, строк в нём нет.
+// Типизированный обход: тип-обёртка несёт [asset(kind, ext)], а кеш и ревизия дерева
+// живут в static_let этого инстанцирования. Вызывающий код не хранит ни список, ни
+// версию дерева — повторный вызов сам перечитает дерево, если оно изменилось.
+def public ForEachAsset(t : type<auto(TT)>; blk : block<(ref : AssetFileRef) : void>) {
+    let info = AssetInfoOf(type<TT>)
+    if (!info.has) {
+        return
+    }
+
+    let domain = AssetDomainOfKind(info.kind)
+    let ext_key = asset_ext_key(info.ext)
+
+    static_let("{typeinfo typename(type<TT>)}`asset_files", $ {
+        var state : FilesQuery
+        var filled : bool
+        var epoch : uint64
+    })
+
+    let revision = get_tree_revision(domain)
+    if (!filled || epoch != g_asset_cache_epoch || state.revision != revision) {
+        filled = true
+        epoch = g_asset_cache_epoch
+        state.revision = revision
+        FillQuery(domain, ext_key, state.refs)
+    }
+
+    for (r in state.refs) {
+        invoke(blk, r)
+    }
+}
+
+// Тот же результат списком, если вызывающему действительно нужен массив. Отдаём копию
+// индексов: 8 байт на файл, строк в нём нет. Для отрисовки списка предпочитай
+// ForEachAsset — он не создаёт копию на каждый кадр.
+def public FindAssets(t : type<auto(TT)>) : array<AssetFileRef> {
+    var out : array<AssetFileRef>
+    ForEachAsset(type<TT>) $(r) {
+        out |> push(r)
+    }
+    return <- out
+}
+
+// Старый вариант без типа: домен и ключ расширения задаются вручную. Нужен браузеру
+// ассетов, который показывает произвольный домен без фильтра по типу.
 def public FindFiles(domain : StorageDomain; ext_key : uint64) : array<AssetFileRef> {
     EnsureQuery(domain, ext_key)
     return <- clone(g_query_cache[int(domain)][ext_key].refs)
 }
 
-// Файл по ссылке из ForEachFile/FindFiles. Строки берутся из живого дерева, поэтому значение
-// годится только сразу: держать его дольше, чем жив узел, нельзя — копию не делаем намеренно.
+// Файл по ссылке из ForEachFile/ForEachAsset/FindFiles. Строки берутся из живого дерева,
+// поэтому значение годится только сразу: держать его дольше, чем жив узел, нельзя —
+// копию не делаем намеренно.
 def public TreeFile(domain : StorageDomain; ref : AssetFileRef) : AssetItem {
     assume folders = get_folders(domain)
     let f = folders[ref.folder].files[ref.file]
@@ -86,8 +173,9 @@ def public TreeFile(domain : StorageDomain; ref : AssetFileRef) : AssetItem {
 
 // Сбросить кеш запросов (например, после пересборки деревьев).
 def public InvalidateFileCache() {
-    for (i in range(length(g_query_cache))) {
-        clear(g_query_cache[i])
+    g_asset_cache_epoch++
+    for (cache in g_query_cache) {
+        clear(cache)
     }
 }
 

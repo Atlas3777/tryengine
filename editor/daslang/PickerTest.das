@@ -15,8 +15,7 @@ require daslib/decs
 
 [DecsSerializable]
 struct PickerDemo {
-    @asset = "material"
-    material : string
+    material : MaterialRef
 }
 
 %ecs~("PickerDemo", type<PickerDemo>) %%
