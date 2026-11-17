@@ -3,6 +3,7 @@ options relaxed_assign = false
 
 module AssetBrowser shared public
 
+require tryengine/Profiling
 require TryEditor
 
 require imgui
@@ -62,6 +63,7 @@ struct AssetDrag {
 
 var public PAYLOAD_VALUE : AssetDrag
 
+[profile]
 def public DrawAssetBrowser() {
     with_style(
         (ImGuiStyleVar.WindowPadding, AB_WINDOW_PADDING),

@@ -13,6 +13,7 @@ module Material shared public
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Types
+require tryengine/Profiling
 require tryengine/EcsMacro
 require tryeditor/Hierarchy
 require tryeditor/Inspector
@@ -665,6 +666,7 @@ def private ApplyMaterial() {
 // Панель
 // ---------------------------------------------------------------------------
 
+[profile]
 def DrawMaterialEditor() {
     window(MATERIAL_EDITOR_WIN, (text = "Material", closable = false, flags = ImGuiWindowFlags.None)) {
         if (!material_path_initialized) {

@@ -18,6 +18,7 @@ require math
 require tryeditor/Hierarchy
 require tryeditor/AssetPicker
 require tryengine/EcsMacro
+require tryengine/Profiling
 require tryengine/Serializable
 require daslib/rtti
 
@@ -150,6 +151,7 @@ def private split_component_name(name : string; var out_prefix : string&; var ou
     return false
 }
 
+[profile]
 def DrawInspector() {
     if (selected_eid != last_selected_eid) {
         clear_inspector_states()

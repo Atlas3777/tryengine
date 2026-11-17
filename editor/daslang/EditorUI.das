@@ -18,6 +18,7 @@ require tryeditor/SceneViewPort
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
+require tryeditor/ProfilerWindow
 require tryeditor/PickerTest
 require tryeditor/EditorActions
 
@@ -29,10 +30,12 @@ require imgui/imgui_boost_v2
 require imgui/imgui_file_dialog
 
 require TryEditor
+require tryengine/Profiling
 require tryengine/EcsMacro
 require daslib/decs
 require daslib/archive
 
+[profile]
 def DrawMainMenu() {
     main_menu_bar(MAIN_MENU_BAR) {
         menu(FILE_MENU, (text = "File", enabled = true)) {
@@ -108,6 +111,7 @@ def DrawMainMenu() {
             menu_label(WIN_QUADTREE, (text = "QuadTree Debug", selected = true))
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
+            menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
 
@@ -195,7 +199,7 @@ def PausePlay()  { is_paused = true}
 def ResumePlay() { is_paused = false }
 def StepPlay()   { /* TODO */ }
 
-[export]
+[export, profile]
 def DrawEditor() {
     unsafe {
         let ctx_address = GetEditorImGuiContext()
@@ -214,6 +218,7 @@ def DrawEditor() {
     DrawGameSceneViewPort()
     DrawBuildManager()
     DrawMaterialEditor()
+    DrawProfilerWindow()
     // DrawQuadTreeDebug()
 
     ProcessFileDialog()

@@ -4,6 +4,7 @@ options _allow_imgui_legacy = true
 
 module SceneViewPort shared
 
+require tryengine/Profiling
 require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
@@ -50,6 +51,7 @@ def GetGameViewportSize : float2 {
     // return size / float2(6, 6);
 }
 
+[profile]
 def DrawSceneViewPort(){
     SetSceneViewportHovered(false)
 
@@ -93,6 +95,7 @@ def DrawSceneViewPort(){
     }
 }
 
+[profile]
 def DrawGameSceneViewPort(){
     SetGameViewportFocused(false)
 

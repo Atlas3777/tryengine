@@ -10,6 +10,7 @@ require tryeditor/EditorHotkeys
 require trygame/Game
 
 require tryengine/Scene
+require tryengine/Profiling
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
@@ -31,7 +32,7 @@ def EditorStart(){
     init_quadtree_debug()
 }
 
-[export]
+[export, profile]
 def EditorUpdate(){
     ProcessHotkeys()
     Move(0.03)

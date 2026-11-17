@@ -9,6 +9,7 @@ require tryengine/Types
 require tryengine/Input
 require tryResources
 require tryengine/Engine
+require tryengine/Profiling
 require math
 
 let mesh_id_1 = 3081795527557720915ul
@@ -77,7 +78,7 @@ def GameStart(){
     SpawnGame()
 }
 
-[export]
+[export, profile]
 def GameUpdate() {
 
     // ================== ОРБИТА КАМЕРЫ ==================

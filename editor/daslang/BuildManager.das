@@ -20,6 +20,7 @@ require tryengine/Scene
 require TryEditor
 require tryeditor/EditorActions
 require tryeditor/FileSystemUtils
+require tryengine/Profiling
 require tryengine/FileReader
 
 struct BuildDependent {
@@ -148,6 +149,7 @@ def private CreateBuildAction() {
 }
 
 
+[profile]
 def DrawBuildManager(){
     window(BUILD_MAN, (text = "BuildSettings", closable = false, flags = ImGuiWindowFlags.None)){
         EnsureSceneList()

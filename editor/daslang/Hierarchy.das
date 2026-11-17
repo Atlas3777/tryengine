@@ -9,6 +9,7 @@ require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
+require tryengine/Profiling
 require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
@@ -24,6 +25,7 @@ def SetSelectedEntity(eid : uint64){
     }
 }
 
+[profile]
 def DrawHierarchy() {
     window(BASICS_WIN, (text = "HierarchyDas", closable = false, flags = ImGuiWindowFlags.None)) {
         // --- NEW: создание новой сущности ---
