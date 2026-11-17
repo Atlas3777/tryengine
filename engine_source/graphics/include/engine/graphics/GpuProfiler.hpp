@@ -66,6 +66,8 @@ private:
     uint32_t current_slot_ = 0;
     uint32_t pass_count_ = 0;
     bool pending_reset_ = false;
+    /// Пишем ли таймстемпы в этом кадре (запись включена). Выключается в BeginFrame.
+    bool active_ = false;
     uint32_t slot_passes_[kMaxFramesInFlight] = {};
     uint32_t slot_frame_[kMaxFramesInFlight] = {};
     const char* slot_names_[kMaxFramesInFlight][kMaxProfiledPasses] = {};

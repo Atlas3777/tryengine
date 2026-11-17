@@ -51,6 +51,18 @@ void EditorRender::RecreateSwapchain(int w, int h, const tryengine::graphics::Vu
     swapchain_.Recreate(static_cast<uint32_t>(w), static_cast<uint32_t>(h), swapchain_.IsVsync());
 }
 
+bool EditorRender::ApplyPendingVSync(const int width, const int height) {
+    if (!vsync_pending_)
+        return false;
+    vsync_pending_ = false;
+    if (swapchain_.IsVsync() == requested_vsync_)
+        return false;
+    swapchain_.Recreate(static_cast<uint32_t>(width), static_cast<uint32_t>(height), requested_vsync_);
+    // Образы swapchain сменились: импорт в граф и все проходы надо пересобрать.
+    rg_.Invalidate();
+    return true;
+}
+
 void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::VulkanDevice& device,
                           PlayModeState& state) {
     int w = 0, h = 0;
@@ -58,6 +70,9 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
 
     if (w == 0 || h == 0)
         return;
+
+    // Переключение VSync из панели: до BeginFrame, пока ни один command buffer не пишется.
+    ApplyPendingVSync(w, h);
 
     const VkExtent2D current_extent = swapchain_.GetExtent();
     if (static_cast<uint32_t>(w) != current_extent.width || static_cast<uint32_t>(h) != current_extent.height) {

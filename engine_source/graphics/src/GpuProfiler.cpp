@@ -62,6 +62,15 @@ void GpuProfiler::BeginFrame(const uint32_t frame_index) {
     current_slot_ = frame_index % kMaxFramesInFlight;
     pass_count_ = 0;
 
+    // Запись выключена (по умолчанию): ни таймстемпов, ни чтения. Слоты обнуляются, чтобы
+    // после включения старые результаты не прилетели как событие чужого кадра.
+    active_ = core::Profiler::Instance().IsRecording();
+    if (!active_) {
+        for (auto& passes : slot_passes_)
+            passes = 0;
+        return;
+    }
+
     // Слот переиспользуется: fence этого кадра только что дождались, результаты прошлого
     // цикла готовы. Сами запросы сбрасывает BeginCommands — командой в command buffer,
     // потому что vkResetQueryPool требует включённой фичи hostQueryReset.
@@ -71,28 +80,28 @@ void GpuProfiler::BeginFrame(const uint32_t frame_index) {
 }
 
 void GpuProfiler::BeginCommands(const VkCommandBuffer cmd) {
-    if (!supported_ || !pending_reset_)
+    if (!supported_ || !active_ || !pending_reset_)
         return;
     vkCmdResetQueryPool(cmd, query_pool_, current_slot_ * kQueriesPerFrame, kQueriesPerFrame);
     pending_reset_ = false;
 }
 
 void GpuProfiler::BeginPass(const VkCommandBuffer cmd, const char* name) {
-    if (!supported_ || pass_count_ >= kMaxProfiledPasses)
+    if (!supported_ || !active_ || pass_count_ >= kMaxProfiledPasses)
         return;
     slot_names_[current_slot_][pass_count_] = name;
     WriteTimestamp(cmd, pass_count_ * 2);
 }
 
 void GpuProfiler::EndPass(const VkCommandBuffer cmd) {
-    if (!supported_ || pass_count_ >= kMaxProfiledPasses)
+    if (!supported_ || !active_ || pass_count_ >= kMaxProfiledPasses)
         return;
     WriteTimestamp(cmd, pass_count_ * 2 + 1);
     ++pass_count_;
 }
 
 void GpuProfiler::EndFrame(const uint32_t frame_index) {
-    if (!supported_)
+    if (!supported_ || !active_)
         return;
     // Читать будем через kMaxFramesInFlight кадров, когда GPU гарантированно закончил этот.
     // Номер кадра запоминаем сейчас: к моменту чтения профилировщик закроет ещё несколько

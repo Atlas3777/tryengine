@@ -27,6 +27,7 @@ require imgui/imgui_colors
 require imgui/imgui_boost_runtime
 require imgui/imgui_boost_v2
 require tryRenderer
+require TryEditor
 require math
 require strings
 
@@ -178,6 +179,7 @@ def private EnsureInit() {
     PROFILE_FOLLOW.value = follow
     PROFILE_AUTOSCALE.value = plot_auto_scale
     PROFILE_CAPTURE.value = ProfileIsCapturing()
+    PROFILE_VSYNC.value = EditorIsVSync()
 }
 
 def private SeriesColor(scope : uint) : uint {
@@ -1206,6 +1208,12 @@ def DrawProfilerWindow() {
             let frames = int(ProfileFrameCount())
             if (checkbox(PROFILE_RECORD_TOGGLE, "Record")) {
                 ProfileSetRecording(PROFILE_RECORD_TOGGLE.value)
+                if (!PROFILE_RECORD_TOGGLE.value && ProfileIsCapturing()) {
+                    // A capture writes frames out of the history: with Record off there is
+                    // nothing to write, so the two switches go off together.
+                    ProfileStopCapture()
+                    PROFILE_CAPTURE.value = false
+                }
             }
             same_line(PROFILER_TOOLBAR_1)
             if (button(PROFILE_RESET_BTN, (text = "Reset"))) {
@@ -1224,10 +1232,10 @@ def DrawProfilerWindow() {
                 export_status = ""
             }
             same_line(PROFILER_TOOLBAR_2)
-            if (button(PROFILE_EXPORT_BTN, (text = "Export"))) {
+            if (button(PROFILE_EXPORT_BTN, (text = "Save to logs"))) {
                 let path = ProfileExportToLogs()
                 if (length(path) == 0) {
-                    export_status = "export failed: nothing recorded or logs/ is not writable"
+                    export_status = "nothing to save: turn Record on first, or logs/ is not writable"
                 } else {
                     export_status = "saved " + path
                 }
@@ -1238,12 +1246,14 @@ def DrawProfilerWindow() {
                     // 64 MB of frames is a few minutes at 1000 fps; the status file next to it
                     // is tiny and keeps going even after the stream hits the cap.
                     ProfileStartCapture(uint64(64 * 1024 * 1024))
+                    // Capture includes Record: a file of empty frames would be useless.
+                    PROFILE_RECORD_TOGGLE.value = true
                 } else {
                     ProfileStopCapture()
                 }
             }
             same_line(PROFILER_TOOLBAR_8)
-            if (button(PROFILE_LOAD_BTN, (text = "Load latest"))) {
+            if (button(PROFILE_LOAD_BTN, (text = "Open latest"))) {
                 if (ProfileImportLatestLog()) {
                     InvalidateScopeNames()
                     PROFILE_CAPTURE.value = false
@@ -1281,11 +1291,27 @@ def DrawProfilerWindow() {
             if (checkbox(PROFILE_AUTOSCALE, "Auto scale")) {
                 plot_auto_scale = PROFILE_AUTOSCALE.value
             }
+            same_line(PROFILER_TOOLBAR_9)
+            if (checkbox(PROFILE_VSYNC, "VSync")) {
+                // The swapchain is rebuilt at the next frame start, so the change lands without
+                // a restart - and the fps number right below shows what it did.
+                EditorSetVSync(PROFILE_VSYNC.value)
+            }
 
-            let last_ms = frames > 0 ? ProfileFrameMs(uint(frames - 1)) : 0.0f
+            // With recording off there are no calls, but the frame time is still measured: the
+            // panel keeps showing the fps it would be measuring.
+            let recording = ProfileIsRecording()
+            let last_ms = frames > 0 ? ProfileFrameMs(uint(frames - 1)) : ProfileLastFrameMs()
             let fps = last_ms > 0.0f ? 1000.0f / last_ms : 0.0f
-            let summary = "{frames} frames   last {last_ms:7.2f} ms   {fps:6.1f} fps"
+            var summary = "{frames} frames   last {last_ms:7.2f} ms   {fps:6.1f} fps"
+            if (!recording) {
+                summary += "   recording is off"
+            }
             text(PROFILER_SUMMARY, (text = summary))
+            text(PROFILER_BUTTONS_HINT,
+                 (text = "Record: keep frames in memory for this panel.  Save to logs: write them out now.  "
+                         + "Capture to file: write to logs/ while the app runs (turns Record on).  "
+                         + "Open latest: read the newest file back."))
             if (ProfileIsCapturing()) {
                 let megabytes = float(int64(ProfileCaptureBytes())) / (1024.0f * 1024.0f)
                 var info = "capture {ProfileCapturedFrames()} frames, {megabytes:5.2f} MB -> {ProfileCapturePath()}"

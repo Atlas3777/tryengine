@@ -120,6 +120,11 @@ int32_t ProfileEventParent(uint32_t frame, uint32_t index) {
     return GetProfiler().EventParent(frame, index);
 }
 
+//! Frame time even with recording off: the root is always measured.
+float ProfileLastFrameMs() {
+    return GetProfiler().LastFrameMs();
+}
+
 char* ProfileExportToLogs(Context* ctx, LineInfoArg* at) {
     const eastl::string path = GetProfiler().ExportToLogs();
     return ctx->allocateString(path.c_str(), path.size(), at);
@@ -292,6 +297,10 @@ int32_t ProfileEventParent(uint32_t, uint32_t) {
     return -1;
 }
 
+float ProfileLastFrameMs() {
+    return 0.0f;
+}
+
 char* ProfileExportToLogs(Context* ctx, LineInfoArg* at) {
     return ctx->allocateString("", 0, at);
 }
@@ -408,6 +417,8 @@ public:
                                                        "ProfileEventKind");
         das::addExtern<DAS_BIND_FUN(ProfileEventParent)>(*this, lib, "ProfileEventParent",
                                                          das::SideEffects::accessGlobal, "ProfileEventParent");
+        das::addExtern<DAS_BIND_FUN(ProfileLastFrameMs)>(*this, lib, "ProfileLastFrameMs",
+                                                         das::SideEffects::accessGlobal, "ProfileLastFrameMs");
         das::addExtern<DAS_BIND_FUN(ProfileExportToLogs)>(*this, lib, "ProfileExportToLogs",
                                                           das::SideEffects::accessGlobal, "ProfileExportToLogs");
         das::addExtern<DAS_BIND_FUN(ProfileStartCapture)>(*this, lib, "ProfileStartCapture",

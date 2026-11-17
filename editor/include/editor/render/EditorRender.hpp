@@ -36,8 +36,25 @@ public:
 
     void RecreateSwapchain(int w, int h, const tryengine::graphics::VulkanDevice& device) const;
 
+    /// VSync the swapchain is running with right now.
+    [[nodiscard]] bool IsVSync() const {
+        return swapchain_.IsVsync();
+    }
+
+    /// Asks for the other VSync mode. The swapchain is recreated at the next frame start: doing
+    /// it from the panel would destroy images the command buffer being recorded already refers to.
+    void RequestVSync(bool enabled) {
+        requested_vsync_ = enabled;
+        vsync_pending_ = true;
+    }
+
 private:
     void ImportSwapchain(uint32_t image_index) const;
+    /// Applies a pending VSync request; returns true when the swapchain was rebuilt.
+    bool ApplyPendingVSync(int width, int height);
+
+    bool requested_vsync_ = false;
+    bool vsync_pending_ = false;
 
     VkExtent2D last_viewport_size_{0, 0};
     VkExtent2D last_game_viewport_size_{0, 0};

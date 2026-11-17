@@ -78,6 +78,9 @@ bool Profiler::StartCapture(const uint64_t max_bytes) {
     if (capture_.IsActive() || status_log_.IsActive())
         return true;
 
+    // Каптион без записи писал бы пустые кадры: кнопка Capture включает и Record.
+    recording_.store(true, std::memory_order_relaxed);
+
     const eastl::string base = ProfilerTimestampedBase("profiler");
     eastl::string frames_path = base;
     frames_path += ".tryprof";

@@ -253,6 +253,22 @@ void* GetEditorImGuiContext() {
     return ImGui::GetCurrentContext();
 }
 
+//! Переключатель VSync из панели: сам по себе он не пересоздаёт swapchain, а просит
+//! EditorRender сделать это в начале следующего кадра.
+bool EditorIsVSync(das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return false;
+    return try_ctx->engine.Get<tryeditor::EditorRender>().IsVSync();
+}
+
+void EditorSetVSync(bool enabled, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return;
+    try_ctx->engine.Get<tryeditor::EditorRender>().RequestVSync(enabled);
+}
+
 void* GetEditorCameraViewImage(das::Context* ctx) {
     auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
     if (!try_ctx)
@@ -314,6 +330,10 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "GetEditorImGuiContext", das::SideEffects::none,
                                                             "GetEditorImGuiContext");
+        das::addExtern<DAS_BIND_FUN(EditorIsVSync)>(*this, lib, "EditorIsVSync", das::SideEffects::accessGlobal,
+                                                    "EditorIsVSync");
+        das::addExtern<DAS_BIND_FUN(EditorSetVSync)>(*this, lib, "EditorSetVSync", das::SideEffects::accessGlobal,
+                                                     "EditorSetVSync");
 
         das::addExtern<DAS_BIND_FUN(RegisterMaterialFile)>(*this, lib, "RegisterMaterialFile",
                                                            das::SideEffects::accessGlobal, "RegisterMaterialFile");

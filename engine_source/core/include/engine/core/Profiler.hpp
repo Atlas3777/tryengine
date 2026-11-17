@@ -6,6 +6,10 @@
 //! for release builds. Set TRY_PROFILE_ENABLED to 0 and rebuild — the macros expand to
 //! `((void)0)`, scope bodies are left untouched and no profiler code is compiled at all.
 //!
+//! Recording is off by default and is a runtime switch: SetRecording toggles it without a
+//! restart, and with it off a scope costs one atomic load (no clock, no lock, no event).
+//! The frame root is still measured, so LastFrameMs() keeps answering.
+//!
 //! Usage:
 //!   TRY_PROFILE_BEGIN_FRAME("EditorApp::Run");  // top of the frame body, opens the root
 //!   TRY_PROFILE_SCOPE(name);                    // any block/function
@@ -36,6 +40,7 @@
 #include <EASTL/string_view.h>
 #include <EASTL/vector.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -103,19 +108,30 @@ public:
         return instance;
     }
 
-    /// Runtime toggle of the panel. One branch in the hot path; the compile-time switch that
-    /// really removes the code is TRY_PROFILE_ENABLED.
+    /// Runtime toggle. Off by default; one relaxed atomic load in the hot path, so a scope with
+    /// recording off costs nothing measurable. The compile-time switch that really removes the
+    /// code is TRY_PROFILE_ENABLED.
     [[nodiscard]] bool IsRecording() const {
-        return recording_;
+        return recording_.load(std::memory_order_relaxed);
     }
 
     void SetRecording(const bool enabled) {
         std::lock_guard lock(mutex_);
-        recording_ = enabled;
+        recording_.store(enabled, std::memory_order_relaxed);
+    }
+
+    /// Duration of the last closed frame. Answers with recording off too: the frame root is
+    /// always measured, only the per-call events are skipped.
+    [[nodiscard]] float LastFrameMs() const {
+        std::lock_guard lock(mutex_);
+        return last_frame_ms_;
     }
 
     /// Opens a scope and returns a token for EndScope. Depth comes from the per-thread stack.
+    /// With recording off nothing is measured and 0 is returned (EndScope ignores it).
     uint64_t BeginScope(const eastl::string_view name) {
+        if (!recording_.load(std::memory_order_relaxed))
+            return 0;
         return BeginScopeAt(name, std::chrono::steady_clock::now());
     }
 
@@ -136,7 +152,7 @@ public:
             std::lock_guard lock(mutex_);
             OpenFrameLocked(now);
             start_ms = std::chrono::duration<float, std::milli>(now - frame_start_).count();
-            if (recording_) {
+            if (recording_.load(std::memory_order_relaxed)) {
                 entry = &GetOrRegister(name, ProfileScopeKind::Cpu, depth, static_cast<uint32_t>(frames_.size()));
                 index = static_cast<uint32_t>(entry - entries_);
                 entry->depth = static_cast<uint8_t>(depth);
@@ -162,6 +178,8 @@ public:
 
     /// Closes a scope opened by BeginScope and completes its reserved event in the open frame.
     void EndScope(const uint64_t id) {
+        if (id == 0)
+            return;  // зона не открывалась: запись была выключена
         auto& stack = ThreadScopes();
         for (size_t i = stack.size(); i-- > 0;) {
             if (stack[i].id != id)
@@ -467,9 +485,16 @@ private:
         totals[index] += value;
     }
 
-    /// Hands the open frame over to the history and resets the per-frame counters.
+    /// Hands the open frame over to the history and resets the per-frame counters. With
+    /// recording off the frame is not stored (history stays empty and does not grow), but its
+    /// duration is kept for LastFrameMs().
     void CommitFrameLocked(const float frame_ms) {
-        frames_.push_back(ProfileFrameRecord{frame_ms, eastl::move(current_events_)});
+        last_frame_ms_ = frame_ms;
+        if (recording_.load(std::memory_order_relaxed)) {
+            frames_.push_back(ProfileFrameRecord{frame_ms, eastl::move(current_events_)});
+            // Кадр стал историей — только теперь его можно отдать в лог и в строку статуса.
+            WriteCaptureLocked();
+        }
         current_events_.clear();
         frame_open_ = false;
         // Брони открытых зон теперь указывают в историю: пусть такие зоны закроются заново.
@@ -492,7 +517,7 @@ private:
 
     void AddEvent(const uint32_t scope, const float start_ms, const float duration_ms, const uint32_t depth,
                   const ProfileScopeKind kind) {
-        if (!recording_)
+        if (!recording_.load(std::memory_order_relaxed))
             return;
         current_events_.push_back(
             ProfileEvent{scope, start_ms, duration_ms, -1, static_cast<uint8_t>(depth), static_cast<uint8_t>(kind)});
@@ -556,7 +581,8 @@ private:
     uint32_t serial_ = 0;  // raised whenever current_events_ is handed over to the history
     std::chrono::steady_clock::time_point frame_start_{};
 
-    bool recording_ = true;
+    std::atomic<bool> recording_{false};
+    float last_frame_ms_ = 0.0f;  // длительность последнего кадра, считается и без записи
 
     // Каптион: бинарный поток кадров и текстовая строка статуса, обе работают без UI.
     ProfilerLog capture_;
