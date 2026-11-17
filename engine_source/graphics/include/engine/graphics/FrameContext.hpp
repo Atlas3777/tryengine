@@ -3,12 +3,11 @@
 #include <EASTL/array.h>
 #include <volk.h>
 
+#include "engine/graphics/FrameConfig.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/VulkanSwapchain.hpp"
 
 namespace tryengine::graphics {
-
-constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 struct FrameContext {
     VkCommandPool command_pool = VK_NULL_HANDLE;
@@ -49,12 +48,12 @@ public:
     bool EndFrameAndPresent(VulkanDevice& device, VulkanSwapchain& swapchain, uint32_t image_index);
 
     void AdvanceFrame() {
-        current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+        current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
     }
 
 private:
     VulkanDevice& device_;
-    eastl::array<FrameContext, MAX_FRAMES_IN_FLIGHT> frames_{};
+    eastl::array<FrameContext, kMaxFramesInFlight> frames_{};
     uint32_t current_frame_ = 0;
 };
 

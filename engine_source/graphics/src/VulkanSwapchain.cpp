@@ -1,6 +1,43 @@
 #include "engine/graphics/VulkanSwapchain.hpp"
 
+#include <EASTL/algorithm.h>
+#include <EASTL/vector.h>
+
 #include "engine/core/Assert.hpp"
+
+namespace {
+
+//! Режим презентации под флаг vsync.
+//!
+//! FIFO — единственный режим, который обязан поддерживать любой драйвер: он ждёт vblank.
+//! MAILBOX тоже привязан к vblank (просто не копит очередь), поэтому «выключить vsync»
+//! означает именно IMMEDIATE: кадр презентуется сразу, fps упирается в GPU, а не в
+//! частоту монитора. Профилировать имеет смысл только так.
+VkPresentModeKHR ChoosePresentMode(const VkPhysicalDevice physical_device, const VkSurfaceKHR surface,
+                                   const bool vsync) {
+    if (vsync)
+        return VK_PRESENT_MODE_FIFO_KHR;
+
+    uint32_t count = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, nullptr);
+    if (count == 0)
+        return VK_PRESENT_MODE_FIFO_KHR;
+
+    eastl::vector<VkPresentModeKHR> modes(count);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, modes.data());
+
+    const auto has = [&modes](const VkPresentModeKHR mode) {
+        return eastl::find(modes.begin(), modes.end(), mode) != modes.end();
+    };
+
+    if (has(VK_PRESENT_MODE_IMMEDIATE_KHR))
+        return VK_PRESENT_MODE_IMMEDIATE_KHR;
+    if (has(VK_PRESENT_MODE_MAILBOX_KHR))
+        return VK_PRESENT_MODE_MAILBOX_KHR;
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+}  // namespace
 
 namespace tryengine::graphics {
 
@@ -24,11 +61,12 @@ void VulkanSwapchain::Build(const uint32_t width, const uint32_t height, const b
     vsync_ = vsync;
     vkb::SwapchainBuilder builder{device_.GetPhysicalDevice(), device_.GetDevice(), device_.GetSurface()};
 
-    auto ret = builder.set_desired_extent(width, height)
-                   .set_desired_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-                   .set_desired_present_mode(vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_MAILBOX_KHR)
-                   .add_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
-                   .build();
+    auto ret =
+        builder.set_desired_extent(width, height)
+            .set_desired_format({VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
+            .set_desired_present_mode(ChoosePresentMode(device_.GetPhysicalDevice(), device_.GetSurface(), vsync))
+            .add_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+            .build();
 
     TRY_CHECK(ret.has_value(), "Не удалось создать Swapchain: {}", ret.error().message());
 

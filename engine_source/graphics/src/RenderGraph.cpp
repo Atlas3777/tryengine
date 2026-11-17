@@ -254,7 +254,7 @@ void RGResourcePool::DestroyAll() {
 
 // ==================== RenderGraph ====================
 
-RenderGraph::RenderGraph(VulkanDevice& device) : device_(device), pool_(device) {}
+RenderGraph::RenderGraph(VulkanDevice& device) : device_(device), pool_(device), gpu_profiler_(device) {}
 
 RenderGraph::~RenderGraph() {
     device_.WaitIdle();
@@ -298,6 +298,9 @@ const RGTextureDesc& RenderGraph::GetTextureDesc(RGResourceHandle h) const {
 
 void RenderGraph::BeginFrame(uint32_t frame_index) {
     frame_index_ = frame_index % kMaxFramesInFlight;
+    // GPU-таймеры читают результаты прошлого использования этого слота и сбрасывают его
+    // запросы. Слот безопасен: FrameSync уже дождался fence этого кадра.
+    gpu_profiler_.BeginFrame(frame_index_);
     auto& allocator = transient_allocators_[frame_index_];
     allocator.current_page_index = 0;
     allocator.current_offset = 0;
@@ -988,6 +991,9 @@ void RenderGraph::Execute(VkCommandBuffer cmd) {
     eastl::fixed_vector<VkImageMemoryBarrier2, 16> image_barriers;
     eastl::fixed_vector<VkBufferMemoryBarrier2, 8> buffer_barriers;
 
+    // Сброс запросов GPU-таймеров этого слота: host-вариант требует hostQueryReset.
+    gpu_profiler_.BeginCommands(cmd);
+
     for (uint32_t pass_idx : sorted_order_) {
         auto& slot = nodes_[pass_idx];
 
@@ -1019,8 +1025,14 @@ void RenderGraph::Execute(VkCommandBuffer cmd) {
         ctx.frame_bb = &scoped_frame_bb;
         ctx.cpu_bb = &scoped_cpu_bb;
 
+        // GPU-таймер вокруг тела пасса: имена приходят из IRenderPass::Name(), поэтому
+        // инструментировать сами пассы не нужно.
+        gpu_profiler_.BeginPass(cmd, slot.pass->Name());
         slot.pass->Execute(ctx);
+        gpu_profiler_.EndPass(cmd);
     }
+
+    gpu_profiler_.EndFrame(frame_index_);
 }
 
 VkImage RenderGraph::GetPhysicalImage(RGResourceHandle h) const {

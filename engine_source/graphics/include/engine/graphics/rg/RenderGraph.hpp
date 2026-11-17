@@ -21,6 +21,8 @@
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/core/TypeRegistry.hpp"
+#include "engine/graphics/FrameConfig.hpp"
+#include "engine/graphics/GpuProfiler.hpp"
 #include "engine/graphics/rg/IRenderPass.hpp"
 #include "engine/graphics/rg/RGTag.hpp"
 
@@ -486,7 +488,6 @@ struct FrameTransientAllocator {
 
 class RenderGraph {
 public:
-    static constexpr uint32_t kMaxFramesInFlight = 2;
     static constexpr VkDeviceSize kDefaultTransientPageSize = 16 * 1024 * 1024;
     explicit RenderGraph(VulkanDevice& device);
     ~RenderGraph();
@@ -615,6 +616,7 @@ private:
     CPUBlackboard cpu_bb_;
     uint32_t frame_index_ = 0;
     FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];
+    GpuProfiler gpu_profiler_;
 };
 
 }  // namespace tryengine::graphics

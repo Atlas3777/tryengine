@@ -2,6 +2,7 @@
 
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Profiler.hpp"
 
 namespace tryengine::graphics {
 
@@ -21,7 +22,7 @@ FrameSync::FrameSync(VulkanDevice& device) : device_(device) {
     fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
         auto& frame = frames_[i];
 
         TRY_CHECK(vkCreateCommandPool(vk_device, &pool_info, nullptr, &frame.command_pool) == VK_SUCCESS,
@@ -72,29 +73,37 @@ bool FrameSync::BeginFrame(VulkanDevice& device, VulkanSwapchain& swapchain, uin
     FrameContext& frame = frames_[current_frame_];
     VkDevice vk_device = device.GetDevice();
 
-    // 1. Ожидание fence текущего кадра
-    VkResult wait_res = vkWaitForFences(vk_device, 1, &frame.in_flight_fence, VK_TRUE, UINT64_MAX);
-    if (wait_res == VK_ERROR_DEVICE_LOST) {
-        LogCritical("GPU Device Lost при вызове vkWaitForFences!");
-        return false;
-    } else if (wait_res != VK_SUCCESS) {
-        LogError("Ошибка при вызове vkWaitForFences: {}", static_cast<int>(wait_res));
-        return false;
+    // 1. Ожидание fence текущего кадра. Зона под это есть: на быстром кадре всё «лишнее»
+    // время кадра оказывается именно в ожиданиях, и без имени его не отличить от работы CPU.
+    {
+        TRY_PROFILE_SCOPE("Render.WaitFence");
+        VkResult wait_res = vkWaitForFences(vk_device, 1, &frame.in_flight_fence, VK_TRUE, UINT64_MAX);
+        if (wait_res == VK_ERROR_DEVICE_LOST) {
+            LogCritical("GPU Device Lost при вызове vkWaitForFences!");
+            return false;
+        } else if (wait_res != VK_SUCCESS) {
+            LogError("Ошибка при вызове vkWaitForFences: {}", static_cast<int>(wait_res));
+            return false;
+        }
     }
 
-    // 2. Запрос следующей картинки из Swapchain
-    VkResult acquire_res = vkAcquireNextImageKHR(vk_device, swapchain.GetHandle(), UINT64_MAX,
-                                                 frame.image_available_semaphore, VK_NULL_HANDLE, &out_image_index);
+    // 2. Запрос следующей картинки из Swapchain. Здесь кадр упирается в презентацию: пока
+    // композитор не отдал образ, vkAcquireNextImageKHR спит.
+    {
+        TRY_PROFILE_SCOPE("Render.Acquire");
+        VkResult acquire_res = vkAcquireNextImageKHR(vk_device, swapchain.GetHandle(), UINT64_MAX,
+                                                     frame.image_available_semaphore, VK_NULL_HANDLE, &out_image_index);
 
-    if (acquire_res == VK_ERROR_DEVICE_LOST) {
-        LogCritical("GPU Device Lost при вызове vkAcquireNextImageKHR!");
-        return false;
-    }
-    if (acquire_res == VK_ERROR_OUT_OF_DATE_KHR)
-        return false;
-    if (acquire_res != VK_SUCCESS && acquire_res != VK_SUBOPTIMAL_KHR) {
-        LogError("Ошибка при вызове vkAcquireNextImageKHR: {}", static_cast<int>(acquire_res));
-        return false;
+        if (acquire_res == VK_ERROR_DEVICE_LOST) {
+            LogCritical("GPU Device Lost при вызове vkAcquireNextImageKHR!");
+            return false;
+        }
+        if (acquire_res == VK_ERROR_OUT_OF_DATE_KHR)
+            return false;
+        if (acquire_res != VK_SUCCESS && acquire_res != VK_SUBOPTIMAL_KHR) {
+            LogError("Ошибка при вызове vkAcquireNextImageKHR: {}", static_cast<int>(acquire_res));
+            return false;
+        }
     }
 
     vkResetFences(vk_device, 1, &frame.in_flight_fence);
@@ -154,13 +163,16 @@ bool FrameSync::EndFrameAndPresent(VulkanDevice& device, VulkanSwapchain& swapch
     submit_info.pSignalSemaphoreInfos = &signal_info;
 
     // Сбой из-за ошибочного шейдера чаще всего происходит именно во время выполнения на GPU после Submit
-    VkResult submit_res = vkQueueSubmit2(device.GetGraphicsQueue(), 1, &submit_info, frame.in_flight_fence);
-    if (submit_res == VK_ERROR_DEVICE_LOST) {
-        LogCritical("GPU Device Lost при вызове vkQueueSubmit2!");
-        return false;
-    } else if (submit_res != VK_SUCCESS) {
-        LogError("Ошибка при выполнении vkQueueSubmit2: {}", static_cast<int>(submit_res));
-        return false;
+    {
+        TRY_PROFILE_SCOPE("Render.Submit");
+        VkResult submit_res = vkQueueSubmit2(device.GetGraphicsQueue(), 1, &submit_info, frame.in_flight_fence);
+        if (submit_res == VK_ERROR_DEVICE_LOST) {
+            LogCritical("GPU Device Lost при вызове vkQueueSubmit2!");
+            return false;
+        } else if (submit_res != VK_SUCCESS) {
+            LogError("Ошибка при выполнении vkQueueSubmit2: {}", static_cast<int>(submit_res));
+            return false;
+        }
     }
 
     VkSwapchainKHR swapchain_handle = swapchain.GetHandle();
@@ -172,7 +184,11 @@ bool FrameSync::EndFrameAndPresent(VulkanDevice& device, VulkanSwapchain& swapch
     present_info.pSwapchains = &swapchain_handle;
     present_info.pImageIndices = &image_index;
 
-    VkResult present_res = vkQueuePresentKHR(device.GetPresentQueue(), &present_info);
+    VkResult present_res = VK_SUCCESS;
+    {
+        TRY_PROFILE_SCOPE("Render.Present");
+        present_res = vkQueuePresentKHR(device.GetPresentQueue(), &present_info);
+    }
 
     AdvanceFrame();
 

@@ -52,7 +52,7 @@ private:
     };
 
     tryengine::graphics::VulkanDevice& device_;
-    Readback readback_[tryengine::graphics::MAX_FRAMES_IN_FLIGHT];
+    Readback readback_[tryengine::graphics::kMaxFramesInFlight];
     tryengine::resources::ResourceHandle<tryengine::graphics::Shader> shader_;
 
     const tryengine::graphics::OpaquePass* opaque_ = nullptr;
