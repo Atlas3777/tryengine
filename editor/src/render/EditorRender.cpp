@@ -5,6 +5,7 @@
 #include "editor/render/PickingPass.hpp"
 #include "engine/core/Assert.hpp"
 #include "engine/core/Engine.hpp"
+#include "engine/core/Profiler.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/PresentPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
@@ -117,9 +118,15 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     rg_.GetCPUBlackboard().Put(kGameScope, tryengine::graphics::RGTag_v<"Camera">, game_cam_data);
     rg_.GetCPUBlackboard().Put(kGameScope, tryengine::graphics::RGTag_v<"ViewportSize">, scene_game_viewport);
 
-    rg_.Collect(engine);
-    rg_.Compile();
-    rg_.Execute(cmd);
+    // Сборка, компиляция и запись графа — это та часть кадра, которая идёт между ожиданиями.
+    // Внутри Execute редактор вызывает скрипт, который строит интерфейс (DrawEditor и панели),
+    // поэтому дерево кадра честно показывает UI как часть записи команд.
+    {
+        TRY_PROFILE_SCOPE("Render.Graph");
+        rg_.Collect(engine);
+        rg_.Compile();
+        rg_.Execute(cmd);
+    }
 
     if (!frame_sync_.EndFrameAndPresent(device, swapchain_, image_index))
         RecreateSwapchain(w, h, device);

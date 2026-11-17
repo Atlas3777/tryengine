@@ -1,5 +1,8 @@
 #include "editor/EditorApp.hpp"
 
+#include <cstdlib>
+#include <string_view>
+
 #include "editor/AssetPipeline.hpp"
 #include "editor/BuildSystem.hpp"
 #include "editor/Editor.hpp"
@@ -41,7 +44,8 @@ struct EditorClock {};
 void EditorApp::Init() {
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "tryengine");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
-    swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720);
+    // vsync выключен: профилировать иначе бессмысленно, fps упирается в частоту монитора.
+    swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/false);
 
     engine_ = std::make_unique<Engine>();
 
@@ -115,27 +119,51 @@ void EditorApp::Run() const {
     auto& input = engine_->Get<InputService>();
     auto& async_file_manager = engine_->Get<AsyncFileManager>();
 
+    // В игре каптион включается сам, здесь — только по TRY_PROFILE_CAPTURE=1: редактору
+    // обычно хватает панели, а прогону без человека (и проверке профайлера) нужен файл.
+    const char* capture = std::getenv("TRY_PROFILE_CAPTURE");
+    if (capture != nullptr && std::string_view(capture) != "0")
+        Profiler::Instance().StartCapture();
+
     while (editor_->running && !input.IsQuitRequested()) {
-        TRY_PROFILE_SCOPE("Main Loop Frame");
+        // Корень кадра ставит сам профайлер: его длительность и есть время кадра, поэтому
+        // полоса "EditorApp::Run" всегда тянется от начала кадра до его конца. Всё, что
+        // делается между итерациями, тоже попадает внутрь корня, а не в пустоту.
+        TRY_PROFILE_BEGIN_FRAME("EditorApp::Run");
 
-        input.PollEvents();
-
-        time_manager.NewFrame();
-        async_file_manager.Pull();
-        MainThread().Pull();
+        {
+            TRY_PROFILE_SCOPE("Input.PollEvents");
+            input.PollEvents();
+        }
+        {
+            TRY_PROFILE_SCOPE("Time.NewFrame");
+            time_manager.NewFrame();
+        }
+        {
+            TRY_PROFILE_SCOPE("Async.Pull");
+            async_file_manager.Pull();
+            MainThread().Pull();
+        }
 
         script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
 
-        engine_->Get<AsyncFileManager>().Submit();
+        {
+            TRY_PROFILE_SCOPE("Async.Submit");
+            engine_->Get<AsyncFileManager>().Submit();
+        }
+        {
+            TRY_PROFILE_SCOPE("Render");
+            render.Render(*engine_, *vulkan_device_, editor_->state);
+        }
 
-        render.Render(*engine_, *vulkan_device_, editor_->state);
-        Profiler::Instance().EndFrame(time_manager.Root().DeltaTime() * 1000.0f);
+        TRY_PROFILE_END_FRAME();
     }
 }
 
 void EditorApp::Shutdown() const {
     LogInfo("EditorApp shutting down...");
+    Profiler::Instance().StopCapture();
     vulkan_device_->WaitIdle();
 }
 }  // namespace tryeditor
