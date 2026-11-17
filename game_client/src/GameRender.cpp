@@ -1,6 +1,7 @@
 #include "GameRender.hpp"
 
 #include "engine/core/Engine.hpp"
+#include "engine/core/Profiler.hpp"
 #include "engine/graphics/BlitPass.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/PresentPass.hpp"
@@ -74,9 +75,12 @@ void GameRender::Render(tryengine::core::Engine& engine, tryengine::graphics::Vu
     rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"ViewportSize">, game_viewport);
     rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"Camera">, cam_data);
 
-    rg_.Collect(engine);
-    rg_.Compile();
-    rg_.Execute(cmd);
+    {
+        TRY_PROFILE_SCOPE("Render.Graph");
+        rg_.Collect(engine);
+        rg_.Compile();
+        rg_.Execute(cmd);
+    }
 
     if (!frame_sync_.EndFrameAndPresent(device, swapchain_, image_index))
         RecreateSwapchain(w, h, device);
