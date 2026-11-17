@@ -4,8 +4,8 @@ options _allow_imgui_legacy = true
 
 module ProfilerWindow shared public
 
-//! Profiler panel: a shared timeline, the call tree of one frame, a multi-series plot and
-//! the scope list.
+//! Profiler panel: the timeline slider, the timeline, the call tree of one frame, the scope
+//! list, and a plot that lives in its own window.
 //!
 //! Frames come from the C++ profiler (engine/core/Profiler.hpp) through tryRenderer. The
 //! engine never trims history: only Reset clears it. Export writes the whole capture to
@@ -49,9 +49,25 @@ let private CALL_ZOOM_LEFT = 0.1f
 let private MAX_CPU_LANES = 10
 let private MAX_GPU_LANES = 10
 let private TREE_ROW_HEIGHT = 16.0f
-let private PLOT_HEIGHT = 120.0f
+let private SCOPE_ROW_HEIGHT = 16.0f
+let private SCOPE_INDENT = 12.0f
+let private SCOPE_SWATCH = 8.0f
+let private SLIDER_HEIGHT = 16.0f
+let private SLIDER_THUMB_MIN = 24.0f
+let private PLOT_MIN_HEIGHT = 140.0f
+// The plot keeps whole frames, so its window is a count, not a scale: four frames is the floor
+// where a curve still reads as a curve.
+let private MIN_PLOT_FRAMES = 4
+// What the plot opens on: a couple of seconds at a high frame rate, wide enough that a spike is
+// visible and narrow enough that the curve is not one sample per twenty frames.
+let private DEFAULT_PLOT_FRAMES = 2000
+// A curve this wide cannot show more than a few thousand samples, and every extra sample is a
+// per-frame history read: a window over 150k frames is plotted with a stride instead.
+let private PLOT_SAMPLES = 2048
 let private MAX_SERIES = 8
-let private STATS_WINDOW = 60
+// The zone ranking is a window of its own and reorders at most twice a second: a list that
+// reshuffles every frame cannot be read.
+let private RANK_REFRESH_SEC = 0.5f
 let private TREE_INDENT = 14.0f
 let private MAX_TREE_DEPTH = 32
 // Below this many pixels per frame a bar is narrower than the space it describes: the
@@ -84,15 +100,20 @@ let private COL_COLUMN_TINT = rgba(130, 140, 170, 14)
 let private COL_HOVER_OUTLINE = rgba(255, 255, 255, 110)
 let private COL_BAR_TEXT = rgba(14, 14, 18, 235)
 
-var private ROW_NAME : table<int; NarrativeState>
-var private ROW_STATS : table<int; NarrativeState>
-var private ROW_SAME_LINE : table<int; EmptyMarkerState>
-var private ROW_SAME_LINE_2 : table<int; EmptyMarkerState>
-var private ROW_MENU : table<int; ClickState>
-
-// Rows keep registration order: re-sorting by time every frame made the list jump around.
+// Registration order of the zones: the aggregate timeline walks it to find its phases.
 var private row_order : array<uint>
 var private row_order_count : int = -1
+
+// The zone ranking of the Scopes window: registered zones by the time they took over the whole
+// capture, most expensive first.
+var private scope_rank : array<uint>
+var private scope_rank_count : int = -1
+// Wall clock of the whole capture: the total of the depth-0 zone, so a row can say what share of
+// the run it took.
+var private rank_base : float = 0.0f
+var private rank_clock : float = 0.0f
+var private rank_stamp : float = -1000.0f
+var private scopes_window_placed : bool = false
 
 // Timeline camera. The left edge is stored split - a frame index plus the fraction of that
 // frame already scrolled past - because one float cannot hold both: at 1e7 px per frame the
@@ -126,11 +147,32 @@ var private cpu_lanes : int = 4
 var private gpu_lanes : int = 2
 var private gpu_lane_of : array<int>
 
-// Plot series: scope indices picked from the row menu, plus an optional fixed scale so the
-// curve does not breathe with every spike.
+// Timeline slider: the whole capture on one rail. `slider_drag` says the thumb is held,
+// `slider_grab` where inside it the press landed - so the thumb does not jump under the cursor.
+var private slider_drag : bool = false
+var private slider_grab : float = 0.0f
+
+// Call a menu was opened for. The menu body is drawn while the mouse is over the popup, which
+// is exactly when the row or bar that opened it no longer reports being hovered.
+var private menu_scope : uint = 0
+var private menu_frame : int = -1
+var private menu_event : int = -1
+var private plot_window_placed : bool = false
+
+// Plot series: scope indices picked from the right-click menu, plus an optional fixed scale so
+// the curve does not breathe with every spike.
 var private plot_series : array<uint>
 var private plot_auto_scale : bool = true
 var private plot_y_max : float = 16.0f
+
+// Plot camera: the plot's own window over the capture. Whole frames - a curve reads at pixel
+// resolution, not at the precision of a single call - and `plot_follow` pins the right edge to
+// the newest frame.
+var private plot_first : int = 0
+var private plot_count : int = 0
+var private plot_follow : bool = true
+var private plot_slider_drag : bool = false
+var private plot_slider_grab : float = 0.0f
 
 // Names and text widths per scope, read once per scope instead of once per call in the
 // window: at 54k visible frames the per-call lookup alone was most of the panel's frame cost.
@@ -179,6 +221,7 @@ def private EnsureInit() {
     PROFILE_FOLLOW.value = follow
     PROFILE_AUTOSCALE.value = plot_auto_scale
     PROFILE_CAPTURE.value = ProfileIsCapturing()
+    PROFILE_PLOT_YMAX.value = plot_y_max
     PROFILE_VSYNC.value = EditorIsVSync()
 }
 
@@ -260,22 +303,44 @@ def private ScopeNameWidth(scope : uint) : float {
     return 0.0f
 }
 
-/// Last / average / peak over the recent window, read from the per-frame totals.
-def private ScopeStats(scope : uint) : tuple<float; float; float> {
-    let frames = int(ProfileFrameCount())
-    let from = max(0, frames - STATS_WINDOW)
-    var last = 0.0f
-    var total = 0.0f
-    var peak = 0.0f
-    var samples = 0
-    for (f in range(from, frames)) {
-        let value = ProfileScopeHistoryAt(scope, uint(f))
-        last = value
-        total += value
-        peak = max(peak, value)
-        samples += 1
+/// Zones ranked by the time they took over the whole capture, most expensive first.
+///
+/// The order comes from the profiler's own per-zone counters (`total_ms`), which are cheap to
+/// read once per zone, and the rebuild is throttled: the totals only grow, so the ranking stays
+/// put, and a list that reorders on every frame would be unreadable anyway.
+def private RefreshScopeRank() {
+    let count = int(ProfileScopeCount())
+    scope_rank.clear()
+    rank_base = 0.0f
+    for (i in range(0, count)) {
+        scope_rank |> push(uint(i))
+        // The frame root is the only CPU zone at depth 0: its total is the wall clock.
+        if (ProfileScopeDepth(uint(i)) == 0 && ProfileScopeKind(uint(i)) == 0) {
+            rank_base = max(rank_base, ProfileScopeTotalMs(uint(i)))
+        }
     }
-    return (last, samples > 0 ? total / float(samples) : 0.0f, peak)
+    scope_rank_count = count
+    // Insertion sort: the keys are floats read once per comparison and the list is dozens of
+    // zones, so this costs less than building a key array and sorting that.
+    for (i in range(1, count)) {
+        let value = scope_rank[i]
+        let key = ProfileScopeTotalMs(value)
+        var j = i - 1
+        while (j >= 0 && ProfileScopeTotalMs(scope_rank[j]) < key) {
+            scope_rank[j + 1] = scope_rank[j]
+            j -= 1
+        }
+        scope_rank[j + 1] = value
+    }
+}
+
+def private EnsureScopeRank() {
+    rank_clock += GetIO().DeltaTime
+    let count = int(ProfileScopeCount())
+    if (count != scope_rank_count || rank_clock - rank_stamp > RANK_REFRESH_SEC) {
+        RefreshScopeRank()
+        rank_stamp = rank_clock
+    }
 }
 
 /// Width of the visible window, in frames: `width` pixels at the current scale, never more
@@ -338,6 +403,67 @@ def private ClampCamera(frames : int; span : float) {
 def private FreezeCamera() {
     follow = false
     PROFILE_FOLLOW.value = false
+}
+
+/// Everything "Reset" means: history, series, camera and the capture stream. One function so
+/// the toolbar button and the row menu can never drift apart again.
+def private ResetAll() {
+    ProfileReset()
+    InvalidateScopeNames()
+    if (ProfileIsCapturing()) {
+        ProfileStopCapture()
+    }
+    PROFILE_CAPTURE.value = false
+    plot_series.clear()
+    plot_count = 0
+    plot_follow = true
+    row_order_count = -1
+    scope_rank_count = -1
+    cam_first = 0
+    cam_frac = 0.0f
+    px_per_frame = DEFAULT_PX_PER_FRAME
+    follow = true
+    PROFILE_FOLLOW.value = true
+    focus_frame = -1
+    selected_event = -1
+    export_status = ""
+}
+
+/// The menu of a call: the same items wherever a call can be right-clicked - a bar on the
+/// timeline, a row of the call tree, a row of the scope list. `frame` and `event` are -1 for a
+/// scope row: that is a function over history, not one call.
+def private DrawScopeMenuBody(scope : uint; frame : int; event : int; frames_total : int; width : float) {
+    let plotted = IsPlotted(scope)
+    let room = length(plot_series) < MAX_SERIES
+    if (MenuItem(plotted ? "Remove from plot" : "Add to plot", "", false, plotted || room)) {
+        TogglePlot(scope)
+        if (!plotted) {
+            // The plot is its own window: a series added while it is closed would look like the
+            // click did nothing.
+            PROFILER_PLOT_WIN.open = true
+        }
+    }
+    if (frame >= 0 && event >= 0) {
+        if (MenuItem("Zoom to this call", "", false, true)) {
+            ZoomToCall(frame, event, frames_total, width)
+        }
+        if (MenuItem("Pin this frame", "", false, true)) {
+            focus_frame = frame
+            selected_event = event
+            FreezeCamera()
+        }
+    }
+    if (MenuItem("Reset all history", "", false, true)) {
+        ResetAll()
+    }
+}
+
+/// Popup of a call picked off the timeline or the call tree, drawn where nothing clips it.
+def private DrawPickedCallPopup(id : string; frames : int; width : float) {
+    if (BeginPopup(id)) {
+        DrawScopeMenuBody(menu_scope, menu_frame, menu_event, frames, width)
+        EndPopup()
+    }
 }
 
 /// Frame the call tree shows: the pinned one, or the newest one inside the window.
@@ -759,6 +885,68 @@ def private DrawTimelineAggregate(focus : int; first_frame : int; last_frame : i
     }
 }
 
+/// Where the left edge of the window sits on the rail, 0 (first frame) to 1 (last frame).
+def private RailPos(frames : int; visible : float; travel : float) : float {
+    let max_left = max(float(frames) - visible, 0.0f)
+    if (max_left <= 0.0f || travel <= 0.0f) {
+        return 0.0f
+    }
+    let left = float(cam_first) + cam_frac
+    return clamp(left / max_left, 0.0f, 1.0f)
+}
+
+/// The whole capture on one rail, right under the title bar: the thumb is the window the
+/// timeline shows. It is the fast way to the first or the last frame, and reaching the right end
+/// re-attaches the camera to the live edge.
+def private DrawTimelineSlider(frames : int; span : float) {
+    let width = max(80.0f, GetContentRegionAvail().x)
+    InvisibleButton("##profiler_slider", ImVec2(width, SLIDER_HEIGHT))
+    let rmin = GetItemRectMin()
+    let rmax = GetItemRectMax()
+    if (frames <= 0) {
+        DrawRail(rmin, rmax, rmin.x, max(SLIDER_THUMB_MIN, width), false)
+        return
+    }
+
+    let visible = clamp(span, 1.0f, float(frames))
+    let thumb_w = max(SLIDER_THUMB_MIN, width * visible / float(frames))
+    let travel = max(1.0f, width - thumb_w)
+
+    let hovered = IsItemHovered(ImGuiHoveredFlags.None)
+    let mouse = GetMousePos()
+    if (hovered && IsMouseClicked(ImGuiMouseButton.Left, false)) {
+        // Grab the thumb where it was pressed. A press on the empty rail centres the thumb under
+        // the cursor first, so clicking and dragging are one gesture.
+        slider_grab = mouse.x - (rmin.x + RailPos(frames, visible, travel) * travel)
+        if (slider_grab < 0.0f || slider_grab > thumb_w) {
+            slider_grab = thumb_w * 0.5f
+        }
+        slider_drag = true
+    }
+    let max_left = max(float(frames) - visible, 0.0f)
+    if (slider_drag) {
+        if (IsMouseDown(ImGuiMouseButton.Left)) {
+            // Nothing to drag when the whole capture fits: moving the thumb would only decide
+            // the camera mode, which is not what a drag on a full rail means.
+            if (max_left > 0.0f) {
+                let t = clamp((mouse.x - slider_grab - rmin.x) / travel, 0.0f, 1.0f)
+                let new_left = t * max_left
+                cam_first = int(floor(new_left))
+                cam_frac = new_left - float(cam_first)
+                // The right end is the live edge, not a frozen copy of it.
+                follow = t >= 1.0f
+                PROFILE_FOLLOW.value = follow
+                ClampCamera(frames, span)
+            }
+        } else {
+            slider_drag = false
+        }
+    }
+
+    let thumb_x = rmin.x + RailPos(frames, visible, travel) * travel
+    DrawRail(rmin, rmax, thumb_x, thumb_w, hovered || slider_drag)
+}
+
 def private DrawTimeline(focus : int) {
     EnsureScopeNames()
     let width = max(120.0f, GetContentRegionAvail().x)
@@ -791,10 +979,11 @@ def private DrawTimeline(focus : int) {
     // absolute frame number would lose the sub-frame part at a long capture.
     let mouse_frame = clamp(cam_first + int(floor(cam_frac + (mouse.x - rmin.x) / px_in)), 0, frames - 1)
 
-    // Wheel zooms at the cursor: the call under the mouse stays under the mouse, which is the
-    // only way to open up a call that is a hairline at frame scale.
+    // Ctrl+wheel zooms at the cursor: the call under the mouse stays under the mouse, which is
+    // the only way to open up a call that is a hairline at frame scale. A plain wheel is left to
+    // ImGui, so scrolling the panel can never change the zoom by accident.
     let wheel = GetIO().MouseWheel
-    if (hovered && wheel != 0.0f) {
+    if (hovered && wheel != 0.0f && GetIO().KeyCtrl) {
         ZoomAt(pow(1.3f, wheel), mouse.x - rmin.x, frames, width)
         span = ViewSpan(frames, width)
     }
@@ -832,6 +1021,15 @@ def private DrawTimeline(focus : int) {
         hover_event = PickCall(hover_frame, mouse, rmin.x, px, cpu_top, gpu_top)
     }
 
+    // Right click on a bar: the menu of that call (add it to the plot, zoom to it). The popup
+    // outlives the hover, so it reads the stored call instead of the one under the mouse.
+    if (hovered && hover_event >= 0 && IsMouseClicked(ImGuiMouseButton.Right, false)) {
+        menu_scope = ProfileEventScope(uint(hover_frame), uint(hover_event))
+        menu_frame = hover_frame
+        menu_event = hover_event
+        OpenPopup("profiler_call_menu")
+    }
+
     PushClipRect(rmin, rmax, true)
 
     // A window of thousands of frames is drawn as a summary: the per-frame column work below
@@ -840,6 +1038,7 @@ def private DrawTimeline(focus : int) {
     if (IsAggregateView(px, first_frame, last_frame)) {
         DrawTimelineAggregate(focus, first_frame, last_frame, rmin, rmax, cpu_top, gpu_top, px, width)
         PopClipRect()
+        DrawPickedCallPopup("profiler_call_menu", frames, width)
         return
     }
 
@@ -951,36 +1150,152 @@ def private DrawTimeline(focus : int) {
     *dl |> AddText(rmin + float2(8.0f, 4.0f), COL_TEXT_DIM, header)
 
     PopClipRect()
+    DrawPickedCallPopup("profiler_call_menu", frames, width)
 }
 
-def private DrawPlot(frames : int; span : float) {
+/// The plot camera: whole frames, kept inside the capture. The plot keeps its own window
+/// instead of following the timeline, because zooming into a call on the timeline would leave
+/// the curve with two points.
+def private ClampPlotWindow(frames : int) {
+    if (frames <= 0) {
+        return
+    }
+    let least = min(MIN_PLOT_FRAMES, frames)
+    plot_count = clamp(plot_count, least, frames)
+    plot_first = clamp(plot_first, 0, frames - plot_count)
+}
+
+/// Zoom the plot's window by `factor` (>1 zooms in), keeping the frame under `anchor` - the
+/// fraction of the width from the left edge - where it is.
+def private ZoomPlot(factor : float; anchor : float; frames : int) {
+    if (frames <= 0 || plot_count <= 0) {
+        return
+    }
+    let anchor_frame = float(plot_first) + anchor * float(plot_count)
+    plot_count = clamp(int(float(plot_count) / factor), min(MIN_PLOT_FRAMES, frames), frames)
+    plot_first = int(anchor_frame - anchor * float(plot_count))
+    ClampPlotWindow(frames)
+}
+
+/// One rail for both cameras: the track, the thumb and the hover highlight. The callers own the
+/// mapping and the dragging, this only paints.
+def private DrawRail(rmin : float2; rmax : float2; thumb_x : float; thumb_w : float; hot : bool) {
+    var dl = GetWindowDrawList()
+    let track_y = (rmin.y + rmax.y) * 0.5f
+    *dl |> AddRectFilled(float2(rmin.x, track_y - 2.0f), float2(rmax.x, track_y + 2.0f), COL_FRAME_LINE, 2.0f,
+                         ImDrawFlags.None)
+    let color = hot ? COL_OUTLINE : COL_TEXT_DIM
+    *dl |> AddRectFilled(float2(thumb_x, track_y - 6.0f), float2(thumb_x + thumb_w, track_y + 6.0f), color, 3.0f,
+                         ImDrawFlags.None)
+}
+
+/// The plot's rail: the same control as the panel's, over the plot's own window. Reaching the
+/// right end re-attaches the plot to the live edge.
+def private DrawPlotSlider(frames : int; count : int) {
+    let width = max(80.0f, GetContentRegionAvail().x)
+    InvisibleButton("##profiler_plot_slider", ImVec2(width, SLIDER_HEIGHT))
+    let rmin = GetItemRectMin()
+    let rmax = GetItemRectMax()
+    if (frames <= 0) {
+        return
+    }
+    let visible = float(clamp(count, 1, frames))
+    let thumb_w = max(SLIDER_THUMB_MIN, width * visible / float(frames))
+    let travel = max(1.0f, width - thumb_w)
+    let max_left = max(float(frames) - visible, 0.0f)
+    let hovered = IsItemHovered(ImGuiHoveredFlags.None)
+    let mouse = GetMousePos()
+    let pos = max_left > 0.0f ? clamp(float(plot_first) / max_left, 0.0f, 1.0f) : 0.0f
+    if (hovered && IsMouseClicked(ImGuiMouseButton.Left, false)) {
+        plot_slider_grab = mouse.x - (rmin.x + pos * travel)
+        if (plot_slider_grab < 0.0f || plot_slider_grab > thumb_w) {
+            plot_slider_grab = thumb_w * 0.5f
+        }
+        plot_slider_drag = true
+    }
+    if (plot_slider_drag) {
+        if (IsMouseDown(ImGuiMouseButton.Left)) {
+            if (max_left > 0.0f) {
+                let t = clamp((mouse.x - plot_slider_grab - rmin.x) / travel, 0.0f, 1.0f)
+                plot_first = int(t * max_left)
+                plot_follow = t >= 1.0f
+                ClampPlotWindow(frames)
+            }
+        } else {
+            plot_slider_drag = false
+        }
+    }
+    let thumb_x = rmin.x + (max_left > 0.0f ? clamp(float(plot_first) / max_left, 0.0f, 1.0f) : 0.0f) * travel
+    DrawRail(rmin, rmax, thumb_x, thumb_w, hovered || plot_slider_drag)
+}
+
+/// The plot of the plot's own window, filling the window it is drawn in.
+///
+/// It keeps history on its own camera: the series come from the profiler's per-frame totals, so
+/// the curve covers whatever range the plot was left at, not the range the timeline happens to
+/// show. One sample per frame would cost one history read per frame per series, so past
+/// PLOT_SAMPLES frames the curve is drawn with a stride.
+def private DrawPlot(frames : int) {
     let width = max(120.0f, GetContentRegionAvail().x)
-    InvisibleButton("##profiler_plot", ImVec2(width, PLOT_HEIGHT))
+    let height = max(PLOT_MIN_HEIGHT, GetContentRegionAvail().y)
+    InvisibleButton("##profiler_plot", ImVec2(width, height))
     let rmin = GetItemRectMin()
     let rmax = GetItemRectMax()
     var dl = GetWindowDrawList()
 
     *dl |> AddRectFilled(rmin, rmax, COL_BG, 0.0f, ImDrawFlags.None)
-    let first = max(0, min(cam_first, frames - 1))
-    let last = min(frames, max(first + 2, cam_first + int(ceil(cam_frac + span))))
-    if (last <= first) {
+    if (frames <= 0) {
         return
     }
+    let plot_w = max(1.0f, rmax.x - rmin.x)
 
+    // Camera first, with the same gestures as the timeline: Ctrl+wheel zooms at the cursor, a
+    // drag pans, a double click fits the whole capture.
+    let hovered = IsItemHovered(ImGuiHoveredFlags.None)
+    let mouse = GetMousePos()
+    let wheel = GetIO().MouseWheel
+    if (hovered && wheel != 0.0f && GetIO().KeyCtrl) {
+        ZoomPlot(pow(1.3f, wheel), clamp((mouse.x - rmin.x) / plot_w, 0.0f, 1.0f), frames)
+    }
+    if (hovered && IsMouseDoubleClicked(ImGuiMouseButton.Left)) {
+        plot_count = frames
+        plot_first = 0
+        plot_follow = true
+    }
+    if (IsItemActive()) {
+        let delta = GetIO().MouseDelta.x
+        if (abs(delta) > 0.0f) {
+            plot_first -= int(delta * float(max(plot_count, 1)) / plot_w)
+            plot_follow = false
+        }
+    }
+    if (plot_follow) {
+        plot_first = max(0, frames - min(plot_count, frames))
+    }
+    ClampPlotWindow(frames)
+    let count = max(1, min(plot_count, frames))
+    let first = plot_first
+    let last = first + count
+    let step = max(1, int(ceil(float(count) / float(PLOT_SAMPLES))))
+
+    // The reference curve is the frame time, so the scale has to cover it: a spike that leaves
+    // the top of the plot would look like a bug in the series.
     var y_max = plot_y_max
     if (plot_auto_scale) {
         y_max = 0.0f
-        for (scope in plot_series) {
-            for (f in range(first, last)) {
+        var f = first
+        while (f < last) {
+            y_max = max(y_max, ProfileFrameMs(uint(f)))
+            for (scope in plot_series) {
                 y_max = max(y_max, ProfileScopeHistoryAt(scope, uint(f)))
             }
+            f += step
         }
         y_max = max(y_max * 1.15f, 1.0f)
     }
     let y_scale = max(y_max, 0.001f)
-    let plot_span = float(last - first)
+    let plot_span = float(count)
     let plot_h = rmax.y - rmin.y
-    let plot_w = rmax.x - rmin.x
 
     for (i in range(0, 5)) {
         let ty = rmin.y + plot_h * float(i) / 4.0f
@@ -989,40 +1304,136 @@ def private DrawPlot(frames : int; span : float) {
         *dl |> AddText(float2(rmin.x + 4.0f, ty + 1.0f), COL_TEXT_DIM, "{value:.1f}")
     }
 
-    // Frame time as the reference curve.
+    var f = first
+    var prev_x = rmin.x
     var prev_y = rmin.y + plot_h
-    for (i in range(0, int(span))) {
-        let f = first + i
-        let x = rmin.x + float(i) / plot_span * plot_w
+    while (f < last) {
+        let x = rmin.x + float(f - first) / plot_span * plot_w
         let y = rmin.y + plot_h * (1.0f - clamp(ProfileFrameMs(uint(f)) / y_scale, 0.0f, 1.0f))
-        if (i > 0) {
-            *dl |> AddLine(float2(x - plot_w / plot_span, prev_y), float2(x, y), COL_FRAME_TIME, 1.0f)
+        if (f > first) {
+            *dl |> AddLine(float2(prev_x, prev_y), float2(x, y), COL_FRAME_TIME, 1.0f)
         }
+        prev_x = x
         prev_y = y
+        f += step
     }
 
     for (scope in plot_series) {
         let color = SeriesColor(scope)
-        var prev = float2(rmin.x, rmin.y + plot_h)
-        for (i in range(0, int(span))) {
-            let f = first + i
-            let x = rmin.x + float(i) / plot_span * plot_w
-            let value = clamp(ProfileScopeHistoryAt(scope, uint(f)) / y_scale, 0.0f, 1.0f)
+        var line_x = rmin.x
+        var line_y = rmin.y + plot_h
+        var sf = first
+        while (sf < last) {
+            let x = rmin.x + float(sf - first) / plot_span * plot_w
+            let value = clamp(ProfileScopeHistoryAt(scope, uint(sf)) / y_scale, 0.0f, 1.0f)
             let y = rmin.y + plot_h * (1.0f - value)
-            if (i > 0) {
-                *dl |> AddLine(prev, float2(x, y), color, 1.5f)
+            if (sf > first) {
+                *dl |> AddLine(float2(line_x, line_y), float2(x, y), color, 1.5f)
             }
-            prev = float2(x, y)
+            line_x = x
+            line_y = y
+            sf += step
         }
     }
 
+    // Legend down the right edge: a series list that grows with the plot, not a fixed box.
     var legend_y = rmin.y + 4.0f
     for (scope in plot_series) {
-        let lx = rmax.x - 170.0f
+        let name_w = ScopeNameWidth(scope)
+        let lx = max(rmin.x + 40.0f, rmax.x - 22.0f - name_w)
         *dl |> AddRectFilled(float2(lx, legend_y + 2.0f), float2(lx + 10.0f, legend_y + 10.0f), SeriesColor(scope),
                              0.0f, ImDrawFlags.None)
-        *dl |> AddText(float2(lx + 14.0f, legend_y), COL_TEXT, ProfileScopeName(scope))
+        *dl |> AddText(float2(lx + 14.0f, legend_y), COL_TEXT, ScopeName(scope))
         legend_y += 13.0f
+    }
+
+    // A sampled curve hides the frames between samples, so say so instead of pretending the
+    // curve is the whole truth.
+    if (step > 1) {
+        let note = "1 sample in {step} frames"
+        *dl |> AddText(float2(rmax.x - 8.0f - CalcTextSize(note).x, rmax.y - 15.0f), COL_TEXT_DIM, note)
+    }
+}
+
+/// The plot is its own window with its own window over the capture: inside the panel it was a
+/// hundred pixels tall and the curves ran through the legend, and following the timeline meant a
+/// curve of two points as soon as the timeline was zoomed into a call.
+[profile]
+def DrawPlotWindow() {
+    if (!ProfileIsEnabled()) {
+        return
+    }
+    // Closed at start: an empty plot window on every launch is noise. After that the state lives
+    // in the window widget, which survives a script reload.
+    if (!plot_window_placed) {
+        plot_window_placed = true
+        if (empty(plot_series)) {
+            PROFILER_PLOT_WIN.open = false
+        }
+    }
+    SetNextWindowSize(ImVec2(760.0f, 420.0f), ImGuiCond.FirstUseEver)
+    // No scrollbar: the plot fills the rest of the window, so a bar would only cover the curve.
+    window(PROFILER_PLOT_WIN, (text = "Plot", closable = true, flags = ImGuiWindowFlags.NoScrollbar)) {
+        // No `return` in here: leaving the block early would skip the container's End() and
+        // unbalance the window stack.
+        let frames = int(ProfileFrameCount())
+        if (frames <= 0) {
+            text(PROFILER_PLOT_EMPTY, (text = "no frames recorded yet"))
+        } else {
+            if (plot_count <= 0) {
+                // Opened for the first time: the live edge and a readable width, not the whole
+                // capture squeezed into one column per twenty frames. Double click fits it all.
+                plot_count = min(frames, DEFAULT_PLOT_FRAMES)
+                plot_first = max(0, frames - plot_count)
+                plot_follow = true
+            }
+            ClampPlotWindow(frames)
+            if (plot_follow) {
+                plot_first = max(0, frames - min(plot_count, frames))
+            }
+            let count = max(1, min(plot_count, frames))
+            var header = "frames {plot_first}..{plot_first + count - 1} of {frames}   {count} wide"
+            if (plot_follow) {
+                header += "   live"
+            }
+            text(PROFILER_PLOT_HEADER, (text = header))
+            text(PROFILER_PLOT_SPAN_LABEL, (text = "window"))
+            same_line(PROFILER_PLOT_SPAN_ROW)
+            DrawPlotSlider(frames, count)
+
+            if (checkbox(PROFILE_AUTOSCALE, "Auto scale")) {
+                plot_auto_scale = PROFILE_AUTOSCALE.value
+            }
+            same_line(PROFILER_PLOT_ROW_1)
+            if (!plot_auto_scale) {
+                // Manual scale: the only way to compare two runs without the axis breathing.
+                if (slider_float(PROFILE_PLOT_YMAX, (text = "Y max", bounds = (0.1f, 500.0f), format = "%.2f"))) {
+                    plot_y_max = PROFILE_PLOT_YMAX.value
+                }
+                same_line(PROFILER_PLOT_ROW_2)
+            }
+            if (button(PROFILE_PLOT_ZOOM_OUT, (text = "-"))) {
+                ZoomPlot(1.0f / 1.5f, 0.5f, frames)
+            }
+            same_line(PROFILER_PLOT_ROW_3)
+            if (button(PROFILE_PLOT_ZOOM_IN, (text = "+"))) {
+                ZoomPlot(1.5f, 0.5f, frames)
+            }
+            same_line(PROFILER_PLOT_ROW_4)
+            if (button(PROFILE_PLOT_FIT, (text = "Fit"))) {
+                // The whole capture, the same gesture as a double click in the plot itself.
+                plot_count = frames
+                plot_first = 0
+                plot_follow = true
+            }
+
+            if (!empty(plot_series)) {
+                // The plot owns the rest of the window, however the user sized it.
+                DrawPlot(frames)
+            } else {
+                text(PROFILER_PLOT_EMPTY, (text = "pick a function in the timeline, the call tree or Scopes"))
+            }
+        }
     }
 }
 
@@ -1109,6 +1520,13 @@ def private DrawFrameTree(frame : int) {
         selected_event = int(tree_rows[hover_row])
         FreezeCamera()
     }
+    if (hover_row >= 0 && IsMouseClicked(ImGuiMouseButton.Right, false)) {
+        let event = int(tree_rows[hover_row])
+        menu_scope = ProfileEventScope(uint(frame), uint(event))
+        menu_frame = frame
+        menu_event = event
+        OpenPopup("profiler_tree_menu")
+    }
 
     let bar_width = max(1.0f, rmax.x - rmin.x - 24.0f)
 
@@ -1147,6 +1565,7 @@ def private DrawFrameTree(frame : int) {
         *dl |> AddText(float2(rmax.x - 8.0f - CalcTextSize(numbers).x, y + 1.0f), COL_TEXT_DIM, numbers)
     }
     PopClipRect()
+    DrawPickedCallPopup("profiler_tree_menu", int(ProfileFrameCount()), width)
 
     if (selected_event >= 0) {
         let path = EventPath(frame, selected_event)
@@ -1158,43 +1577,88 @@ def private DrawFrameTree(frame : int) {
     }
 }
 
+/// One row of the Scopes window: rank, name, the numbers and a right-click menu.
+///
+/// The row paints itself instead of stacking three widgets, so the row has one hover surface
+/// and one place to right-click. The colour square means exactly one thing: this zone is on the
+/// plot, in this colour. Nothing is drawn for the zones that are not plotted.
 def private DrawScopeRow(scope : uint) {
-    let (last, avg, peak) = ScopeStats(scope)
     let kind = ProfileScopeKind(scope)
-    let plotted = IsPlotted(scope) ? "*" : " "
+    // uint64/uint32 interpolate as hex, so both go through int to read as a number.
+    let calls = int(ProfileScopeTotalCalls(scope))
+    let total = ProfileScopeTotalMs(scope)
+    let peak = ProfileScopeMaxMs(scope)
+    let avg = calls > 0 ? total / float(calls) : 0.0f
+    let share = rank_base > 0.0f ? total / rank_base * 100.0f : 0.0f
+    let numbers = "{total:9.2f} ms  {share:5.1f}%  avg {avg:6.3f}  max {peak:7.3f}  x{calls}"
 
-    var indent = ""
-    for (_ in range(0, int(ProfileScopeDepth(scope)))) {
-        indent += "  "
-    }
-    let tag = (kind == 1) ? "GPU " : "    "
-    let title = "{plotted}{tag}{indent}{ProfileScopeName(scope)}"
-    // uint32 interpolates as hex, so the call count goes through int to read as a number.
-    let calls = int(ProfileScopeCalls(scope))
-    // GPU rows have no call counter: one pass is one bar, so print the kind instead.
-    var numbers = "{last:8.2f} ms  avg {avg:8.2f}  max {peak:8.2f}  x{calls}"
-    if (kind == 1) {
-        numbers = "{last:8.2f} ms  avg {avg:8.2f}  max {peak:8.2f}  gpu"
-    }
-
-    text(ROW_NAME[int(scope)], (text = title))
-    same_line(ROW_SAME_LINE[int(scope)])
-    text(ROW_STATS[int(scope)], (text = numbers))
-    same_line(ROW_SAME_LINE_2[int(scope)])
-
-    if (small_button(ROW_MENU[int(scope)], (text = "..."))) {
+    let width = max(120.0f, GetContentRegionAvail().x)
+    InvisibleButton("##profiler_scope_{scope}", ImVec2(width, SCOPE_ROW_HEIGHT))
+    let rmin = GetItemRectMin()
+    let rmax = GetItemRectMax()
+    let hovered = IsItemHovered(ImGuiHoveredFlags.None)
+    if (hovered && IsMouseClicked(ImGuiMouseButton.Right, false)) {
         OpenPopup("scope_menu_{scope}")
     }
+
+    var dl = GetWindowDrawList()
+    if (hovered) {
+        *dl |> AddRectFilled(rmin, rmax, COL_HOVER, 0.0f, ImDrawFlags.None)
+    }
+
+    let depth = min(int(ProfileScopeDepth(scope)), MAX_TREE_DEPTH)
+    let x = rmin.x + 4.0f + float(depth) * SCOPE_INDENT
+    if (IsPlotted(scope)) {
+        *dl |> AddRectFilled(float2(x, rmin.y + 4.0f), float2(x + SCOPE_SWATCH, rmax.y - 4.0f),
+                             SeriesColor(scope), 1.0f, ImDrawFlags.None)
+    }
+    var name_x = x + SCOPE_SWATCH + 5.0f
+    let name_room = rmax.x - 8.0f - CalcTextSize(numbers).x
+    PushClipRect(float2(rmin.x, rmin.y), float2(max(name_room, rmin.x + 1.0f), rmax.y), true)
+    if (kind == 1) {
+        *dl |> AddText(float2(name_x, rmin.y + 1.0f), COL_GPU_BORDER, "GPU ")
+        name_x += CalcTextSize("GPU ").x
+    }
+    *dl |> AddText(float2(name_x, rmin.y + 1.0f), COL_TEXT, ScopeName(scope))
+    PopClipRect()
+    *dl |> AddText(float2(rmax.x - 8.0f - CalcTextSize(numbers).x, rmin.y + 1.0f), COL_TEXT_DIM, numbers)
+
     if (BeginPopup("scope_menu_{scope}")) {
-        if (MenuItem(IsPlotted(scope) ? "Remove from plot" : "Add to plot", "", false, true)) {
-            TogglePlot(scope)
-        }
-        if (MenuItem("Reset all history", "", false, true)) {
-            ProfileReset()
-            plot_series.clear()
-            row_order_count = -1
-        }
+        DrawScopeMenuBody(scope, -1, -1, int(ProfileFrameCount()), width)
         EndPopup()
+    }
+}
+
+/// Every registered zone, ranked by the time it took over the whole capture: the live version of
+/// the table `tools/prof-report.sh` prints. The panel only ever shows one frame, so a function
+/// that runs once in a thousand frames has nowhere else to appear.
+[profile]
+def DrawScopesWindow() {
+    if (!ProfileIsEnabled()) {
+        return
+    }
+    if (!scopes_window_placed) {
+        scopes_window_placed = true
+        PROFILER_SCOPES_WIN.open = false
+    }
+    SetNextWindowSize(ImVec2(560.0f, 420.0f), ImGuiCond.FirstUseEver)
+    window(PROFILER_SCOPES_WIN, (text = "Scopes", closable = true, flags = ImGuiWindowFlags.None)) {
+        EnsureScopeRank()
+        if (empty(scope_rank)) {
+            text(PROFILER_SCOPES_EMPTY, (text = "no zones recorded yet"))
+        } else {
+            var header = "{length(scope_rank)} zones   total = summed call time, children included   "
+            header += "share = of the frame root over the whole capture"
+            text_wrapped(PROFILER_SCOPES_HEADER, (text = header))
+            for (scope in scope_rank) {
+                // The row menu can reset the history: the rest of the ranked list then points at
+                // zones that no longer exist, and the next frame rebuilds it.
+                if (scope_rank_count < 0) {
+                    break
+                }
+                DrawScopeRow(scope)
+            }
+        }
     }
 }
 
@@ -1206,6 +1670,22 @@ def DrawProfilerWindow() {
             text(PROFILER_DISABLED_TEXT, (text = "Profiling is compiled out: rebuild with TRY_PROFILE_ENABLED=1"))
         } else {
             let frames = int(ProfileFrameCount())
+            // The timeline's width, before anything else is laid out: the slider at the top and
+            // the timeline below it must agree on how many frames fit.
+            view_width = max(120.0f, GetContentRegionAvail().x)
+            var span = ViewSpan(frames, view_width)
+            if (frames > 0) {
+                if (follow) {
+                    FollowCamera(frames, span)
+                } else {
+                    ClampCamera(frames, span)
+                }
+                // The whole capture on one rail, at the very top: the timeline, the tree and the
+                // plot all read the window this slider moves.
+                text(PROFILER_SLIDER_LABEL, (text = "timeline"))
+                same_line(PROFILER_SLIDER_ROW)
+                DrawTimelineSlider(frames, span)
+            }
             if (checkbox(PROFILE_RECORD_TOGGLE, "Record")) {
                 ProfileSetRecording(PROFILE_RECORD_TOGGLE.value)
                 if (!PROFILE_RECORD_TOGGLE.value && ProfileIsCapturing()) {
@@ -1217,19 +1697,7 @@ def DrawProfilerWindow() {
             }
             same_line(PROFILER_TOOLBAR_1)
             if (button(PROFILE_RESET_BTN, (text = "Reset"))) {
-                ProfileReset()
-                InvalidateScopeNames()
-                PROFILE_CAPTURE.value = false
-                plot_series.clear()
-                row_order_count = -1
-                cam_first = 0
-                cam_frac = 0.0f
-                px_per_frame = DEFAULT_PX_PER_FRAME
-                follow = true
-                PROFILE_FOLLOW.value = true
-                focus_frame = -1
-                selected_event = -1
-                export_status = ""
+                ResetAll()
             }
             same_line(PROFILER_TOOLBAR_2)
             if (button(PROFILE_EXPORT_BTN, (text = "Save to logs"))) {
@@ -1257,7 +1725,13 @@ def DrawProfilerWindow() {
                 if (ProfileImportLatestLog()) {
                     InvalidateScopeNames()
                     PROFILE_CAPTURE.value = false
+                    // Series are scope indices of the capture that was open: the imported file
+                    // has its own scope table, so a kept series would plot another function.
+                    plot_series.clear()
+                    plot_count = 0
+                    plot_follow = true
                     row_order_count = -1
+                    scope_rank_count = -1
                     cam_first = 0
                     cam_frac = 0.0f
                     px_per_frame = DEFAULT_PX_PER_FRAME
@@ -1288,8 +1762,16 @@ def DrawProfilerWindow() {
                 ZoomAt(1.0f / 1.5f, view_width * 0.5f, frames, view_width)
             }
             same_line(PROFILER_TOOLBAR_6)
-            if (checkbox(PROFILE_AUTOSCALE, "Auto scale")) {
-                plot_auto_scale = PROFILE_AUTOSCALE.value
+            if (button(PROFILE_PLOT_BTN, (text = "Plot"))) {
+                // The plot is a window of its own: a few hundred pixels between the tree and the
+                // scope list was never enough to read a curve.
+                PROFILER_PLOT_WIN.open = !PROFILER_PLOT_WIN.open
+            }
+            same_line(PROFILER_ZONES_BTN)
+            if (button(PROFILE_SCOPES_BTN, (text = "Scopes"))) {
+                // Ranked list of every zone over the whole capture, in a window of its own: it is
+                // an overview, not something to keep under the timeline you are reading.
+                PROFILER_SCOPES_WIN.open = !PROFILER_SCOPES_WIN.open
             }
             same_line(PROFILER_TOOLBAR_9)
             if (checkbox(PROFILE_VSYNC, "VSync")) {
@@ -1311,7 +1793,12 @@ def DrawProfilerWindow() {
             text(PROFILER_BUTTONS_HINT,
                  (text = "Record: keep frames in memory for this panel.  Save to logs: write them out now.  "
                          + "Capture to file: write to logs/ while the app runs (turns Record on).  "
-                         + "Open latest: read the newest file back."))
+                         + "Open latest: read the newest file back.  Plot: the series window.  "
+                         + "Scopes: every zone ranked by its cost over the whole capture."))
+            text(PROFILER_MOUSE_HINT,
+                 (text = "Right-click a bar, or a row in Scopes, to add it to the plot.  "
+                         + "Timeline: drag to pan, double-click a bar to fill the view, Ctrl+wheel to zoom; "
+                         + "a plain wheel scrolls the panel."))
             if (ProfileIsCapturing()) {
                 let megabytes = float(int64(ProfileCaptureBytes())) / (1024.0f * 1024.0f)
                 var info = "capture {ProfileCapturedFrames()} frames, {megabytes:5.2f} MB -> {ProfileCapturePath()}"
@@ -1326,9 +1813,9 @@ def DrawProfilerWindow() {
 
             EnsureLaneCounts()
             if (frames > 0) {
-                // The camera settles here, so the timeline, the tree and the plot all read
-                // the same window.
-                let span = ViewSpan(frames, max(120.0f, GetContentRegionAvail().x))
+                // The camera settles here too: the toolbar's zoom buttons have moved it after the
+                // slider read it.
+                span = ViewSpan(frames, view_width)
                 if (follow) {
                     FollowCamera(frames, span)
                 } else {
@@ -1340,20 +1827,6 @@ def DrawProfilerWindow() {
                 DrawSelectionDetails(focus)
                 separator(PROFILER_SEP_TREE)
                 DrawFrameTree(focus)
-                if (!empty(plot_series)) {
-                    separator(PROFILER_SEP_PLOT)
-                    DrawPlot(frames, span)
-                }
-            }
-
-            EnsureRowOrder()
-            separator(PROFILER_SEP_CPU)
-            if (empty(row_order)) {
-                text(PROFILER_EMPTY_CPU, (text = "no scopes recorded yet"))
-            } else {
-                for (scope in row_order) {
-                    DrawScopeRow(scope)
-                }
             }
         }
     }

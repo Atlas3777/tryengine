@@ -19,7 +19,6 @@ require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
 require tryeditor/ProfilerWindow
-require tryeditor/PickerTest
 require tryeditor/EditorActions
 
 require imgui
@@ -219,6 +218,8 @@ def DrawEditor() {
     DrawBuildManager()
     DrawMaterialEditor()
     DrawProfilerWindow()
+    DrawPlotWindow()
+    DrawScopesWindow()
     // DrawQuadTreeDebug()
 
     ProcessFileDialog()
