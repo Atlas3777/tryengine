@@ -46,6 +46,9 @@ modules/dasImgui
 *.das_module.manifest
 *.shared_module
 
+# Выгрузки профайлера (Profiler -> Export) — результат прогона, а не исходники
+logs/
+
 # Агентский пайплайн
 .dsh/bundles/
 tools/agent/.tmp/
