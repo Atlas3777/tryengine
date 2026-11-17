@@ -12,6 +12,17 @@
 
 namespace tryeditor {
 
+namespace {
+
+// Бэкенд ImGui по умолчанию молча глотает VkResult: ошибка выделения дескриптора
+// выглядит как VK_NULL_HANDLE в наборе и падение драйвера. Пусть хотя бы попадает в лог.
+void LogVkResult(VkResult err) {
+    if (err != VK_SUCCESS)
+        LogError("ImGui Vulkan backend: VkResult {}", static_cast<int>(err));
+}
+
+}  // namespace
+
 ImGuiPass::ImGuiPass(tryengine::graphics::RenderGraph& rg, tryengine::graphics::VulkanDevice& device,
                      tryengine::graphics::VulkanSwapchain& swapchain)
     : rg_(rg), device_(device), swapchain_(swapchain) {
@@ -58,6 +69,7 @@ ImGuiPass::ImGuiPass(tryengine::graphics::RenderGraph& rg, tryengine::graphics::
 
     init_info.PipelineInfoMain.PipelineRenderingCreateInfo = rendering_info;
     init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.CheckVkResultFn = LogVkResult;
 
     ImGui_ImplVulkan_LoadFunctions(
         VK_API_VERSION_1_4,
@@ -112,6 +124,11 @@ void ImGuiPass::Setup(tryengine::graphics::RenderGraphBuilder& builder) {
 }
 
 void ImGuiPass::Collect(tryengine::graphics::CollectContext& ctx) {
+    // Счётчик нужен, чтобы понять, когда GPU гарантированно закончил с наборами,
+    // которые мы сняли с вьюпорта (см. PurgeRetiredDescriptorSets).
+    ++frame_number_;
+    PurgeRetiredDescriptorSets();
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -149,13 +166,51 @@ VkDescriptorSet ImGuiPass::GetTexture(tryengine::graphics::ScopeId scope, tryeng
     if (!view)
         return VK_NULL_HANDLE;
 
-    auto it = texture_cache_.find(view);
-    if (it != texture_cache_.end())
-        return it->second;
+    const tryengine::graphics::RGTagKey key = tryengine::graphics::MakeTagKey(scope, tag);
+    auto it = viewport_textures_.find(key);
+    const VkDescriptorSet previous_set = it != viewport_textures_.end() ? it->second.set : VK_NULL_HANDLE;
 
-    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(sampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    texture_cache_[view] = ds;
-    return ds;
+    // Пока view тот же, набор переиспользуется: AddTexture на каждый кадр исчерпал бы пул.
+    if (it != viewport_textures_.end() && it->second.set != VK_NULL_HANDLE && it->second.view == view)
+        return it->second.set;
+
+    VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(sampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (set == VK_NULL_HANDLE) {
+        // Бэкенд ImGui в этом случае всё равно вызовет vkUpdateDescriptorSets с
+        // VK_NULL_HANDLE в dstSet. Держим прошлый набор, чтобы панель не пропала.
+        LogError("ImGuiPass: пул дескрипторов исчерпан, текстура вьюпорта (scope {}, tag {}) не обновлена", scope, tag);
+        return previous_set;
+    }
+
+    if (it != viewport_textures_.end()) {
+        RetireDescriptorSet(it->second.set);
+        it->second = ViewportTexture{view, set};
+    } else {
+        viewport_textures_.emplace(key, ViewportTexture{view, set});
+    }
+    return set;
+}
+
+void ImGuiPass::RetireDescriptorSet(VkDescriptorSet set) {
+    if (set != VK_NULL_HANDLE)
+        retired_sets_.push_back(RetiredTextureSet{set, frame_number_});
+}
+
+void ImGuiPass::PurgeRetiredDescriptorSets() {
+    // Снятый набор мог попасть в command buffer прошлых кадров, поэтому освобождаем его
+    // только когда кадры, которые могли его использовать, гарантированно завершены GPU.
+    size_t write = 0;
+    for (size_t read = 0; read < retired_sets_.size(); ++read) {
+        const RetiredTextureSet& entry = retired_sets_[read];
+        if (frame_number_ - entry.retired_frame >= tryengine::graphics::kMaxFramesInFlight) {
+            ImGui_ImplVulkan_RemoveTexture(entry.set);
+            continue;
+        }
+        if (write != read)
+            retired_sets_[write] = entry;
+        ++write;
+    }
+    retired_sets_.resize(write);
 }
 
 VkDescriptorSet ImGuiPass::GetGameViewportTexture() {
@@ -168,10 +223,15 @@ VkDescriptorSet ImGuiPass::GetEditorViewportTexture() {
 
 void ImGuiPass::ClearTextureCache() {
     device_.WaitIdle();
-    for (auto [view, ds] : texture_cache_)
-        ImGui_ImplVulkan_RemoveTexture(ds);
+    for (auto& entry : viewport_textures_)
+        if (entry.second.set)
+            ImGui_ImplVulkan_RemoveTexture(entry.second.set);
+    viewport_textures_.clear();
+    for (const auto& entry : retired_sets_)
+        if (entry.set)
+            ImGui_ImplVulkan_RemoveTexture(entry.set);
+    retired_sets_.clear();
     LogInfo("ImGuiPass: ClearTextureCache");
-    texture_cache_.clear();
 }
 
 }  // namespace tryeditor

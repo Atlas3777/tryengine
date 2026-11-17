@@ -135,6 +135,13 @@
 - `kMaxFramesInFlight` — один на движок, `engine/graphics/FrameConfig.hpp`. От него зависят
   `FrameSync`, `RenderGraph` (транзиентные аллокаторы), `PickingPass` (слоты readback) и
   `GpuProfiler` (слоты запросов). Второй константы в коде быть не должно.
+- `RGResourcePool` при пересборке графа только помечает ресурсы свободными
+  (`ReleaseAll`, запоминает `idle_since_frame`), а уничтожает их в `PurgeUnused` из
+  `BeginFrame`, когда простой перевалил за `kMaxFramesInFlight`. Уничтожать раньше нельзя:
+  command buffer прошлых кадров ещё ссылается на эти image/view, а `ReleaseAll` без
+  уничтожения — это утечка целой текстуры на каждый шаг ресайза вьюпорта. Кто держит
+  `VkImageView`/`VkImage` из пула дольше одного кадра (ImGui-панель), обязан освобождать
+  свои дескрипторы по тому же счётчику кадров.
 - VSync: `FIFO` ждёт vblank, `MAILBOX` тоже привязан к vblank (просто не копит очередь),
   поэтому «выключить» — это `IMMEDIATE` (`ChoosePresentMode` в `VulkanSwapchain.cpp`).
   Редактор и клиент создают swapchain с `vsync = false`: иначе fps упирается в монитор и

@@ -229,11 +229,56 @@ RGResourcePool::PooledBuffer RGResourcePool::AcquireBuffer(const RGBufferDesc& d
     return new_entry;
 }
 
-void RGResourcePool::ReleaseAll() {
-    for (auto& entry : texture_pool_)
-        entry.in_use = false;
-    for (auto& entry : buffer_pool_)
-        entry.in_use = false;
+void RGResourcePool::ReleaseAll(uint64_t frame_number) {
+    for (auto& entry : texture_pool_) {
+        if (entry.in_use) {
+            entry.in_use = false;
+            entry.idle_since_frame = frame_number;
+        }
+    }
+    for (auto& entry : buffer_pool_) {
+        if (entry.in_use) {
+            entry.in_use = false;
+            entry.idle_since_frame = frame_number;
+        }
+    }
+}
+
+void RGResourcePool::PurgeUnused(uint64_t frame_number) {
+    const VkDevice device = device_.GetDevice();
+    const VmaAllocator allocator = device_.GetAllocator();
+
+    size_t texture_write = 0;
+    for (size_t read = 0; read < texture_pool_.size(); ++read) {
+        PooledTexture& entry = texture_pool_[read];
+        const bool expired = !entry.in_use && frame_number - entry.idle_since_frame > kMaxFramesInFlight;
+        if (expired) {
+            if (entry.view)
+                vkDestroyImageView(device, entry.view, nullptr);
+            if (entry.image)
+                vmaDestroyImage(allocator, entry.image, entry.allocation);
+            continue;
+        }
+        if (texture_write != read)
+            texture_pool_[texture_write] = entry;
+        ++texture_write;
+    }
+    texture_pool_.resize(texture_write);
+
+    size_t buffer_write = 0;
+    for (size_t read = 0; read < buffer_pool_.size(); ++read) {
+        PooledBuffer& entry = buffer_pool_[read];
+        const bool expired = !entry.in_use && frame_number - entry.idle_since_frame > kMaxFramesInFlight;
+        if (expired) {
+            if (entry.buffer)
+                vmaDestroyBuffer(allocator, entry.buffer, entry.allocation);
+            continue;
+        }
+        if (buffer_write != read)
+            buffer_pool_[buffer_write] = entry;
+        ++buffer_write;
+    }
+    buffer_pool_.resize(buffer_write);
 }
 
 void RGResourcePool::DestroyAll() {
@@ -298,6 +343,11 @@ const RGTextureDesc& RenderGraph::GetTextureDesc(RGResourceHandle h) const {
 
 void RenderGraph::BeginFrame(uint32_t frame_index) {
     frame_index_ = frame_index % kMaxFramesInFlight;
+    ++frame_number_;
+    // Свободные ресурсы, которые граф не использует дольше kMaxFramesInFlight кадров,
+    // уничтожаем: при ресайзе вьюпорта каждый кадр оставлял бы в пуле текстуру старого
+    // размера и память росла бы без предела.
+    pool_.PurgeUnused(frame_number_);
     // GPU-таймеры читают результаты прошлого использования этого слота и сбрасывают его
     // запросы. Слот безопасен: FrameSync уже дождался fence этого кадра.
     gpu_profiler_.BeginFrame(frame_index_);
@@ -657,7 +707,7 @@ void RenderGraph::Compile() {
 }
 
 void RenderGraph::Rebuild() {
-    pool_.ReleaseAll();
+    pool_.ReleaseAll(frame_number_);
     resources_.clear();
     tag_to_handle_.clear();
     handle_redirects_.clear();

@@ -451,6 +451,9 @@ public:
         VmaAllocation allocation = VK_NULL_HANDLE;
         RGTextureDesc desc;
         bool in_use = false;
+        /// Кадр, в котором ресурс перестал использоваться; нужен для отложенного
+        /// уничтожения: записанный command buffer прошлых кадров ещё на него ссылается.
+        uint64_t idle_since_frame = 0;
     };
 
     struct PooledBuffer {
@@ -459,11 +462,16 @@ public:
         void* mapped_ptr = nullptr;
         RGBufferDesc desc;
         bool in_use = false;
+        uint64_t idle_since_frame = 0;
     };
 
     PooledTexture AcquireTexture(const RGTextureDesc& desc);
     PooledBuffer AcquireBuffer(const RGBufferDesc& desc);
-    void ReleaseAll();
+    /// Освобождает все ресурсы и запоминает кадр, в котором они перестали использоваться.
+    void ReleaseAll(uint64_t frame_number);
+    /// Уничтожает свободные ресурсы, которые простояли kMaxFramesInFlight кадров:
+    /// к этому моменту кадры, которые могли их читать, уже завершены GPU.
+    void PurgeUnused(uint64_t frame_number);
     void DestroyAll();
 
 private:
@@ -615,6 +623,7 @@ private:
     eastl::hash_map<RGTagKey, RGExternalResource> externals_;
     CPUBlackboard cpu_bb_;
     uint32_t frame_index_ = 0;
+    uint64_t frame_number_ = 0;
     FrameTransientAllocator transient_allocators_[kMaxFramesInFlight];
     GpuProfiler gpu_profiler_;
 };

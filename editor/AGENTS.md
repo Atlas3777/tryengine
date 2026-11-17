@@ -147,3 +147,15 @@
 - Строку-список с меню и подсветкой рисуй одним `InvisibleButton` + `GetWindowDrawList`, а
   не стопкой `text`/`same_line`/`small_button`: у строки появляется одна поверхность под
   курсором и одно место под правый клик (`OpenPopup` + `BeginPopup` рядом с ней).
+
+## Текстура вьюпорта сцены (ImGuiPass)
+
+- `SceneView`/`SceneGameView` рисуют `image(...)` по `VkDescriptorSet` из
+  `GetEditorViewportTexture`/`GetGameViewportTexture`. Текстура вьюпорта лежит в
+  `RGResourcePool` и получает новый `VkImageView` на каждую пересборку графа, то есть на
+  каждый шаг ресайза панели. Поэтому набор кешируется по паре `(scope, tag)`, а не по view:
+  старый набор уходит в `retired_sets_` и освобождается через `kMaxFramesInFlight` кадров.
+  Кеш по view исчерпывал пул ImGui (64 набора) примерно за 64 шага ресайза, после чего
+  бэкенд отдавал `VK_NULL_HANDLE` в `vkUpdateDescriptorSets` и приложение падало.
+- `ImGui_ImplVulkan_InitInfo::CheckVkResultFn` выставляется в `ImGuiPass`: без него бэкенд
+  молча глотает ошибки Vulkan, и первым симптомом становится SIGSEGV.
