@@ -13,6 +13,7 @@
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
+#include "engine/resources/AssetTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
@@ -229,6 +230,30 @@ char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
     return ctx->allocateString(loose->path.c_str(), static_cast<uint32_t>(loose->path.size()), at);
 }
 
+// Путь editor-артефакта с плоской композицией модели. Импортёр пишет его в формате
+// .prefab рядом с исходным glTF-ассетом; игра этот артефакт не видит.
+char* GetModelPrefabArtifactPath(const char* asset_path, uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
+    if (!ctx || !asset_path || !*asset_path || guid == 0)
+        return nullptr;
+
+    const eastl::string_view path(asset_path);
+    for (const tryeditor::StorageRoot& root : tryeditor::kStorageRoots) {
+        if (!tryeditor::IsAssetDomain(root.domain))
+            continue;
+
+        const eastl::string_view dir(root.dir);
+        if (path.size() <= dir.size())
+            continue;
+        if (path.substr(0, dir.size()) != dir || path[dir.size()] != '/')
+            continue;
+
+        const eastl::string artifact_path = tryengine::fmt::format(
+            "{}/editor/{}/{}", root.artifacts_dir, guid, static_cast<uint32_t>(tryengine::EditorArtifactGuid::Prefab));
+        return ctx->allocateString(artifact_path.c_str(), static_cast<uint32_t>(artifact_path.size()), at);
+    }
+    return nullptr;
+}
+
 // Live-правка материала: текст материала применяется к уже загруженному Material без
 // пересоздания GPU-ресурсов, поэтому изменения видны в том же кадре.
 bool ApplyMaterialConfigText(uint64_t material_guid, const char* text, das::Context* ctx) {
@@ -343,6 +368,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetAssetFilePath)>(*this, lib, "GetAssetFilePath", das::SideEffects::accessGlobal,
                                                        "GetAssetFilePath");
+
+        das::addExtern<DAS_BIND_FUN(GetModelPrefabArtifactPath)>(
+            *this, lib, "GetModelPrefabArtifactPath", das::SideEffects::accessGlobal, "GetModelPrefabArtifactPath");
 
         das::addExtern<DAS_BIND_FUN(ApplyMaterialConfigText)>(
             *this, lib, "ApplyMaterialConfigText", das::SideEffects::accessGlobal, "ApplyMaterialConfigText");
