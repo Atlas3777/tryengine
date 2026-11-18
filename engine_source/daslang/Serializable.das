@@ -5,6 +5,7 @@ module Serializable shared
 
 require daslib/ast_boost
 require daslib/decs
+require daslib/decs_boost
 require daslib/rtti public
 require daslib/apply
 require daslib/strings_boost
@@ -109,6 +110,112 @@ def public DecsWriteComponent(ptr : void?; type_name : string; component_name : 
         cf.name = component_name
     }
     return <- cf
+}
+
+//! Применяет одно поле ConfigFormat к ComponentMap по его имени в DECS.
+//! Общая точка для загрузки сцены и префаба: тип берётся из уже известных
+//! компонентов архетипа, а если его там ещё нет — из варианта значения.
+//! Возвращает false для null/неподдерживаемого значения; вызывающий решает,
+//! считать это ошибкой.
+def public ApplyDecsConfigField(var cmp : decs::ComponentMap;
+                                component_name : string;
+                                cf : StructField? const;
+                                type_name : string) : bool {
+    if (cf == null || cf.value is _null) {
+        return false
+    }
+
+    if (decsState.componentTypeCheck |> key_exists(component_name)) {
+        let info = decsState.componentTypeCheck |> get_value(component_name)
+        if (info.basicType == Type.tFloat) {
+            cmp |> set(component_name, from_CF(cf, type<float>))
+            return true
+        } elif (info.basicType == Type.tFloat2) {
+            cmp |> set(component_name, from_CF(cf, type<float2>))
+            return true
+        } elif (info.basicType == Type.tFloat3) {
+            cmp |> set(component_name, from_CF(cf, type<float3>))
+            return true
+        } elif (info.basicType == Type.tFloat4) {
+            cmp |> set(component_name, from_CF(cf, type<float4>))
+            return true
+        } elif (info.basicType == Type.tInt) {
+            cmp |> set(component_name, from_CF(cf, type<int>))
+            return true
+        } elif (info.basicType == Type.tInt2) {
+            cmp |> set(component_name, from_CF(cf, type<int2>))
+            return true
+        } elif (info.basicType == Type.tInt3) {
+            cmp |> set(component_name, from_CF(cf, type<int3>))
+            return true
+        } elif (info.basicType == Type.tInt4) {
+            cmp |> set(component_name, from_CF(cf, type<int4>))
+            return true
+        } elif (info.basicType == Type.tUInt) {
+            cmp |> set(component_name, from_CF(cf, type<uint>))
+            return true
+        } elif (info.basicType == Type.tUInt64) {
+            cmp |> set(component_name, from_CF(cf, type<uint64>))
+            return true
+        } elif (info.basicType == Type.tInt64) {
+            cmp |> set(component_name, from_CF(cf, type<int64>))
+            return true
+        } elif (info.basicType == Type.tBool) {
+            cmp |> set(component_name, from_CF(cf, type<bool>))
+            return true
+        } elif (info.basicType == Type.tString) {
+            cmp |> set(component_name, from_CF(cf, type<string>))
+            return true
+        } elif (info.basicType == Type.tStructure) {
+            return DecsAddComponent(cmp, type_name, component_name, cf)
+        }
+    }
+
+    assume val = cf.value
+    if (val is _float) {
+        cmp |> set(component_name, val as _float)
+        return true
+    } elif (val is _float2) {
+        cmp |> set(component_name, val as _float2)
+        return true
+    } elif (val is _float3) {
+        cmp |> set(component_name, val as _float3)
+        return true
+    } elif (val is _float4) {
+        cmp |> set(component_name, val as _float4)
+        return true
+    } elif (val is _int) {
+        cmp |> set(component_name, val as _int)
+        return true
+    } elif (val is _int2) {
+        cmp |> set(component_name, val as _int2)
+        return true
+    } elif (val is _int3) {
+        cmp |> set(component_name, val as _int3)
+        return true
+    } elif (val is _int4) {
+        cmp |> set(component_name, val as _int4)
+        return true
+    } elif (val is _uint) {
+        cmp |> set(component_name, val as _uint)
+        return true
+    } elif (val is _uint64) {
+        cmp |> set(component_name, val as _uint64)
+        return true
+    } elif (val is _int64) {
+        cmp |> set(component_name, val as _int64)
+        return true
+    } elif (val is _bool) {
+        cmp |> set(component_name, val as _bool)
+        return true
+    } elif (val is _string) {
+        cmp |> set(component_name, val as _string)
+        return true
+    } elif (val is _object) {
+        return DecsAddComponent(cmp, type_name, component_name, cf)
+    }
+
+    return false
 }
 
 //! Есть ли для типа сгенерированная схема инспектора.
