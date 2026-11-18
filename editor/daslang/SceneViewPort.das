@@ -53,17 +53,17 @@ def private GetViewportDropPoint() : float3 {
     var origin = float3(0.0f, 0.0f, 0.0f)
     var direction = float3(0.0f, 1.0f, 0.0f)
 
-    query() $(let transform : Transform, let camera : Camera; let editorCameraTag : bool) {
+    query() $(let world : WorldTransform, let camera : Camera; let editorCameraTag : bool) {
         let size = float2(max(scene_viewport_size.x, 1.0f), max(scene_viewport_size.y, 1.0f))
         let ndc_x = scene_viewport_mouse.pos.x / size.x * 2.0f - 1.0f
         let ndc_y = 1.0f - scene_viewport_mouse.pos.y / size.y * 2.0f
         let half_tan = tan(radians(camera.fov) * 0.5f)
 
-        let forward = quat_mul_vec(transform.rotation, float3(0.0f, 1.0f, 0.0f))
-        let up = quat_mul_vec(transform.rotation, float3(0.0f, 0.0f, 1.0f))
-        let right = quat_mul_vec(transform.rotation, float3(1.0f, 0.0f, 0.0f))
+        let forward = quat_mul_vec(world.rotation, float3(0.0f, 1.0f, 0.0f))
+        let up = quat_mul_vec(world.rotation, float3(0.0f, 0.0f, 1.0f))
+        let right = quat_mul_vec(world.rotation, float3(1.0f, 0.0f, 0.0f))
 
-        origin = transform.position
+        origin = world.position
         direction = normalize(forward + right * (ndc_x * half_tan * size.x / size.y) + up * (ndc_y * half_tan))
     }
 

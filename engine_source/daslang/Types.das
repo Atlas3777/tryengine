@@ -42,6 +42,16 @@ struct Transform {
     scale    : float3
 }
 
+// Derived world transform. The prefix starts with "_", so Scene.das never saves it and
+// the Inspector never shows it: Transform is the authored local transform, this one is
+// recomputed from the Relationship hierarchy every frame and is what the renderer reads.
+[decs_template(prefix = "_world_")]
+struct WorldTransform {
+    position : float3
+    rotation : float4
+    scale    : float3
+}
+
 [decs_template, EcsTemplate, DecsSerializable]
 struct Relationship {
     parent      : EntityId = INVALID_ENTITY_ID

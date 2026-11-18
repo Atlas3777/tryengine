@@ -16,9 +16,9 @@ module Prefab shared public
 //!  * `eid` and `Relationship_*` fields are forbidden.
 //!
 //! Entity fields are plain ConfigFormat component names (`tag`, `meshGuid`,
-//! `Transform_position`, `materialRef`, ...). `Transform_position` is relative
-//! to the prefab root; spawn adds the world position and does not propagate
-//! instance rotation/scale yet.
+//! `Transform_position`, `materialRef`, ...). Transforms are local to the parent;
+//! spawn writes them to the authored Transform and UpdateWorldTransforms derives
+//! the world transform from the hierarchy. The spawn origin is added to the root only.
 
 require strings
 require math
@@ -29,6 +29,7 @@ require daslib/decs_boost
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Serializable
+require tryengine/TransformSystem
 require tryengine/Types
 require tryengine/FileReader
 
@@ -59,6 +60,29 @@ def private GetEntityId(var ids : table<uint; EntityId>; local_id : uint) : Enti
         return INVALID_ENTITY_ID
     }
     return ids[local_id]
+}
+
+// Local TRS of one prefab entity. Missing components are identity, so the array
+// may describe a pure grouping node.
+def private GetLocalTransform(entity_obj : table<string; StructField?>) : Transform {
+    var transform : Transform
+
+    let position_cf = entity_obj?["Transform_position"] ?? null
+    if (position_cf != null && position_cf.value is _float3) {
+        transform.position = position_cf.value as _float3
+    }
+
+    let rotation_cf = entity_obj?["Transform_rotation"] ?? null
+    if (rotation_cf != null && rotation_cf.value is _float4) {
+        transform.rotation = rotation_cf.value as _float4
+    }
+
+    let scale_cf = entity_obj?["Transform_scale"] ?? null
+    if (scale_cf != null && scale_cf.value is _float3) {
+        transform.scale = scale_cf.value as _float3
+    }
+
+    return <- transform
 }
 
 //! Spawns a prefab parsed from ConfigFormat text into the current DECS scene.
@@ -188,23 +212,32 @@ def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
     }
 
     var entity_ids : table<uint; EntityId>
+
     for (entity_index in entity_indices) {
         let entity_cf = entities_arr[entity_index]
         assume entity_obj = entity_cf.value as _object
         let local_id = EntityLocalId(entity_obj?["localId"] ?? null)
+        let parent_local_id = EntityParentLocalId(entity_obj?["parentLocalId"] ?? null)
+
+        // The prefab stores local TRS; only the root is moved to the spawn point.
+        // Children keep their authored local transform, and UpdateWorldTransforms
+        // derives the world transform from the Relationship hierarchy.
+        var local_transform = GetLocalTransform(entity_obj)
+        if (parent_local_id == PREFAB_ROOT_PARENT) {
+            local_transform.position = origin + local_transform.position
+        }
 
         let eid = create_entity() @(eid, cmp) {
             apply_decs_template(cmp, Relationship())
+            apply_decs_template(cmp, local_transform)
 
             for (field_name in keys(entity_obj)) {
-                if (field_name == "localId" || field_name == "parentLocalId") {
+                if (field_name == "localId" || field_name == "parentLocalId" || starts_with(field_name, "Transform_")) {
                     continue
                 }
 
                 let cf = entity_obj?[field_name] ?? null
-                if (field_name == "Transform_position" && cf != null && cf.value is _float3) {
-                    cmp |> set(field_name, (cf.value as _float3) + origin)
-                } elif (!ApplyDecsConfigField(cmp, field_name, cf, cf != null ? cf.typeName : "")) {
+                if (!ApplyDecsConfigField(cmp, field_name, cf, cf != null ? cf.typeName : "")) {
                     print("[PREFAB WARNING] entity {local_id}: field '{field_name}' was not applied\n")
                 }
             }
@@ -239,6 +272,7 @@ def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
     }
 
     commit()
+    UpdateWorldTransforms()
     return GetEntityId(entity_ids, root_local)
 }
 

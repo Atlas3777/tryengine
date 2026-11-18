@@ -442,11 +442,9 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
 // ---------------------------------------------------------------------------
 // Prefab-ready view of a model (editor artifact only).
 //
-// The ModelAssetMap keeps local transforms of the glTF nodes. A prefab, on the
-// other hand, is a flat pre-order list without runtime ids: the whole hierarchy
-// is baked into root-relative TRS, because DECS does not compose transforms
-// between entities. The list stays in artifacts/editor and is never packed:
-// the game spawns prefabs, not glTF nodes.
+// A prefab is a flat pre-order list of entities with local transforms: the
+// spawner composes parent rotation/scale/translation itself. The list lives in
+// artifacts/editor and is never packed; the game spawns prefabs, not glTF nodes.
 // ---------------------------------------------------------------------------
 
 constexpr uint32_t kPrefabRootParent = 0xFFFFFFFFu;
@@ -455,7 +453,6 @@ struct PrefabFlatNode {
     uint32_t local_id = 0;
     uint32_t parent_local_id = kPrefabRootParent;
     int32_t node_index = -1;  // -1 for the synthetic root
-    das::float4x4 world;
 };
 
 void FlattenModelNodes(const ModelAssetMap& map, eastl::vector<PrefabFlatNode>& out) {
@@ -487,44 +484,34 @@ void FlattenModelNodes(const ModelAssetMap& map, eastl::vector<PrefabFlatNode>& 
     // так инвариант формата соблюдается без изменения самой иерархии.
     eastl::vector<bool> visited(static_cast<size_t>(node_count), false);
 
-    auto visit = [&](auto&& self, int32_t node_index, uint32_t parent_local, das::float4x4 parent_world) -> void {
+    auto visit = [&](auto&& self, int32_t node_index, uint32_t parent_local) -> void {
         if (node_index < 0 || node_index >= node_count || visited[static_cast<size_t>(node_index)])
             return;
         visited[static_cast<size_t>(node_index)] = true;
 
         const ModelNodeData& node = map.nodes[static_cast<size_t>(node_index)];
-        const das::float4x4 local = das::float4x4_compose(node.local_transform.position, node.local_transform.rotation,
-                                                          node.local_transform.scale);
-        const das::float4x4 world = das::float4x4_mul(parent_world, local);
-
         const uint32_t local_id = static_cast<uint32_t>(out.size());
         PrefabFlatNode flat;
         flat.local_id = local_id;
         flat.parent_local_id = parent_local;
         flat.node_index = node_index;
-        flat.world = world;
         out.push_back(flat);
 
         for (int32_t child : node.children_indices)
-            self(self, child, local_id, world);
+            self(self, child, local_id);
     };
 
     if (roots.size() == 1) {
-        das::float4x4 identity;
-        das::float4x4_identity(identity);
-        visit(visit, roots[0], kPrefabRootParent, identity);
+        visit(visit, roots[0], kPrefabRootParent);
     } else {
         PrefabFlatNode root;
         root.local_id = 0;
         root.parent_local_id = kPrefabRootParent;
         root.node_index = -1;
-        das::float4x4_identity(root.world);
         out.push_back(root);
 
-        das::float4x4 identity;
-        das::float4x4_identity(identity);
         for (int32_t index : roots)
-            visit(visit, index, 0, identity);
+            visit(visit, index, 0);
     }
 }
 
@@ -563,14 +550,8 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     if (flat.empty())
         return {};
 
-    // Всё, что находится в префабе, задаётся относительно корня: спавн добавляет
-    // только мировую позицию. Обратная матрица корня убирает его собственный
-    // трансформ, чтобы корневая сущность стояла в нуле.
-    das::float4x4 root_inverse;
-    das::float4x4_identity(root_inverse);
-    const float determinant = das::float4x4_det(flat[0].world);
-    if (std::abs(determinant) > 1e-8f)
-        root_inverse = das::float4x4_inverse(flat[0].world);
+    const eastl::string_view stem = ModelStem(asset_path);
+    const eastl::string stem_string(stem.data(), stem.size());
 
     ConfigArray entities;
     for (const PrefabFlatNode& node : flat) {
@@ -578,32 +559,33 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
         entity.fields.push_back(MakePrefabField("localId", "u32", ConfigValue(node.local_id)));
         entity.fields.push_back(MakePrefabField("parentLocalId", "u32", ConfigValue(node.parent_local_id)));
 
+        tryengine::Transform local_transform;
         eastl::string tag;
         uint64_t mesh_id = 0;
         uint64_t material_id = 0;
         if (node.node_index >= 0) {
             const ModelNodeData& source = map.nodes[static_cast<size_t>(node.node_index)];
             tag = source.name.empty() ? tryengine::fmt::format("Node_{}", node.node_index) : source.name;
+            local_transform = source.local_transform;
             mesh_id = source.mesh_id;
             material_id = source.material_id;
         } else {
-            tag = eastl::string(ModelStem(asset_path).data(), ModelStem(asset_path).size());
+            tag = stem_string;
         }
 
         entity.fields.push_back(MakeStringField("tag", eastl::move(tag)));
 
-        const das::float4x4 relative = das::float4x4_mul(node.world, root_inverse);
-        das::float3 position;
-        das::float4 rotation;
-        das::float3 scale;
-        das::float4x4_decompose(relative, position, rotation, scale);
-
-        entity.fields.push_back(MakePrefabField("Transform_position", "f32x3",
-                                                ConfigValue(ConfigFloat3{position.x, position.y, position.z})));
-        entity.fields.push_back(MakePrefabField(
-            "Transform_rotation", "f32x4", ConfigValue(ConfigFloat4{rotation.x, rotation.y, rotation.z, rotation.w})));
         entity.fields.push_back(
-            MakePrefabField("Transform_scale", "f32x3", ConfigValue(ConfigFloat3{scale.x, scale.y, scale.z})));
+            MakePrefabField("Transform_position", "f32x3",
+                            ConfigValue(ConfigFloat3{local_transform.position.x, local_transform.position.y,
+                                                     local_transform.position.z})));
+        entity.fields.push_back(
+            MakePrefabField("Transform_rotation", "f32x4",
+                            ConfigValue(ConfigFloat4{local_transform.rotation.x, local_transform.rotation.y,
+                                                     local_transform.rotation.z, local_transform.rotation.w})));
+        entity.fields.push_back(MakePrefabField(
+            "Transform_scale", "f32x3",
+            ConfigValue(ConfigFloat3{local_transform.scale.x, local_transform.scale.y, local_transform.scale.z})));
 
         if (mesh_id != 0) {
             entity.fields.push_back(MakePrefabField("meshGuid", "u64", ConfigValue(mesh_id)));
@@ -622,8 +604,7 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
 
     ConfigObject root;
     root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{1})));
-    root.fields.push_back(
-        MakeStringField("name", eastl::string(ModelStem(asset_path).data(), ModelStem(asset_path).size())));
+    root.fields.push_back(MakeStringField("name", stem_string));
     root.fields.push_back(MakeStringField("configType", {}));
     root.fields.push_back(MakeStringField("configRow", {}));
     root.fields.push_back(MakePrefabField("entities", "PrefabEntity[]",
