@@ -96,6 +96,13 @@
   (дескриптор у каждого смотрит в offset 0) — это стоит поправить до появления второго
   cbuffer'а в шейдере.
 
+## Индексные буферы
+
+- `MeshProcessor` выбирает `UInt8`-индексы для мешей с ≤255 вершинами. Это требует
+  `VkPhysicalDeviceVulkan14Features::indexTypeUint8 = VK_TRUE` в `VulkanDevice`; без фичи
+  `vkCmdBindIndexBuffer` даёт `VUID-vkCmdBindIndexBuffer-indexType-08787`. Не отключай
+  фичу, не поменяв автоподбор формата в импортёре.
+
 ## Биндинги daslang
 
 - По файлу на нативный модуль, и файл лежит в слое, чьи типы он отдаёт в скрипт: здесь

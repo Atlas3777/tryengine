@@ -43,6 +43,11 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
 
     TRY_CHECK(SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_), "Ошибка создания Surface");
 
+    // Фичи Vulkan 1.4 (UInt8 index buffer; MeshProcessor выбирает его для мелких мешей)
+    VkPhysicalDeviceVulkan14Features features14{};
+    features14.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES;
+    features14.indexTypeUint8 = VK_TRUE;
+
     // Фичи Vulkan 1.3 (Dynamic Rendering и Synchronization2)
     VkPhysicalDeviceVulkan13Features features13{};
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -84,6 +89,7 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
     auto phys_ret = selector.set_surface(surface_)
                         .set_minimum_version(1, 4)
                         .set_required_features(features10)
+                        .set_required_features_14(features14)
                         .set_required_features_13(features13)
                         .set_required_features_12(features12)
                         .set_required_features_11(features11)
