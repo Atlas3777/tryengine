@@ -164,14 +164,32 @@
 
 - Импорт glTF пишет два editor-артефакта: `10` — `ModelAssetMap` (локальные трансформы,
   дети, `scene_roots`), `11` — плоскую pre-order композицию в формате `.prefab`
-  (`EditorArtifactGuid::Prefab`). В артефакте `11` мировые TRS запечены относительно корня,
-  поэтому DECS не компонует иерархию: спавн добавляет только мировую позицию.
+  (`EditorArtifactGuid::Prefab`). В артефакте `11` лежат локальные TRS; спавн пишет их в
+  `Transform`, а иерархию в мировые трансформы разворачивает `tryengine/TransformSystem`.
 - Оба артефакта — `target = Editor` и лежат в `artifacts/editor/<guid>/`: в пак они не
   попадают. Runtime спавнит `.prefab`, а не glb; glb можно дропнуть только в редакторе.
 - `tryengine/Prefab.das` — единственный парсер/спавнер префаба. В файле нет `eid` и
   `Relationship_*`: хранятся только `localId`/`parentLocalId`, а `first_child`/`prev`/`next`
   выводятся из порядка массива. Проверяются один корень, уникальность `localId` и то, что
-  родитель записан раньше ребёнка.
+  родитель записан раньше ребёнка. `Transform_*` в префабе локальные: спавн пишет их в
+  авторский `Transform`, а мировые TRS считает `tryengine/TransformSystem`.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
+
+## Transform и editor camera
+
+- `Transform` — авторский локальный трансформ (его правит Inspector и сохраняет сцена).
+  `WorldTransform` (`_world_*`, `tryengine/Types`) — производный: `tryengine/TransformSystem`
+  разворачивает Relationship-иерархию каждый кадр и пишет мировые TRS, их читает
+  `Render.das`. Компоненты `_world_*` не сохраняются и не видны в Inspector.
+- `UpdateWorldTransforms` вызывают `EditorApp`/`GameApp` после `EditorUpdate`/`GameUpdate`
+  и до `Render`; это единственное место, где считается иерархия. Меняешь сцену из скрипта —
+  правь `Transform`, не `_world_*`.
+- `EditorStart` подписывается на `RegisterSceneLoadedListener` и вызывает `LoadEmptyScene`:
+  начальная пустая сцена — такой же load-event, как файл. Event создаёт editor-камеру;
+  `EditorStart`, `LoadScene`, `CreateScene` и выход из Play её не дублируют.
+  `GameStart` editor-камеру не создаёт — в игре её нет.
+- Editor-камера помечена `editorCameraTag`, поэтому `Mover` двигает только её. `Scene.das`
+  не пишет такие сущности в файл, а `UnloadActiveScene` (restart DECS) их убивает; в сцене
+  всегда одна editor-камера.
