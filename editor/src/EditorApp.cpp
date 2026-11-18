@@ -147,8 +147,6 @@ void EditorApp::Run() const {
 
         script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
-        // The authored Transform is local; the renderer reads WorldTransform.
-        script_system.InvokeFunctionFast("UpdateWorldTransforms");
 
         {
             TRY_PROFILE_SCOPE("Async.Submit");

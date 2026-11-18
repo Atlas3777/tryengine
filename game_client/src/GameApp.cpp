@@ -122,8 +122,6 @@ void GameApp::Run() {
 
         script_system.InvokeFunctionSafe("EngineUpdate");
         script_system.InvokeFunctionSafe("GameUpdate");
-        // The authored Transform is local; the renderer reads WorldTransform.
-        script_system.InvokeFunctionSafe("UpdateWorldTransforms");
 
         {
             TRY_PROFILE_SCOPE("Async.Submit");

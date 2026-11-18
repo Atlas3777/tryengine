@@ -183,9 +183,9 @@
   `WorldTransform` (`_world_*`, `tryengine/Types`) — производный: `tryengine/TransformSystem`
   разворачивает Relationship-иерархию каждый кадр и пишет мировые TRS, их читает
   `Render.das`. Компоненты `_world_*` не сохраняются и не видны в Inspector.
-- `UpdateWorldTransforms` вызывают `EditorApp`/`GameApp` после `EditorUpdate`/`GameUpdate`
-  и до `Render`; это единственное место, где считается иерархия. Меняешь сцену из скрипта —
-  правь `Transform`, не `_world_*`.
+- `UpdateWorldTransforms` вызывает `EngineUpdate` (то есть `engine_source/daslang/Engine.das`)
+  до того, как кадр дойдёт до `EditorUpdate`/`GameUpdate` и `Render`; это единственное место,
+  где считается иерархия. Меняешь сцену из скрипта — правь `Transform`, не `_world_*`.
 - `EditorStart` подписывается на `RegisterSceneLoadedListener` и вызывает `LoadEmptyScene`:
   начальная пустая сцена — такой же load-event, как файл. Event создаёт editor-камеру;
   `EditorStart`, `LoadScene`, `CreateScene` и выход из Play её не дублируют.

@@ -6,7 +6,6 @@ module Game shared public
 
 require daslib/decs
 require tryengine/Types
-require tryengine/TransformSystem
 require tryengine/Input
 require tryResources
 require tryengine/Engine

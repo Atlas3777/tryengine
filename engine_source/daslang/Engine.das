@@ -10,6 +10,7 @@ require tryengine/AsyncTaskManager
 require tryengine/Input
 require tryengine/Profiling
 require daslib/just_in_time
+require tryengine/TransformSystem
 
 // A zone around the tick: tick_async_tasks finishes hot-reload work for scripts, and one
 // frame in a long run can cost hundreds of milliseconds. Without a name that time hangs on
@@ -17,6 +18,7 @@ require daslib/just_in_time
 [export, profile]
 def EngineUpdate() {
     tick_async_tasks()
+    UpdateWorldTransforms()
 }
 
 [export]
