@@ -17,7 +17,6 @@
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/core/TimeManager.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/loaders/MeshLoader.hpp"
@@ -38,8 +37,6 @@ using namespace tryengine::async;
 using namespace tryengine::graphics;
 using namespace tryengine::platform;
 using namespace tryengine::resources;
-
-struct EditorClock {};
 
 void EditorApp::Init() {
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "tryengine");
@@ -70,12 +67,6 @@ void EditorApp::Init() {
     });
 
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
-
-    auto& time_manager = engine_->RegisterSystem<TimeManager>();
-    time_manager.RegisterClock<EditorClock>();
-    time_manager.RegisterClock<GameClock>();
-    time_manager.RegisterClock<GameWorldClock, GameClock>();
-    time_manager.RegisterClock<GameUIClock, GameClock>();
 
     editor_ = std::make_unique<Editor>(*engine_, *vulkan_device_);
 
@@ -113,7 +104,6 @@ void EditorApp::Run() const {
     editor_->running = true;
     editor_->state = PlayModeState::Edit;
 
-    auto& time_manager = engine_->Get<TimeManager>();
     auto& script_system = engine_->Get<ScriptSystem>();
     auto& render = engine_->Get<EditorRender>();
     auto& input = engine_->Get<InputService>();
@@ -134,10 +124,6 @@ void EditorApp::Run() const {
         {
             TRY_PROFILE_SCOPE("Input.PollEvents");
             input.PollEvents();
-        }
-        {
-            TRY_PROFILE_SCOPE("Time.NewFrame");
-            time_manager.NewFrame();
         }
         {
             TRY_PROFILE_SCOPE("Async.Pull");

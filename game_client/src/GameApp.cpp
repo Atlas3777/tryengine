@@ -8,7 +8,6 @@
 #include "engine/core/GameScriptSetup.hpp"
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/core/TimeManager.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
@@ -64,12 +63,6 @@ void GameApp::Init() {
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
 
-    auto& time_manager = engine_->RegisterSystem<TimeManager>();
-
-    time_manager.RegisterClock<GameClock>();
-    time_manager.RegisterClock<GameWorldClock, GameClock>();
-    time_manager.RegisterClock<GameUIClock, GameClock>();
-
     auto pak_task = RunPollable(ThreadPool(), LoadScriptPak(fm));
     while (!pak_task.IsReady()) {
         fm.Pull();
@@ -95,7 +88,6 @@ void GameApp::Init() {
 
 void GameApp::Run() {
     running_ = true;
-    auto& tm = engine_->Get<TimeManager>();
     auto& script_system = engine_->Get<ScriptSystem>();
     auto& render = engine_->Get<GameRender>();
     auto& input = engine_->Get<InputService>();
@@ -109,10 +101,6 @@ void GameApp::Run() {
         {
             TRY_PROFILE_SCOPE("Input.PollEvents");
             input.PollEvents();
-        }
-        {
-            TRY_PROFILE_SCOPE("Time.NewFrame");
-            tm.NewFrame();
         }
         {
             TRY_PROFILE_SCOPE("Async.Pull");

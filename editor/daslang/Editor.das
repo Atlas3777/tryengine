@@ -11,6 +11,7 @@ require trygame/Game
 
 require tryengine/Scene
 require tryengine/Profiling
+require tryengine/Time
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
@@ -27,12 +28,19 @@ let mat_id = 17036954862819815981ul
 var is_playing : bool = false
 var is_paused  : bool = false
 
+// The editor owns its clock and hangs it off the engine root: editor tools (camera, gizmos)
+// keep running while the game is paused, and play mode never slows them down.
+struct EditorClock : ClockTag {}
+
+var editor_clock = EditorClock()
+
 def private OnSceneLoaded(name : string; path : string; empty : bool) {
     EnsureEditorCamera()
 }
 
 [export]
 def EditorStart(){
+    TimeAttach(editor_clock)
     init_quadtree_debug()
     RegisterSceneLoadedListener(@@OnSceneLoaded)
     LoadEmptyScene()
@@ -41,9 +49,11 @@ def EditorStart(){
 [export, profile]
 def EditorUpdate(){
     ProcessHotkeys()
-    Move(0.03)
+    Move(TimeDelta(editor_clock))
 
-    if (is_playing && !is_paused){
+    // A paused game clock is a zero delta, and a system that integrates time has no
+    // business running on a zero delta at all.
+    if (is_playing && TimeIsAdvancing(game_clock)){
         GameUpdate()
     }
 }

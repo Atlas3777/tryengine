@@ -10,6 +10,7 @@ require tryengine/Input
 require tryResources
 require tryengine/Engine
 require tryengine/Profiling
+require tryengine/Time
 require math
 
 let mesh_id_1 = 3081795527557720915ul
@@ -26,7 +27,24 @@ var  orbit_angle  = 0.0f
 let  orbit_center = float3(0.0f, 7.5f, 0.0f)   // центр группы мешей в плоскости XY
 let  orbit_radius = 20.0f
 let  orbit_height = 10.0f
-let  orbit_speed  = 0.008f
+let  orbit_speed  = 0.48f                      // радиан в секунду
+
+// === время игры ===
+// The game owns its subtree and attaches it to the engine root; the editor does the same
+// with its own clock. Nothing is registered for us, and GameStart may run again on Play.
+struct GameClock : ClockTag {}
+struct GameWorldClock : ClockTag {}
+struct GameUIClock : ClockTag {}
+
+var game_clock       = GameClock()
+var game_world_clock = GameWorldClock()
+var game_ui_clock    = GameUIClock()
+
+def RegisterGameTime() {
+    TimeAttach(game_clock)
+    TimeRegister(game_world_clock, game_clock)
+    TimeRegister(game_ui_clock, game_clock)
+}
 
 [export]
 def TestTestTest(){
@@ -36,6 +54,8 @@ def TestTestTest(){
 [export]
 def GameStart(){
     print("Game Start\n")
+    RegisterGameTime()
+
     // The editor camera belongs to the editor: EditorStart/EnsureEditorCamera owns it, so
     // play mode does not create a second one that disappears when Stop restores the snapshot.
     create_entity() @(eid, cmp){
@@ -66,9 +86,12 @@ def GameStart(){
 
 [export, profile]
 def GameUpdate() {
+    // Everything below integrates time, so it runs on the world clock: a paused game
+    // freezes it, a slowdown scales it, and the caller never passes dt in.
+    let dt = TimeDelta(game_world_clock)
 
     // ================== ОРБИТА КАМЕРЫ ==================
-    orbit_angle += orbit_speed
+    orbit_angle += orbit_speed * dt
 
     // позиция камеры: крутимся в плоскости XY, поднимаемся по Z
     let eye = float3(
@@ -109,7 +132,7 @@ def GameUpdate() {
     }
 
     query()$(var t : Transform, inputState : float3, speed : float){
-        t.position += inputState * 0.08 * speed;
+        t.position += inputState * 4.8f * speed * dt;
     }
 }
 

@@ -5,6 +5,7 @@ module EditorUI shared public
 
 require tryengine/Scene
 require tryengine/AsyncTaskManager
+require tryengine/Time
 require strings
 require math
 
@@ -179,11 +180,15 @@ def StartPlay() {
     is_paused  = false
     // снимок состояния редактора
     GameStart()
+    // Play always starts from a running game clock at zero, never from the pause or the
+    // accumulated time a previous session left behind.
+    TimeReset(game_clock)
 }
 
 def StopPlay() {
     is_playing = false
     is_paused  = false
+    TimeSetPaused(game_clock, false)
     // restore_decs_state()
     var data : array<uint8>
     if (live_load_bytes("__decs_state", data)) {
@@ -197,9 +202,11 @@ def StopPlay() {
     // сообщить движку «выйти из play-mode»
 }
 
-def PausePlay()  { is_paused = true}
-def ResumePlay() { is_paused = false }
-def StepPlay()   { /* TODO */ }
+def PausePlay()  { is_paused = true;  TimeSetPaused(game_clock, true) }
+def ResumePlay() { is_paused = false; TimeSetPaused(game_clock, false) }
+// One synthetic frame at a fixed step: the step ignores the pause flag, and GameUpdate runs
+// here because EditorUpdate already skipped its own call for this frame.
+def StepPlay()   { TimeStepOnce(1.0f / 60.0f); GameUpdate() }
 
 [export, profile]
 def DrawEditor() {
