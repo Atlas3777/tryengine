@@ -190,6 +190,9 @@ def StopPlay() {
         data |> mem_archive_load(decsState)
     }
 
+    // Снимок снят до GameStart: камеры редактора в нём может не быть.
+    EnsureEditorCamera()
+
     // восстановить состояние
     // сообщить движку «выйти из play-mode»
 }

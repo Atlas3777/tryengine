@@ -6,6 +6,7 @@ module Game shared public
 
 require daslib/decs
 require tryengine/Types
+require tryengine/TransformSystem
 require tryengine/Input
 require tryResources
 require tryengine/Engine
@@ -36,22 +37,8 @@ def TestTestTest(){
 [export]
 def GameStart(){
     print("Game Start\n")
-    create_entity() @(eid, cmp){
-        cmp.tag := "EditorCamera"
-        apply_decs_template(cmp, Transform(
-            position = float3(0.0f, -20.0f, 10.0f),
-            rotation = float4(0f, 0f, 0f, 1f),
-            scale = float3(1.0f, 1.0f, 1.0f)
-        ))
-        apply_decs_template(cmp, Camera(
-            fov = 35.0f,
-            near_plane = 0.01f,
-            far_plane = 500.0f
-        ))
-        apply_decs_template(cmp, Relationship())
-        cmp.editorCameraTag := true
-    }
-
+    // The editor camera belongs to the editor: EditorStart/EnsureEditorCamera owns it, so
+    // play mode does not create a second one that disappears when Stop restores the snapshot.
     create_entity() @(eid, cmp){
         cmp.tag := "GameCamera"
         apply_decs_template(cmp, Transform(

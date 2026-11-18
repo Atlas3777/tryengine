@@ -27,9 +27,15 @@ let mat_id = 17036954862819815981ul
 var is_playing : bool = false
 var is_paused  : bool = false
 
+def private OnSceneLoaded(name : string; path : string; empty : bool) {
+    EnsureEditorCamera()
+}
+
 [export]
 def EditorStart(){
     init_quadtree_debug()
+    RegisterSceneLoadedListener(@@OnSceneLoaded)
+    LoadEmptyScene()
 }
 
 [export, profile]

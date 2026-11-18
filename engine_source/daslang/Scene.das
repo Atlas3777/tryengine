@@ -34,6 +34,31 @@ struct LoadedSceneContext {
 var scene_context : LoadedSceneContext
 var active_scene : Scene
 
+// Scene lifecycle event. The editor subscribes to spawn its camera after every load;
+// the game has no listener and therefore no editor camera. `empty` marks the initial
+// untitled scene that has no file yet.
+typedef SceneLoadedListener = function<(name : string; path : string; empty : bool) : void>
+
+var private g_scene_loaded_listeners : array<SceneLoadedListener>
+
+def public RegisterSceneLoadedListener(listener : SceneLoadedListener) {
+    g_scene_loaded_listeners |> push(listener)
+}
+
+def private NotifySceneLoaded(name, path : string; empty : bool) {
+    for (listener in g_scene_loaded_listeners) {
+        invoke(listener, name, path, empty)
+    }
+}
+
+//! The editor's first load: there is no file yet, but it is still a scene load.
+def public LoadEmptyScene() {
+    UnloadActiveScene()
+    scene_context.scene_name = ""
+    scene_context.scene_path = ""
+    NotifySceneLoaded("", "", true)
+}
+
 [async]
 def LoadScene(name, path : string) : void {
     UnloadActiveScene()
@@ -42,6 +67,7 @@ def LoadScene(name, path : string) : void {
     scene_context.scene_path = path
 
     await(LoadSceneAsync(path))
+    NotifySceneLoaded(name, path, false)
 }
 
 def UnloadActiveScene(){
@@ -67,10 +93,10 @@ def GetScenePath() : string {
 [async]
 def CreateScene(name, path : string) : void {
     UnloadActiveScene()
-    CreateCamera()
 
     scene_context.scene_name = name
     scene_context.scene_path = path
+    NotifySceneLoaded(name, path, true)
 }
 
 [async]
@@ -122,6 +148,28 @@ struct TestSer {
 struct CastPlayer{
     hp : int
     speed : float
+}
+
+//! Creates the editor camera when the current scene has none. Called by the editor at
+//! startup and after play mode restores the pre-play DECS snapshot: without it the
+//! viewport has no camera until a scene with one is loaded.
+def public EnsureEditorCamera() {
+    var cameras : array<EntityId>
+    query() $(eid : EntityId; let editorCameraTag : bool) {
+        cameras |> push(eid)
+    }
+
+    if (length(cameras) == 0) {
+        CreateCamera()
+        commit()
+    } elif (length(cameras) > 1) {
+        // One editor camera is an invariant: a loaded scene may contain a stale one,
+        // and GameStart no longer creates a second.
+        for (i in range(1, length(cameras))) {
+            decs::delete_entity(cameras[i])
+        }
+        commit()
+    }
 }
 
 def private CreateCamera{
@@ -224,6 +272,11 @@ def private save_scene_to_config() : string {
                 }
                 cf_val.name = comp.name
                 entity_obj[comp.name] = cf_val
+            }
+
+            // The editor camera is editor state, not scene content.
+            if (entity_obj |> key_exists("editorCameraTag")) {
+                continue
             }
 
             var entity_cf = CF(entity_obj)

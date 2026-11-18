@@ -21,7 +21,7 @@ def Move(dt : float) {
         return
     }
 
-    query() $(var transform : Transform; camera : Camera) {
+    query() $(var transform : Transform; camera : Camera; let editorCameraTag : bool) {
         let md = mouse_delta()
 
         let front_raw = float3(0.0, 1.0, 0.0)
