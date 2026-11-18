@@ -159,3 +159,19 @@
   бэкенд отдавал `VK_NULL_HANDLE` в `vkUpdateDescriptorSets` и приложение падало.
 - `ImGui_ImplVulkan_InitInfo::CheckVkResultFn` выставляется в `ImGuiPass`: без него бэкенд
   молча глотает ошибки Vulkan, и первым симптомом становится SIGSEGV.
+
+## Prefabs и drag&drop моделей
+
+- Импорт glTF пишет два editor-артефакта: `10` — `ModelAssetMap` (локальные трансформы,
+  дети, `scene_roots`), `11` — плоскую pre-order композицию в формате `.prefab`
+  (`EditorArtifactGuid::Prefab`). В артефакте `11` мировые TRS запечены относительно корня,
+  поэтому DECS не компонует иерархию: спавн добавляет только мировую позицию.
+- Оба артефакта — `target = Editor` и лежат в `artifacts/editor/<guid>/`: в пак они не
+  попадают. Runtime спавнит `.prefab`, а не glb; glb можно дропнуть только в редакторе.
+- `tryengine/Prefab.das` — единственный парсер/спавнер префаба. В файле нет `eid` и
+  `Relationship_*`: хранятся только `localId`/`parentLocalId`, а `first_child`/`prev`/`next`
+  выводятся из порядка массива. Проверяются один корень, уникальность `localId` и то, что
+  родитель записан раньше ребёнка.
+- `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
+  `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
+  камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
