@@ -31,8 +31,8 @@ let world_up  = float3(0.0f, 0.0f, 1.0f)
 // scenes get their own pak. Prefabs, bundles and data files are in the common pak.
 let STARTUP_SCENE = "game/content/test.scene"
 let LOADING_SCENE = "game/content/loading.scene"
-let STARTUP_BUNDLE = "startup"
-let LOADING_VISUAL_PREFAB = "prefabl"
+let STARTUP_BUNDLE = "game/data/bundles/startup.bundle"
+let LOADING_VISUAL_PREFAB = "game/content/prefabl.prefab"
 
 // Purely a feel knob. The loader reports readiness as soon as the assets are there;
 // this holds the loading screen for at least this long. Set it to 0.0f to enter as fast

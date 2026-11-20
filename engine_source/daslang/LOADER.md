@@ -22,17 +22,19 @@
 var request <- LoaderRequest()
 request.SetLoadingScene("game/content/loading.scene") // "" — не менять сцену
 request.SetBlocking(true)
-request.AddBundle("startup")
+request.AddBundle("game/data/bundles/startup.bundle")
 request.AddScene("game/content/main.scene")
-request.AddPrefab("props/sword")
+request.AddPrefab("game/content/props/sword.prefab")
 request.AddStep("server-handshake") // внешний этап; CompleteStep("...") завершает
 
 Loader::Invoke(request)
 ```
 
-- `AddBundle` — имя или путь `.bundle` из `game/data`.
+- `AddBundle` — полный путь `.bundle` из `game/data` (расширение можно опустить).
+  Короткие имена и пути относительно `game/data` не резолвятся.
 - `AddScene` — предзагрузка сцены: текст и её меши/материалы. Перехода нет.
-- `AddPrefab` — имя или путь `.prefab`.
+- `AddPrefab` — полный путь `.prefab` из `game/content` (расширение можно опустить).
+  Короткие имена и пути относительно `game/content` не резолвятся.
 - `SetLoadingScene` — единственная сцена, которую применяет сам загрузчик, когда её текст
   готов. Если не задана, загрузчик ничего не переключает.
 - `SetBlocking` — контракт для игры: пока `Loader::IsBlocking()`, gameplay не продолжается.
@@ -94,13 +96,14 @@ if (Loader::IsReady()) {
 version: u32 = 1
 name: string = "startup"
 prefabs: string[] = [
-    "prefabl"
-    "props/sword"
+    "game/content/prefabl.prefab"
+    "game/content/props/sword.prefab"
 ]
 ```
 
-`Loader::AddBundle("startup")` находит файл по манифесту, читает его текст в фазе `Bundles`,
-добавляет префабы в общий список и тем самым увеличивает `Total` фазы `Prefabs`. Бандл —
+`Loader::AddBundle("game/data/bundles/startup.bundle")` находит файл по пути, читает его
+текст в фазе `Bundles`, добавляет префабы в общий список и тем самым увеличивает `Total`
+фазы `Prefabs`. `prefabs` — полные пути `.prefab`; короткие имена не резолвятся. Бандл —
 это только группировка префабов, не отдельный кеш ресурсов.
 
 ## Где грузятся префабы

@@ -27,59 +27,38 @@ struct public BundleData {
     prefabs : array<string>
 }
 
-// Same manifest matching rules as Prefab::FindInContent: exact path, content key, then a
-// unique file stem. An ambiguous short name resolves to "".
-def public FindInContent(name_or_path : string) : string {
+// Authored path -> canonical content path. The path must be repo-relative or absolute;
+// a `.bundle` extension is added when the game/data path has none. Short names and
+// data-relative names are not resolved: the path must name a file.
+def private BundlePathOf(name_or_path : string) : string {
     if (empty(name_or_path)) {
         return ""
     }
 
-    var direct = replace(name_or_path, "\\", "/")
-    while (starts_with(direct, "./")) {
-        direct = slice(direct, 2, length(direct))
+    var path = replace(name_or_path, "\\", "/")
+    while (starts_with(path, "./")) {
+        path = slice(path, 2, length(path))
     }
     let marker = "/game/data/"
-    let marker_index = rfind(direct, marker)
+    let marker_index = rfind(path, marker)
     if (marker_index >= 0) {
-        direct = "game/data/{slice(direct, marker_index + length(marker), length(direct))}"
+        path = "game/data/{slice(path, marker_index + length(marker), length(path))}"
     }
+    if (starts_with(path, "game/data/") && !ends_with(path, ".bundle")) {
+        path = "{path}.bundle"
+    }
+    return path
+}
 
-    let manifest = Assets::ContentManifest()
-    var direct_match = ""
-    var key_match = ""
-    var stem_match = ""
-    var stem_count = 0
-
-    for (path in split(manifest, "\n")) {
-        if (empty(path) || !ends_with(path, ".bundle")) {
-            continue
-        }
-        if (path == direct) {
-            direct_match = path
-        }
-        let key = BundleKey(path)
-        if (key == name_or_path) {
-            key_match = path
-        }
-        if (BundleStem(key) == name_or_path) {
-            stem_count++
-            stem_match = path
-        }
+//! Resolves an authored bundle path without reading the bundle. Short names are not
+//! resolved: `game/data/bundles/startup` and `game/data/bundles/startup.bundle` name
+//! the same file, `startup` and `bundles/startup` do not.
+def public FindInContent(name_or_path : string) : string {
+    let path = BundlePathOf(name_or_path)
+    if (empty(path) || !Assets::Exists(path)) {
+        return ""
     }
-
-    if (!empty(direct_match)) {
-        return direct_match
-    }
-    if (!empty(key_match)) {
-        return key_match
-    }
-    if (stem_count == 1) {
-        return stem_match
-    }
-    if (stem_count > 1) {
-        print("[BUNDLE WARNING] name '{name_or_path}' is ambiguous; use a content path\n")
-    }
-    return ""
+    return path
 }
 
 def private BundleStem(path : string) : string {
@@ -93,19 +72,6 @@ def private BundleStem(path : string) : string {
         name = slice(name, 0, dot)
     }
     return name
-}
-
-def private BundleKey(path : string) : string {
-    var key = path
-    let prefix = "game/data/"
-    if (starts_with(key, prefix)) {
-        key = slice(key, length(prefix), length(key))
-    }
-    let suffix = ".bundle"
-    if (ends_with(key, suffix)) {
-        key = slice(key, 0, length(key) - length(suffix))
-    }
-    return key
 }
 
 //! Parses a bundle document. `path` is kept for diagnostics and for the cache key.

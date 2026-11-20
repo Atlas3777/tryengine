@@ -199,14 +199,15 @@
 - `Prefab::RefreshContent()` больше не ходит на диск: он берёт список путей из
   `Assets::ContentManifest()` (в редакторе — из зарегистрированных деревьев, в игре — из
   манифеста пака) и читает каждый `.prefab` через `Assets::ReadText`. После неё
-  `Prefab::Spawn("sword", origin)` — hit кеша и `EntityId`; относительный ключ
-  (`"props/sword"`) тоже работает. Одинаковые имена в разных папках становятся ambiguous
-  и по короткому имени не резолвятся. `RefreshContent` — инструмент редактора и тестов: он
+  `Prefab::Spawn("game/content/props/sword.prefab", origin)` — hit кеша и `EntityId`.
+  Путь должен быть полным (`game/content/...`); короткие имена (`"sword"`) и пути
+  относительно `game/content` (`"props/sword"`) не резолвятся. `RefreshContent` — инструмент
+  редактора и тестов: он
   читает весь кеш. Игра читает только запрошенные префабы через
   `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует текст и добавляет
-  меши/материалы в прогресс. `Prefab::FindInContent` резолвит имя по манифесту, не читая
-  остальные файлы. Перед `RefreshContent` вызывай `RefreshAssetTrees()`, если файлы могли
-  появиться на диске.
+  меши/материалы в прогресс. `Prefab::FindInContent` проверяет путь через
+  `Assets::Exists`, не читая остальные файлы. Перед `RefreshContent` вызывай
+  `RefreshAssetTrees()`, если файлы могли появиться на диске.
 - `SpawnPrefab(path)` (drag&drop) каждый раз читает текст через asset API и обновляет кеш,
   поэтому изменённый prefab не спавнится старым. `Prefab::SavePrefabFromEntity` пишет текст
   через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в

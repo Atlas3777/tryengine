@@ -338,10 +338,10 @@ def public Invoke(var request : LoaderRequest) : bool {
         g_phase = LoaderPhase.Bundles
     }
 
-    for (bundle_name in request.bundles) {
-        let path = Bundle::FindInContent(bundle_name)
+    for (bundle_path in request.bundles) {
+        let path = Bundle::FindInContent(bundle_path)
         if (empty(path)) {
-            Fail("bundle '{bundle_name}' was not found in content")
+            Fail("bundle '{bundle_path}' is not in content; use its path under game/data")
             return false
         }
         if (!AddText(g_bundles, path)) {
@@ -357,10 +357,10 @@ def public Invoke(var request : LoaderRequest) : bool {
         }
     }
 
-    for (prefab_name in request.prefabs) {
-        let path = Prefab::FindInContent(prefab_name)
+    for (prefab_path in request.prefabs) {
+        let path = Prefab::FindInContent(prefab_path)
         if (empty(path)) {
-            Fail("prefab '{prefab_name}' was not found in content")
+            Fail("prefab '{prefab_path}' is not in content; use its path under game/content")
             return false
         }
         if (!AddText(g_prefabs, path)) {
@@ -436,10 +436,10 @@ def public Update() {
                 return
             }
             print("[LOADER] bundle '{bundle.name}': {length(bundle.prefabs)} prefab(s)\n")
-            for (prefab_name in bundle.prefabs) {
-                let path = Prefab::FindInContent(prefab_name)
+            for (prefab_path in bundle.prefabs) {
+                let path = Prefab::FindInContent(prefab_path)
                 if (empty(path)) {
-                    Fail("bundle '{item.path}': prefab '{prefab_name}' was not found")
+                    Fail("bundle '{item.path}': prefab '{prefab_path}' is not in content; use its path under game/content")
                     return
                 }
                 if (!AddText(g_prefabs, path)) {

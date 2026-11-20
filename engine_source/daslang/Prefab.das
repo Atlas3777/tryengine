@@ -24,7 +24,8 @@ module Prefab shared public
 //! (entity configs with parent/sibling indices), so repeated spawns do no I/O and no
 //! parsing. `RefreshContent` fills the cache from the content manifest (editor: scanned
 //! trees, game: pak manifest) through `tryengine/Assets`; `Spawn` is a synchronous cache
-//! hit and returns the root `EntityId`.
+//! hit and returns the root `EntityId`. Prefabs are addressed by authored path only;
+//! short file-stem names are not resolved.
 
 require strings
 require math
@@ -66,13 +67,8 @@ struct public PrefabData {
 }
 
 // path -> compiled prefab. Paths are canonical: relative to the repository root and
-// rooted under PREFAB_CONTENT_ROOT when possible.
+// rooted under PREFAB_CONTENT_ROOT.
 var private g_prefabs : table<string; PrefabData?>
-// Short name (file stem) and content-relative path without extension -> canonical path.
-var private g_prefab_names : table<string; string>
-// Names that occur more than once: they are removed from g_prefab_names and never
-// resolve to an arbitrary file.
-var private g_ambiguous_names : table<string; bool>
 // Load order for UI/iteration (manifest order is not stable, so RefreshContent sorts).
 var private g_prefab_paths : array<string>
 
@@ -110,18 +106,15 @@ def private PrefabStem(path : string) : string {
     return name
 }
 
-// `game/content/props/sword.prefab` -> `props/sword`. Used as a stable, human key.
-def private PrefabKey(path : string) : string {
-    var key = path
-    let prefix = "{PREFAB_CONTENT_ROOT}/"
-    if (starts_with(key, prefix)) {
-        key = slice(key, length(prefix), length(key))
+// Authored path -> canonical cache key. The path must be repo-relative or absolute;
+// a `.prefab` extension is added when the content-root path has none. Short names and
+// content-relative names are not resolved: the path must name a file.
+def private PrefabPathOf(name_or_path : string) : string {
+    let path = CanonicalPrefabPath(name_or_path)
+    if (starts_with(path, "{PREFAB_CONTENT_ROOT}/") && !ends_with(path, ".prefab")) {
+        return "{path}.prefab"
     }
-    let suffix = ".prefab"
-    if (ends_with(key, suffix)) {
-        key = slice(key, 0, length(key) - length(suffix))
-    }
-    return key
+    return path
 }
 
 def private IsReservedEntityField(name : string) : bool {
@@ -301,40 +294,18 @@ def private CompilePrefab(text : string; path : string) : PrefabData? {
 // Cache
 // ---------------------------------------------------------------------------
 
-def private RegisterPrefabName(name : string; path : string) {
-    if (empty(name)) {
-        return
-    }
-    if (key_exists(g_ambiguous_names, name)) {
-        return
-    }
-    if (key_exists(g_prefab_names, name)) {
-        if (g_prefab_names[name] != path) {
-            print("[PREFAB WARNING] name '{name}' is ambiguous: '{g_prefab_names[name]}' and '{path}'\n")
-            g_ambiguous_names[name] = true
-            erase(g_prefab_names, name)
-        }
-        return
-    }
-    g_prefab_names[name] = path
-}
-
 def private StorePrefab(var data : PrefabData?) {
     let path = data.path
     if (!key_exists(g_prefabs, path)) {
         g_prefab_paths |> push(path)
     }
     g_prefabs[path] = data
-
-    let key = PrefabKey(path)
-    RegisterPrefabName(key, path)
-    RegisterPrefabName(PrefabStem(key), path)
 }
 
 // Parses and validates `text`, then stores the compiled prefab under `path`.
 // Used by LoadPrefabFile, SavePrefabFromEntity and tests; does no file I/O.
 def public CachePrefabText(path : string; text : string) : bool {
-    let canonical = CanonicalPrefabPath(path)
+    let canonical = PrefabPathOf(path)
     var data = CompilePrefab(text, canonical)
     if (data == null) {
         return false
@@ -345,8 +316,6 @@ def public CachePrefabText(path : string; text : string) : bool {
 
 def public ClearPrefabCache() {
     clear(g_prefabs)
-    clear(g_prefab_names)
-    clear(g_ambiguous_names)
     clear(g_prefab_paths)
 }
 
@@ -362,33 +331,13 @@ def public ForEachPrefab(blk : block<(path : string; data : PrefabData? const) :
     }
 }
 
+// Canonical content path of a cached prefab, or "" when it is not cached.
 def public ResolvePrefabPath(name_or_path : string) : string {
-    if (empty(name_or_path)) {
+    let path = PrefabPathOf(name_or_path)
+    if (empty(path) || !key_exists(g_prefabs, path)) {
         return ""
     }
-
-    var key = NormalizePrefabPath(name_or_path)
-    if (ends_with(key, ".prefab")) {
-        let direct = CanonicalPrefabPath(key)
-        if (key_exists(g_prefabs, direct)) {
-            return direct
-        }
-        let rooted = CanonicalPrefabPath("{PREFAB_CONTENT_ROOT}/{key}")
-        if (key_exists(g_prefabs, rooted)) {
-            return rooted
-        }
-        return ""
-    }
-
-    if (key_exists(g_prefab_names, key)) {
-        return g_prefab_names[key]
-    }
-
-    let rooted = CanonicalPrefabPath("{PREFAB_CONTENT_ROOT}/{key}.prefab")
-    if (key_exists(g_prefabs, rooted)) {
-        return rooted
-    }
-    return ""
+    return path
 }
 
 def public GetPrefabData(name_or_path : string) : PrefabData? {
@@ -399,50 +348,16 @@ def public GetPrefabData(name_or_path : string) : PrefabData? {
     return g_prefabs[path]
 }
 
-//! Resolves an authored prefab name or path against the content manifest without
-//! reading every prefab. Used by explicit loading, which caches only the prefabs the
-//! game asks for; an ambiguous short name resolves to "" rather than an arbitrary file.
+//! Resolves an authored prefab path to its canonical content path without reading the
+//! prefab. Short names are not resolved: `game/content/props/sword.prefab` and
+//! `game/content/props/sword` name the same file, `sword` and `props/sword` do not.
+//! Used by explicit loading, which caches only the prefabs the game asks for.
 def public FindInContent(name_or_path : string) : string {
-    if (empty(name_or_path)) {
+    let path = PrefabPathOf(name_or_path)
+    if (empty(path) || !Assets::Exists(path)) {
         return ""
     }
-
-    let direct = CanonicalPrefabPath(name_or_path)
-    let manifest = Assets::ContentManifest()
-    var direct_match = ""
-    var key_match = ""
-    var stem_match = ""
-    var stem_count = 0
-
-    for (path in split(manifest, "\n")) {
-        if (empty(path) || !ends_with(path, ".prefab")) {
-            continue
-        }
-        if (path == direct) {
-            direct_match = path
-        }
-        if (PrefabKey(path) == name_or_path) {
-            key_match = path
-        }
-        if (PrefabStem(path) == name_or_path) {
-            stem_count++
-            stem_match = path
-        }
-    }
-
-    if (!empty(direct_match)) {
-        return direct_match
-    }
-    if (!empty(key_match)) {
-        return key_match
-    }
-    if (stem_count == 1) {
-        return stem_match
-    }
-    if (stem_count > 1) {
-        print("[PREFAB WARNING] name '{name_or_path}' is ambiguous; use a content path\n")
-    }
-    return ""
+    return path
 }
 
 //! Binary assets one cached prefab needs. Missing or legacy material fields are read
@@ -491,16 +406,6 @@ def public InvalidatePrefab(name_or_path : string) {
     let index = find_index(g_prefab_paths, path)
     if (index >= 0) {
         g_prefab_paths |> erase(index)
-    }
-
-    // Rebuild the name table from the remaining paths: the erased prefab may have
-    // owned a short name that another prefab can now claim.
-    clear(g_prefab_names)
-    clear(g_ambiguous_names)
-    for (remaining in g_prefab_paths) {
-        let key = PrefabKey(remaining)
-        RegisterPrefabName(key, remaining)
-        RegisterPrefabName(PrefabStem(key), remaining)
     }
 }
 
@@ -590,7 +495,9 @@ def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
 //! Synchronous spawn from the prefab cache. Call RefreshContent, LoadPrefabFile or
 //! a LoaderRequest with AddPrefab first; an unknown or not-yet-loaded prefab returns
 //! INVALID_ENTITY_ID.
-//! Accepts a short name ("sword"), a content-relative key ("props/sword"), or a path.
+//! Accepts a repo-relative/absolute .prefab path ("game/content/props/sword.prefab"
+//! or "game/content/props/sword"). Short names ("sword") and content-relative names
+//! ("props/sword") are not resolved.
 def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0f)) : EntityId {
     let path = ResolvePrefabPath(name_or_path)
     if (empty(path)) {
@@ -607,7 +514,7 @@ def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0
 //! Reads, validates and caches one .prefab file through the asset API.
 [async]
 def public LoadPrefabFile(path : string) : bool {
-    let canonical = CanonicalPrefabPath(path)
+    let canonical = PrefabPathOf(path)
     let text : string <- await(Assets::ReadText(canonical))
     if (empty(text)) {
         print("[PREFAB ERROR] file '{canonical}' is missing or empty\n")
@@ -626,7 +533,7 @@ def public SpawnPrefab(path : string; origin : float3) : EntityId {
         yield INVALID_ENTITY_ID
     }
 
-    let canonical = CanonicalPrefabPath(path)
+    let canonical = PrefabPathOf(path)
     yield SpawnPrefabData(g_prefabs[canonical], origin)
 }
 
@@ -848,7 +755,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
 //! The saved text is cached immediately, so Spawn() sees the new version.
 [async]
 def public SavePrefabFromEntity(eid : EntityId; path : string) : bool {
-    var canonical = CanonicalPrefabPath(path)
+    var canonical = PrefabPathOf(path)
     if (!ends_with(canonical, ".prefab")) {
         canonical = "{canonical}.prefab"
     }

@@ -191,14 +191,18 @@ daslang -dry-run -no-lint \
   (игра). Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
 - Префабы: `tryengine/Prefab.das` — формат, кеш и спавн. `Prefab::RefreshContent()` берёт
   список `.prefab` из манифеста и складывает разобранные `PrefabData` в daslang-кеш;
-  `Prefab::Spawn("sword", origin)` — синхронный cache-hit и `EntityId`. C++-кеш
+  `Prefab::Spawn("game/content/props/sword.prefab", origin)` — синхронный cache-hit и
+  `EntityId`. Префаб адресуется только полным авторским путём (`game/content/...`,
+  с расширением или без); короткие имена и пути относительно `game/content` не
+  резолвятся. C++-кеш
   `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
   сырой текст читает его `TextAsset`. Игра не прогревает все префабы:
   `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное, а
-  `Prefab::FindInContent` резолвит имя по манифесту без чтения всех файлов.
+  `Prefab::FindInContent` проверяет путь через `Assets::Exists` без чтения файла.
   `RefreshContent` остаётся инструментом редактора/тестов.
 - Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/**/*.bundle` (ConfigFormat,
-  `version = 1`, `name`, `prefabs: string[]`). Бандл — авторская группа префабов; билд
+  `version = 1`, `name`, `prefabs: string[]`). В `prefabs` лежат пути `.prefab`; короткие
+  имена не резолвятся. Бандл — авторская группа префабов; билд
   кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
   шаг предзагрузки префабов.
 - `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка
