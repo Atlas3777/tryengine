@@ -186,42 +186,51 @@ daslang -dry-run -no-lint \
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
-- Content читается только через `tryengine/Assets.das`: скрипт называет авторский путь,
+- Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
+  `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
   (игра). Пути в игровом коде пишутся относительно `game/`: `content/...` и `data/...`;
   префикс `game/` подразумевается. Расширение файла указывается всегда явно, ничего не
   дописывается. Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
-- Префабы: `tryengine/Prefab.das` — формат, кеш и спавн. `Prefab::RefreshContent()` берёт
-  список `.prefab` из манифеста и складывает разобранные `PrefabData` в daslang-кеш;
+- Общий слой документов: `tryengine/Content.das`. Здесь живут путь по виду документа
+  (`ContentKind.Scene/Prefab/Bundle`), stem, `Find` через `Assets::Exists`, разбор
+  ConfigFormat, общий сбор `meshGuid`/`materialRef` в `AssetRefs` и кеш разобранных
+  `Document` (текст + корень + зависимости). Scene/Prefab/Bundle отвечают только за свой
+  формат и действие; Loader читает все документы одним конвейером. `Content::Cache`
+  сохраняет документ после `Loader::Finish`, поэтому предзагруженную сцену можно применить
+  позже, а скомпилированный префаб держит свой корень.
+- Префабы: `tryengine/Prefab.das` — формат, компилированный кеш и спавн.
+  `Prefab::LoadPrefabFile(path)` читает и компилирует один `.prefab` по требованию;
   `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`.
   Префаб адресуется путём относительно `content/` (`prefabl.prefab`,
   `props/sword.prefab`) или полным путём; расширение обязательно. C++-кеш
   `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
   сырой текст читает его `TextAsset`. Игра не прогревает все префабы:
   `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное (пути
-  `content/...` и `data/...`), а
-  `Prefab::FindInContent` проверяет путь через `Assets::Exists` без чтения файла.
-  `RefreshContent` остаётся инструментом редактора/тестов.
+  `content/...` и `data/...`). Полного `RefreshContent` больше нет: редакторская панель
+  `Prefab Inspector` показывает выбранный в Asset Browser префаб и грузит его точечно.
 - Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/**/*.bundle` (ConfigFormat,
   `version = 1`, `name`, `prefabs: string[]`). В `prefabs` лежат пути `content/...`;
   расширение обязательно. Бандл — авторская группа префабов; билд
   кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
   шаг предзагрузки префабов.
-- `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка
-  строится как запрос: `Scene::UnloadActiveScene`, затем
-  `var request <- LoaderRequest()` с `SetLoadingScene`, `AddBundle`, `AddScene`,
-  `AddPrefab`, `AddStep`, `SetBlocking` и `Loader::Invoke(request)`. `Loader::Update` в `GameUpdate`
-  асинхронно читает тексты, разворачивает бандлы, парсит зависимости сцен/префабов,
-  запрашивает меши/материалы и отдаёт `Phase()`/`Headline()`/`Current()`/`Total()`/
-  `Progress()`/`Status()`. Loading-сцену применяет сам загрузчик, когда её текст готов;
-  target-сцену — игра: `Scene::Load(STARTUP_SCENE, @@StartGameScene)` после
-  `Loader::IsReady()`, затем `Loader::Finish()`. `Scene::Load(path, callback)` — это и есть
-  scene-specific hook; события `Loader::RegisterLoaderListener` оставлены как
-  необязательные уведомления. `blocking` — контракт: пока `Loader::IsBlocking()`, игра не
-  должна продолжать gameplay; флаг не блокирует поток и не останавливает `Update`.
-  `GameApp::Init` больше ничего не прогревает: только паки и `script_pak`. В редакторе Play
-  тот же путь; Play снимает снимок DECS-heap/`SceneState`/selection, а Stop вызывает
-  `Loader::Abort` и возвращает снимок. `tryengine/startup` автоматически не загружается.
+- `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка —
+  ручной сценарий игры, а не состояние загрузчика: `GameStart` запускает `BootContent`-
+  корутину, та читает текст loading-сцены через `Assets::ReadText`, кладёт его в
+  `Content::Cache` и синхронно применяет `Scene::Load(LOADING_SCENE, @@OnLoadingScene)`;
+  затем `var request <- LoaderRequest()` с `AddBundle`, `AddScene`, `AddPrefab`,
+  `SetBlocking` и `Loader::Invoke(request, @@OnLoadingFinished)`. Загрузчик не применяет
+  сцены и не знает про loading-screen. `Loader::Update` в `GameUpdate` читает тексты,
+  разворачивает бандлы, компилирует префабы и ждёт меши/материалы; состояние — `Phase()`,
+  `PhaseName(phase)`, `Progress()` и `Progress(phase) : float2` (done/total, например
+  `10/23` для `LoaderPhase.Prefabs`). Когда запрос готов, игра сама входит в target-сцену:
+  `Scene::Load(STARTUP_SCENE, @@StartGameScene)`, затем `Loader::Finish()`;
+  `Scene::Load(path, callback)` — scene-specific hook, вызывается после создания DECS-мира.
+  `blocking` — контракт: пока `Loader::IsBlocking()`, игра не продолжает gameplay; флаг не
+  блокирует поток и не останавливает `Update`. `GameApp::Init` ничего не прогревает: только
+  паки и `script_pak`. В редакторе Play тот же путь; Play снимает снимок
+  DECS-heap/`SceneState`/selection, а Stop вызывает `Game::StopGame()` (гасит boot-корутину
+  и `Loader::Abort`) и возвращает снимок. `tryengine/startup` автоматически не загружается.
   Подробности — `engine_source/daslang/LOADER.md`.
 - Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 

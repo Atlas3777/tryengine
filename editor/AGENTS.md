@@ -151,7 +151,7 @@
   внутри цикла по строкам паникует (`rendered twice`). Для повторяющихся строк объявляй
   `table<string; NarrativeState>` / `TreeNodeState` и передавай `[key]`; `with_id` даёт
   уникальный ImGui ID, но не отменяет проверку call site (пример — дерево компонентов в
-  `PrefabWindow.das`).
+  `PrefabInspector.das`).
 - `Hierarchy` при смене `selected_eid` (viewport, спавн префаба, Inspector, `SetSelectedEntity`)
   один кадр принудительно раскрывает цепочку родителей и выбранный узел, а если узел вне
   видимой области — скроллит к нему (`SetNextItemOpen` + `SetScrollHereY`). Force снимается
@@ -196,26 +196,24 @@
   DECS в daslang, у content-файлов нет guid в игре, а `spawn` синхронный. На диске файл
   остаётся ConfigFormat-текстом; в памяти лежит `PrefabData` — распарсенный `StructField`
   плюс parent/sibling индексы, поэтому повторный спавн не читает файл и не парсит.
-- `Prefab::RefreshContent()` больше не ходит на диск: он берёт список путей из
-  `Assets::ContentManifest()` (в редакторе — из зарегистрированных деревьев, в игре — из
-  манифеста пака) и читает каждый `.prefab` через `Assets::ReadText`. После неё
-  `Prefab::Spawn("props/sword.prefab", origin)` — hit кеша и `EntityId`. Путь пишется
-  относительно `content/` или полным; расширение обязательно. `RefreshContent` — инструмент
-  редактора и тестов: он
-  читает весь кеш. Игра читает только запрошенные префабы через
-  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует текст и добавляет
-  меши/материалы в прогресс. `Prefab::FindInContent` проверяет путь через
-  `Assets::Exists`, не читая остальные файлы. Перед `RefreshContent` вызывай
-  `RefreshAssetTrees()`, если файлы могли появиться на диске.
+- Полного прогрева префабов больше нет: `Prefab::RefreshContent` и
+  `Assets::ContentManifest` удалены. `Prefab::LoadPrefabFile(path)` читает и компилирует
+  один `.prefab` через `tryengine/Content`; `Prefab::Spawn("props/sword.prefab", origin)`
+  после этого — hit кеша и `EntityId`. Путь пишется относительно `content/` или полным;
+  расширение обязательно. Игра читает только запрошенные префабы через
+  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует документ и добавляет
+  меши/материалы в прогресс.
 - `SpawnPrefab(path)` (drag&drop) каждый раз читает текст через asset API и обновляет кеш,
   поэтому изменённый prefab не спавнится старым. `Prefab::SavePrefabFromEntity` пишет текст
   через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в
   кеш и обновляет дерево ассетов.
-- Панель `editor/daslang/PrefabWindow.das` (Window → Prefabs): список, поиск, дерево
-  сущностей/компонентов, `Spawn at origin` и drag&drop во вьюпорт. Кнопка
-  `Save Selection as Prefab...` сериализует выделенную ветку в pre-order, выкидывает
-  `eid`/`Relationship_*`/`_*`/`editorCameraTag`, обнуляет позицию корня (rotation/scale
-  сохраняются) и обновляет дерево ассетов.
+- `editor/daslang/PrefabInspector.das` (Window → Prefab Inspector) — не браузер, а
+  инспектор выбранного в Asset Browser `.prefab`: своего списка, поиска и Refresh у него
+  нет. Выбранный путь приходит из `AssetBrowser::GetSelectedFile`; панель грузит документ
+  точечно и показывает дерево сущностей/компонентов и `Spawn at origin`.
+  `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
+  выделенную ветку в pre-order, выкидывает `eid`/`Relationship_*`/`_*`/`editorCameraTag`,
+  обнуляет позицию корня (rotation/scale сохраняются) и обновляет дерево ассетов.
 - Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
   `common_dto.pak`, вместе с мешами и материалами, которые эти префабы упоминают
   (и их шейдерами/текстурами): иначе `Prefab::Spawn` в игре получил бы текст без ресурсов.
@@ -224,17 +222,18 @@
   запуска скриптов, поэтому `Loader::Update` читает сцены, бандлы и префабы через тот же
   `tryengine/Assets`, что и редактор; игра не читает loose-файлы. `tryengine/startup`
   автоматически больше не загружается: стартовую сцену выбирает `Game.das`.
-- `game_client` больше не прогревает контент: `GameApp::Init` только монтирует паки и
-  грузит `script_pak`, а `GameStart` собирает `LoaderRequest`. `Loader::Update`
-  (вызывается из `GameUpdate`) асинхронно читает тексты через content API (`Assets::IdOf` +
-  `tryResources`), разворачивает бандлы, парсит зависимости сцен/префабов, запрашивает
-  меши/материалы и отдаёт `Headline`/`Current`/`Total`. Прочитанные тексты сцен попадают в
-  кеш `Scene` (`Scene::CacheText`), поэтому `Scene::Load` остаётся синхронным и может
-  применяться позже; без загрузчика текст пака не появится. Редактор Play проходит тот же
-  путь: loose-файл читается тем же API. `editor/daslang/PlayMode.das` до `GameStart`
-  снимает снимок (DECS-heap, `SceneState` с путём сцены и ссылками на ресурсы,
-  выделение), а `EndPlay` сначала вызывает `Loader::Abort`, затем возвращает снимок,
-  включая несохранённые правки.
+- `game_client` не прогревает контент: `GameApp::Init` только монтирует паки и грузит
+  `script_pak`, а `GameStart` запускает boot-корутину игры. `Game::BootContent` читает текст
+  loading-сцены через `Assets::ReadText`, кладёт его в `Content::Cache` и синхронно
+  применяет `Scene::Load`; затем собирает `LoaderRequest` и вызывает
+  `Loader::Invoke(request, @@OnLoadingFinished)`. `Loader::Update` (из `GameUpdate`)
+  асинхронно читает документы, разворачивает бандлы, компилирует префабы, запрашивает
+  меши/материалы и отдаёт `Phase()`/`Progress(phase)`. Сцену загрузчик не применяет:
+  target-сцену игра входит сама через `Scene::Load`, её текст уже лежит в `Content`.
+  В редакторе Play тот же путь: loose-файл читается тем же API. `PlayMode.BeginPlay` до
+  `GameStart` снимает снимок (DECS-heap, `SceneState`, выделение), а `EndPlay` сначала
+  вызывает `Game::StopGame` (гасит boot-корутину и `Loader::Abort`), затем возвращает
+  снимок, включая несохранённые правки.
 
 ## Transform и editor camera
 

@@ -38,15 +38,13 @@
   content-чанк, в редакторе — зарегистрированный авторский файл.
 - Единая точка чтения текста для скриптов — `TextAsset` + биндинги `tryResources`
   (`ResolveAssetPath`, `RequestLoadAssetText`, `AssetTextIsReady/IsFailed`,
-  `GetAssetText`, `ReadAssetTextSync`). `ResourceManager` сам выбирает
-  `LooseFileLocation` или `PakChunkLocation`, поэтому Prefab/Scene/Assets.das не знают,
-  откуда читается файл. `ReadAssetTextSync` отдаёт готовый `TextAsset` из кеша, а при
-  промахе читает loose-файл напрямую: это путь редактора Play. Чанк пака синхронно не
-  читается: игра сначала делает текст готовым через `RequestLoadAssetText`
-  (`Loader::Update`), а затем вызывает синхронный `Scene::Load`, который читает тот же
-  кеш. Молчаливое чтение мимо этого шага скрыло бы ошибку загрузки.
+  `GetAssetText`). `ResourceManager` сам выбирает `LooseFileLocation` или
+  `PakChunkLocation`, поэтому Content/Scene/Prefab/Assets.das не знают, откуда читается
+  файл. Синхронного чтения текста нет: `Assets::ReadText` — корутина, и текст всегда
+  приходит через `RequestLoadAssetText` в `Loader::Update` или `Scene::LoadAsync`.
+  `Scene::Load` применяет уже разобранный `Content::Document` и диск не читает.
 - Сцена (`engine_source/daslang/Scene.das`) хранит авторские ссылки: компонент
   `materialRef: MaterialRef`, список `requireMaterials: string[]`. `GetSceneHeader` и
-  `Scene::CollectRefs` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки не
-  знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
+  `Content::CollectRefs` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки
+  не знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
   отвергаются/не получают материал.
