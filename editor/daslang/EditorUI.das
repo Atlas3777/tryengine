@@ -20,7 +20,8 @@ require tryeditor/SceneViewPort
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
-require tryeditor/PrefabWindow
+require tryeditor/PrefabAuthoring
+require tryeditor/PrefabInspector
 require tryeditor/ProfilerWindow
 require tryeditor/EditorActions
 
@@ -41,7 +42,7 @@ def DrawMainMenu() {
     main_menu_bar(MAIN_MENU_BAR) {
         menu(FILE_MENU, (text = "File", enabled = true)) {
             if (menu_label(FILE_NEW, (text = "New Scene", shortcut = "Ctrl+N"))) {
-                StartTask(CreateScene("Untitled", ""))
+                Scene::Create("")
             }
             if (menu_label(FILE_OPEN, (text = "Open Scene...", shortcut = "Ctrl+O"))) {
                 open_editor_file_dialog(
@@ -52,11 +53,10 @@ def DrawMainMenu() {
                         filters <- file_filters("Scene Files|scene|All Files|")
                     ),
                     @(path : string; ctx : string) : void {
-                        let name = get_file_name_without_extension(path)
                         // A dialog returns an absolute path; the asset API is path-id based,
                         // so register it before the scene reader asks for it.
                         Assets::RegisterPath(path)
-                        StartTask(LoadScene(name, path))
+                        StartTask(Scene::LoadAsync(path))
                     }
                 )
             }
@@ -72,7 +72,7 @@ def DrawMainMenu() {
                             filters <- file_filters("Scene Files|scene|All Files|")
                         ),
                         @(path : string; ctx : string) : void {
-                            SetScenePath(get_file_name_without_extension(path), path)
+                            SetScenePath(path)
                             StartTask(SaveCurrentScene())
                         }
                     )
@@ -90,6 +90,10 @@ def DrawMainMenu() {
             //         ),
             //     )
             // }
+            if (menu_label(FILE_SAVE_PREFAB, (text = "Save Selection as Prefab..."))) {
+                SaveSelectionAsPrefab()
+            }
+
             separator(FILE_SEP_1)
             menu_item(FILE_AUTOSAVE, (text = "Auto-Save"))
             separator(FILE_SEP_2)
@@ -115,7 +119,7 @@ def DrawMainMenu() {
             menu_label(WIN_QUADTREE, (text = "QuadTree Debug", selected = true))
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
-            menu_label(WIN_PREFABS, (text = "Prefabs", selected = true))
+            menu_label(WIN_PREFABS, (text = "Prefab Inspector", selected = true))
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
@@ -127,19 +131,6 @@ def DrawMainMenu() {
 
 def DrawDockSpace() {
 
-}
-
-def get_file_name_without_extension(path : string) : string {
-    var name = path
-    let last_slash = max(rfind(name, "/"), rfind(name, "\\"))
-    if (last_slash >= 0) {
-        name = slice(name, last_slash + 1)
-    }
-    let last_dot = rfind(name, ".")
-    if (last_dot > 0) {
-        name = slice(name, 0, last_dot)
-    }
-    return name
 }
 
 def DrawPlayControls() {
@@ -194,7 +185,7 @@ def DrawEditor() {
     DrawGameSceneViewPort()
     DrawBuildManager()
     DrawMaterialEditor()
-    DrawPrefabWindow()
+    DrawPrefabInspector()
     DrawProfilerWindow()
     DrawPlotWindow()
     DrawScopesWindow()

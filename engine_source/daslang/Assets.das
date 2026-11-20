@@ -3,18 +3,20 @@ options relaxed_assign = false
 
 module Assets shared public
 
-// Unified content reading. The script always asks with an authored path; the engine
+// Unified content storage. The script always asks with an authored path; the engine
 // turns it into PathId(path) and finds either a loose file (editor) or a pak chunk
 // (game). No script reads the disk directly, so the storage can be swapped later
-// without touching Prefab/Scene/Game.
+// without touching Content/Scene/Prefab/Game.
 //
 // Authored paths are relative to the game directory: `content/...` and `data/...`, so
 // `game/` is never written by game code. `game/...`, absolute paths and virtual
 // `tryengine/...` entries are accepted as they are. Extensions are always explicit.
+//
+// This module is storage only: it resolves paths, exposes the text asynchronously and
+// registers loose files from editor dialogs. Parsed documents and their dependencies
+// live in `tryengine/Content`.
 
-require daslib/array_boost
 require daslib/async_boost
-require daslib/linq
 require strings
 require tryResources
 
@@ -59,30 +61,9 @@ def public ResolveGamePath(path : string; fallback_root : string) : string {
 }
 
 // Path the registry knows. Domain-relative `content/...` and `data/...` are accepted; a
-// bare name is left alone because only a module knows its root (Prefab, Bundle, Scene).
+// bare name is left alone because only a document kind knows its root (Content does that).
 def private AssetPath(path : string) : string {
     return ResolveGamePath(path, "")
-}
-
-// Binary assets one content document needs before it can be shown: meshes and materials
-// are the heavy, asynchronous part of loading. Scene and prefab loaders fill this from
-// the authored document; the loading state machine requests the ids and waits for them.
-struct public AssetRefs {
-    meshes : array<uint64>
-    materials : array<uint64>
-    parsed : bool
-}
-
-def public AddMeshRef(var refs : AssetRefs; id : uint64) {
-    if (id != 0ul && !refs.meshes.contains(id)) {
-        refs.meshes |> push(id)
-    }
-}
-
-def public AddMaterialRef(var refs : AssetRefs; id : uint64) {
-    if (id != 0ul && !refs.materials.contains(id)) {
-        refs.materials |> push(id)
-    }
 }
 
 def public Exists(path : string) : bool {
@@ -133,22 +114,4 @@ def public ReadText(path : string) : string {
     let text = GetAssetText(id)
     ReleaseAssetText(id)
     yield text
-}
-
-// Synchronous text read. The game calls it after its C++ preload phase, so the text
-// comes from the ResourceManager cache. The editor has no preload phase; there the
-// same call falls back to a synchronous loose-file read, which keeps editor Play on
-// the game's synchronous entry path.
-def public ReadTextCached(path : string) : string {
-    let id = ResolveAssetPath(AssetPath(path))
-    if (id == 0ul) {
-        return ""
-    }
-    return ReadAssetTextSync(id)
-}
-
-// Newline-separated list of content paths. In the editor it is assembled from the
-// scanned trees, in the game it comes from the pak manifest.
-def public ContentManifest() : string {
-    return GetContentManifestText()
 }

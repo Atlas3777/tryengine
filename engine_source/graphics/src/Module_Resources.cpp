@@ -1,6 +1,4 @@
 #include <EASTL/hash_set.h>
-#include <EASTL/vector.h>
-#include <cstdio>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
@@ -192,50 +190,6 @@ char* GetAssetText(uint64_t id, das::Context* ctx, LineInfoArg* at) {
     return ctx->allocateString(text->text.c_str(), text->text.size(), at);
 }
 
-// Синхронное чтение текста для редактора. В игре GameApp прогревает все тексты до
-// GameStart, поэтому здесь чанк пака не читается: у пака нет синхронного ридера, и
-// молчаливое чтение мимо preload'а скрыло бы его ошибку. В редакторе источник — loose
-// файл, и прямой read держит Play на том же синхронном пути, что и игру.
-char* ReadAssetTextSync(uint64_t id, das::Context* ctx, LineInfoArg* at) {
-    auto* res_manager = GetResourceManager(ctx);
-    if (!res_manager)
-        return ctx->allocateString("", 0, at);
-
-    if (res_manager->IsReady<tryengine::resources::TextAsset>(id)) {
-        const auto* text = res_manager->GetPointerExplicit<tryengine::resources::TextAsset>(id);
-        if (text)
-            return ctx->allocateString(text->text.c_str(), text->text.size(), at);
-    }
-
-    const auto location = res_manager->GetAssetRegistry().GetAssetLocation(id);
-    if (!location.has_value())
-        return ctx->allocateString("", 0, at);
-
-    const auto* loose = eastl::get_if<tryengine::resources::LooseFileLocation>(&*location);
-    if (!loose)
-        return ctx->allocateString("", 0, at);
-
-    std::FILE* file = std::fopen(loose->path.c_str(), "rb");
-    if (!file)
-        return ctx->allocateString("", 0, at);
-
-    std::fseek(file, 0, SEEK_END);
-    const long size = std::ftell(file);
-    std::fseek(file, 0, SEEK_SET);
-    if (size <= 0) {
-        std::fclose(file);
-        return ctx->allocateString("", 0, at);
-    }
-
-    eastl::vector<char> buffer(static_cast<size_t>(size));
-    const size_t read = std::fread(buffer.data(), 1, buffer.size(), file);
-    std::fclose(file);
-    if (read != buffer.size())
-        return ctx->allocateString("", 0, at);
-
-    return ctx->allocateString(buffer.data(), buffer.size(), at);
-}
-
 void ReleaseAssetText(uint64_t id, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
         res_manager->Release<tryengine::resources::TextAsset>(id);
@@ -246,16 +200,6 @@ void ReleaseAssetText(uint64_t id, das::Context* ctx) {
 void InvalidateAssetText(uint64_t id, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
         res_manager->Discard<tryengine::resources::TextAsset>(id);
-}
-
-// Список content-файлов. Редактор отдаёт зарегистрированные файлы, игра — манифест,
-// прочитанный PakManager'ом из пака.
-char* GetContentManifestText(das::Context* ctx, LineInfoArg* at) {
-    auto* res_manager = GetResourceManager(ctx);
-    if (!res_manager)
-        return nullptr;
-    const eastl::string manifest = res_manager->GetAssetRegistry().ContentManifest();
-    return ctx->allocateString(manifest.c_str(), manifest.size(), at);
 }
 
 class Module_Resources : public das::Module {
@@ -334,17 +278,11 @@ public:
         das::addExtern<DAS_BIND_FUN(GetAssetText)>(*this, lib, "GetAssetText", das::SideEffects::accessGlobal,
                                                    "GetAssetText");
 
-        das::addExtern<DAS_BIND_FUN(ReadAssetTextSync)>(*this, lib, "ReadAssetTextSync", das::SideEffects::accessGlobal,
-                                                        "ReadAssetTextSync");
-
         das::addExtern<DAS_BIND_FUN(ReleaseAssetText)>(*this, lib, "ReleaseAssetText", das::SideEffects::accessGlobal,
                                                        "ReleaseAssetText");
 
         das::addExtern<DAS_BIND_FUN(InvalidateAssetText)>(*this, lib, "InvalidateAssetText",
                                                           das::SideEffects::accessGlobal, "InvalidateAssetText");
-
-        das::addExtern<DAS_BIND_FUN(GetContentManifestText)>(*this, lib, "GetContentManifestText",
-                                                             das::SideEffects::accessGlobal, "GetContentManifestText");
 
         verifyAotReady();
     }

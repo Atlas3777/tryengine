@@ -112,6 +112,16 @@ def public DecsWriteComponent(ptr : void?; type_name : string; component_name : 
     return <- cf
 }
 
+//! Значение компонента архетипа -> ConfigFormat. `index` — строка в архетипе.
+//! Общая точка для сохранения сцены и префаба: смещение и тип берутся из Component.
+def public DecsComponentToCF(comp : decs::Component&; index : int64) : StructField? {
+    let offset = index * int64(comp.stride)
+    unsafe {
+        let ptr = addr<void?>(comp.data[offset])
+        return DecsWriteComponent(ptr, comp.info.fullName, comp.name)
+    }
+}
+
 //! Применяет одно поле ConfigFormat к ComponentMap по его имени в DECS.
 //! Общая точка для загрузки сцены и префаба: тип берётся из уже известных
 //! компонентов архетипа, а если его там ещё нет — из варианта значения.

@@ -63,6 +63,40 @@ struct AssetDrag {
 
 var public PAYLOAD_VALUE : AssetDrag
 
+// Current file selection, for panels that inspect one asset kind and must not keep their
+// own copy of the content tree. `valid` is false while a folder or nothing is selected.
+struct public AssetSelection {
+    valid : bool
+    path : string
+    name : string
+    ext : uint64
+    guid : uint64
+}
+
+def public GetSelectedFile() : AssetSelection {
+    var selection : AssetSelection
+    if (selected_file_folder_idx < 0 || selected_file_idx < 0) {
+        return <- selection
+    }
+
+    assume folders = get_folders(current_domain)
+    if (selected_file_folder_idx >= length(folders)) {
+        return <- selection
+    }
+    assume folder = folders[selected_file_folder_idx]
+    if (selected_file_idx >= length(folder.files)) {
+        return <- selection
+    }
+
+    assume file = folder.files[selected_file_idx]
+    selection.valid = true
+    selection.path = file.path
+    selection.name = file.name
+    selection.ext = file.ext
+    selection.guid = file.guid
+    return <- selection
+}
+
 [profile]
 def public DrawAssetBrowser() {
     with_style(

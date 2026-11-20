@@ -3,7 +3,7 @@ options relaxed_assign = false
 
 module Prefab shared public
 
-//! Prefab format, cache and spawning.
+//! Prefab format, compiled cache and spawning.
 //!
 //! A prefab is a flat pre-order list of entities. It stores only `parentLocalId`,
 //! never DECS entity ids: runtime ids are assigned by `create_entity` during spawn.
@@ -20,28 +20,28 @@ module Prefab shared public
 //! spawn writes them to the authored Transform and UpdateWorldTransforms derives
 //! the world transform from the hierarchy. The spawn origin is added to the root only.
 //!
-//! Files stay ConfigFormat text. The cache keeps a compiled, validated `PrefabData`
-//! (entity configs with parent/sibling indices), so repeated spawns do no I/O and no
-//! parsing. `RefreshContent` fills the cache from the content manifest (editor: scanned
-//! trees, game: pak manifest) through `tryengine/Assets`; `Spawn` is a synchronous cache
-//! hit and returns the root `EntityId`. A prefab is addressed by a path relative to
-//! `content/` (`prefabl.prefab`) or by a full path; the extension is always explicit.
+//! Files stay ConfigFormat text. `tryengine/Content` parses the document and collects its
+//! mesh/material refs; this module validates the prefab shape and keeps a compiled
+//! `PrefabData` (entity configs with parent/sibling indices), so repeated spawns do no I/O
+//! and no parsing. `LoadPrefabFile` reads one prefab on demand: the game caches exactly the
+//! prefabs a `LoaderRequest` asked for, the editor loads the selected one. `Spawn` is a
+//! synchronous cache hit and returns the root `EntityId`. A prefab is addressed by a path
+//! relative to `content/` (`prefabl.prefab`) or by a full path; the extension is explicit.
 
 require strings
-require math
 require daslib/async_boost
 require daslib/decs
 require daslib/decs_boost
 require daslib/strings_boost
 require tryengine/Assets
-require tryengine/FileReader
 require tryengine/ConfigFormat
-require tryengine/Profiling
 require tryengine/ConfigFormatBoost
+require tryengine/Content
+require tryengine/FileReader
+require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/TransformSystem
 require tryengine/Types
-require tryResources
 
 let public PREFAB_VERSION : uint = 1u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
@@ -65,31 +65,9 @@ struct public PrefabData {
     entities : array<PrefabEntity>
 }
 
-// path -> compiled prefab. Paths are canonical: relative to the repository root and
-// rooted under game/content.
+// Canonical path -> compiled prefab. Paths are relative to the repository root and rooted
+// under game/content.
 var private g_prefabs : table<string; PrefabData?>
-// Load order for UI/iteration (manifest order is not stable, so RefreshContent sorts).
-var private g_prefab_paths : array<string>
-
-def private PrefabStem(path : string) : string {
-    var name = path
-    let slash = max(rfind(name, "/"), rfind(name, "\\"))
-    if (slash >= 0) {
-        name = slice(name, slash + 1, length(name))
-    }
-    let dot = rfind(name, ".")
-    if (dot > 0) {
-        name = slice(name, 0, dot)
-    }
-    return name
-}
-
-// Authored path -> canonical cache key. A bare path is relative to `content/`, a
-// `content/...` path is relative to the game directory, and `game/...` or absolute paths
-// are kept. The extension is always explicit: nothing is guessed or appended.
-def private PrefabPathOf(name_or_path : string) : string {
-    return Assets::ResolveGamePath(name_or_path, "content")
-}
 
 def private IsReservedEntityField(name : string) : bool {
     return name == "eid" || starts_with(name, "Relationship_")
@@ -127,22 +105,16 @@ def private GetLocalTransform(entity_obj : table<string; StructField?> const) : 
 }
 
 // ---------------------------------------------------------------------------
-// Compilation: ConfigFormat text -> validated PrefabData
+// Compilation: parsed document -> validated PrefabData
 // ---------------------------------------------------------------------------
 
-def private CompilePrefab(text : string; path : string) : PrefabData? {
-    var error : string
-    var root = read_config(text, error)
-    if (length(error) > 0 || root == null) {
-        print("[PREFAB ERROR] failed to parse config: {error}\n")
-        return null
-    }
-    if (!(root.value is _object)) {
-        print("[PREFAB ERROR] config root is not an object\n")
+def private CompilePrefab(var document : Content::Document?) : PrefabData? {
+    if (document == null || document.root == null || !(document.root.value is _object)) {
+        print("[PREFAB ERROR] document root is not an object\n")
         return null
     }
 
-    assume root_obj = root.value as _object
+    assume root_obj = document.root.value as _object
 
     let version = from_CF(root_obj?["version"] ?? null, type<uint>)
     if (version != PREFAB_VERSION) {
@@ -258,10 +230,10 @@ def private CompilePrefab(text : string; path : string) : PrefabData? {
 
     var name = from_CF(root_obj?["name"] ?? null, type<string>)
     if (empty(name)) {
-        name = PrefabStem(path)
+        name = Content::Stem(document.path)
     }
 
-    return new PrefabData(path = Assets::ResolveGamePath(path, "content"), name = name, root = root, entities <- entities)
+    return new PrefabData(path = document.path, name = name, root = document.root, entities <- entities)
 }
 
 // ---------------------------------------------------------------------------
@@ -269,18 +241,15 @@ def private CompilePrefab(text : string; path : string) : PrefabData? {
 // ---------------------------------------------------------------------------
 
 def private StorePrefab(var data : PrefabData?) {
-    let path = data.path
-    if (!key_exists(g_prefabs, path)) {
-        g_prefab_paths |> push(path)
+    if (data == null) {
+        return
     }
-    g_prefabs[path] = data
+    g_prefabs[data.path] = data
 }
 
-// Parses and validates `text`, then stores the compiled prefab under `path`.
-// Used by LoadPrefabFile, SavePrefabFromEntity and tests; does no file I/O.
-def public CachePrefabText(path : string; text : string) : bool {
-    let canonical = PrefabPathOf(path)
-    var data = CompilePrefab(text, canonical)
+//! Validates a parsed prefab document and stores the compiled form. Does no file I/O.
+def public CachePrefabDocument(var document : Content::Document?) : bool {
+    var data = CompilePrefab(document)
     if (data == null) {
         return false
     }
@@ -288,26 +257,9 @@ def public CachePrefabText(path : string; text : string) : bool {
     return true
 }
 
-def public ClearPrefabCache() {
-    clear(g_prefabs)
-    clear(g_prefab_paths)
-}
-
-def public PrefabCount() : int {
-    return length(g_prefab_paths)
-}
-
-// Iteration for UI: paths are sorted by RefreshContent, and `data` is never null
-// for an entry in the list.
-def public ForEachPrefab(blk : block<(path : string; data : PrefabData? const) : void>) {
-    for (path in g_prefab_paths) {
-        invoke(blk, path, g_prefabs[path])
-    }
-}
-
 // Canonical content path of a cached prefab, or "" when it is not cached.
 def public ResolvePrefabPath(name_or_path : string) : string {
-    let path = PrefabPathOf(name_or_path)
+    let path = Content::ResolvePath(ContentKind.Prefab, name_or_path)
     if (empty(path) || !key_exists(g_prefabs, path)) {
         return ""
     }
@@ -322,65 +274,15 @@ def public GetPrefabData(name_or_path : string) : PrefabData? {
     return g_prefabs[path]
 }
 
-//! Resolves an authored prefab path to its canonical content path without reading the
-//! prefab. A bare path is relative to `content/` (`props/sword.prefab`), a `content/...`
-//! path is relative to the game directory, and `game/...` or absolute paths are kept.
-//! The extension is required. Used by explicit loading, which caches only the prefabs
-//! the game asks for.
-def public FindInContent(name_or_path : string) : string {
-    let path = PrefabPathOf(name_or_path)
-    if (empty(path) || !Assets::Exists(path)) {
-        return ""
-    }
-    return path
-}
-
-//! Binary assets one cached prefab needs. Missing or legacy material fields are read
-//! the same way the scene collector reads them, so loading sees one dependency set.
-def public CollectRefs(data : PrefabData? const) : AssetRefs {
-    var refs : AssetRefs
-    if (data == null) {
-        return <- refs
-    }
-    refs.parsed = true
-
-    for (entity in data.entities) {
-        let config = entity.config
-        if (config == null || !(config.value is _object)) {
-            continue
-        }
-        assume entity_obj = config.value as _object
-
-        AddMeshRef(refs, from_CF(entity_obj?["meshGuid"] ?? null, type<uint64>))
-
-        let material_cf = entity_obj?["materialRef"] ?? null
-        if (material_cf != null && material_cf.value is _object) {
-            let material = from_CF(material_cf, type<MaterialRef>)
-            if (!empty(material.path)) {
-                AddMaterialRef(refs, ResolveAssetRef(material.path))
-            }
-        }
-    }
-
-    return <- refs
-}
-
 def public IsPrefabCached(name_or_path : string) : bool {
     return !empty(ResolvePrefabPath(name_or_path))
 }
 
+//! Drops the compiled prefab so the next load re-reads and re-validates the document.
 def public InvalidatePrefab(name_or_path : string) {
-    let path = ResolvePrefabPath(name_or_path)
-    if (empty(path)) {
-        return
-    }
-
-    if (key_exists(g_prefabs, path)) {
+    let path = Content::ResolvePath(ContentKind.Prefab, name_or_path)
+    if (!empty(path)) {
         erase(g_prefabs, path)
-    }
-    let index = find_index(g_prefab_paths, path)
-    if (index >= 0) {
-        g_prefab_paths |> erase(index)
     }
 }
 
@@ -389,7 +291,7 @@ def public InvalidatePrefab(name_or_path : string) {
 // ---------------------------------------------------------------------------
 
 [profile]
-def public SpawnPrefabData(data : PrefabData? const; origin : float3) : EntityId {
+def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
     if (data == null) {
         return INVALID_ENTITY_ID
     }
@@ -457,18 +359,8 @@ def public SpawnPrefabData(data : PrefabData? const; origin : float3) : EntityId
     return entity_ids[0]
 }
 
-//! Spawns a prefab parsed from ConfigFormat text into the current DECS scene.
-//! Returns the root entity id, or INVALID_ENTITY_ID if validation failed.
-def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
-    var data = CompilePrefab(text, "")
-    if (data == null) {
-        return INVALID_ENTITY_ID
-    }
-    return SpawnPrefabData(data, origin)
-}
-
-//! Synchronous spawn from the prefab cache. Call RefreshContent, LoadPrefabFile or
-//! a LoaderRequest with AddPrefab first; an unknown or not-yet-loaded prefab returns
+//! Synchronous spawn from the prefab cache. The prefab must have been loaded by a
+//! `LoaderRequest` or by `LoadPrefabFile` first; an unknown prefab returns
 //! INVALID_ENTITY_ID.
 //! Accepts a path relative to `content/` ("prefabl.prefab", "props/sword.prefab"), a
 //! `content/...` path, or a repo-relative/absolute .prefab path. The extension is
@@ -476,7 +368,7 @@ def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
 def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0f)) : EntityId {
     let path = ResolvePrefabPath(name_or_path)
     if (empty(path)) {
-        print("[PREFAB ERROR] prefab '{name_or_path}' is not cached; call Prefab::RefreshContent() or add it to a LoaderRequest first\n")
+        print("[PREFAB ERROR] prefab '{name_or_path}' is not loaded; add it to a LoaderRequest or call Prefab::LoadPrefabFile() first\n")
         return INVALID_ENTITY_ID
     }
     return SpawnPrefabData(g_prefabs[path], origin)
@@ -486,17 +378,18 @@ def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0
 // File I/O
 // ---------------------------------------------------------------------------
 
-//! Reads, validates and caches one .prefab file through the asset API.
+//! Reads, validates and caches one .prefab file through the content layer.
 [async]
 def public LoadPrefabFile(path : string) : bool {
-    let canonical = PrefabPathOf(path)
+    let canonical = Content::ResolvePath(ContentKind.Prefab, path)
     let text : string <- await(Assets::ReadText(canonical))
     if (empty(text)) {
         print("[PREFAB ERROR] file '{canonical}' is missing or empty\n")
         yield false
     }
 
-    yield CachePrefabText(canonical, text)
+    var document = Content::Cache(ContentKind.Prefab, canonical, text)
+    yield CachePrefabDocument(document)
 }
 
 //! Reads and caches a .prefab file, then spawns it. The editor uses this for drops,
@@ -508,59 +401,8 @@ def public SpawnPrefab(path : string; origin : float3) : EntityId {
         yield INVALID_ENTITY_ID
     }
 
-    let canonical = PrefabPathOf(path)
+    let canonical = Content::ResolvePath(ContentKind.Prefab, path)
     yield SpawnPrefabData(g_prefabs[canonical], origin)
-}
-
-def private PrefabPaths() : array<string> {
-    let manifest = Assets::ContentManifest()
-    var paths : array<string>
-    for (path in split(manifest, "\n")) {
-        if (!empty(path) && ends_with(path, ".prefab")) {
-            paths |> push(path)
-        }
-    }
-    sort(paths)
-    return <- paths
-}
-
-//! Fills the cache from the content manifest: every .prefab path listed there is read
-//! through Assets::ReadText. The editor's manifest is built from the scanned content
-//! tree, the game's comes from the pak, so this code is identical in both.
-[async]
-def public RefreshContent() : void {
-    ClearPrefabCache()
-
-    let paths <- PrefabPaths()
-    var loaded = 0
-    for (path in paths) {
-        let loaded_now : bool <- await(LoadPrefabFile(path))
-        if (loaded_now) {
-            loaded++
-        }
-    }
-
-    print("[PREFAB] cached {loaded}/{length(paths)} prefabs\n")
-}
-
-//! Synchronous variant for the editor and tools, where a loose file can be read on the
-//! spot. The game no longer preloads every prefab: `LoaderRequest::AddPrefab` reads only the
-//! prefabs the game asks for, so calling this in a pak build caches nothing.
-def public RefreshContentCached() {
-    ClearPrefabCache()
-
-    let paths <- PrefabPaths()
-    var loaded = 0
-    for (path in paths) {
-        let text = Assets::ReadTextCached(path)
-        if (empty(text)) {
-            print("[PREFAB ERROR] '{path}' is not available\n")
-        } elif (CachePrefabText(path, text)) {
-            loaded++
-        }
-    }
-
-    print("[PREFAB] cached {loaded}/{length(paths)} prefabs (synchronous)\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -588,14 +430,6 @@ def private GetEntityLocation(eid : EntityId; var out_arch_idx : int&; var out_i
     out_arch_idx = found - 1
     out_index = rec.index
     return true
-}
-
-def private ComponentToCF(comp : Component&; index : int64) : StructField? {
-    let offset = index * int64(comp.stride)
-    unsafe {
-        let ptr = reinterpret<void?>(addr(comp.data[offset]))
-        return DecsWriteComponent(ptr, comp.info.fullName, comp.name)
-    }
 }
 
 // Runtime-only components and the derived hierarchy are never authored into a prefab.
@@ -648,7 +482,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     var parents : array<uint>
     var visited : table<uint; bool>
     CollectSubtree(eid, PREFAB_ROOT_PARENT, order, parents, visited)
-    if (length(order) == 0) {
+    if (empty(order)) {
         return ""
     }
 
@@ -672,7 +506,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
                 continue
             }
 
-            var cf_val = ComponentToCF(comp, rec_index)
+            var cf_val = DecsComponentToCF(comp, rec_index)
             if (cf_val == null) {
                 print("[PREFAB WARNING] component '{comp.name}' is not serializable; skipped\n")
                 skipped_components++
@@ -685,7 +519,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
             entity_obj[comp.name] = cf_val
         }
 
-        var local_id_cf = CF(uint(entity_index))
+        var local_id_cf = CF(entity_index)
         local_id_cf.name = "localId"
         entity_obj["localId"] = local_id_cf
 
@@ -721,22 +555,22 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     entities_cf.name = "entities"
     root_obj["entities"] = entities_cf
 
-    var text = write_config(CF(root_obj))
+    let text = write_config(CF(root_obj))
     print("[PREFAB] saved '{name}': {length(order)} entities, skipped {skipped_components} components\n")
     return text
 }
 
 //! Serializes the selected entity subtree and overwrites `path`.
-//! The saved text is cached immediately, so Spawn() sees the new version.
+//! The saved text is parsed and cached immediately, so Spawn() sees the new version.
 [async]
 def public SavePrefabFromEntity(eid : EntityId; path : string) : bool {
-    let canonical = PrefabPathOf(path)
+    let canonical = Content::ResolvePath(ContentKind.Prefab, path)
     if (!ends_with(canonical, ".prefab")) {
         print("[PREFAB ERROR] save path must end with .prefab: '{path}'\n")
         yield false
     }
 
-    let name = PrefabStem(canonical)
+    let name = Content::Stem(canonical)
     let text = BuildPrefabTextFromEntity(eid, name)
     if (empty(text)) {
         yield false
@@ -750,7 +584,8 @@ def public SavePrefabFromEntity(eid : EntityId; path : string) : bool {
         yield false
     }
 
-    let cached = CachePrefabText(canonical, text)
+    var document = Content::Cache(ContentKind.Prefab, canonical, text)
+    let cached = CachePrefabDocument(document)
     print("[PREFAB] wrote '{canonical}'\n")
     yield cached
 }

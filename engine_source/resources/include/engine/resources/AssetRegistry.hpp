@@ -130,7 +130,7 @@ public:
     }
 
     // Список content-файлов: авторитетные файлы редактора плюс манифесты смонтированных
-    // паков. Отсортирован и без дублей, чтобы билд и RefreshContent были детерминированы.
+    // паков. Отсортирован и без дублей, чтобы билд был детерминирован.
     eastl::vector<eastl::string> ContentPaths() const {
         std::lock_guard lock(mutex_);
         eastl::vector<eastl::string> paths;
@@ -147,19 +147,6 @@ public:
         eastl::sort(paths.begin(), paths.end());
         paths.erase(eastl::unique(paths.begin(), paths.end()), paths.end());
         return paths;
-    }
-
-    // Манифест — список путей через '\n'. В паке нет листинга каталога, поэтому игра
-    // получает его из пака; редактор собирает тот же список из зарегистрированных файлов.
-    eastl::string ContentManifest() const {
-        const eastl::vector<eastl::string> paths = ContentPaths();
-        eastl::string manifest;
-        for (size_t i = 0; i < paths.size(); ++i) {
-            if (i > 0)
-                manifest += '\n';
-            manifest += paths[i];
-        }
-        return manifest;
     }
 
     // Добавляет пути из манифеста, прочитанного из пака. Идемпотентно.

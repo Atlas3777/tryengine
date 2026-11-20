@@ -3,69 +3,48 @@ options relaxed_assign = false
 
 module Loader shared public
 
-//! Explicit asset loader.
+//! Asynchronous content loader.
 //!
-//! The game builds a `LoaderRequest` (prefabs, bundles, scenes), optionally names the
-//! scene shown while the request runs, and calls `Invoke`. The loader reads texts,
-//! expands bundles, parses scene/prefab dependencies, requests meshes and materials and
-//! exposes progress and per-phase counts. It never switches the target scene: the game
-//! calls `Scene::Load(path, callback)` when the loader is ready.
+//! The caller builds a `LoaderRequest` (bundles, scenes, prefabs) and calls `Invoke` with
+//! a completion callback. The loader reads document texts through `tryengine/Content`,
+//! expands bundles, compiles prefabs, collects mesh/material dependencies and waits for
+//! the resources. It never applies a scene and never switches what the player sees:
+//! scene entry is `Scene::Load` and belongs to the caller.
 //!
-//! `blocking` is a contract for the caller: while `IsBlocking()` is true, gameplay should
-//! not advance. The loader itself always runs through `Update`, so a loading screen stays
-//! interactive and can read `Headline()`/`Current()`/`Total()`/`Progress()`.
+//! `blocking` is a caller contract: while `IsBlocking()` is true, gameplay should not
+//! advance. The loader itself always runs through `Update`, so a loading screen stays
+//! interactive and can read `Progress(phase)` / `PhaseName(phase)`.
 
 require strings
-require math
-require daslib/linq
-require daslib/strings_boost
 require tryengine/Assets
 require tryengine/Bundle
+require tryengine/Content
 require tryengine/Prefab
 require tryengine/Profiling
-require tryengine/Scene
 require tryResources
 
 enum public LoaderPhase {
     Idle
-    LoadingScene
     Bundles
     Scenes
     Prefabs
     Assets
-    Steps
     Ready
     Failed
 }
 
-// Optional notifications. Scene-specific code should use the callback passed to
-// `Scene::Load`, not these events; they exist for HUD/animation/telemetry.
-enum public LoaderEvent {
-    LoadingSceneStarted
-    BundlesLoaded
-    ScenesLoaded
-    PrefabsLoaded
-    AssetsReady
-    Ready
-    Failed
-}
-
-typedef LoaderListener = function<(event : LoaderEvent; name : string) : void>
+//! Called once when the request reaches `Ready`. Failure is reported through `IsFailed` /
+//! `Error`; the callback is not called for a failed request.
+typedef public LoaderCallback = function<() : void>
 
 // Builder. Array fields are filled in place; the request is consumed by `Invoke`.
 // All paths are relative to the game directory: scenes and prefabs use `content/...`,
 // bundles use `data/...`. Extensions are explicit; `game/` is implied.
 struct public LoaderRequest {
     blocking : bool = true
-    loading_scene : string = ""
     prefabs : array<string>
     bundles : array<string>
     scenes : array<string>
-    steps : array<string>
-
-    def static AddStep(var self : LoaderRequest; name : string) {
-        self.steps |> push(name)
-    }
 
     def static AddPrefab(var self : LoaderRequest; name : string) {
         self.prefabs |> push(name)
@@ -79,10 +58,6 @@ struct public LoaderRequest {
         self.scenes |> push(path)
     }
 
-    def static SetLoadingScene(var self : LoaderRequest; path : string) {
-        self.loading_scene = path
-    }
-
     def static SetBlocking(var self : LoaderRequest; blocking : bool) {
         self.blocking = blocking
     }
@@ -93,7 +68,9 @@ enum private LoaderAssetKind {
     Material
 }
 
-struct private LoaderText {
+// One requested document. `kind` selects both the parse rule and the phase it belongs to.
+struct private LoaderDocument {
+    kind : ContentKind
     path : string
     id : uint64
     held : bool
@@ -107,29 +84,16 @@ struct private LoaderAsset {
     done : bool
 }
 
-struct private LoaderStep {
-    name : string
-    done : bool
-}
-
 var private g_active = false
 var private g_phase = LoaderPhase.Idle
 var private g_blocking = true
-var private g_loading_scene = ""
-var private g_loading_text : LoaderText
-var private g_bundles : array<LoaderText>
-var private g_scenes : array<LoaderText>
-var private g_prefabs : array<LoaderText>
+var private g_documents : array<LoaderDocument>
 var private g_assets : array<LoaderAsset>
-var private g_steps : array<LoaderStep>
 var private g_error = ""
-var private g_progress = 0.0f
-var private g_current = 0
-var private g_total = 0
-var private g_listeners : array<LoaderListener>
+var private g_on_loaded : LoaderCallback = @@LoaderNoop
+var private g_notified = false
 
-def public RegisterLoaderListener(listener : LoaderListener) {
-    g_listeners |> push(listener)
+def private LoaderNoop() {
 }
 
 // Loader request paths are relative to the game directory: scenes and prefabs use
@@ -143,60 +107,150 @@ def private IsDataPath(path : string) : bool {
     return starts_with(path, "data/")
 }
 
-def private Notify(event : LoaderEvent; name : string) {
-    for (listener in g_listeners) {
-        invoke(listener, event, name)
+// Phase layout of the overall progress bar. Phases with no documents are skipped, so a
+// request with only prefabs jumps straight to the prefab span.
+def private PhaseBase(phase : LoaderPhase) : float {
+    if (phase == LoaderPhase.Bundles) {
+        return 0.0f
     }
+    if (phase == LoaderPhase.Scenes) {
+        return 0.10f
+    }
+    if (phase == LoaderPhase.Prefabs) {
+        return 0.30f
+    }
+    if (phase == LoaderPhase.Assets) {
+        return 0.60f
+    }
+    return 1.0f
 }
 
-def private AddText(var items : array<LoaderText>; path : string) : bool {
-    let id = Assets::IdOf(path)
-    if (id == 0ul) {
-        print("[LOADER ERROR] asset '{path}' is not registered\n")
+def private PhaseSpan(phase : LoaderPhase) : float {
+    if (phase == LoaderPhase.Bundles) {
+        return 0.10f
+    }
+    if (phase == LoaderPhase.Scenes) {
+        return 0.20f
+    }
+    if (phase == LoaderPhase.Prefabs) {
+        return 0.30f
+    }
+    if (phase == LoaderPhase.Assets) {
+        return 0.40f
+    }
+    return 0.0f
+}
+
+//! Items done and total for one phase. `Loader::Progress(LoaderPhase.Prefabs)` returns
+//! e.g. `float2(10, 23)` while 23 prefabs were requested and 10 are ready. A phase that
+//! has not started yet returns `float2(0, total)` as soon as its items are known; an
+//! unknown phase returns `float2(0, 0)`.
+def public Progress(phase : LoaderPhase) : float2 {
+    if (phase == LoaderPhase.Ready) {
+        return float2(1.0f, 1.0f)
+    }
+
+    var done = 0
+    var total = 0
+
+    if (phase == LoaderPhase.Bundles || phase == LoaderPhase.Scenes || phase == LoaderPhase.Prefabs) {
+        var kind = ContentKind.Bundle
+        if (phase == LoaderPhase.Scenes) {
+            kind = ContentKind.Scene
+        } elif (phase == LoaderPhase.Prefabs) {
+            kind = ContentKind.Prefab
+        }
+        for (document in g_documents) {
+            if (document.kind != kind) {
+                continue
+            }
+            total++
+            if (document.done) {
+                done++
+            }
+        }
+    } elif (phase == LoaderPhase.Assets) {
+        total = length(g_assets)
+        for (asset in g_assets) {
+            if (asset.done) {
+                done++
+            }
+        }
+    }
+
+    return float2(float(done), float(total))
+}
+
+//! Overall progress 0..1. A phase with no items counts as complete.
+def public Progress() : float {
+    if (!g_active || g_phase == LoaderPhase.Idle || g_phase == LoaderPhase.Failed) {
+        return 0.0f
+    }
+    if (g_phase == LoaderPhase.Ready) {
+        return 1.0f
+    }
+
+    let phase_progress = Progress(g_phase)
+    let total = phase_progress.y
+    let fraction = total <= 0.0f ? 1.0f : phase_progress.x / total
+    return PhaseBase(g_phase) + PhaseSpan(g_phase) * fraction
+}
+
+def public PhaseName(phase : LoaderPhase) : string {
+    if (phase == LoaderPhase.Bundles) {
+        return "Bundles"
+    }
+    if (phase == LoaderPhase.Scenes) {
+        return "Scenes"
+    }
+    if (phase == LoaderPhase.Prefabs) {
+        return "Prefabs"
+    }
+    if (phase == LoaderPhase.Assets) {
+        return "Assets"
+    }
+    if (phase == LoaderPhase.Ready) {
+        return "Ready"
+    }
+    if (phase == LoaderPhase.Failed) {
+        return "Failed"
+    }
+    return "Idle"
+}
+
+def private AddDocument(kind : ContentKind; path : string) : bool {
+    let resolved = Content::Find(kind, path)
+    if (empty(resolved)) {
         return false
     }
 
-    for (item in items) {
-        if (item.id == id) {
+    let id = Assets::IdOf(resolved)
+    if (id == 0ul) {
+        return false
+    }
+
+    for (document in g_documents) {
+        if (document.id == id) {
             return true
         }
     }
 
     InvalidateAssetText(id)
     RequestLoadAssetText(id)
-    items |> push(LoaderText(path = path, id = id, held = true))
+    g_documents |> push(LoaderDocument(kind = kind, path = resolved, id = id, held = true))
     return true
 }
 
-def private AddAsset(kind : LoaderAssetKind; id : uint64) {
-    if (id == 0ul) {
-        return
-    }
-    for (item in g_assets) {
-        if (item.kind == kind && item.id == id) {
-            return
-        }
-    }
-    g_assets |> push(LoaderAsset(kind = kind, id = id))
-}
-
-def private ReleaseText(var item : LoaderText) {
-    if (item.held) {
-        ReleaseAssetText(item.id)
-        item.held = false
+def private ReleaseDocument(var document : LoaderDocument) {
+    if (document.held) {
+        ReleaseAssetText(document.id)
+        document.held = false
     }
 }
 
 def private ReleaseAll() {
-    ReleaseText(g_loading_text)
-    for (index in range(length(g_bundles))) {
-        ReleaseText(g_bundles[index])
-    }
-    for (index in range(length(g_scenes))) {
-        ReleaseText(g_scenes[index])
-    }
-    for (index in range(length(g_prefabs))) {
-        ReleaseText(g_prefabs[index])
+    for (index in range(length(g_documents))) {
+        ReleaseDocument(g_documents[index])
     }
     for (index in range(length(g_assets))) {
         if (!g_assets[index].held) {
@@ -215,17 +269,32 @@ def private ResetState() {
     g_active = false
     g_phase = LoaderPhase.Idle
     g_blocking = true
-    g_loading_scene = ""
     g_error = ""
-    g_progress = 0.0f
-    g_current = 0
-    g_total = 0
-    g_loading_text = LoaderText()
-    clear(g_bundles)
-    clear(g_scenes)
-    clear(g_prefabs)
+    g_on_loaded = @@LoaderNoop
+    g_notified = false
+    clear(g_documents)
     clear(g_assets)
-    clear(g_steps)
+}
+
+def private AddAsset(kind : LoaderAssetKind; id : uint64) {
+    if (id == 0ul) {
+        return
+    }
+    for (asset in g_assets) {
+        if (asset.kind == kind && asset.id == id) {
+            return
+        }
+    }
+    g_assets |> push(LoaderAsset(kind = kind, id = id))
+}
+
+def private AddRefs(refs : AssetRefs) {
+    for (mesh in refs.meshes) {
+        AddAsset(LoaderAssetKind.Mesh, mesh)
+    }
+    for (material in refs.materials) {
+        AddAsset(LoaderAssetKind.Material, material)
+    }
 }
 
 def private RequestAssets() {
@@ -242,89 +311,127 @@ def private RequestAssets() {
     }
 }
 
-def private AddRefs(refs : AssetRefs) {
-    for (mesh in refs.meshes) {
-        AddAsset(LoaderAssetKind.Mesh, mesh)
+def private HasKind(kind : ContentKind) : bool {
+    for (document in g_documents) {
+        if (document.kind == kind) {
+            return true
+        }
     }
-    for (material in refs.materials) {
-        AddAsset(LoaderAssetKind.Material, material)
-    }
+    return false
 }
 
-def private PhaseStats(done_count : int; total_count : int) -> void {
-    g_current = done_count
-    g_total = total_count
+def private NextPhase(phase : LoaderPhase) : LoaderPhase {
+    if (phase == LoaderPhase.Idle) {
+        if (HasKind(ContentKind.Bundle)) {
+            return LoaderPhase.Bundles
+        }
+    }
+    if (phase == LoaderPhase.Idle || phase == LoaderPhase.Bundles) {
+        if (HasKind(ContentKind.Scene)) {
+            return LoaderPhase.Scenes
+        }
+    }
+    if (phase == LoaderPhase.Idle || phase == LoaderPhase.Bundles || phase == LoaderPhase.Scenes) {
+        if (HasKind(ContentKind.Prefab)) {
+            return LoaderPhase.Prefabs
+        }
+    }
+    return LoaderPhase.Assets
 }
 
-def private UpdateProgress() {
-    var base = 0.0f
-    var span = 0.0f
-    var done = 0.0f
+def private AllDocumentsDone(kind : ContentKind) : bool {
+    for (document in g_documents) {
+        if (document.kind == kind && !document.done) {
+            return false
+        }
+    }
+    return true
+}
 
-    if (g_phase == LoaderPhase.LoadingScene) {
-        base = 0.0f
-        span = 0.05f
-        PhaseStats(g_loading_text.done ? 1 : 0, 1)
-        done = g_loading_text.done ? 1.0f : 0.0f
-    } elif (g_phase == LoaderPhase.Bundles) {
-        base = 0.05f
-        span = 0.10f
-        var count = 0
-        for (item in g_bundles) {
-            if (item.done) { count++ }
+// Expands a parsed bundle into prefab jobs, compiles a prefab, and adds scene/prefab
+// dependencies to the asset phase. Returns false after `Fail` was called.
+def private HandleDocument(var document : Content::Document?) : bool {
+    if (document == null) {
+        return false
+    }
+
+    if (document.kind == ContentKind.Bundle) {
+        let bundle = Bundle::Parse(document)
+        if (bundle == null) {
+            Fail("'{document.path}' is not a valid bundle")
+            return false
         }
-        PhaseStats(count, length(g_bundles))
-        done = length(g_bundles) == 0 ? 0.0f : float(count) / float(length(g_bundles))
-    } elif (g_phase == LoaderPhase.Scenes) {
-        base = 0.15f
-        span = 0.20f
-        var count = 0
-        for (item in g_scenes) {
-            if (item.done) { count++ }
+        print("[LOADER] bundle '{bundle.name}': {length(bundle.prefabs)} prefab(s)\n")
+        for (prefab_path in bundle.prefabs) {
+            if (!IsContentPath(prefab_path)) {
+                Fail("bundle '{document.path}': prefab '{prefab_path}' must be a content/... path")
+                return false
+            }
+            if (!AddDocument(ContentKind.Prefab, prefab_path)) {
+                Fail("bundle '{document.path}': prefab '{prefab_path}' was not found; check the content/ path")
+                return false
+            }
         }
-        PhaseStats(count, length(g_scenes))
-        done = length(g_scenes) == 0 ? 0.0f : float(count) / float(length(g_scenes))
-    } elif (g_phase == LoaderPhase.Prefabs) {
-        base = 0.35f
-        span = 0.25f
-        var count = 0
-        for (item in g_prefabs) {
-            if (item.done) { count++ }
+    } elif (document.kind == ContentKind.Prefab) {
+        if (!Prefab::CachePrefabDocument(document)) {
+            Fail("'{document.path}' is not a valid prefab")
+            return false
         }
-        PhaseStats(count, length(g_prefabs))
-        done = length(g_prefabs) == 0 ? 0.0f : float(count) / float(length(g_prefabs))
-    } elif (g_phase == LoaderPhase.Assets) {
-        base = 0.60f
-        span = 0.30f
-        var count = 0
-        for (item in g_assets) {
-            if (item.done) { count++ }
-        }
-        PhaseStats(count, length(g_assets))
-        done = length(g_assets) == 0 ? 0.0f : float(count) / float(length(g_assets))
-    } elif (g_phase == LoaderPhase.Steps) {
-        base = 0.90f
-        span = 0.10f
-        var count = 0
-        for (step in g_steps) {
-            if (step.done) { count++ }
-        }
-        PhaseStats(count, length(g_steps))
-        done = length(g_steps) == 0 ? 0.0f : float(count) / float(length(g_steps))
-    } elif (g_phase == LoaderPhase.Ready) {
-        g_progress = 1.0f
-        return
+        AddRefs(document.refs)
     } else {
-        g_progress = 0.0f
-        return
+        AddRefs(document.refs)
     }
 
-    g_progress = base + span * done
+    return true
 }
 
-//! Starts a request. The loader must be idle; call `Abort` or `Finish` first. All texts
-//! are requested immediately; bundles are expanded when their text arrives.
+// Polls the texts of one phase, parses each ready document and runs its kind-specific
+// step. Documents of another kind are ignored, so the three document phases share one loop.
+def private ProcessDocuments(kind : ContentKind) {
+    let count = length(g_documents)
+    for (index in range(count)) {
+        let document = g_documents[index]
+        if (document.kind != kind || document.done) {
+            continue
+        }
+        if (AssetTextIsFailed(document.id)) {
+            Fail("'{document.path}' failed to read")
+            return
+        }
+        if (!AssetTextIsReady(document.id)) {
+            continue
+        }
+
+        let text = GetAssetText(document.id)
+        var parsed = Content::Cache(kind, document.path, text)
+        ReleaseDocument(g_documents[index])
+        g_documents[index].done = true
+        if (parsed == null) {
+            Fail("'{document.path}' is not a valid {Content::KindName(kind)} document")
+            return
+        }
+        if (!HandleDocument(parsed)) {
+            return
+        }
+    }
+}
+
+def private NotifyReady() {
+    if (g_notified) {
+        return
+    }
+    g_notified = true
+    invoke(g_on_loaded)
+}
+
+//! Starts a request. The loader must be idle; call `Abort` or `Finish` first. All document
+//! texts are requested immediately; bundles are expanded when their text arrives. The
+//! callback runs once, after the phase becomes `Ready`.
 def public Invoke(var request : LoaderRequest) : bool {
+    return Invoke(request, @@LoaderNoop)
+}
+
+def public Invoke(var request : LoaderRequest; on_loaded : LoaderCallback) : bool {
     if (g_active) {
         print("[LOADER ERROR] a request is already active; call Abort or Finish first\n")
         return false
@@ -333,40 +440,15 @@ def public Invoke(var request : LoaderRequest) : bool {
     ResetState()
     g_active = true
     g_blocking = request.blocking
-    g_loading_scene = request.loading_scene
-
-    if (!empty(g_loading_scene)) {
-        if (!IsContentPath(g_loading_scene)) {
-            Fail("loading scene '{g_loading_scene}' must be a content/... path")
-            return false
-        }
-        g_loading_text.path = g_loading_scene
-        let id = Assets::IdOf(g_loading_scene)
-        if (id == 0ul) {
-            Fail("loading scene '{g_loading_scene}' is not registered")
-            return false
-        }
-        InvalidateAssetText(id)
-        RequestLoadAssetText(id)
-        g_loading_text.id = id
-        g_loading_text.held = true
-        g_phase = LoaderPhase.LoadingScene
-    } else {
-        g_phase = LoaderPhase.Bundles
-    }
+    g_on_loaded = on_loaded
 
     for (bundle_path in request.bundles) {
         if (!IsDataPath(bundle_path)) {
             Fail("bundle '{bundle_path}' must be a data/... path")
             return false
         }
-        let path = Bundle::FindInContent(bundle_path)
-        if (empty(path)) {
+        if (!AddDocument(ContentKind.Bundle, bundle_path)) {
             Fail("bundle '{bundle_path}' was not found; check the data/ path")
-            return false
-        }
-        if (!AddText(g_bundles, path)) {
-            Fail("bundle '{path}' is not registered")
             return false
         }
     }
@@ -376,8 +458,8 @@ def public Invoke(var request : LoaderRequest) : bool {
             Fail("scene '{scene_path}' must be a content/... path")
             return false
         }
-        if (!AddText(g_scenes, scene_path)) {
-            Fail("scene '{scene_path}' is not registered")
+        if (!AddDocument(ContentKind.Scene, scene_path)) {
+            Fail("scene '{scene_path}' was not found; check the content/ path")
             return false
         }
     }
@@ -387,30 +469,13 @@ def public Invoke(var request : LoaderRequest) : bool {
             Fail("prefab '{prefab_path}' must be a content/... path")
             return false
         }
-        let path = Prefab::FindInContent(prefab_path)
-        if (empty(path)) {
+        if (!AddDocument(ContentKind.Prefab, prefab_path)) {
             Fail("prefab '{prefab_path}' was not found; check the content/ path")
             return false
         }
-        if (!AddText(g_prefabs, path)) {
-            Fail("prefab '{path}' is not registered")
-            return false
-        }
     }
 
-    for (step_name in request.steps) {
-        g_steps |> push(LoaderStep(name = step_name))
-    }
-
-    if (g_phase == LoaderPhase.Bundles && length(g_bundles) == 0) {
-        g_phase = length(g_scenes) > 0 ? LoaderPhase.Scenes : LoaderPhase.Prefabs
-    }
-    if (g_phase == LoaderPhase.Prefabs && length(g_prefabs) == 0) {
-        g_phase = LoaderPhase.Assets
-        RequestAssets()
-    }
-
-    UpdateProgress()
+    g_phase = NextPhase(LoaderPhase.Idle)
     return true
 }
 
@@ -422,150 +487,39 @@ def public Update() {
         return
     }
 
-    if (g_phase == LoaderPhase.LoadingScene) {
-        let id = g_loading_text.id
-        if (AssetTextIsFailed(id)) {
-            Fail("loading scene '{g_loading_scene}' failed to read")
+    if (g_phase == LoaderPhase.Bundles) {
+        ProcessDocuments(ContentKind.Bundle)
+        if (g_phase == LoaderPhase.Failed) {
             return
         }
-        if (AssetTextIsReady(id)) {
-            let text = GetAssetText(id)
-            Scene::CacheText(g_loading_scene, text)
-            ReleaseText(g_loading_text)
-            g_loading_text.done = true
-            if (!Scene::Load(g_loading_scene)) {
-                Fail("loading scene '{g_loading_scene}' failed to load")
-                return
-            }
-            Notify(LoaderEvent.LoadingSceneStarted, g_loading_scene)
-            g_phase = LoaderPhase.Bundles
-        }
-    }
-
-    if (g_phase == LoaderPhase.Bundles) {
-        for (index in range(length(g_bundles))) {
-            let item = g_bundles[index]
-            if (item.done) {
-                continue
-            }
-            if (AssetTextIsFailed(item.id)) {
-                Fail("bundle '{item.path}' failed to read")
-                return
-            }
-            if (!AssetTextIsReady(item.id)) {
-                continue
-            }
-
-            let text = GetAssetText(item.id)
-            var bundle = Bundle::Parse(item.path, text)
-            ReleaseText(g_bundles[index])
-            g_bundles[index].done = true
-            if (bundle == null) {
-                Fail("bundle '{item.path}' is not a valid bundle")
-                return
-            }
-            print("[LOADER] bundle '{bundle.name}': {length(bundle.prefabs)} prefab(s)\n")
-            for (prefab_path in bundle.prefabs) {
-                if (!IsContentPath(prefab_path)) {
-                    Fail("bundle '{item.path}': prefab '{prefab_path}' must be a content/... path")
-                    return
-                }
-                let path = Prefab::FindInContent(prefab_path)
-                if (empty(path)) {
-                    Fail("bundle '{item.path}': prefab '{prefab_path}' was not found; check the content/ path")
-                    return
-                }
-                if (!AddText(g_prefabs, path)) {
-                    Fail("bundle '{item.path}': prefab '{path}' is not registered")
-                    return
-                }
-            }
-        }
-
-        var complete = true
-        for (item in g_bundles) {
-            if (!item.done) { complete = false }
-        }
-        if (complete) {
-            Notify(LoaderEvent.BundlesLoaded, "")
-            g_phase = LoaderPhase.Scenes
+        if (AllDocumentsDone(ContentKind.Bundle)) {
+            g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoaderPhase.Scenes) {
-        for (index in range(length(g_scenes))) {
-            let item = g_scenes[index]
-            if (item.done) {
-                continue
-            }
-            if (AssetTextIsFailed(item.id)) {
-                Fail("scene '{item.path}' failed to read")
-                return
-            }
-            if (!AssetTextIsReady(item.id)) {
-                continue
-            }
-
-            let text = GetAssetText(item.id)
-            Scene::CacheText(item.path, text)
-            var refs <- Scene::CollectRefs(text)
-            ReleaseText(g_scenes[index])
-            g_scenes[index].done = true
-            if (!refs.parsed) {
-                Fail("scene '{item.path}' is not a valid scene document")
-                return
-            }
-            AddRefs(refs)
+        ProcessDocuments(ContentKind.Scene)
+        if (g_phase == LoaderPhase.Failed) {
+            return
         }
-
-        var complete = true
-        for (item in g_scenes) {
-            if (!item.done) { complete = false }
-        }
-        if (complete) {
-            Notify(LoaderEvent.ScenesLoaded, "")
-            g_phase = LoaderPhase.Prefabs
+        if (AllDocumentsDone(ContentKind.Scene)) {
+            g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoaderPhase.Prefabs) {
-        for (index in range(length(g_prefabs))) {
-            let item = g_prefabs[index]
-            if (item.done) {
-                continue
-            }
-            if (AssetTextIsFailed(item.id)) {
-                Fail("prefab '{item.path}' failed to read")
-                return
-            }
-            if (!AssetTextIsReady(item.id)) {
-                continue
-            }
-
-            let text = GetAssetText(item.id)
-            let cached = Prefab::CachePrefabText(item.path, text)
-            ReleaseText(g_prefabs[index])
-            g_prefabs[index].done = true
-            if (!cached) {
-                Fail("prefab '{item.path}' is not a valid prefab")
-                return
-            }
-            var refs <- Prefab::CollectRefs(Prefab::GetPrefabData(item.path))
-            AddRefs(refs)
+        ProcessDocuments(ContentKind.Prefab)
+        if (g_phase == LoaderPhase.Failed) {
+            return
         }
-
-        var complete = true
-        for (item in g_prefabs) {
-            if (!item.done) { complete = false }
-        }
-        if (complete) {
-            Notify(LoaderEvent.PrefabsLoaded, "")
-            g_phase = LoaderPhase.Assets
-            RequestAssets()
+        if (AllDocumentsDone(ContentKind.Prefab)) {
+            g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoaderPhase.Assets) {
+        RequestAssets()
+
         var complete = true
         for (index in range(length(g_assets))) {
             if (g_assets[index].done) {
@@ -596,46 +550,18 @@ def public Update() {
         }
 
         if (complete) {
-            Notify(LoaderEvent.AssetsReady, "")
-            g_phase = AllStepsDone() ? LoaderPhase.Ready : LoaderPhase.Steps
-            if (g_phase == LoaderPhase.Ready) {
-                Notify(LoaderEvent.Ready, "")
-            }
-        }
-    }
-
-    if (g_phase == LoaderPhase.Steps) {
-        if (AllStepsDone()) {
             g_phase = LoaderPhase.Ready
-            Notify(LoaderEvent.Ready, "")
         }
     }
 
-    UpdateProgress()
-}
-
-def private AllStepsDone() : bool {
-    for (step in g_steps) {
-        if (!step.done) {
-            return false
-        }
-    }
-    return true
-}
-
-//! Completes a named external step (network sync, save read, warmup). Steps are requested
-//! with `LoaderRequest::AddStep`; the loader stays active until every step is done.
-def public CompleteStep(name : string) {
-    for (index in range(length(g_steps))) {
-        if (g_steps[index].name == name) {
-            g_steps[index].done = true
-            return
-        }
+    if (g_phase == LoaderPhase.Ready) {
+        NotifyReady()
     }
 }
 
-//! Releases the loader's references. Call after the target scene is applied; preloaded
-//! scene texts live in `Scene`'s cache and stay available.
+//! Releases the loader's references. Preloaded documents stay in `Content`'s cache and
+//! compiled prefabs stay in `Prefab`'s cache, so a later `Scene::Load` / `Prefab::Spawn`
+//! still works. Call it after the target scene was applied.
 def public Finish() {
     if (!g_active) {
         return
@@ -644,8 +570,7 @@ def public Finish() {
     ResetState()
 }
 
-//! Cancels the request. Preloaded scene texts stay in Scene's cache; call
-//! `Scene::ClearCachedTexts` if you want to drop them too.
+//! Cancels the request. Content and prefab caches are not touched.
 def public Abort() {
     if (!g_active) {
         return
@@ -664,7 +589,6 @@ def public Fail(reason : string) {
     g_error = reason
     ReleaseAll()
     print("[LOADER ERROR] {reason}\n")
-    Notify(LoaderEvent.Failed, reason)
 }
 
 def public IsActive() : bool {
@@ -687,59 +611,6 @@ def public Phase() : LoaderPhase {
     return g_phase
 }
 
-def public Progress() : float {
-    return g_progress
-}
-
-def public Current() : int {
-    return g_current
-}
-
-def public Total() : int {
-    return g_total
-}
-
 def public Error() : string {
     return g_error
-}
-
-def public Headline() : string {
-    if (!g_active) {
-        return "Idle"
-    }
-    if (g_phase == LoaderPhase.LoadingScene) {
-        return "Loading scene"
-    }
-    if (g_phase == LoaderPhase.Bundles) {
-        return "Bundles"
-    }
-    if (g_phase == LoaderPhase.Scenes) {
-        return "Scenes"
-    }
-    if (g_phase == LoaderPhase.Prefabs) {
-        return "Prefabs"
-    }
-    if (g_phase == LoaderPhase.Assets) {
-        return "Assets"
-    }
-    if (g_phase == LoaderPhase.Steps) {
-        return "Steps"
-    }
-    if (g_phase == LoaderPhase.Ready) {
-        return "Ready"
-    }
-    if (g_phase == LoaderPhase.Failed) {
-        return "Failed"
-    }
-    return "Idle"
-}
-
-def public Status() : string {
-    if (!g_active) {
-        return "Idle"
-    }
-    if (g_phase == LoaderPhase.Failed) {
-        return "Failed: {g_error}"
-    }
-    return "{Headline()} {g_current}/{g_total}"
 }
