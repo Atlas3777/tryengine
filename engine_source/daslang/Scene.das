@@ -199,13 +199,14 @@ def SaveCurrentScene() : void {
 
 [async]
 def SaveSceneAsync(path : string) : void {
+    let target = Assets::ResolveGamePath(path, "content")
     let config_text = save_scene_to_config()
-    let written : bool <- await(FileReader::WriteFile(path, config_text))
+    let written : bool <- await(FileReader::WriteFile(target, config_text))
     if (!written) {
-        print("[SCENE ERROR] Failed to write scene to '{path}'.\n")
+        print("[SCENE ERROR] Failed to write scene to '{target}'.\n")
     } else {
-        InvalidateCachedText(path)
-        print("[SCENE] Scene saved successfully to '{path}'.\n")
+        InvalidateCachedText(target)
+        print("[SCENE] Scene saved successfully to '{target}'.\n")
     }
 }
 
@@ -546,24 +547,6 @@ def public SceneNameFromPath(path : string) : string {
     return name
 }
 
-[async]
-def private LoadScenePath(path : string) : void {
-    UnloadActiveScene()
-    scene_context.scene_name = SceneNameFromPath(path)
-    scene_context.scene_path = path
-    await(LoadSceneAsync(path))
-    NotifySceneLoaded(scene_context.scene_name, path, false)
-}
-
-//! Loads the scene the build marked as startup (a text entry with a fixed id). The
-//! editor has no `tryengine/startup` entry, so this leaves the open editor scene alone.
-[async]
-def public LoadStartupScene() : void {
-    let path : string <- await(Assets::ReadText(Assets::STARTUP_SCENE_PATH))
-    if (!empty(path)) {
-        await(LoadScenePath(path))
-    }
-}
 
 //! Synchronous startup load used by the explicit entry point. In the game the C++ preload
 //! phase has already read the startup entry and the scene text; in the editor the content
@@ -590,14 +573,6 @@ def private LoadScenePathCached(path : string) : bool {
         NotifySceneLoaded(scene_context.scene_name, path, false)
     }
     return loaded
-}
-
-def public LoadStartupSceneCached() : bool {
-    let path = Assets::ReadTextCached(Assets::STARTUP_SCENE_PATH)
-    if (empty(path)) {
-        return false
-    }
-    return LoadScenePathCached(path)
 }
 
 //! Synchronous scene apply. The text must be cached: `Loader` fills the scene text cache

@@ -188,21 +188,23 @@ daslang -dry-run -no-lint \
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
 - Content читается только через `tryengine/Assets.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
-  (игра). Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
+  (игра). Пути в игровом коде пишутся относительно `game/`: `content/...` и `data/...`;
+  префикс `game/` подразумевается. Расширение файла указывается всегда явно, ничего не
+  дописывается. Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
 - Префабы: `tryengine/Prefab.das` — формат, кеш и спавн. `Prefab::RefreshContent()` берёт
   список `.prefab` из манифеста и складывает разобранные `PrefabData` в daslang-кеш;
-  `Prefab::Spawn("game/content/props/sword.prefab", origin)` — синхронный cache-hit и
-  `EntityId`. Префаб адресуется только полным авторским путём (`game/content/...`,
-  с расширением или без); короткие имена и пути относительно `game/content` не
-  резолвятся. C++-кеш
+  `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`.
+  Префаб адресуется путём относительно `content/` (`prefabl.prefab`,
+  `props/sword.prefab`) или полным путём; расширение обязательно. C++-кеш
   `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
   сырой текст читает его `TextAsset`. Игра не прогревает все префабы:
-  `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное, а
+  `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное (пути
+  `content/...` и `data/...`), а
   `Prefab::FindInContent` проверяет путь через `Assets::Exists` без чтения файла.
   `RefreshContent` остаётся инструментом редактора/тестов.
 - Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/**/*.bundle` (ConfigFormat,
-  `version = 1`, `name`, `prefabs: string[]`). В `prefabs` лежат пути `.prefab`; короткие
-  имена не резолвятся. Бандл — авторская группа префабов; билд
+  `version = 1`, `name`, `prefabs: string[]`). В `prefabs` лежат пути `content/...`;
+  расширение обязательно. Бандл — авторская группа префабов; билд
   кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
   шаг предзагрузки префабов.
 - `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка

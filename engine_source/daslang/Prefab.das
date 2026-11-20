@@ -24,8 +24,8 @@ module Prefab shared public
 //! (entity configs with parent/sibling indices), so repeated spawns do no I/O and no
 //! parsing. `RefreshContent` fills the cache from the content manifest (editor: scanned
 //! trees, game: pak manifest) through `tryengine/Assets`; `Spawn` is a synchronous cache
-//! hit and returns the root `EntityId`. Prefabs are addressed by authored path only;
-//! short file-stem names are not resolved.
+//! hit and returns the root `EntityId`. A prefab is addressed by a path relative to
+//! `content/` (`prefabl.prefab`) or by a full path; the extension is always explicit.
 
 require strings
 require math
@@ -45,7 +45,6 @@ require tryResources
 
 let public PREFAB_VERSION : uint = 1u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
-let public PREFAB_CONTENT_ROOT : string = "game/content"
 
 // One entity of a compiled prefab. `config` points into the parsed ConfigFormat tree;
 // the root pointer in `PrefabData` keeps that tree alive. No tables are copied per
@@ -67,31 +66,10 @@ struct public PrefabData {
 }
 
 // path -> compiled prefab. Paths are canonical: relative to the repository root and
-// rooted under PREFAB_CONTENT_ROOT.
+// rooted under game/content.
 var private g_prefabs : table<string; PrefabData?>
 // Load order for UI/iteration (manifest order is not stable, so RefreshContent sorts).
 var private g_prefab_paths : array<string>
-
-def private NormalizePrefabPath(path : string) : string {
-    var result = replace(path, "\\", "/")
-    while (starts_with(result, "./")) {
-        result = slice(result, 2, length(result))
-    }
-    return result
-}
-
-// Absolute or relative path under the content root becomes repo-relative. Prefabs
-// outside the content root keep their path: they still cache and spawn, but
-// RefreshContent will not discover them.
-def private CanonicalPrefabPath(path : string) : string {
-    var result = NormalizePrefabPath(path)
-    let marker = "/{PREFAB_CONTENT_ROOT}/"
-    let marker_index = rfind(result, marker)
-    if (marker_index >= 0) {
-        result = "{PREFAB_CONTENT_ROOT}/{slice(result, marker_index + length(marker), length(result))}"
-    }
-    return result
-}
 
 def private PrefabStem(path : string) : string {
     var name = path
@@ -106,15 +84,11 @@ def private PrefabStem(path : string) : string {
     return name
 }
 
-// Authored path -> canonical cache key. The path must be repo-relative or absolute;
-// a `.prefab` extension is added when the content-root path has none. Short names and
-// content-relative names are not resolved: the path must name a file.
+// Authored path -> canonical cache key. A bare path is relative to `content/`, a
+// `content/...` path is relative to the game directory, and `game/...` or absolute paths
+// are kept. The extension is always explicit: nothing is guessed or appended.
 def private PrefabPathOf(name_or_path : string) : string {
-    let path = CanonicalPrefabPath(name_or_path)
-    if (starts_with(path, "{PREFAB_CONTENT_ROOT}/") && !ends_with(path, ".prefab")) {
-        return "{path}.prefab"
-    }
-    return path
+    return Assets::ResolveGamePath(name_or_path, "content")
 }
 
 def private IsReservedEntityField(name : string) : bool {
@@ -287,7 +261,7 @@ def private CompilePrefab(text : string; path : string) : PrefabData? {
         name = PrefabStem(path)
     }
 
-    return new PrefabData(path = CanonicalPrefabPath(path), name = name, root = root, entities <- entities)
+    return new PrefabData(path = Assets::ResolveGamePath(path, "content"), name = name, root = root, entities <- entities)
 }
 
 // ---------------------------------------------------------------------------
@@ -349,9 +323,10 @@ def public GetPrefabData(name_or_path : string) : PrefabData? {
 }
 
 //! Resolves an authored prefab path to its canonical content path without reading the
-//! prefab. Short names are not resolved: `game/content/props/sword.prefab` and
-//! `game/content/props/sword` name the same file, `sword` and `props/sword` do not.
-//! Used by explicit loading, which caches only the prefabs the game asks for.
+//! prefab. A bare path is relative to `content/` (`props/sword.prefab`), a `content/...`
+//! path is relative to the game directory, and `game/...` or absolute paths are kept.
+//! The extension is required. Used by explicit loading, which caches only the prefabs
+//! the game asks for.
 def public FindInContent(name_or_path : string) : string {
     let path = PrefabPathOf(name_or_path)
     if (empty(path) || !Assets::Exists(path)) {
@@ -495,9 +470,9 @@ def public SpawnPrefabFromText(text : string; origin : float3) : EntityId {
 //! Synchronous spawn from the prefab cache. Call RefreshContent, LoadPrefabFile or
 //! a LoaderRequest with AddPrefab first; an unknown or not-yet-loaded prefab returns
 //! INVALID_ENTITY_ID.
-//! Accepts a repo-relative/absolute .prefab path ("game/content/props/sword.prefab"
-//! or "game/content/props/sword"). Short names ("sword") and content-relative names
-//! ("props/sword") are not resolved.
+//! Accepts a path relative to `content/` ("prefabl.prefab", "props/sword.prefab"), a
+//! `content/...` path, or a repo-relative/absolute .prefab path. The extension is
+//! required: nothing is appended.
 def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0f)) : EntityId {
     let path = ResolvePrefabPath(name_or_path)
     if (empty(path)) {
@@ -755,9 +730,10 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
 //! The saved text is cached immediately, so Spawn() sees the new version.
 [async]
 def public SavePrefabFromEntity(eid : EntityId; path : string) : bool {
-    var canonical = PrefabPathOf(path)
+    let canonical = PrefabPathOf(path)
     if (!ends_with(canonical, ".prefab")) {
-        canonical = "{canonical}.prefab"
+        print("[PREFAB ERROR] save path must end with .prefab: '{path}'\n")
+        yield false
     }
 
     let name = PrefabStem(canonical)

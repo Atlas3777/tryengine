@@ -80,18 +80,13 @@ def private LoadPrefabAsync(path : string) : void {
 
 [async]
 def private SaveSelectionAsync(eid : EntityId; path : string) : void {
-    var target = path
-    if (!ends_with(target, ".prefab")) {
-        target = "{target}.prefab"
-    }
-
-    let saved : bool <- await(Prefab::SavePrefabFromEntity(eid, target))
+    let saved : bool <- await(Prefab::SavePrefabFromEntity(eid, path))
     if (saved) {
         RefreshAssetTrees()
-        g_selected_path = Prefab::ResolvePrefabPath(target)
-        g_status = "Saved {target}"
+        g_selected_path = Prefab::ResolvePrefabPath(path)
+        g_status = "Saved {path}"
     } else {
-        g_status = "Save failed: {target}"
+        g_status = "Save failed: {path}"
     }
 }
 

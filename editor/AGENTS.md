@@ -199,9 +199,8 @@
 - `Prefab::RefreshContent()` больше не ходит на диск: он берёт список путей из
   `Assets::ContentManifest()` (в редакторе — из зарегистрированных деревьев, в игре — из
   манифеста пака) и читает каждый `.prefab` через `Assets::ReadText`. После неё
-  `Prefab::Spawn("game/content/props/sword.prefab", origin)` — hit кеша и `EntityId`.
-  Путь должен быть полным (`game/content/...`); короткие имена (`"sword"`) и пути
-  относительно `game/content` (`"props/sword"`) не резолвятся. `RefreshContent` — инструмент
+  `Prefab::Spawn("props/sword.prefab", origin)` — hit кеша и `EntityId`. Путь пишется
+  относительно `content/` или полным; расширение обязательно. `RefreshContent` — инструмент
   редактора и тестов: он
   читает весь кеш. Игра читает только запрошенные префабы через
   `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует текст и добавляет

@@ -27,32 +27,16 @@ struct public BundleData {
     prefabs : array<string>
 }
 
-// Authored path -> canonical content path. The path must be repo-relative or absolute;
-// a `.bundle` extension is added when the game/data path has none. Short names and
-// data-relative names are not resolved: the path must name a file.
+// Authored path -> canonical content path. A bare path is relative to `data/`
+// (`bundles/startup.bundle`), a `data/...` path is relative to the game directory, and
+// `game/...` or absolute paths are kept. The extension is always explicit.
 def private BundlePathOf(name_or_path : string) : string {
-    if (empty(name_or_path)) {
-        return ""
-    }
-
-    var path = replace(name_or_path, "\\", "/")
-    while (starts_with(path, "./")) {
-        path = slice(path, 2, length(path))
-    }
-    let marker = "/game/data/"
-    let marker_index = rfind(path, marker)
-    if (marker_index >= 0) {
-        path = "game/data/{slice(path, marker_index + length(marker), length(path))}"
-    }
-    if (starts_with(path, "game/data/") && !ends_with(path, ".bundle")) {
-        path = "{path}.bundle"
-    }
-    return path
+    return Assets::ResolveGamePath(name_or_path, "data")
 }
 
-//! Resolves an authored bundle path without reading the bundle. Short names are not
-//! resolved: `game/data/bundles/startup` and `game/data/bundles/startup.bundle` name
-//! the same file, `startup` and `bundles/startup` do not.
+//! Resolves an authored bundle path without reading the bundle. A bare path is relative
+//! to `data/`, a `data/...` path is relative to the game directory; the extension is
+//! required.
 def public FindInContent(name_or_path : string) : string {
     let path = BundlePathOf(name_or_path)
     if (empty(path) || !Assets::Exists(path)) {

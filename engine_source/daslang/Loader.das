@@ -53,6 +53,8 @@ enum public LoaderEvent {
 typedef LoaderListener = function<(event : LoaderEvent; name : string) : void>
 
 // Builder. Array fields are filled in place; the request is consumed by `Invoke`.
+// All paths are relative to the game directory: scenes and prefabs use `content/...`,
+// bundles use `data/...`. Extensions are explicit; `game/` is implied.
 struct public LoaderRequest {
     blocking : bool = true
     loading_scene : string = ""
@@ -128,6 +130,17 @@ var private g_listeners : array<LoaderListener>
 
 def public RegisterLoaderListener(listener : LoaderListener) {
     g_listeners |> push(listener)
+}
+
+// Loader request paths are relative to the game directory: scenes and prefabs use
+// `content/...`, bundles use `data/...`. `game/` is implied, and the extension is always
+// explicit. The loader needs the leading domain because it reads both folders.
+def private IsContentPath(path : string) : bool {
+    return starts_with(path, "content/")
+}
+
+def private IsDataPath(path : string) : bool {
+    return starts_with(path, "data/")
 }
 
 def private Notify(event : LoaderEvent; name : string) {
@@ -323,6 +336,10 @@ def public Invoke(var request : LoaderRequest) : bool {
     g_loading_scene = request.loading_scene
 
     if (!empty(g_loading_scene)) {
+        if (!IsContentPath(g_loading_scene)) {
+            Fail("loading scene '{g_loading_scene}' must be a content/... path")
+            return false
+        }
         g_loading_text.path = g_loading_scene
         let id = Assets::IdOf(g_loading_scene)
         if (id == 0ul) {
@@ -339,9 +356,13 @@ def public Invoke(var request : LoaderRequest) : bool {
     }
 
     for (bundle_path in request.bundles) {
+        if (!IsDataPath(bundle_path)) {
+            Fail("bundle '{bundle_path}' must be a data/... path")
+            return false
+        }
         let path = Bundle::FindInContent(bundle_path)
         if (empty(path)) {
-            Fail("bundle '{bundle_path}' is not in content; use its path under game/data")
+            Fail("bundle '{bundle_path}' was not found; check the data/ path")
             return false
         }
         if (!AddText(g_bundles, path)) {
@@ -351,6 +372,10 @@ def public Invoke(var request : LoaderRequest) : bool {
     }
 
     for (scene_path in request.scenes) {
+        if (!IsContentPath(scene_path)) {
+            Fail("scene '{scene_path}' must be a content/... path")
+            return false
+        }
         if (!AddText(g_scenes, scene_path)) {
             Fail("scene '{scene_path}' is not registered")
             return false
@@ -358,9 +383,13 @@ def public Invoke(var request : LoaderRequest) : bool {
     }
 
     for (prefab_path in request.prefabs) {
+        if (!IsContentPath(prefab_path)) {
+            Fail("prefab '{prefab_path}' must be a content/... path")
+            return false
+        }
         let path = Prefab::FindInContent(prefab_path)
         if (empty(path)) {
-            Fail("prefab '{prefab_path}' is not in content; use its path under game/content")
+            Fail("prefab '{prefab_path}' was not found; check the content/ path")
             return false
         }
         if (!AddText(g_prefabs, path)) {
@@ -437,9 +466,13 @@ def public Update() {
             }
             print("[LOADER] bundle '{bundle.name}': {length(bundle.prefabs)} prefab(s)\n")
             for (prefab_path in bundle.prefabs) {
+                if (!IsContentPath(prefab_path)) {
+                    Fail("bundle '{item.path}': prefab '{prefab_path}' must be a content/... path")
+                    return
+                }
                 let path = Prefab::FindInContent(prefab_path)
                 if (empty(path)) {
-                    Fail("bundle '{item.path}': prefab '{prefab_path}' is not in content; use its path under game/content")
+                    Fail("bundle '{item.path}': prefab '{prefab_path}' was not found; check the content/ path")
                     return
                 }
                 if (!AddText(g_prefabs, path)) {

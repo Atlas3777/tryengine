@@ -20,21 +20,21 @@
 
 ```das
 var request <- LoaderRequest()
-request.SetLoadingScene("game/content/loading.scene") // "" — не менять сцену
+request.SetLoadingScene("content/loading.scene") // "" — не менять сцену
 request.SetBlocking(true)
-request.AddBundle("game/data/bundles/startup.bundle")
-request.AddScene("game/content/main.scene")
-request.AddPrefab("game/content/props/sword.prefab")
+request.AddBundle("data/bundles/startup.bundle")
+request.AddScene("content/main.scene")
+request.AddPrefab("content/props/sword.prefab")
 request.AddStep("server-handshake") // внешний этап; CompleteStep("...") завершает
 
 Loader::Invoke(request)
 ```
 
-- `AddBundle` — полный путь `.bundle` из `game/data` (расширение можно опустить).
-  Короткие имена и пути относительно `game/data` не резолвятся.
+- `AddBundle` — путь к `.bundle` относительно `game/`: `data/bundles/startup.bundle`.
 - `AddScene` — предзагрузка сцены: текст и её меши/материалы. Перехода нет.
-- `AddPrefab` — полный путь `.prefab` из `game/content` (расширение можно опустить).
-  Короткие имена и пути относительно `game/content` не резолвятся.
+- `AddPrefab` — путь к `.prefab` относительно `game/`: `content/props/sword.prefab`.
+- Пути в запросе всегда начинаются с `content/` или `data/`; `game/` подразумевается.
+  Расширение указывается явно, загрузчик его не дописывает.
 - `SetLoadingScene` — единственная сцена, которую применяет сам загрузчик, когда её текст
   готов. Если не задана, загрузчик ничего не переключает.
 - `SetBlocking` — контракт для игры: пока `Loader::IsBlocking()`, gameplay не продолжается.
@@ -65,7 +65,7 @@ Loader::Error()
 
 ```das
 if (Loader::IsReady()) {
-    if (Scene::Load("game/content/main.scene", @@StartMainMenuScene)) {
+    if (Scene::Load("content/main.scene", @@StartMainMenuScene)) {
         Loader::Finish()
     } else {
         Loader::Fail("main scene failed to load")
@@ -96,14 +96,14 @@ if (Loader::IsReady()) {
 version: u32 = 1
 name: string = "startup"
 prefabs: string[] = [
-    "game/content/prefabl.prefab"
-    "game/content/props/sword.prefab"
+    "content/prefabl.prefab"
+    "content/props/sword.prefab"
 ]
 ```
 
-`Loader::AddBundle("game/data/bundles/startup.bundle")` находит файл по пути, читает его
+`Loader::AddBundle("data/bundles/startup.bundle")` находит файл по пути, читает его
 текст в фазе `Bundles`, добавляет префабы в общий список и тем самым увеличивает `Total`
-фазы `Prefabs`. `prefabs` — полные пути `.prefab`; короткие имена не резолвятся. Бандл —
+фазы `Prefabs`. `prefabs` — пути `content/...` с расширением. Бандл —
 это только группировка префабов, не отдельный кеш ресурсов.
 
 ## Где грузятся префабы
