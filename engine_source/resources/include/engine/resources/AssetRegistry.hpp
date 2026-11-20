@@ -2,7 +2,6 @@
 
 #include <EASTL/algorithm.h>
 #include <EASTL/hash_map.h>
-#include <EASTL/hash_set.h>
 #include <EASTL/optional.h>
 #include <EASTL/sort.h>
 #include <EASTL/string.h>
@@ -129,42 +128,23 @@ public:
         return eastl::nullopt;
     }
 
-    // Список content-файлов: авторитетные файлы редактора плюс манифесты смонтированных
-    // паков. Отсортирован и без дублей, чтобы билд был детерминирован.
-    eastl::vector<eastl::string> ContentPaths() const {
+    // Список авторитетных файлов, которые знает редактор. Пак листинга не хранит: у
+    // content-файла id = PathId(путь), поэтому runtime находит его по хешу пути, а не по
+    // таблице путей. Список нужен только сборщику редактора, чтобы обойти content/data.
+    eastl::vector<eastl::string> AuthoritativePaths() const {
         std::lock_guard lock(mutex_);
         eastl::vector<eastl::string> paths;
-        paths.reserve(locations_.size() + content_paths_.size());
+        paths.reserve(locations_.size());
 
         for (const auto& entry : locations_) {
             if (const auto* loose = eastl::get_if<LooseFileLocation>(&entry.second))
                 if (loose->origin == AssetOrigin::Authoritative)
                     paths.push_back(loose->path);
         }
-        for (const auto& path : content_paths_)
-            paths.push_back(path);
 
         eastl::sort(paths.begin(), paths.end());
         paths.erase(eastl::unique(paths.begin(), paths.end()), paths.end());
         return paths;
-    }
-
-    // Добавляет пути из манифеста, прочитанного из пака. Идемпотентно.
-    void AppendContentManifest(eastl::string_view manifest) {
-        std::lock_guard lock(mutex_);
-        size_t start = 0;
-        while (start <= manifest.size()) {
-            const size_t end = manifest.find('\n', start);
-            const size_t stop = end == eastl::string_view::npos ? manifest.size() : end;
-            if (stop > start) {
-                const uint64_t id = core::PathId(manifest.substr(start, stop - start));
-                if (content_path_ids_.insert(id).second)
-                    content_paths_.push_back(eastl::string(manifest.data() + start, stop - start));
-            }
-            if (end == eastl::string_view::npos)
-                break;
-            start = end + 1;
-        }
     }
 
     // Вызывать до старта потоков. В game не вызывается.
@@ -182,9 +162,6 @@ private:
     // PathId(путь) -> id. Авторитетные файлы индексируются под своим id, артефакты
     // импорта — под путём артефакта, чтобы редактор мог найти ресурс по любому пути.
     eastl::hash_map<uint64_t, uint64_t> path_index_;
-    // Пути из манифестов паков. В паке нет каталогов, листинг приходит одним текстом.
-    eastl::vector<eastl::string> content_paths_;
-    eastl::hash_set<uint64_t> content_path_ids_;
     IAssetMissHandler* miss_handler_ = nullptr;
 };
 

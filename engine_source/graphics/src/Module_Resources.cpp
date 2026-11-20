@@ -5,7 +5,6 @@
 #include "engine/core/TryengineContext.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
-#include "engine/resources/Content.hpp"
 #include "engine/resources/ResourceManager.hpp"
 #include "engine/resources/TextAsset.hpp"
 

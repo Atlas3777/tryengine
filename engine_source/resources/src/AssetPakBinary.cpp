@@ -4,7 +4,6 @@
 #include <cstring>
 
 #include "engine/core/MakeError.hpp"
-#include "engine/resources/Content.hpp"
 
 namespace tryengine::resources {
 namespace {
@@ -162,21 +161,8 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
     for (size_t i = 0; i < texture_count; ++i)
         append_resource(pak.textures[i], pak.textures_data[i]);
 
-    // Content: манифест (список путей), стартовая сцена и сами файлы. Идентичность —
-    // PathId(путь), поэтому таблицы path -> id нет; манифест нужен только для листинга.
-    if (!pak.content_paths.empty()) {
-        eastl::string manifest;
-        for (size_t i = 0; i < pak.content_paths.size(); ++i) {
-            if (i > 0)
-                manifest += '\n';
-            manifest += pak.content_paths[i];
-        }
-        append_bytes(kContentManifestId, manifest.data(), manifest.size());
-    }
-
-    if (!pak.startup_scene.empty())
-        append_bytes(kStartupSceneId, pak.startup_scene.data(), pak.startup_scene.size());
-
+    // Content-файлы. Идентичность — PathId(путь), поэтому ни пути, ни таблицы
+    // path -> id в паке нет: runtime просит файл по пути и считает тот же хеш.
     const size_t content_count =
         pak.contents.size() < pak.contents_data.size() ? pak.contents.size() : pak.contents_data.size();
     for (size_t i = 0; i < content_count; ++i)

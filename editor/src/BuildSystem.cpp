@@ -10,7 +10,6 @@
 #include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetPak.hpp"
-#include "engine/resources/Content.hpp"
 #include "engine/resources/ContentAssets.hpp"
 #include "engine/resources/TextAsset.hpp"
 
@@ -156,7 +155,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     // 3. Собираем content до common-пака: префабы должны уехать туда вместе со своими
     // мешами и материалами, иначе Prefab::Spawn в игре получит текст без ресурсов.
     eastl::vector<ContentFile> content_files;
-    const auto content_paths = res_m_.GetAssetRegistry().ContentPaths();
+    const auto content_paths = res_m_.GetAssetRegistry().AuthoritativePaths();
     for (const auto& path : content_paths) {
         const bool is_prefab = StartsWith(path, "game/content/") && EndsWith(path, ".prefab");
         const bool is_data = StartsWith(path, "game/data/");
@@ -233,12 +232,9 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         co_return LogAndMakeError("Create Pak Is Failed");
 
     tryengine::resources::AssetPak common_pak = eastl::move(*common_result);
-    if (!scenes.empty())
-        common_pak.startup_scene = scenes[0].path;
 
     for (auto& file : content_files) {
         common_pak.contents.push_back(file.id);
-        common_pak.content_paths.push_back(file.path);
         common_pak.contents_data.push_back(eastl::move(file.data));
     }
 
@@ -279,7 +275,6 @@ tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
             const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
             pak.contents.push_back(scene_id);
             pak.contents_data.push_back(eastl::vector<uint8_t>(begin, begin + text.size()));
-            pak.content_paths.push_back(scene.path);
         } else {
             LogError("Scene text '{}' is not readable", scene.path.c_str());
         }

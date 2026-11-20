@@ -15,7 +15,6 @@
 #include "engine/core/MakeError.hpp"
 #include "engine/platform/Directory.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
-#include "engine/resources/Content.hpp"
 
 namespace tryengine::resources {
 
@@ -189,27 +188,6 @@ public:
                                                                        .fd_slot = fd_slot,
                                                                        .offset = header.data_offset + entry.offset,
                                                                        .size = entry.size});
-        }
-
-        // 8. Манифест content-файлов: в паке нет каталогов, поэтому листинг приходит
-        // отдельной записью. Игра читает его и наполняет кеш префабов.
-        for (const auto& entry : manifest.layout) {
-            if (entry.guid != kContentManifestId)
-                continue;
-
-            FileHandle content_manifest_handle = file_manager_.ReadChunkFDAsync(
-                fd_slot, header.data_offset + entry.offset, static_cast<uint32_t>(entry.size));
-            co_await content_manifest_handle;
-
-            if (content_manifest_handle.IsFailed()) {
-                LogError("Failed to read content manifest from PAK '{}'", pak_path.c_str());
-                break;
-            }
-
-            const auto data = content_manifest_handle.GetData();
-            registry_.AppendContentManifest(
-                eastl::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
-            break;
         }
 
         co_return new_handle;
