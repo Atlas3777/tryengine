@@ -1,6 +1,7 @@
 #include "editor/BuildSystem.hpp"
 
 #include <EASTL/algorithm.h>
+#include <EASTL/hash_set.h>
 #include <EASTL/sort.h>
 #include <EASTL/unique_ptr.h>
 #include <EASTL/unordered_map.h>
@@ -9,8 +10,35 @@
 #include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetPak.hpp"
+#include "engine/resources/Content.hpp"
+#include "engine/resources/ContentAssets.hpp"
+#include "engine/resources/TextAsset.hpp"
 
 namespace tryeditor {
+
+namespace {
+
+bool StartsWith(eastl::string_view value, eastl::string_view prefix) {
+    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+bool EndsWith(eastl::string_view value, eastl::string_view suffix) {
+    return value.size() >= suffix.size() && value.substr(value.size() - suffix.size()) == suffix;
+}
+
+void AppendUnique(eastl::vector<uint64_t>& destination, eastl::vector<uint64_t> source) {
+    destination.insert(destination.end(), source.begin(), source.end());
+    eastl::sort(destination.begin(), destination.end());
+    destination.erase(eastl::unique(destination.begin(), destination.end()), destination.end());
+}
+
+struct ContentFile {
+    eastl::string path;
+    uint64_t id = 0;
+    eastl::vector<uint8_t> data;
+};
+
+}  // namespace
 
 eastl::vector<uint64_t> BuildSystem::ExtractAndRemoveShared(eastl::span<eastl::vector<uint64_t>*> per_scene_lists) {
     eastl::unordered_map<uint64_t, uint32_t> ref_count;
@@ -120,26 +148,103 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     for (auto& tex_guid : common_textures)
         LogInfo("COMMON TEXTURE {}", tex_guid);
 
-    SceneDTO common_dto;
+    SceneDTO common_dto{};
     common_dto.meshes = eastl::move(common_meshes);
     common_dto.mats = eastl::move(common_mats);
     common_dto.name = "common_dto";
 
+    // 3. Собираем content до common-пака: префабы должны уехать туда вместе со своими
+    // мешами и материалами, иначе Prefab::Spawn в игре получит текст без ресурсов.
+    eastl::vector<ContentFile> content_files;
+    const auto content_paths = res_m_.GetAssetRegistry().ContentPaths();
+    for (const auto& path : content_paths) {
+        const bool is_prefab = StartsWith(path, "game/content/") && EndsWith(path, ".prefab");
+        const bool is_data = StartsWith(path, "game/data/");
+        if (!is_prefab && !is_data)
+            continue;
+
+        const uint64_t id = tryengine::core::PathId(path);
+        res_m_.Discard<tryengine::resources::TextAsset>(id);
+        auto text_res = co_await res_m_.GetAsync<tryengine::resources::TextAsset>(id);
+        if (!text_res.has_value()) {
+            LogError("Content file '{}' is not readable; skipped", path.c_str());
+            continue;
+        }
+
+        const auto& text = (*text_res)->text;
+
+        ContentFile file;
+        file.path = path;
+        file.id = id;
+        const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
+        file.data = eastl::vector<uint8_t>(begin, begin + text.size());
+
+        if (is_prefab) {
+            tryengine::resources::ContentAssetRefs refs;
+            tryengine::resources::CollectPrefabAssetRefs(text, res_m_.GetAssetRegistry(), refs);
+            AppendUnique(common_dto.meshes, eastl::move(refs.meshes));
+            AppendUnique(common_dto.mats, eastl::move(refs.mats));
+        } else if (is_data && EndsWith(path, ".mat")) {
+            // A material may be requested at runtime by path even if no scene/prefab
+            // references it; its shader and textures belong in common as well.
+            eastl::vector<uint64_t> data_mat;
+            data_mat.push_back(id);
+            AppendUnique(common_dto.mats, eastl::move(data_mat));
+        }
+
+        content_files.push_back(eastl::move(file));
+    }
+
+    // Материалы (общие и из префабов) тянут за собой шейдеры и текстуры.
+    for (uint64_t mat : common_dto.mats) {
+        auto mat_res = co_await res_m_.GetAsync<tryengine::graphics::MaterialConfig>(mat);
+        if (!mat_res.has_value()) {
+            LogError("Common material {} is not readable; skipped", mat);
+            continue;
+        }
+        const auto& asset_data = *mat_res;
+        if (asset_data->shader != 0)
+            common_shaders.push_back(asset_data->shader);
+        for (const auto& field : asset_data->textures.fields)
+            if (const auto* texture_id = eastl::get_if<uint64_t>(&field.value); texture_id && *texture_id != 0)
+                common_textures.push_back(*texture_id);
+    }
+    eastl::sort(common_shaders.begin(), common_shaders.end());
+    common_shaders.erase(eastl::unique(common_shaders.begin(), common_shaders.end()), common_shaders.end());
+    eastl::sort(common_textures.begin(), common_textures.end());
+    common_textures.erase(eastl::unique(common_textures.begin(), common_textures.end()), common_textures.end());
+
     eastl::vector<tryengine::resources::AssetPak> asset_paks;
 
-    // 3. Пакуем сцены вместе с их уникальными зависимостями
+    // 4. Пакуем сцены вместе с их уникальными зависимостями
     for (size_t i = 0; i < scenes.size(); ++i) {
         auto o = co_await CreatePak(scenes[i], per_scene_shaders[i], per_scene_textures[i]);
         if (!o.has_value())
             co_return LogAndMakeError("Create Pak Is Failed");
+        // Общие ресурсы и content лежат в common; PakManager подтянет его по зависимостям.
+        o->requirement_paks.push_back("content/common_dto.pak");
         asset_paks.emplace_back(eastl::move(*o));
     }
 
-    // 4. Пакуем общие ресурсы
-    auto a = co_await CreatePak(common_dto, common_shaders, common_textures);
-    if (!a.has_value())
+    // 5. Пакуем общие ресурсы: сцены делят их между собой, а префабы могут понадобиться
+    // в любой момент, поэтому common несёт все prefab/data и их зависимости.
+    auto common_result = co_await CreatePak(common_dto, common_shaders, common_textures);
+    if (!common_result.has_value())
         co_return LogAndMakeError("Create Pak Is Failed");
-    asset_paks.emplace_back(eastl::move(*a));
+
+    tryengine::resources::AssetPak common_pak = eastl::move(*common_result);
+    if (!scenes.empty())
+        common_pak.startup_scene = scenes[0].path;
+
+    for (auto& file : content_files) {
+        common_pak.contents.push_back(file.id);
+        common_pak.content_paths.push_back(file.path);
+        common_pak.contents_data.push_back(eastl::move(file.data));
+    }
+
+    LogInfo("Common pak: {} content file(s), {} meshes, {} materials", common_pak.contents.size(),
+            common_dto.meshes.size(), common_dto.mats.size());
+    asset_paks.emplace_back(eastl::move(common_pak));
 
     LogInfo("Начали писать в папку {}", build_directory);
     for (auto& asset_pak : asset_paks) {
@@ -148,13 +253,6 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         tryengine::resources::FileHandle h = file_m_.WriteChunkAsync(path, pak_binary);
         co_await h;
     }
-    auto path = tryengine::fmt::format("{}/content/{}", build_directory, "setting");
-    auto data = tryengine::fmt::format("Какие-то данные");
-    eastl::span view{reinterpret_cast<const uint8_t*>(data.data()), data.size()};
-
-    tryengine::resources::FileHandle h = file_m_.WriteChunkAsync(path, view);
-    co_await h;
-
     LogInfo("Закончили писать в папку");
     co_return {};
 }
@@ -167,6 +265,25 @@ tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
     pak.name = scene.name;
 
     auto& registry = res_m_.GetAssetRegistry();
+
+    // Текст сцены — такой же content-файл, как префаб: id = PathId(путь), данные — текст.
+    // Читается через общий TextAsset, поэтому игра грузит сцену без loose-файлов.
+    if (!scene.path.empty()) {
+        const uint64_t scene_id = tryengine::core::PathId(scene.path);
+        // Сцена могла быть сохранена в этой же сессии редактора: закешированный текст
+        // запаковал бы прошлую ревизию.
+        res_m_.Discard<tryengine::resources::TextAsset>(scene_id);
+        auto text_res = co_await res_m_.GetAsync<tryengine::resources::TextAsset>(scene_id);
+        if (text_res.has_value()) {
+            const auto& text = (*text_res)->text;
+            const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
+            pak.contents.push_back(scene_id);
+            pak.contents_data.push_back(eastl::vector<uint8_t>(begin, begin + text.size()));
+            pak.content_paths.push_back(scene.path);
+        } else {
+            LogError("Scene text '{}' is not readable", scene.path.c_str());
+        }
+    }
 
     for (uint64_t mesh : scene.meshes) {
         auto o = registry.GetAssetLocation(mesh);

@@ -18,6 +18,16 @@ struct AssetPak {
     eastl::vector<eastl::vector<uint8_t>> textures_data;
     eastl::vector<eastl::vector<uint8_t>> mats_data;
 
+    // Content-файлы (prefabs, scenes, data): id — PathId(путь), данные — сам текст.
+    // content_paths дублирует пути только для манифеста: в паке листинга нет.
+    eastl::vector<uint64_t> contents;
+    eastl::vector<eastl::vector<uint8_t>> contents_data;
+    eastl::vector<eastl::string> content_paths;
+
+    // Стартовая сцена билда; пустая строка — стартовой сцены нет. Pack кладёт её в пак
+    // под фиксированным id (kStartupSceneId) вместе с манифестом.
+    eastl::string startup_scene;
+
     eastl::vector<eastl::string> requirement_paks;
 };
 

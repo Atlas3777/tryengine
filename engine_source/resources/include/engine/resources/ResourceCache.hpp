@@ -22,8 +22,10 @@ public:
     // Убирает ресурс из кеша, не уничтожая его: старые handles продолжают жить.
     // Нужен редактору для перезагрузки материала после правки файла.
     virtual bool Invalidate(uint64_t guid) = 0;
+    virtual bool Discard(uint64_t guid) = 0;
     virtual void RequestLoad(uint64_t guid) = 0;
     virtual bool IsReady(uint64_t guid) = 0;
+    virtual bool IsFailed(uint64_t guid) = 0;
     virtual void* GetRawPointer(uint64_t guid) = 0;
     virtual bool Release(uint64_t guid) = 0;
     virtual bool HasGuid(uint64_t guid) const = 0;
@@ -88,6 +90,14 @@ public:
         return false;
     }
 
+    bool IsFailed(uint64_t guid) override {
+        std::lock_guard lock(cache_mutex_);
+        auto it = cache_.find(guid);
+        if (it != cache_.end() && it->second)
+            return it->second->state.load(std::memory_order_acquire) == ResourceState::Failed;
+        return false;
+    }
+
     void* GetRawPointer(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
@@ -114,6 +124,21 @@ public:
         if (cache_.find(guid) != cache_.end())
             return true;
         return registry_.GetAssetLocation(guid).has_value();
+    }
+
+    // Удаляет ресурс без retired, если на него нет ссылок. Только для value-типов,
+    // чьи указатели не утекают наружу (TextAsset): текст копируется в строку скрипта.
+    bool Discard(uint64_t guid) override {
+        std::lock_guard lock(cache_mutex_);
+        auto it = cache_.find(guid);
+        if (it == cache_.end())
+            return false;
+        if (it->second->state.load(std::memory_order_acquire) == ResourceState::Loading)
+            return false;
+        if (it->second->ref_count.load(std::memory_order_acquire) != 0)
+            return false;
+        cache_.erase(it);
+        return true;
     }
 
     bool Invalidate(uint64_t guid) override {

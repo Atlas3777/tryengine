@@ -6,9 +6,11 @@ module Editor shared public
 require tryeditor/Mover
 require tryeditor/DebugRender
 require tryeditor/EditorHotkeys
+require tryeditor/Hierarchy
 
 require trygame/Game
 
+require math
 require tryengine/Scene
 require tryengine/Profiling
 require tryengine/Time
@@ -22,9 +24,6 @@ require tryResources
 require imgui
 require daslib/decs
 
-let mesh_id = 3081795527557720915ul
-let mat_id = 17036954862819815981ul
-
 var is_playing : bool = false
 var is_paused  : bool = false
 
@@ -35,7 +34,39 @@ struct EditorClock : ClockTag {}
 var editor_clock = EditorClock()
 
 def private OnSceneLoaded(name : string; path : string; empty : bool) {
-    EnsureEditorCamera()
+    print("Загрузка\n")
+    // A scene load replaces the whole DECS heap, so an id from the previous scene is no
+    // longer even in range of the lookup table. Panels that query `selected_eid` would
+    // index past it; clear the selection at the one place every load goes through.
+    selected_eid = INVALID_ENTITY_ID
+
+    // Play runs GameStart unchanged; the editor camera is editor state layered on top.
+    // It is tagged `editorCameraTag`, so the game camera query and GameUpdate ignore it,
+    // while Mover and the Scene viewport keep working during Play.
+    create_entity() @(eid : EntityId; var cmp : ComponentMap) {
+        cmp.tag := "EditorCamera"
+        cmp |> set("editorCameraTag", true)
+        apply_decs_template(cmp, Transform(position = float3(0, 0, 0), rotation =  float4(0, 0, 0, 1), scale = float3(1, 1, 1)))
+        apply_decs_template(cmp, Camera())
+        apply_decs_template(cmp, Relationship())
+    }
+    decs::commit()
+}
+
+def private OnSceneUnloaded() {
+    print("Выгрузка\n")
+    // A scene load replaces the whole DECS heap, so an id from the previous scene is no
+    // longer even in range of the lookup table. Panels that query `selected_eid` would
+    // index past it; clear the selection at the one place every load goes through.
+    selected_eid = INVALID_ENTITY_ID
+
+    // Play runs GameStart unchanged; the editor camera is editor state layered on top.
+    // It is tagged `editorCameraTag`, so the game camera query and GameUpdate ignore it,
+    // while Mover and the Scene viewport keep working during Play.
+    query()$(eid : EntityId, editorCameraTag : bool, tf : Transform, camera : Camera){
+        delete_entity(eid)
+    }
+    decs::commit()
 }
 
 [export]
@@ -43,6 +74,7 @@ def EditorStart(){
     TimeAttach(editor_clock)
     init_quadtree_debug()
     RegisterSceneLoadedListener(@@OnSceneLoaded)
+    RegisterSceneUnloadedListener(@@OnSceneUnloaded)
     LoadEmptyScene()
 }
 
@@ -57,55 +89,3 @@ def EditorUpdate(){
         GameUpdate()
     }
 }
-
-// def create_mesh_entity(tag : string, pos : float3) {
-//     return create_entity() @(eid, cmp) {
-//         cmp.tag := tag
-//         apply_decs_template(cmp, Transform(
-//             position = pos,
-//             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-//             scale = float3(1.0f, 1.0f, 1.0f)
-//         ))
-//         cmp.meshGuid := mesh_id
-//         cmp.materialGuid := mat_id
-//         apply_decs_template(cmp, Relationship())
-//     }
-// }
-
-// def Spawn() {
-//     print("Spawn \n")
-
-//     let test_eid = create_entity() @(eid, cmp) {
-//         cmp.tag := "teest"
-//         apply_decs_template(cmp, Transform(
-//             position = float3(0.0f, 0.0f, 0.0f),
-//             rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-//             scale = float3(1.0f, 1.0f, 1.0f)
-//         ))
-//         cmp.inputState := float3(0, 0, 0)
-//         cmp.speed := float(3)
-
-//         cmp.meshGuid := mesh_id
-//         cmp.materialGuid := mat_id
-//         apply_decs_template(cmp, Relationship())
-//     }
-
-//     create_mesh_entity("Right 1", float3(5.0f, 5.0f, 0.0f))
-//     create_mesh_entity("Right 2", float3(5.0f, 10.0f, 0.0f))
-//     create_mesh_entity("Left 1",  float3(-5.0f, 5.0f, 0.0f))
-//     create_mesh_entity("Left 2",  float3(-5.0f, 10.0f, 0.0f))
-
-//     commit()
-// }
-    // if (pressed(Key.H)){
-    //     print("request mesh \n")
-    //     RequestLoadMesh(mesh_id)
-    //     print("request mat \n")
-    //     RequestLoadMaterial(mat_id)
-    // }
-
-    // if (pressed(Key.B))
-    //     Spawn()
-    // AddLine(float3(0, 0, 0), float3(1, 0, 0), Color.Red)
-    // AddLine(float3(0, 0, 0), float3(0, 1, 0), Color.Green)
-    // AddLine(float3(0, 0, 0), float3(0, 0, 1), Color.Blue)

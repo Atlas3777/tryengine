@@ -1,7 +1,13 @@
 #pragma once
 
+#include <EASTL/algorithm.h>
 #include <EASTL/hash_map.h>
+#include <EASTL/hash_set.h>
 #include <EASTL/optional.h>
+#include <EASTL/sort.h>
+#include <EASTL/string.h>
+#include <EASTL/string_view.h>
+#include <EASTL/vector.h>
 #include <mutex>
 
 #include "engine/core/strings/Hash.hpp"
@@ -51,10 +57,17 @@ public:
     // авторитетный это файл или артефакт импорта.
     eastl::optional<uint64_t> ResolvePath(eastl::string_view path) const {
         std::lock_guard lock(mutex_);
-        auto it = path_index_.find(core::PathId(path));
-        if (it == path_index_.end())
-            return eastl::nullopt;
-        return it->second;
+        const uint64_t id = core::PathId(path);
+        auto it = path_index_.find(id);
+        if (it != path_index_.end())
+            return it->second;
+
+        // У content-файла id — это PathId(путь), и в паке он зарегистрирован под этим
+        // id без пути. Таблица путей в паке не нужна: запрос по пути даёт тот же хеш.
+        if (locations_.find(id) != locations_.end())
+            return id;
+
+        return eastl::nullopt;
     }
 
     // Авторская ссылка -> id: "guid:<u64>" самодостаточен, всё остальное — по пути.
@@ -116,6 +129,57 @@ public:
         return eastl::nullopt;
     }
 
+    // Список content-файлов: авторитетные файлы редактора плюс манифесты смонтированных
+    // паков. Отсортирован и без дублей, чтобы билд и RefreshContent были детерминированы.
+    eastl::vector<eastl::string> ContentPaths() const {
+        std::lock_guard lock(mutex_);
+        eastl::vector<eastl::string> paths;
+        paths.reserve(locations_.size() + content_paths_.size());
+
+        for (const auto& entry : locations_) {
+            if (const auto* loose = eastl::get_if<LooseFileLocation>(&entry.second))
+                if (loose->origin == AssetOrigin::Authoritative)
+                    paths.push_back(loose->path);
+        }
+        for (const auto& path : content_paths_)
+            paths.push_back(path);
+
+        eastl::sort(paths.begin(), paths.end());
+        paths.erase(eastl::unique(paths.begin(), paths.end()), paths.end());
+        return paths;
+    }
+
+    // Манифест — список путей через '\n'. В паке нет листинга каталога, поэтому игра
+    // получает его из пака; редактор собирает тот же список из зарегистрированных файлов.
+    eastl::string ContentManifest() const {
+        const eastl::vector<eastl::string> paths = ContentPaths();
+        eastl::string manifest;
+        for (size_t i = 0; i < paths.size(); ++i) {
+            if (i > 0)
+                manifest += '\n';
+            manifest += paths[i];
+        }
+        return manifest;
+    }
+
+    // Добавляет пути из манифеста, прочитанного из пака. Идемпотентно.
+    void AppendContentManifest(eastl::string_view manifest) {
+        std::lock_guard lock(mutex_);
+        size_t start = 0;
+        while (start <= manifest.size()) {
+            const size_t end = manifest.find('\n', start);
+            const size_t stop = end == eastl::string_view::npos ? manifest.size() : end;
+            if (stop > start) {
+                const uint64_t id = core::PathId(manifest.substr(start, stop - start));
+                if (content_path_ids_.insert(id).second)
+                    content_paths_.push_back(eastl::string(manifest.data() + start, stop - start));
+            }
+            if (end == eastl::string_view::npos)
+                break;
+            start = end + 1;
+        }
+    }
+
     // Вызывать до старта потоков. В game не вызывается.
     void SetMissHandler(IAssetMissHandler* h) {
         miss_handler_ = h;
@@ -131,6 +195,9 @@ private:
     // PathId(путь) -> id. Авторитетные файлы индексируются под своим id, артефакты
     // импорта — под путём артефакта, чтобы редактор мог найти ресурс по любому пути.
     eastl::hash_map<uint64_t, uint64_t> path_index_;
+    // Пути из манифестов паков. В паке нет каталогов, листинг приходит одним текстом.
+    eastl::vector<eastl::string> content_paths_;
+    eastl::hash_set<uint64_t> content_path_ids_;
     IAssetMissHandler* miss_handler_ = nullptr;
 };
 

@@ -186,6 +186,37 @@ daslang -dry-run -no-lint \
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
+- Content читается только через `tryengine/Assets.das`: скрипт называет авторский путь,
+  движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
+  (игра). Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
+- Префабы: `tryengine/Prefab.das` — формат, кеш и спавн. `Prefab::RefreshContent()` берёт
+  список `.prefab` из манифеста и складывает разобранные `PrefabData` в daslang-кеш;
+  `Prefab::Spawn("sword", origin)` — синхронный cache-hit и `EntityId`. C++-кеш
+  `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
+  сырой текст читает его `TextAsset`. Игра не прогревает все префабы:
+  `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное, а
+  `Prefab::FindInContent` резолвит имя по манифесту без чтения всех файлов.
+  `RefreshContent` остаётся инструментом редактора/тестов.
+- Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/**/*.bundle` (ConfigFormat,
+  `version = 1`, `name`, `prefabs: string[]`). Бандл — авторская группа префабов; билд
+  кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
+  шаг предзагрузки префабов.
+- `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка
+  строится как запрос: `Scene::UnloadActiveScene`, затем
+  `var request <- LoaderRequest()` с `SetLoadingScene`, `AddBundle`, `AddScene`,
+  `AddPrefab`, `AddStep`, `SetBlocking` и `Loader::Invoke(request)`. `Loader::Update` в `GameUpdate`
+  асинхронно читает тексты, разворачивает бандлы, парсит зависимости сцен/префабов,
+  запрашивает меши/материалы и отдаёт `Phase()`/`Headline()`/`Current()`/`Total()`/
+  `Progress()`/`Status()`. Loading-сцену применяет сам загрузчик, когда её текст готов;
+  target-сцену — игра: `Scene::Load(STARTUP_SCENE, @@StartGameScene)` после
+  `Loader::IsReady()`, затем `Loader::Finish()`. `Scene::Load(path, callback)` — это и есть
+  scene-specific hook; события `Loader::RegisterLoaderListener` оставлены как
+  необязательные уведомления. `blocking` — контракт: пока `Loader::IsBlocking()`, игра не
+  должна продолжать gameplay; флаг не блокирует поток и не останавливает `Update`.
+  `GameApp::Init` больше ничего не прогревает: только паки и `script_pak`. В редакторе Play
+  тот же путь; Play снимает снимок DECS-heap/`SceneState`/selection, а Stop вызывает
+  `Loader::Abort` и возвращает снимок. `tryengine/startup` автоматически не загружается.
+  Подробности — `engine_source/daslang/LOADER.md`.
 - Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 
 ## 7. Стиль кода

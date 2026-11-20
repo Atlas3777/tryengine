@@ -5,6 +5,7 @@ module FileReader shared public
 
 require tryAsyncFile public
 require daslib/async_boost
+require daslib/strings_boost
 
 def finalize(var file_handle : FileHandle&) {
     finalize_file_handle(file_handle)
@@ -28,4 +29,18 @@ def GetFileSize(path : string) : uint64 {
     let size = handle.GetFileSize
     delete handle
     yield size
+}
+
+//! Writes text through the engine file API. Parent directories are created by the file
+//! manager, so callers never touch the filesystem directly. Editor-only operation.
+[async]
+def WriteFile(path : string; text : string) : bool {
+    var data <- text.to_bytes()
+    var handle <- WriteChunkAsync(path, data, 0ul)
+    while (!handle.IsReady) {
+        await_next_frame()
+    }
+    let failed = handle.IsFailed
+    delete handle
+    yield !failed
 }

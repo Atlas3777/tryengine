@@ -1,8 +1,10 @@
 #include "../include/engine/resources/binary/AssetPakBinary.hpp"
 
+#include <EASTL/hash_set.h>
 #include <cstring>
 
 #include "engine/core/MakeError.hpp"
+#include "engine/resources/Content.hpp"
 
 namespace tryengine::resources {
 namespace {
@@ -114,16 +116,27 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
     // 2. Строим таблицу ResourceLayout и склеенный буфер данных.
     eastl::vector<ResourceLayout> layout;
     // Резервируем место под все типы ресурсов
-    layout.reserve(pak.meshes.size() + pak.mats.size() + pak.shaders.size() + pak.textures.size());
+    layout.reserve(pak.meshes.size() + pak.mats.size() + pak.shaders.size() + pak.textures.size() +
+                   pak.contents.size() + 2);
     eastl::vector<uint8_t> data_buffer;
+    // Один id не может лежать в паке дважды: материал, запечённый в mats, и тот же файл
+    // из data — это один ресурс.
+    eastl::hash_set<uint64_t> appended_ids;
 
-    auto append_resource = [&](uint64_t guid, const eastl::vector<uint8_t>& bytes) {
+    auto append_bytes = [&](uint64_t guid, const void* bytes, size_t size) {
+        if (!appended_ids.insert(guid).second)
+            return;
         ResourceLayout entry;
         entry.guid = guid;
         entry.offset = static_cast<uint64_t>(data_buffer.size());
-        entry.size = static_cast<uint64_t>(bytes.size());
-        data_buffer.insert(data_buffer.end(), bytes.begin(), bytes.end());
+        entry.size = static_cast<uint64_t>(size);
+        const auto* first = static_cast<const uint8_t*>(bytes);
+        data_buffer.insert(data_buffer.end(), first, first + size);
         layout.push_back(entry);
+    };
+
+    auto append_resource = [&](uint64_t guid, const eastl::vector<uint8_t>& bytes) {
+        append_bytes(guid, bytes.data(), bytes.size());
     };
 
     // Берём min(вектор.size(), вектор_data.size()), чтобы не выйти за границы
@@ -148,6 +161,26 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
         pak.textures.size() < pak.textures_data.size() ? pak.textures.size() : pak.textures_data.size();
     for (size_t i = 0; i < texture_count; ++i)
         append_resource(pak.textures[i], pak.textures_data[i]);
+
+    // Content: манифест (список путей), стартовая сцена и сами файлы. Идентичность —
+    // PathId(путь), поэтому таблицы path -> id нет; манифест нужен только для листинга.
+    if (!pak.content_paths.empty()) {
+        eastl::string manifest;
+        for (size_t i = 0; i < pak.content_paths.size(); ++i) {
+            if (i > 0)
+                manifest += '\n';
+            manifest += pak.content_paths[i];
+        }
+        append_bytes(kContentManifestId, manifest.data(), manifest.size());
+    }
+
+    if (!pak.startup_scene.empty())
+        append_bytes(kStartupSceneId, pak.startup_scene.data(), pak.startup_scene.size());
+
+    const size_t content_count =
+        pak.contents.size() < pak.contents_data.size() ? pak.contents.size() : pak.contents_data.size();
+    for (size_t i = 0; i < content_count; ++i)
+        append_resource(pak.contents[i], pak.contents_data[i]);
 
     // 3. Формируем заголовок.
     AssetPakHeader header{};

@@ -68,6 +68,12 @@ public:
     }
 
     template <typename T>
+    bool IsFailed(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->IsFailed(guid) : false;
+    }
+
+    template <typename T>
     void* GetPointer(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
         TRY_ASSERT(cache, "Cache for type not registered");
@@ -91,6 +97,14 @@ public:
     bool Invalidate(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
         return cache ? cache->Invalidate(guid) : false;
+    }
+
+    // Удаляет ресурс из кеша без retired. Безопасно только для типов, которые не отдают
+    // наружу сырые указатели (TextAsset): иначе старый указатель в компоненте повиснет.
+    template <typename T>
+    bool Discard(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->Discard(guid) : false;
     }
 
     template <typename T>

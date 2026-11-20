@@ -8,7 +8,6 @@
 #include "engine/core/GameScriptSetup.hpp"
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptSystem.hpp"
-#include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/loaders/MeshLoader.hpp"
@@ -19,6 +18,7 @@
 #include "engine/resources/PendingLoadQueue.hpp"
 #include "engine/resources/ReadFullFile.hpp"
 #include "engine/resources/ResourceManager.hpp"
+#include "engine/resources/TextAsset.hpp"
 
 namespace trygame {
 
@@ -54,7 +54,7 @@ void GameApp::Init() {
     auto& registry = engine_->RegisterSystem<AssetRegistry>();
     engine_->RegisterSystem<PendingLoadQueue>(registry);
 
-    engine_->RegisterSystem<PakManager>(fm, registry).StartLoadAll();
+    auto& pak_manager = engine_->RegisterSystem<PakManager>(fm, registry);
 
     auto& rm = engine_->RegisterSystem<ResourceManager>(fm, registry);
 
@@ -62,6 +62,18 @@ void GameApp::Init() {
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
+    rm.RegisterType<TextAsset>(TextAssetLoader{});
+
+    // Паки монтируются до старта скриптов: манифест и тексты читаются через тот же API,
+    // что и в редакторе. GameStart только планирует загрузку; она идёт в GameUpdate.
+    auto paks_task = RunPollable(ThreadPool(), pak_manager.LoadAllAsync());
+    while (!paks_task.IsReady()) {
+        fm.Pull();
+        MainThread().Pull();
+        fm.Submit();
+        std::this_thread::yield();
+    }
+    TRY_ASSERT(paks_task.GetResult().has_value(), "Не удалось смонтировать content паки");
 
     auto pak_task = RunPollable(ThreadPool(), LoadScriptPak(fm));
     while (!pak_task.IsReady()) {
@@ -75,6 +87,9 @@ void GameApp::Init() {
     engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult())));
     engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
+
+    // Прогрева контента здесь нет: GameStart только планирует загрузку, а Loader::Update
+    // читает тексты и запрашивает меши/материалы из GameUpdate.
     engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     // У игры нет ImGui: смотреть на её кадры можно только по файлам в logs/. Каптион пишет

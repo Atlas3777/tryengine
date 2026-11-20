@@ -14,6 +14,9 @@
   Значения совпадают с прежним `PathGuid`, поэтому уже сохранённые в сценах ссылки на
   `.mat` продолжают резолвиться. Отдельных `PathHash`/`PathGuid` больше нет; не заводи
   третий путь-хеш.
+- Готовность ресурсов для загрузки: `ResourceIsReady*` и `ResourceIsFailed*` из
+  `tryResources`. Загрузчик запрашивает id один раз, опрашивает пару ready/failed и сам
+  решает, когда переключать сцену.
 - `AssetRegistry` хранит `id -> AssetLocation` и `PathId(путь) -> id`. Авторитетные файлы
   регистрирует `AssetPipeline::BuildTreeFromDisk` при сканировании домена
   (`RegisterAuthoritative`), артефакты импорта — `RegisterArtifactPaths`
@@ -24,11 +27,26 @@
   `ResolveRef` переводит её в id, `AssetRefOf` — обратно; `IsImported(id)` отличает
   производный ресурс от авторитетного. Вид ссылки — данные, а не тип поля: отдельный
   компонент под guid не нужен.
-- В паке путей нет: `AssetPak` и `BuildSystem` работают только с u64. Путь в пак попадать
-  не должен — конвертация путь → id выполняется до сборки пака. Если сцена собирается в
-  пак, её refs нужно превратить в `guid:<u64>` на куке; иначе рантайм не сможет резолвить
-  путь, потому что в паке нет таблицы путей.
+- В паке нет каталогов: `AssetPak` и `BuildSystem` работают с u64. Для content-файлов
+  (`game/content`, `game/data`) id — это `PathId(путь)`, поэтому путь в пак не нужен:
+  скрипт просит файл по пути, C++ считает тот же хеш. Что действительно кладётся в пак —
+  манифест (`tryengine/content_manifest`) со списком путей: игре нужен листинг, чтобы
+  перечислить префабы до `Spawn("short_name")`. `BuildSystem` пишет манифест и стартовую
+  сцену (`tryengine/startup`) в common-пак.
+- Ссылки в сцене не нужно переписывать в `guid:`: `AssetRegistry::ResolvePath` сначала
+  смотрит таблицу путей, а затем пробует `PathId(путь)` в `locations_`. В игре это находит
+  content-чанк, в редакторе — зарегистрированный авторский файл.
+- Единая точка чтения текста для скриптов — `TextAsset` + биндинги `tryResources`
+  (`ResolveAssetPath`, `RequestLoadAssetText`, `AssetTextIsReady/IsFailed`,
+  `GetAssetText`, `ReadAssetTextSync`). `ResourceManager` сам выбирает
+  `LooseFileLocation` или `PakChunkLocation`, поэтому Prefab/Scene/Assets.das не знают,
+  откуда читается файл. `ReadAssetTextSync` отдаёт готовый `TextAsset` из кеша, а при
+  промахе читает loose-файл напрямую: это путь редактора Play. Чанк пака синхронно не
+  читается: игра сначала делает текст готовым через `RequestLoadAssetText`
+  (`Loader::Update`), а затем вызывает синхронный `Scene::Load`, который читает тот же
+  кеш. Молчаливое чтение мимо этого шага скрыло бы ошибку загрузки.
 - Сцена (`engine_source/daslang/Scene.das`) хранит авторские ссылки: компонент
-  `materialRef: string`, список `requireMaterials: string[]`. `GetSceneHeader` резолвит их
-  в u64, поэтому `BuildSystem` и pak про формат ссылки не знают. Старый
-  `materialGuid: u64` мигрируется при загрузке через `AssetRefOf`.
+  `materialRef: MaterialRef`, список `requireMaterials: string[]`. `GetSceneHeader` и
+  `Scene::CollectRefs` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки не
+  знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
+  отвергаются/не получают материал.

@@ -157,18 +157,21 @@ def DrawInspector() {
     }
 
     window(INSPECTOR_WIN, (text = "InspectorDas", closable = false, flags = ImGuiWindowFlags.None)) {
-        if (selected_eid == INVALID_ENTITY_ID) {
-            text("pick entity")
-            return
-        }
-
+        // Never leave this window body early: an early return skips the window's End()
+        // and the next panel starts inside this one. A dead selected id is normal after
+        // a scene load, so it is a state, not an exit.
         var arch_idx = -1
         var rec_index : int64 = 0
-        if (!get_entity_location(selected_eid, arch_idx, rec_index)) {
+        var show_body = false
+        if (selected_eid == INVALID_ENTITY_ID) {
+            text("pick entity")
+        } elif (!get_entity_location(selected_eid, arch_idx, rec_index)) {
             text("dead entity")
-            return
+        } else {
+            show_body = true
         }
 
+        if (show_body) {
         text("Entity [{selected_eid.id:d}]")
         let a = unsafe(reinterpret<uint64>(selected_eid));
         text("Entity2 [{a:d}]")
@@ -243,6 +246,7 @@ def DrawInspector() {
             RemoveInspectorComponent(selected_eid, g_pending_remove_arch, g_pending_remove, g_pending_remove_group)
             g_pending_remove = ""
             clear_inspector_states()
+        }
         }
     }
 }

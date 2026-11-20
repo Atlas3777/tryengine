@@ -18,6 +18,54 @@ var ENTITY_NODE : TreeNodeState
 
 var selected_eid : EntityId = INVALID_ENTITY_ID
 
+// Selection reveal: when selected_eid changes (viewport pick, prefab spawn, inspector),
+// open the selection's ancestors and its own children once, then scroll it into view.
+// The force is one frame only, so the user can collapse the node afterwards.
+var private g_last_selected_eid : EntityId = INVALID_ENTITY_ID
+var private g_selection_chain : array<EntityId>
+var private g_force_open_selection : bool
+var private g_scroll_to_selection : bool
+
+def private IsInSelectionChain(eid : EntityId) : bool {
+    for (chain_eid in g_selection_chain) {
+        if (chain_eid == eid) {
+            return true
+        }
+    }
+    return false
+}
+
+def private UpdateSelectionReveal() {
+    if (selected_eid == g_last_selected_eid) {
+        return
+    }
+    g_last_selected_eid = selected_eid
+
+    clear(g_selection_chain)
+    g_force_open_selection = false
+    g_scroll_to_selection = false
+
+    if (selected_eid == INVALID_ENTITY_ID) {
+        return
+    }
+
+    var current = selected_eid
+    var depth = 0
+    while (current != INVALID_ENTITY_ID && depth < 1024) {
+        g_selection_chain |> push(current)
+
+        var parent = INVALID_ENTITY_ID
+        query(current) $(rel : Relationship) {
+            parent = rel.parent
+        }
+        current = parent
+        depth++
+    }
+
+    g_force_open_selection = true
+    g_scroll_to_selection = true
+}
+
 [export]
 def SetSelectedEntity(eid : uint64){
     unsafe {
@@ -48,12 +96,19 @@ def DrawHierarchy() {
             selected_eid = INVALID_ENTITY_ID
         }
 
+        UpdateSelectionReveal()
+
         // Отрисовка корневых сущностей
         query() $(eid : EntityId; rel : Relationship) {
             if (rel.parent == INVALID_ENTITY_ID) {
                 DrawEntityNode(eid)
             }
         }
+
+        // One-shot: if the selection was not drawn (dead entity, collapsed window),
+        // do not keep the force/scroll request alive for the next frame.
+        g_force_open_selection = false
+        g_scroll_to_selection = false
     }
 }
 
@@ -81,10 +136,21 @@ def DrawEntityNode(eid : EntityId) {
     }
 
     with_id("{eid.id}") {
+        if (g_force_open_selection && IsInSelectionChain(eid)) {
+            SetNextItemOpen(true, ImGuiCond.Always)
+        }
+
         let opened = tree_node_ex(ENTITY_NODE, (text = labell, flags = flags))
 
         if (IsItemClicked()) {
             selected_eid = eid
+        }
+
+        if (g_scroll_to_selection && is_selected) {
+            if (!IsItemVisible()) {
+                SetScrollHereY(0.5f)
+            }
+            g_scroll_to_selection = false
         }
 
         if (opened) {

@@ -505,7 +505,7 @@ def private LoadMaterial() {
 // materialRef выделенной сущности. Нужен, чтобы панель замечала не только смену
 // выделения, но и выбор материала через инспектор.
 def private SelectedMaterialRef() : string {
-    if (selected_eid == INVALID_ENTITY_ID) {
+    if (!is_alive(selected_eid)) {
         return ""
     }
     var asset_ref = ""
@@ -519,7 +519,7 @@ def private SelectedMaterialRef() : string {
 // false — путь ещё не известен (реестр ассетов заполняется асинхронно на старте),
 // панель повторит попытку на следующем кадре.
 def private SyncFromSelected() : bool {
-    if (selected_eid == INVALID_ENTITY_ID) {
+    if (!is_alive(selected_eid)) {
         return true
     }
 
@@ -632,7 +632,7 @@ def private ApplyMaterial() {
         status = "load a material first"
         return
     }
-    if (selected_eid == INVALID_ENTITY_ID) {
+    if (!is_alive(selected_eid)) {
         status = "select an entity in the hierarchy first"
         return
     }

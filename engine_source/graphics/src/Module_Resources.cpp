@@ -1,11 +1,15 @@
 #include <EASTL/hash_set.h>
+#include <EASTL/vector.h>
+#include <cstdio>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 
 #include "engine/core/TryengineContext.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/resources/Content.hpp"
 #include "engine/resources/ResourceManager.hpp"
+#include "engine/resources/TextAsset.hpp"
 
 using namespace tryengine::core;
 using das::LineInfoArg;
@@ -46,6 +50,16 @@ bool ResourceIsReadyMesh(uint64_t guid, das::Context* ctx) {
 bool ResourceIsReadyMaterial(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->IsReady<tryengine::graphics::Material>(guid) : false;
+}
+
+bool ResourceIsFailedMesh(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsFailed<tryengine::graphics::Mesh>(guid) : false;
+}
+
+bool ResourceIsFailedMaterial(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsFailed<tryengine::graphics::Material>(guid) : false;
 }
 
 tryengine::graphics::Mesh* GetMeshPointer(uint64_t guid, das::Context* ctx) {
@@ -116,6 +130,134 @@ bool IsImportedAsset(uint64_t id, das::Context* ctx) {
     return res_manager ? res_manager->GetAssetRegistry().IsImported(id) : false;
 }
 
+// ---------------------------------------------------------------------------
+// Content text API
+// ---------------------------------------------------------------------------
+// Единственная точка чтения content-файлов для скриптов. В редакторе источник — loose
+// файл, в игре — чанк пака; разницу скрывает AssetRegistry + ResourceManager.
+
+uint64_t AssetPathId(const char* path) {
+    if (!path || !*path)
+        return 0;
+    return tryengine::core::PathId(path);
+}
+
+// Путь (или ссылка `guid:`) -> id. В паке content-файл зарегистрирован под PathId(путь),
+// поэтому таблица путей не нужна: тот же путь даёт тот же id.
+uint64_t ResolveAssetPath(const char* path, das::Context* ctx) {
+    if (!path || !*path)
+        return 0;
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return 0;
+    const auto id = res_manager->GetAssetRegistry().ResolveRef(path);
+    return id.has_value() ? *id : 0;
+}
+
+// Редактор: путь, которого ещё нет в реестре (файл из диалога), становится
+// авторитетным ресурсом. В игре не вызывается — там всё уже в паке.
+uint64_t RegisterAssetPath(const char* path, das::Context* ctx) {
+    if (!path || !*path)
+        return 0;
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return 0;
+    auto& registry = res_manager->GetAssetRegistry();
+    const auto resolved = registry.ResolvePath(path);
+    return resolved.has_value() ? *resolved : registry.RegisterAuthoritative(path);
+}
+
+void RequestLoadAssetText(uint64_t id, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->RequestLoad<tryengine::resources::TextAsset>(id);
+}
+
+bool AssetTextIsReady(uint64_t id, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsReady<tryengine::resources::TextAsset>(id) : false;
+}
+
+bool AssetTextIsFailed(uint64_t id, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsFailed<tryengine::resources::TextAsset>(id) : false;
+}
+
+char* GetAssetText(uint64_t id, das::Context* ctx, LineInfoArg* at) {
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return nullptr;
+    auto* text = res_manager->GetPointerExplicit<tryengine::resources::TextAsset>(id);
+    if (!text)
+        return nullptr;
+    return ctx->allocateString(text->text.c_str(), text->text.size(), at);
+}
+
+// Синхронное чтение текста для редактора. В игре GameApp прогревает все тексты до
+// GameStart, поэтому здесь чанк пака не читается: у пака нет синхронного ридера, и
+// молчаливое чтение мимо preload'а скрыло бы его ошибку. В редакторе источник — loose
+// файл, и прямой read держит Play на том же синхронном пути, что и игру.
+char* ReadAssetTextSync(uint64_t id, das::Context* ctx, LineInfoArg* at) {
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return ctx->allocateString("", 0, at);
+
+    if (res_manager->IsReady<tryengine::resources::TextAsset>(id)) {
+        const auto* text = res_manager->GetPointerExplicit<tryengine::resources::TextAsset>(id);
+        if (text)
+            return ctx->allocateString(text->text.c_str(), text->text.size(), at);
+    }
+
+    const auto location = res_manager->GetAssetRegistry().GetAssetLocation(id);
+    if (!location.has_value())
+        return ctx->allocateString("", 0, at);
+
+    const auto* loose = eastl::get_if<tryengine::resources::LooseFileLocation>(&*location);
+    if (!loose)
+        return ctx->allocateString("", 0, at);
+
+    std::FILE* file = std::fopen(loose->path.c_str(), "rb");
+    if (!file)
+        return ctx->allocateString("", 0, at);
+
+    std::fseek(file, 0, SEEK_END);
+    const long size = std::ftell(file);
+    std::fseek(file, 0, SEEK_SET);
+    if (size <= 0) {
+        std::fclose(file);
+        return ctx->allocateString("", 0, at);
+    }
+
+    eastl::vector<char> buffer(static_cast<size_t>(size));
+    const size_t read = std::fread(buffer.data(), 1, buffer.size(), file);
+    std::fclose(file);
+    if (read != buffer.size())
+        return ctx->allocateString("", 0, at);
+
+    return ctx->allocateString(buffer.data(), buffer.size(), at);
+}
+
+void ReleaseAssetText(uint64_t id, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->Release<tryengine::resources::TextAsset>(id);
+}
+
+// Drops a cached text. Discard, not Invalidate: a text asset hands out no raw pointers,
+// so the old copy can be destroyed immediately instead of growing retired_.
+void InvalidateAssetText(uint64_t id, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->Discard<tryengine::resources::TextAsset>(id);
+}
+
+// Список content-файлов. Редактор отдаёт зарегистрированные файлы, игра — манифест,
+// прочитанный PakManager'ом из пака.
+char* GetContentManifestText(das::Context* ctx, LineInfoArg* at) {
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return nullptr;
+    const eastl::string manifest = res_manager->GetAssetRegistry().ContentManifest();
+    return ctx->allocateString(manifest.c_str(), manifest.size(), at);
+}
+
 class Module_Resources : public das::Module {
 public:
     Module_Resources() : Module("tryResources") {
@@ -142,6 +284,12 @@ public:
         das::addExtern<DAS_BIND_FUN(ResourceIsReadyMesh)>(*this, lib, "ResourceIsReadyMesh",
                                                           das::SideEffects::accessGlobal, "ResourceIsReadyMesh");
 
+        das::addExtern<DAS_BIND_FUN(ResourceIsFailedMaterial)>(
+            *this, lib, "ResourceIsFailedMaterial", das::SideEffects::accessGlobal, "ResourceIsFailedMaterial");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsFailedMesh)>(*this, lib, "ResourceIsFailedMesh",
+                                                           das::SideEffects::accessGlobal, "ResourceIsFailedMesh");
+
         das::addExtern<DAS_BIND_FUN(ReleaseMaterialResource)>(
             *this, lib, "ReleaseMaterialResource", das::SideEffects::accessGlobal, "ReleaseMaterialResource");
 
@@ -165,6 +313,38 @@ public:
 
         das::addExtern<DAS_BIND_FUN(IsImportedAsset)>(*this, lib, "IsImportedAsset", das::SideEffects::accessGlobal,
                                                       "IsImportedAsset");
+
+        das::addExtern<DAS_BIND_FUN(AssetPathId)>(*this, lib, "AssetPathId", das::SideEffects::none, "AssetPathId");
+
+        das::addExtern<DAS_BIND_FUN(ResolveAssetPath)>(*this, lib, "ResolveAssetPath", das::SideEffects::accessGlobal,
+                                                       "ResolveAssetPath");
+
+        das::addExtern<DAS_BIND_FUN(RegisterAssetPath)>(*this, lib, "RegisterAssetPath", das::SideEffects::accessGlobal,
+                                                        "RegisterAssetPath");
+
+        das::addExtern<DAS_BIND_FUN(RequestLoadAssetText)>(*this, lib, "RequestLoadAssetText",
+                                                           das::SideEffects::accessGlobal, "RequestLoadAssetText");
+
+        das::addExtern<DAS_BIND_FUN(AssetTextIsReady)>(*this, lib, "AssetTextIsReady", das::SideEffects::accessGlobal,
+                                                       "AssetTextIsReady");
+
+        das::addExtern<DAS_BIND_FUN(AssetTextIsFailed)>(*this, lib, "AssetTextIsFailed", das::SideEffects::accessGlobal,
+                                                        "AssetTextIsFailed");
+
+        das::addExtern<DAS_BIND_FUN(GetAssetText)>(*this, lib, "GetAssetText", das::SideEffects::accessGlobal,
+                                                   "GetAssetText");
+
+        das::addExtern<DAS_BIND_FUN(ReadAssetTextSync)>(*this, lib, "ReadAssetTextSync", das::SideEffects::accessGlobal,
+                                                        "ReadAssetTextSync");
+
+        das::addExtern<DAS_BIND_FUN(ReleaseAssetText)>(*this, lib, "ReleaseAssetText", das::SideEffects::accessGlobal,
+                                                       "ReleaseAssetText");
+
+        das::addExtern<DAS_BIND_FUN(InvalidateAssetText)>(*this, lib, "InvalidateAssetText",
+                                                          das::SideEffects::accessGlobal, "InvalidateAssetText");
+
+        das::addExtern<DAS_BIND_FUN(GetContentManifestText)>(*this, lib, "GetContentManifestText",
+                                                             das::SideEffects::accessGlobal, "GetContentManifestText");
 
         verifyAotReady();
     }

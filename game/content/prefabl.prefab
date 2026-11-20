@@ -1,0 +1,18 @@
+version: u32 = 1
+name: string = "prefabl"
+configType: string = ""
+configRow: string = ""
+entities: PrefabEntity[] = [
+	{
+		Transform_position: f32x3 = [0 0 0]
+		Transform_rotation: f32x4 = [0 0 0 1]
+		Transform_scale: f32x3 = [1 1 1]
+		materialRef: MaterialRef = {
+			path: string = "guid:17036954862819815981"
+		}
+		meshGuid: u64 = 3081795527557720915
+		tag: string = "Vulcan_Scarlet_Lance_Material_Vulcan_0"
+		localId: u32 = 0
+		parentLocalId: u32 = 4294967295
+	}
+]

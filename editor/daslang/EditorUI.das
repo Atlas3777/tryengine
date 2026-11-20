@@ -4,12 +4,13 @@ options relaxed_assign = false
 module EditorUI shared public
 
 require tryengine/Scene
+require tryengine/Assets
 require tryengine/AsyncTaskManager
-require tryengine/Time
 require strings
 require math
 
 require tryeditor/Editor
+require tryeditor/PlayMode
 require trygame/Game
 
 require tryeditor/Hierarchy
@@ -19,6 +20,7 @@ require tryeditor/SceneViewPort
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
+require tryeditor/PrefabWindow
 require tryeditor/ProfilerWindow
 require tryeditor/EditorActions
 
@@ -33,7 +35,6 @@ require TryEditor
 require tryengine/Profiling
 require tryengine/EcsMacro
 require daslib/decs
-require daslib/archive
 
 [profile]
 def DrawMainMenu() {
@@ -52,6 +53,9 @@ def DrawMainMenu() {
                     ),
                     @(path : string; ctx : string) : void {
                         let name = get_file_name_without_extension(path)
+                        // A dialog returns an absolute path; the asset API is path-id based,
+                        // so register it before the scene reader asks for it.
+                        Assets::RegisterPath(path)
                         StartTask(LoadScene(name, path))
                     }
                 )
@@ -111,6 +115,7 @@ def DrawMainMenu() {
             menu_label(WIN_QUADTREE, (text = "QuadTree Debug", selected = true))
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
+            menu_label(WIN_PREFABS, (text = "Prefabs", selected = true))
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
@@ -158,55 +163,17 @@ def DrawPlayControls() {
 
     // 3. Рисуем кнопки как раньше
     if (!is_playing) {
-        if (button(PLAY_BTN, (text = "Play"))) { StartPlay() }
+        if (button(PLAY_BTN, (text = "Play"))) { BeginPlay() }
     } else {
         if (button(PAUSE_BTN, (text = is_paused ? "Continue" : "Pause"))) {
-            is_paused = !is_paused
-            if (is_paused) { PausePlay() } else { ResumePlay() }
+            if (is_paused) { ResumePlay() } else { PausePlay() }
         }
         same_line()
         if (button(STEP_BTN, (text = "Step frame"))) { StepPlay() }
         same_line()
-        if (button(STOP_BTN, (text = "Stop"))) { StopPlay() }
+        if (button(STOP_BTN, (text = "Stop"))) { EndPlay() }
     }
 }
-
-def StartPlay() {
-    // save_decs_state()
-    let data <- mem_archive_save(decsState)
-    live_store_bytes("__decs_state", data)
-
-    is_playing = true
-    is_paused  = false
-    // снимок состояния редактора
-    GameStart()
-    // Play always starts from a running game clock at zero, never from the pause or the
-    // accumulated time a previous session left behind.
-    TimeReset(game_clock)
-}
-
-def StopPlay() {
-    is_playing = false
-    is_paused  = false
-    TimeSetPaused(game_clock, false)
-    // restore_decs_state()
-    var data : array<uint8>
-    if (live_load_bytes("__decs_state", data)) {
-        data |> mem_archive_load(decsState)
-    }
-
-    // Снимок снят до GameStart: камеры редактора в нём может не быть.
-    EnsureEditorCamera()
-
-    // восстановить состояние
-    // сообщить движку «выйти из play-mode»
-}
-
-def PausePlay()  { is_paused = true;  TimeSetPaused(game_clock, true) }
-def ResumePlay() { is_paused = false; TimeSetPaused(game_clock, false) }
-// One synthetic frame at a fixed step: the step ignores the pause flag, and GameUpdate runs
-// here because EditorUpdate already skipped its own call for this frame.
-def StepPlay()   { TimeStepOnce(1.0f / 60.0f); GameUpdate() }
 
 [export, profile]
 def DrawEditor() {
@@ -227,6 +194,7 @@ def DrawEditor() {
     DrawGameSceneViewPort()
     DrawBuildManager()
     DrawMaterialEditor()
+    DrawPrefabWindow()
     DrawProfilerWindow()
     DrawPlotWindow()
     DrawScopesWindow()

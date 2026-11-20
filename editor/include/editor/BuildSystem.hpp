@@ -11,7 +11,10 @@ namespace tryeditor {
 
 struct SceneDTO {
     uint64_t scene_guid;
-    const char* name;
+    eastl::string name;
+    // Авторский путь (game/content/...): одновременно id сцены (PathId) и ключ для
+    // чтения текста через общий asset API.
+    eastl::string path;
     eastl::vector<uint64_t> meshes;
     eastl::vector<uint64_t> mats;
 };

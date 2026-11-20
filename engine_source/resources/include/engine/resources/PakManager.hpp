@@ -15,6 +15,7 @@
 #include "engine/core/MakeError.hpp"
 #include "engine/platform/Directory.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
+#include "engine/resources/Content.hpp"
 
 namespace tryengine::resources {
 
@@ -34,7 +35,11 @@ public:
     PakManager(const PakManager&) = delete;
     PakManager& operator=(const PakManager&) = delete;
 
-    void StartLoadAll() {
+    // Монтирует все паки из content/ и ждёт их. Игра вызывает это до старта скриптов:
+    // иначе первый же кадр просит ассет, которого ещё нет в реестре.
+    async::Task<void> LoadAllAsync() {
+        eastl::vector<eastl::string> pak_paths;
+
         filesystem::ReadDirectory("content/", [&](eastl::string_view name, filesystem::EntryKind kind) {
             // Пропускаем директории и другие записи, оставляем только файлы
             if (kind != filesystem::EntryKind::File)
@@ -48,9 +53,34 @@ public:
             // Формируем полный путь, т.к. ReadDirectory отдаёт только имя файла
             char fullPath[filesystem::kMaxPath];
             std::snprintf(fullPath, sizeof(fullPath), "content/%.*s", static_cast<int>(name.size()), name.data());
-
-            async::RunAndForget(async::ThreadPool(), LoadPakAsync(fullPath));
+            pak_paths.emplace_back(fullPath);
         });
+
+        if (pak_paths.empty()) {
+            LogWarn("PakManager: no .pak files under content/");
+            co_return {};
+        }
+
+        eastl::vector<async::Task<PakHandle>> tasks;
+        tasks.reserve(pak_paths.size());
+        for (const auto& path : pak_paths)
+            tasks.push_back(LoadPakAsync(path));
+
+        auto results = co_await async::WhenAll(async::ThreadPool(), eastl::move(tasks));
+        if (!results.has_value())
+            co_return LogAndMakeError("Failed to load content paks: {}", results.error().Message());
+
+        for (size_t i = 0; i < results->size(); ++i)
+            if (!(*results)[i].has_value())
+                co_return LogAndMakeError("Failed to load pak '{}': {}", pak_paths[i].c_str(),
+                                          (*results)[i].error().Message());
+
+        co_return {};
+    }
+
+    // Fire-and-forget вариант для редактора и тестов; игра ждёт LoadAllAsync.
+    void StartLoadAll() {
+        async::RunAndForget(async::ThreadPool(), LoadAllAsync());
     }
 
     async::Task<PakHandle> LoadPakAsync(const eastl::string pak_path) {
@@ -159,6 +189,27 @@ public:
                                                                        .fd_slot = fd_slot,
                                                                        .offset = header.data_offset + entry.offset,
                                                                        .size = entry.size});
+        }
+
+        // 8. Манифест content-файлов: в паке нет каталогов, поэтому листинг приходит
+        // отдельной записью. Игра читает его и наполняет кеш префабов.
+        for (const auto& entry : manifest.layout) {
+            if (entry.guid != kContentManifestId)
+                continue;
+
+            FileHandle content_manifest_handle = file_manager_.ReadChunkFDAsync(
+                fd_slot, header.data_offset + entry.offset, static_cast<uint32_t>(entry.size));
+            co_await content_manifest_handle;
+
+            if (content_manifest_handle.IsFailed()) {
+                LogError("Failed to read content manifest from PAK '{}'", pak_path.c_str());
+                break;
+            }
+
+            const auto data = content_manifest_handle.GetData();
+            registry_.AppendContentManifest(
+                eastl::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+            break;
         }
 
         co_return new_handle;

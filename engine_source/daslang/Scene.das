@@ -15,6 +15,8 @@ require daslib/array_boost
 require daslib/linq
 
 require strings
+require math
+require tryengine/Assets
 require tryengine/FileReader
 require tryengine/Types
 require tryengine/Serializable
@@ -26,28 +28,60 @@ struct Scene {
     requireMaterials : array<uint64>
 }
 
+// Editor play mode snapshots the scene description together with the DECS heap: the
+// heap restores the entities, and this restores the resource references the entities
+// render through. The game never captures or applies it.
+struct public SceneState {
+    name : string
+    path : string
+    requireMeshs : array<uint64>
+    requireMaterials : array<uint64>
+}
+
 struct LoadedSceneContext {
     scene_name : string // берется из имени файла
     scene_path : string
 }
 
+// Called after a scene is applied, so scene-specific code has the new DECS world.
+typedef public SceneCallback = function<() : void>
+
 var scene_context : LoadedSceneContext
 var active_scene : Scene
+
+// Preloaded scene texts keyed by asset id. `Loader` fills this so a later
+// `Scene::Load` is a pure apply step and does not need a pak read.
+var private g_scene_texts : table<uint64; string>
 
 // Scene lifecycle event. The editor subscribes to spawn its camera after every load;
 // the game has no listener and therefore no editor camera. `empty` marks the initial
 // untitled scene that has no file yet.
 typedef SceneLoadedListener = function<(name : string; path : string; empty : bool) : void>
 
+typedef SceneUnloadedListener = function<() : void>
+
+
 var private g_scene_loaded_listeners : array<SceneLoadedListener>
+
+var private g_scene_unloaded_listeners : array<SceneUnloadedListener>
 
 def public RegisterSceneLoadedListener(listener : SceneLoadedListener) {
     g_scene_loaded_listeners |> push(listener)
 }
 
+def public RegisterSceneUnloadedListener(listener : SceneUnloadedListener) {
+    g_scene_unloaded_listeners |> push(listener)
+}
+
 def private NotifySceneLoaded(name, path : string; empty : bool) {
     for (listener in g_scene_loaded_listeners) {
         invoke(listener, name, path, empty)
+    }
+}
+
+def private NotifySceneUnloaded() {
+    for (listener in g_scene_unloaded_listeners) {
+        invoke(listener)
     }
 }
 
@@ -70,15 +104,23 @@ def LoadScene(name, path : string) : void {
     NotifySceneLoaded(name, path, false)
 }
 
-def UnloadActiveScene(){
-    for (mat in active_scene.requireMaterials){
-        ReleaseMaterialResource(mat)
-    }
-    for (mesh in active_scene.requireMeshs){
-        ReleaseMeshResource(mesh)
-    }
+//! Clears the active scene and releases the resources it held. Scene loads call it
+//! internally; explicit entry points call it when they want to start from a blank world
+//! before their own loading step (the game does this before Loader::Invoke).
+def public UnloadActiveScene(){
+    NotifySceneUnloaded()
+    ReleaseActiveSceneResources()
     active_scene <- Scene()
     decs::restart()
+}
+
+def private ReleaseActiveSceneResources() {
+    for (mat in active_scene.requireMaterials) {
+        ReleaseMaterialResource(mat)
+    }
+    for (mesh in active_scene.requireMeshs) {
+        ReleaseMeshResource(mesh)
+    }
 }
 
 def SetScenePath(name, path : string) {
@@ -86,8 +128,59 @@ def SetScenePath(name, path : string) {
     scene_context.scene_path = path
 }
 
+//! Keeps a parsed scene text for a later synchronous `Load`. The loader calls this after
+//! reading the text asynchronously; the cache survives `Loader::Finish`, so preloaded
+//! scenes can be entered at any later point.
+def public CacheText(path : string; text : string) {
+    let id = Assets::IdOf(path)
+    if (id != 0ul) {
+        g_scene_texts[id] = text
+    }
+}
+
+def public InvalidateCachedText(path : string) {
+    let id = Assets::IdOf(path)
+    if (id != 0ul) {
+        erase(g_scene_texts, id)
+    }
+}
+
+def public ClearCachedTexts() {
+    clear(g_scene_texts)
+}
+
 def GetScenePath() : string {
     return scene_context.scene_path
+}
+
+//! Editor play mode: the scene the editor had open before GameStart. `ApplyState` puts
+//! it back and re-requests its resources; the caller restores the DECS heap separately.
+def public CaptureState() : SceneState {
+    var state : SceneState
+    state.name = scene_context.scene_name
+    state.path = scene_context.scene_path
+    clone(state.requireMeshs, active_scene.requireMeshs)
+    clone(state.requireMaterials, active_scene.requireMaterials)
+    return <- state
+}
+
+//! Releases the resources of the scene that is active now (the play scene), installs
+//! the captured editor scene, and requests its resources again. Does not touch DECS:
+//! the caller loads the heap snapshot after this.
+def public ApplyState(var state : SceneState) {
+    ReleaseActiveSceneResources()
+
+    clone(active_scene.requireMeshs, state.requireMeshs)
+    clone(active_scene.requireMaterials, state.requireMaterials)
+    scene_context.scene_name = state.name
+    scene_context.scene_path = state.path
+
+    for (mesh in active_scene.requireMeshs) {
+        RequestLoadMesh(mesh)
+    }
+    for (mat in active_scene.requireMaterials) {
+        RequestLoadMaterial(mat)
+    }
 }
 
 [async]
@@ -107,88 +200,36 @@ def SaveCurrentScene() : void {
 [async]
 def SaveSceneAsync(path : string) : void {
     let config_text = save_scene_to_config()
-    let str_len = length(config_text)
-
-    var data <- config_text.to_bytes()
-
-    var handle <- WriteChunkAsync(path, data, 0ul)
-    while (!handle.IsReady) {
-        await_next_frame()
+    let written : bool <- await(FileReader::WriteFile(path, config_text))
+    if (!written) {
+        print("[SCENE ERROR] Failed to write scene to '{path}'.\n")
+    } else {
+        InvalidateCachedText(path)
+        print("[SCENE] Scene saved successfully to '{path}'.\n")
     }
-
-    delete handle
-    print("[SCENE] Scene saved successfully to '{path}'.\n")
 }
 
 [async]
 def LoadSceneAsync(path : string) : void {
-    let file_size : uint64 <- await(FileReader::GetFileSize(path))
-    if (file_size == 0ul) {
+    let config_text : string <- await(Assets::ReadText(path))
+    if (empty(config_text)) {
         print("[SCENE ERROR] File '{path}' does not exist or is empty.\n")
-        return false
+    } else {
+        print("[SCENE] Loaded {length(config_text)} bytes from '{path}'\n")
+        load_scene_from_config(config_text)
     }
-
-    let bytes : array<uint8> <- await(FileReader::ReadFile(path, 0ul, uint(file_size)))
-    let config_text = string(bytes)
-
-    print("[DEBUG I/O] Path: '{path}', Stat size: {file_size}, Loaded bytes: {length(bytes)}\n")
-    // print("[DEBUG CONTENT START]\n{config_text}\n[DEBUG CONTENT END]\n")
-
-    load_scene_from_config(config_text)
 }
 
 [DecsSerializable]
 struct TestSer {
     name : string
     somee : uint64
-    //pp : CastPlayer
     name2 : string
 }
 
 struct CastPlayer{
     hp : int
     speed : float
-}
-
-//! Creates the editor camera when the current scene has none. Called by the editor at
-//! startup and after play mode restores the pre-play DECS snapshot: without it the
-//! viewport has no camera until a scene with one is loaded.
-def public EnsureEditorCamera() {
-    var cameras : array<EntityId>
-    query() $(eid : EntityId; let editorCameraTag : bool) {
-        cameras |> push(eid)
-    }
-
-    if (length(cameras) == 0) {
-        CreateCamera()
-        commit()
-    } elif (length(cameras) > 1) {
-        // One editor camera is an invariant: a loaded scene may contain a stale one,
-        // and GameStart no longer creates a second.
-        for (i in range(1, length(cameras))) {
-            decs::delete_entity(cameras[i])
-        }
-        commit()
-    }
-}
-
-def private CreateCamera{
-        create_entity() @(eid, cmp){
-        cmp.tag := "Camera"
-        apply_decs_template(cmp, Transform(
-            position = float3(0.0f, 0.0f, 2.0f),
-            rotation = float4(0f, 0f, 0f, 1f),
-            scale = float3(1.0f, 1.0f, 1.0f)
-        ))
-        apply_decs_template(cmp, Camera(
-            fov = 60.0f,
-            near_plane = 0.01f,
-            far_plane = 100.0f
-        ))
-        apply_decs_template(cmp, Relationship())
-        cmp.editorCameraTag := true
-        cmp |> set("TestSerRRR", TestSer(name = "tet", somee = 324ul, name2 = "HAHHA2"))
-    }
 }
 
 def private parse_uint64_array(cf : StructField?) : array<uint64> {
@@ -212,8 +253,8 @@ def private parse_uint64_array(cf : StructField?) : array<uint64> {
     return <- res
 }
 
-// requireMaterials: новый формат — строки-ссылки ("путь" или "guid:<id>"), старый — u64.
-// Оба приводятся к id, чтобы загрузчик сцены и билд не знали про формат ссылки.
+// requireMaterials is an array of authored references: a project path or "guid:<id>".
+// The loader resolves them to ids; there is no numeric fallback in the format.
 def private parse_asset_ref_array(cf : StructField?) : array<uint64> {
     var res : array<uint64>
     if (cf == null || !(cf.value is _array))
@@ -221,26 +262,69 @@ def private parse_asset_ref_array(cf : StructField?) : array<uint64> {
 
     assume arr = cf.value as _array
     for (elem in arr) {
-        if (elem == null)
+        if (elem == null || !(elem.value is _string))
             continue
-
-        var id : uint64 = 0ul
-        if (elem.value is _string) {
-            id = ResolveAssetRef(elem.value as _string)
-        } elif (elem.value is _uint64) {
-            id = elem.value as _uint64
-        } elif (elem.value is _int64) {
-            id = uint64(elem.value as _int64)
-        } elif (elem.value is _uint) {
-            id = uint64(elem.value as _uint)
-        } elif (elem.value is _int) {
-            id = uint64(elem.value as _int)
-        }
-
+        let id = ResolveAssetRef(elem.value as _string)
         if (id != 0ul && !res.contains(id))
             res |> push(id)
     }
     return <- res
+}
+
+// Refs live on the entity as components. `materialRef` is the only material form.
+def private CollectEntityRefs(var refs : AssetRefs; entity_obj : table<string; StructField?> const) {
+    let mesh_cf = entity_obj?["meshGuid"] ?? null
+    if (mesh_cf != null) {
+        AddMeshRef(refs, from_CF(mesh_cf, type<uint64>))
+    }
+
+    let material_cf = entity_obj?["materialRef"] ?? null
+    if (material_cf != null && material_cf.value is _object) {
+        let material = from_CF(material_cf, type<MaterialRef>)
+        if (!empty(material.path)) {
+            AddMaterialRef(refs, ResolveAssetRef(material.path))
+        }
+    }
+}
+
+//! Parsed dependency set of a scene document. Header arrays are authoritative, but a
+//! scene saved by an older editor may list refs only on its entities, so both are read.
+//! `parsed` is false when the text is not a valid scene object.
+def public CollectRefs(text : string) : AssetRefs {
+    var refs : AssetRefs
+
+    var error : string
+    var root = read_config(text, error)
+    if (length(error) > 0 || root == null || !(root.value is _object)) {
+        return <- refs
+    }
+
+    assume root_obj = root.value as _object
+    refs.parsed = true
+
+    let header_meshes <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
+    for (id in header_meshes) {
+        AddMeshRef(refs, id)
+    }
+
+    let header_materials <- parse_asset_ref_array(root_obj?["requireMaterials"] ?? null)
+    for (id in header_materials) {
+        AddMaterialRef(refs, id)
+    }
+
+    let entities_cf = root_obj?["entities"] ?? null
+    if (entities_cf != null && entities_cf.value is _array) {
+        assume entities_arr = entities_cf.value as _array
+        for (entity_cf in entities_arr) {
+            if (entity_cf == null || !(entity_cf.value is _object)) {
+                continue
+            }
+            assume entity_obj = entity_cf.value as _object
+            CollectEntityRefs(refs, entity_obj)
+        }
+    }
+
+    return <- refs
 }
 
 struct private SaveSceneDTO {
@@ -330,51 +414,24 @@ def private parse_and_apply_field(var cmp : ComponentMap;
                                   entity_tag : string;
                                   field_name : string;
                                   cf : StructField?;
-                                  renames : table<string; string>;
                                   var out_warnings : int&,
                                   type_name : string) : bool {
-    var target_name = field_name
-
-    if (renames |> key_exists(field_name)) {
-        target_name = renames?[field_name] ?? field_name
-        print("[SCENE MIGRATION] Entity '{entity_tag}': Field '{field_name}' renamed -> '{target_name}'.\n")
-        out_warnings++
-    }
-
     if (cf == null || cf.value is _null) {
-        print("[SCENE WARNING] Entity '{entity_tag}': Field '{target_name}' is null. Skipped.\n")
+        print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' is null. Skipped.\n")
         out_warnings++
         return false
     }
 
-    // Старый формат: materialGuid: u64. Превращаем id в каноническую ссылку, чтобы
-    // сцена не зависела от того, чем этот id был раньше.
-    if (field_name == "materialGuid") {
-        if (cf.value is _uint64) {
-            let ref = AssetRefOf(cf.value as _uint64)
-            if (!empty(ref))
-                cmp |> set("materialRef", MaterialRef(path = ref))
-        }
+    if (ApplyDecsConfigField(cmp, field_name, cf, type_name)) {
         return true
     }
 
-    // Старый формат materialRef: string. Новый — обёртка MaterialRef(path): обновляем
-    // старые сцены на лету, чтобы Render.das видел один и тот же тип компонента.
-    if (field_name == "materialRef" && cf.value is _string) {
-        cmp |> set("materialRef", MaterialRef(path = cf.value as _string))
-        return true
-    }
-
-    if (ApplyDecsConfigField(cmp, target_name, cf, type_name)) {
-        return true
-    }
-
-    print("[SCENE WARNING] Entity '{entity_tag}': Field '{target_name}' has unsupported ConfigFormat type. Skipped.\n")
+    print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' has unsupported ConfigFormat type. Skipped.\n")
     out_warnings++
     return false
 }
 
-def load_scene_from_config(config_text : string; renames : table<string; string>) : bool {
+def load_scene_from_config(config_text : string) : bool {
     var error : string
     var root = read_config(config_text, error)
 
@@ -420,10 +477,6 @@ def load_scene_from_config(config_text : string; renames : table<string; string>
     print(" [SCENE LOAD] Starting runtime validation & load...\n")
     print("==================================================\n")
 
-    decs::restart()
-
-    var renames_captured := renames
-
     for (ent_idx in range(ent_count)) {
         let ent_cf = entities_arr[ent_idx]
         if (ent_cf == null || !(ent_cf.value is _object)) {
@@ -451,7 +504,7 @@ def load_scene_from_config(config_text : string; renames : table<string; string>
                         continue
                     let cf = cur_ent_obj?[field_name] ?? null
                     // print("field name = {field_name}\n")
-                    parse_and_apply_field(cmp, entity_tag, field_name, cf, renames_captured, warnings_count, cf.typeName)
+                    parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, cf.typeName)
                 }
             }
         }
@@ -471,27 +524,106 @@ def load_scene_from_config(config_text : string; renames : table<string; string>
     return true
 }
 
-def load_scene_from_config(config_text : string) : bool {
-    var renames : table<string; string>
-    return load_scene_from_config(config_text, renames)
-}
 
 struct SceneHeader {
     name : string
+    path : string
     requireMeshs : array<uint64>
     requireMaterials : array<uint64>
 }
 
+// File name without directory and extension, as shown in the editor title.
+def public SceneNameFromPath(path : string) : string {
+    var name = path
+    let slash = max(rfind(name, "/"), rfind(name, "\\"))
+    if (slash >= 0) {
+        name = slice(name, slash + 1, length(name))
+    }
+    let dot = rfind(name, ".")
+    if (dot > 0) {
+        name = slice(name, 0, dot)
+    }
+    return name
+}
+
+[async]
+def private LoadScenePath(path : string) : void {
+    UnloadActiveScene()
+    scene_context.scene_name = SceneNameFromPath(path)
+    scene_context.scene_path = path
+    await(LoadSceneAsync(path))
+    NotifySceneLoaded(scene_context.scene_name, path, false)
+}
+
+//! Loads the scene the build marked as startup (a text entry with a fixed id). The
+//! editor has no `tryengine/startup` entry, so this leaves the open editor scene alone.
+[async]
+def public LoadStartupScene() : void {
+    let path : string <- await(Assets::ReadText(Assets::STARTUP_SCENE_PATH))
+    if (!empty(path)) {
+        await(LoadScenePath(path))
+    }
+}
+
+//! Synchronous startup load used by the explicit entry point. In the game the C++ preload
+//! phase has already read the startup entry and the scene text; in the editor the content
+//! layer serves the loose file synchronously. Either way no frame is awaited.
+def private LoadScenePathCached(path : string) : bool {
+    let id = Assets::IdOf(path)
+    var config_text = ""
+    if (id != 0ul && key_exists(g_scene_texts, id)) {
+        config_text = g_scene_texts[id]
+    } else {
+        config_text = Assets::ReadTextCached(path)
+    }
+    if (empty(config_text)) {
+        print("[SCENE ERROR] Scene '{path}' is not available.\n")
+        return false
+    }
+
+    UnloadActiveScene()
+    scene_context.scene_name = SceneNameFromPath(path)
+    scene_context.scene_path = path
+
+    let loaded = load_scene_from_config(config_text)
+    if (loaded) {
+        NotifySceneLoaded(scene_context.scene_name, path, false)
+    }
+    return loaded
+}
+
+def public LoadStartupSceneCached() : bool {
+    let path = Assets::ReadTextCached(Assets::STARTUP_SCENE_PATH)
+    if (empty(path)) {
+        return false
+    }
+    return LoadScenePathCached(path)
+}
+
+//! Synchronous scene apply. The text must be cached: `Loader` fills the scene text cache
+//! asynchronously, and the editor can still fall back to a loose-file read.
+def public Load(path : string) : bool {
+    return LoadScenePathCached(path)
+}
+
+//! Applies the scene and then calls `on_loaded`. The callback is the scene-specific hook:
+//! this is where gameplay setup for that scene belongs, instead of a global load event.
+def public Load(path : string; on_loaded : SceneCallback) : bool {
+    let loaded = LoadScenePathCached(path)
+    if (loaded) {
+        invoke(on_loaded)
+    }
+    return loaded
+}
+
 [async]
 def GetSceneHeader(let path : string -const) : SceneHeader {
-    let file_size : uint64 = await(FileReader::GetFileSize(path))
-    if (file_size == 0ul)
+    let config_text : string <- await(Assets::ReadText(path))
+    if (empty(config_text))
         return false
 
-    let bytes : array<uint8> <- await(FileReader::ReadFile(path, 0ul, uint(file_size)))
-
     var error : string
-    let root = read_config(bytes, error)
+    let root = read_config(config_text, error)
     if (length(error) > 0 || root == null)
         return false
 
@@ -500,7 +632,8 @@ def GetSceneHeader(let path : string -const) : SceneHeader {
     let root_obj & = root.value as _object
 
     var header <- SceneHeader()
-    header.name = (path |> last_index_of("/")) >= 0 ? slice(path, (path |> last_index_of("/")) + 1) : path
+    header.name = SceneNameFromPath(path)
+    header.path = path
     header.requireMeshs <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
     header.requireMaterials <- parse_asset_ref_array(root_obj?["requireMaterials"] ?? null)
 

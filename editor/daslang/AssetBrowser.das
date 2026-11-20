@@ -76,8 +76,7 @@ def public DrawAssetBrowser() {
             assume folders = get_folders(current_domain)
             if (length(folders) == 0) {
                 text("No folders under this root.")
-                return
-            }
+            } else {
             if (current_folder_idx >= length(folders)) {
                 current_folder_idx = 0
             }
@@ -109,6 +108,7 @@ def public DrawAssetBrowser() {
                 }
 
                 columns_close()
+            }
             }
         }
     }

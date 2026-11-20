@@ -147,6 +147,22 @@
 - Строку-список с меню и подсветкой рисуй одним `InvisibleButton` + `GetWindowDrawList`, а
   не стопкой `text`/`same_line`/`small_button`: у строки появляется одна поверхность под
   курсором и одно место под правый клик (`OpenPopup` + `BeginPopup` рядом с ней).
+- Один call site `text`/`tree_node_ex`/любого `[widget]` — одно состояние на кадр. Вызов
+  внутри цикла по строкам паникует (`rendered twice`). Для повторяющихся строк объявляй
+  `table<string; NarrativeState>` / `TreeNodeState` и передавай `[key]`; `with_id` даёт
+  уникальный ImGui ID, но не отменяет проверку call site (пример — дерево компонентов в
+  `PrefabWindow.das`).
+- `Hierarchy` при смене `selected_eid` (viewport, спавн префаба, Inspector, `SetSelectedEntity`)
+  один кадр принудительно раскрывает цепочку родителей и выбранный узел, а если узел вне
+  видимой области — скроллит к нему (`SetNextItemOpen` + `SetScrollHereY`). Force снимается
+  в конце кадра, поэтому выбранный узел можно свернуть обратно.
+- Загрузка сцены (`Scene::NotifySceneLoaded`) обнуляет `selected_eid`: `decs::restart()`
+  заменяет lookup-таблицу, и id из прошлой сцены может быть за её границей. Любой
+  `query(selected_eid)` в панели сначала проверяет `is_alive(selected_eid)` —
+  `for_eid_archetype` индексирует `entityLookup` без проверки границ, и исключение в
+  середине `window(...)`/`child(...)` оставляет стек ImGui открытым (`Missing EndChild()`).
+  По той же причине в теле контейнера не должно быть `return` (см. выше): состояние
+  рисуется через `if`/`else`, а не выходом из функции.
 
 ## Текстура вьюпорта сцены (ImGuiPass)
 
@@ -176,6 +192,49 @@
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
+- Кеш префабов живёт в `tryengine/Prefab.das`, а не в C++ `ResourceManager`: префаб нужен
+  DECS в daslang, у content-файлов нет guid в игре, а `spawn` синхронный. На диске файл
+  остаётся ConfigFormat-текстом; в памяти лежит `PrefabData` — распарсенный `StructField`
+  плюс parent/sibling индексы, поэтому повторный спавн не читает файл и не парсит.
+- `Prefab::RefreshContent()` больше не ходит на диск: он берёт список путей из
+  `Assets::ContentManifest()` (в редакторе — из зарегистрированных деревьев, в игре — из
+  манифеста пака) и читает каждый `.prefab` через `Assets::ReadText`. После неё
+  `Prefab::Spawn("sword", origin)` — hit кеша и `EntityId`; относительный ключ
+  (`"props/sword"`) тоже работает. Одинаковые имена в разных папках становятся ambiguous
+  и по короткому имени не резолвятся. `RefreshContent` — инструмент редактора и тестов: он
+  читает весь кеш. Игра читает только запрошенные префабы через
+  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует текст и добавляет
+  меши/материалы в прогресс. `Prefab::FindInContent` резолвит имя по манифесту, не читая
+  остальные файлы. Перед `RefreshContent` вызывай `RefreshAssetTrees()`, если файлы могли
+  появиться на диске.
+- `SpawnPrefab(path)` (drag&drop) каждый раз читает текст через asset API и обновляет кеш,
+  поэтому изменённый prefab не спавнится старым. `Prefab::SavePrefabFromEntity` пишет текст
+  через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в
+  кеш и обновляет дерево ассетов.
+- Панель `editor/daslang/PrefabWindow.das` (Window → Prefabs): список, поиск, дерево
+  сущностей/компонентов, `Spawn at origin` и drag&drop во вьюпорт. Кнопка
+  `Save Selection as Prefab...` сериализует выделенную ветку в pre-order, выкидывает
+  `eid`/`Relationship_*`/`_*`/`editorCameraTag`, обнуляет позицию корня (rotation/scale
+  сохраняются) и обновляет дерево ассетов.
+- Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
+  `common_dto.pak`, вместе с мешами и материалами, которые эти префабы упоминают
+  (и их шейдерами/текстурами): иначе `Prefab::Spawn` в игре получил бы текст без ресурсов.
+  Тексты сцен — в пак своей сцены. `BuildSystem` также пишет в common манифест
+  content-путей и стартовую сцену (`tryengine/startup`). `PakManager` монтирует paks до
+  запуска скриптов, поэтому `Loader::Update` читает сцены, бандлы и префабы через тот же
+  `tryengine/Assets`, что и редактор; игра не читает loose-файлы. `tryengine/startup`
+  автоматически больше не загружается: стартовую сцену выбирает `Game.das`.
+- `game_client` больше не прогревает контент: `GameApp::Init` только монтирует паки и
+  грузит `script_pak`, а `GameStart` собирает `LoaderRequest`. `Loader::Update`
+  (вызывается из `GameUpdate`) асинхронно читает тексты через content API (`Assets::IdOf` +
+  `tryResources`), разворачивает бандлы, парсит зависимости сцен/префабов, запрашивает
+  меши/материалы и отдаёт `Headline`/`Current`/`Total`. Прочитанные тексты сцен попадают в
+  кеш `Scene` (`Scene::CacheText`), поэтому `Scene::Load` остаётся синхронным и может
+  применяться позже; без загрузчика текст пака не появится. Редактор Play проходит тот же
+  путь: loose-файл читается тем же API. `editor/daslang/PlayMode.das` до `GameStart`
+  снимает снимок (DECS-heap, `SceneState` с путём сцены и ссылками на ресурсы,
+  выделение), а `EndPlay` сначала вызывает `Loader::Abort`, затем возвращает снимок,
+  включая несохранённые правки.
 
 ## Transform и editor camera
 
@@ -187,9 +246,11 @@
   до того, как кадр дойдёт до `EditorUpdate`/`GameUpdate` и `Render`; это единственное место,
   где считается иерархия. Меняешь сцену из скрипта — правь `Transform`, не `_world_*`.
 - `EditorStart` подписывается на `RegisterSceneLoadedListener` и вызывает `LoadEmptyScene`:
-  начальная пустая сцена — такой же load-event, как файл. Event создаёт editor-камеру;
-  `EditorStart`, `LoadScene`, `CreateScene` и выход из Play её не дублируют.
-  `GameStart` editor-камеру не создаёт — в игре её нет.
+  начальная пустая сцена — такой же load-event, как файл. Event создаёт editor-камеру на
+  любой загрузке сцены, включая Play: камера помечена `editorCameraTag`, поэтому game
+  camera query и `GameUpdate` её игнорируют, а `Mover` и Scene viewport продолжают
+  работать. `GameStart` сам editor-камеру не создаёт; в standalone-игре слушателя нет,
+  поэтому её там нет.
 - Editor-камера помечена `editorCameraTag`, поэтому `Mover` двигает только её. `Scene.das`
   не пишет такие сущности в файл, а `UnloadActiveScene` (restart DECS) их убивает; в сцене
   всегда одна editor-камера.

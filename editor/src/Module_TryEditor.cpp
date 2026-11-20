@@ -10,6 +10,7 @@
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
+#include "engine/core/strings/Hash.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
@@ -57,6 +58,7 @@ uint64_t AssetExtKey(const char* name) {
 
 struct SceneDTODas {
     const char* name;
+    const char* path;
     das::Array meshes;
     das::Array mats;
 };
@@ -85,6 +87,8 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
         const uint64_t* mat_ptr = reinterpret_cast<const uint64_t*>(scene.mats.data);
         dto.mats = eastl::vector<uint64_t>(mat_ptr, mat_ptr + scene.mats.size);
         dto.name = scene.name;
+        dto.path = scene.path;
+        dto.scene_guid = tryengine::core::PathId(dto.path.c_str());
 
         scene_dtos.emplace_back(eastl::move(dto));
     }
