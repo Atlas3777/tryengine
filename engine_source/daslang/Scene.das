@@ -85,6 +85,12 @@ def private NotifySceneUnloaded() {
     }
 }
 
+// Scenes live in content, so a bare path is relative to `content/`. The extension is
+// always explicit and is never appended here.
+def private ScenePath(path : string) : string {
+    return Assets::ResolveGamePath(path, "content")
+}
+
 //! The editor's first load: there is no file yet, but it is still a scene load.
 def public LoadEmptyScene() {
     UnloadActiveScene()
@@ -97,11 +103,12 @@ def public LoadEmptyScene() {
 def LoadScene(name, path : string) : void {
     UnloadActiveScene()
 
+    let resolved = ScenePath(path)
     scene_context.scene_name = name
-    scene_context.scene_path = path
+    scene_context.scene_path = resolved
 
-    await(LoadSceneAsync(path))
-    NotifySceneLoaded(name, path, false)
+    await(LoadSceneAsync(resolved))
+    NotifySceneLoaded(name, resolved, false)
 }
 
 //! Clears the active scene and releases the resources it held. Scene loads call it
@@ -125,14 +132,14 @@ def private ReleaseActiveSceneResources() {
 
 def SetScenePath(name, path : string) {
     scene_context.scene_name = name
-    scene_context.scene_path = path
+    scene_context.scene_path = ScenePath(path)
 }
 
 //! Keeps a parsed scene text for a later synchronous `Load`. The loader calls this after
 //! reading the text asynchronously; the cache survives `Loader::Finish`, so preloaded
 //! scenes can be entered at any later point.
 def public CacheText(path : string; text : string) {
-    let id = Assets::IdOf(path)
+    let id = Assets::IdOf(ScenePath(path))
     if (id != 0ul) {
         g_scene_texts[id] = text
     }
@@ -187,9 +194,10 @@ def public ApplyState(var state : SceneState) {
 def CreateScene(name, path : string) : void {
     UnloadActiveScene()
 
+    let resolved = ScenePath(path)
     scene_context.scene_name = name
-    scene_context.scene_path = path
-    NotifySceneLoaded(name, path, true)
+    scene_context.scene_path = resolved
+    NotifySceneLoaded(name, resolved, true)
 }
 
 [async]
@@ -199,7 +207,7 @@ def SaveCurrentScene() : void {
 
 [async]
 def SaveSceneAsync(path : string) : void {
-    let target = Assets::ResolveGamePath(path, "content")
+    let target = ScenePath(path)
     let config_text = save_scene_to_config()
     let written : bool <- await(FileReader::WriteFile(target, config_text))
     if (!written) {
@@ -212,7 +220,7 @@ def SaveSceneAsync(path : string) : void {
 
 [async]
 def LoadSceneAsync(path : string) : void {
-    let config_text : string <- await(Assets::ReadText(path))
+    let config_text : string <- await(Assets::ReadText(ScenePath(path)))
     if (empty(config_text)) {
         print("[SCENE ERROR] File '{path}' does not exist or is empty.\n")
     } else {
@@ -548,35 +556,37 @@ def public SceneNameFromPath(path : string) : string {
 }
 
 
-//! Synchronous startup load used by the explicit entry point. In the game the C++ preload
-//! phase has already read the startup entry and the scene text; in the editor the content
-//! layer serves the loose file synchronously. Either way no frame is awaited.
+//! Synchronous scene apply from the text cache. In the game the loader has already read
+//! the text; in the editor the content layer serves the loose file synchronously.
 def private LoadScenePathCached(path : string) : bool {
-    let id = Assets::IdOf(path)
+    let resolved = ScenePath(path)
+    let id = Assets::IdOf(resolved)
     var config_text = ""
     if (id != 0ul && key_exists(g_scene_texts, id)) {
         config_text = g_scene_texts[id]
     } else {
-        config_text = Assets::ReadTextCached(path)
+        config_text = Assets::ReadTextCached(resolved)
     }
     if (empty(config_text)) {
-        print("[SCENE ERROR] Scene '{path}' is not available.\n")
+        print("[SCENE ERROR] Scene '{resolved}' is not available.\n")
         return false
     }
 
     UnloadActiveScene()
-    scene_context.scene_name = SceneNameFromPath(path)
-    scene_context.scene_path = path
+    scene_context.scene_name = SceneNameFromPath(resolved)
+    scene_context.scene_path = resolved
 
     let loaded = load_scene_from_config(config_text)
     if (loaded) {
-        NotifySceneLoaded(scene_context.scene_name, path, false)
+        NotifySceneLoaded(scene_context.scene_name, resolved, false)
     }
     return loaded
 }
 
-//! Synchronous scene apply. The text must be cached: `Loader` fills the scene text cache
-//! asynchronously, and the editor can still fall back to a loose-file read.
+//! Synchronous scene apply. `path` is relative to `content/` (`main.scene`), a
+//! `content/...` path, or a full path; the extension is explicit. The text must be
+//! cached: `Loader` fills the scene text cache asynchronously, and the editor can still
+//! fall back to a loose-file read.
 def public Load(path : string) : bool {
     return LoadScenePathCached(path)
 }
@@ -593,7 +603,8 @@ def public Load(path : string; on_loaded : SceneCallback) : bool {
 
 [async]
 def GetSceneHeader(let path : string -const) : SceneHeader {
-    let config_text : string <- await(Assets::ReadText(path))
+    let resolved = ScenePath(path)
+    let config_text : string <- await(Assets::ReadText(resolved))
     if (empty(config_text))
         return false
 
@@ -607,8 +618,8 @@ def GetSceneHeader(let path : string -const) : SceneHeader {
     let root_obj & = root.value as _object
 
     var header <- SceneHeader()
-    header.name = SceneNameFromPath(path)
-    header.path = path
+    header.name = SceneNameFromPath(resolved)
+    header.path = resolved
     header.requireMeshs <- parse_uint64_array(root_obj?["requireMeshs"] ?? null)
     header.requireMaterials <- parse_asset_ref_array(root_obj?["requireMaterials"] ?? null)
 
