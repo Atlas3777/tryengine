@@ -117,7 +117,7 @@ prefabs: string[] = [
 1. `AddPrefab`/`AddBundle` ставят `.prefab` в очередь.
 2. Задача `Load` читает текст, `Content::Cache` разбирает документ и собирает
    `meshGuid`/`materialRef`, `Prefab::CachePrefabDocument` проверяет формат и кладёт
-   `PrefabData` в кеш.
+   `PrefabTemplate` в кеш.
 3. Ссылки попадают в фазу `Assets`, загрузчик их запрашивает и опрашивает.
 4. `Prefab::Spawn` — только cache-hit. Если префаба нет в запросе и он не загружен
    `Prefab::LoadPrefabFile`, `Spawn` вернёт `INVALID_ENTITY_ID`.

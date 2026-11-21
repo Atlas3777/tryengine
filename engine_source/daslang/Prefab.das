@@ -22,7 +22,7 @@ module Prefab shared public
 //!
 //! Files stay ConfigFormat text. `tryengine/Content` parses the document and collects its
 //! mesh/material refs; this module validates the prefab shape and keeps a compiled
-//! `PrefabData` (entity configs with parent/sibling indices), so repeated spawns do no I/O
+//! `PrefabTemplate` (entity configs with parent/sibling indices), so repeated spawns do no I/O
 //! and no parsing. `LoadPrefabFile` reads one prefab on demand: the game caches exactly the
 //! prefabs a `LoaderRequest` asked for, the editor loads the selected one. `Spawn` is a
 //! synchronous cache hit and returns the root `EntityId`. A prefab is addressed by a path
@@ -46,10 +46,10 @@ require tryengine/Types
 let public PREFAB_VERSION : uint = 1u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
 
-// One entity of a compiled prefab. `config` points into the parsed ConfigFormat tree;
-// the root pointer in `PrefabData` keeps that tree alive. No tables are copied per
-// spawn, and the sibling links are precomputed as indices into `PrefabData.entities`.
-struct public PrefabEntity {
+// One node of a compiled prefab. `config` points into the parsed ConfigFormat tree;
+// the root pointer in `PrefabTemplate` keeps that tree alive. No tables are copied per
+// spawn, and the sibling links are precomputed as indices into `PrefabTemplate.nodes`.
+struct public PrefabNode {
     local_id    : uint
     parent      : int
     first_child : int
@@ -58,16 +58,16 @@ struct public PrefabEntity {
     config      : StructField?
 }
 
-struct public PrefabData {
-    path     : string
-    name     : string
-    root     : StructField?  // owns the parsed tree referenced by `entities[*].config`
-    entities : array<PrefabEntity>
+struct public PrefabTemplate {
+    path  : string
+    name  : string
+    root  : StructField?  // owns the parsed tree referenced by `nodes[*].config`
+    nodes : array<PrefabNode>
 }
 
 // Canonical path -> compiled prefab. Paths are relative to the repository root and rooted
 // under game/content.
-var private g_prefabs : table<string; PrefabData?>
+var private g_prefabs : table<string; PrefabTemplate?>
 
 def private IsReservedEntityField(name : string) : bool {
     return name == "eid" || starts_with(name, "Relationship_")
@@ -105,10 +105,10 @@ def private GetLocalTransform(entity_obj : table<string; StructField?> const) : 
 }
 
 // ---------------------------------------------------------------------------
-// Compilation: parsed document -> validated PrefabData
+// Compilation: parsed document -> validated PrefabTemplate
 // ---------------------------------------------------------------------------
 
-def private CompilePrefab(var document : Content::Document?) : PrefabData? {
+def private CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
     if (document == null || document.root == null || !(document.root.value is _object)) {
         print("[PREFAB ERROR] document root is not an object\n")
         return null
@@ -137,7 +137,7 @@ def private CompilePrefab(var document : Content::Document?) : PrefabData? {
     assume entities_arr = entities_cf.value as _array
 
     var local_ids : table<uint; int>
-    var entities : array<PrefabEntity>
+    var nodes : array<PrefabNode>
 
     var roots = 0
     var root_index = -1
@@ -196,14 +196,14 @@ def private CompilePrefab(var document : Content::Document?) : PrefabData? {
             }
         }
 
-        var entity : PrefabEntity
-        entity.local_id = local_id
-        entity.parent = parent_index
-        entity.first_child = -1
-        entity.prev = -1
-        entity.next = -1
-        entity.config = entity_cf
-        entities |> push(entity)
+        var node : PrefabNode
+        node.local_id = local_id
+        node.parent = parent_index
+        node.first_child = -1
+        node.prev = -1
+        node.next = -1
+        node.config = entity_cf
+        nodes |> push(node)
 
         local_ids[local_id] = entity_index
     }
@@ -217,13 +217,13 @@ def private CompilePrefab(var document : Content::Document?) : PrefabData? {
     // pre-order, which is also sibling order, so the links follow from the indices.
     var last_child : table<int; int>
     for (entity_index in range(1, entity_count)) {
-        let parent_index = entities[entity_index].parent
+        let parent_index = nodes[entity_index].parent
         if (key_exists(last_child, parent_index)) {
             let previous = last_child[parent_index]
-            entities[previous].next = entity_index
-            entities[entity_index].prev = previous
+            nodes[previous].next = entity_index
+            nodes[entity_index].prev = previous
         } else {
-            entities[parent_index].first_child = entity_index
+            nodes[parent_index].first_child = entity_index
         }
         last_child[parent_index] = entity_index
     }
@@ -233,14 +233,14 @@ def private CompilePrefab(var document : Content::Document?) : PrefabData? {
         name = Content::Stem(document.path)
     }
 
-    return new PrefabData(path = document.path, name = name, root = document.root, entities <- entities)
+    return new PrefabTemplate(path = document.path, name = name, root = document.root, nodes <- nodes)
 }
 
 // ---------------------------------------------------------------------------
 // Cache
 // ---------------------------------------------------------------------------
 
-def private StorePrefab(var data : PrefabData?) {
+def private StorePrefab(var data : PrefabTemplate?) {
     if (data == null) {
         return
     }
@@ -266,7 +266,7 @@ def public ResolvePrefabPath(name_or_path : string) : string {
     return path
 }
 
-def public GetPrefabData(name_or_path : string) : PrefabData? {
+def public GetPrefabTemplate(name_or_path : string) : PrefabTemplate? {
     let path = ResolvePrefabPath(name_or_path)
     if (empty(path)) {
         return null
@@ -291,13 +291,13 @@ def public InvalidatePrefab(name_or_path : string) {
 // ---------------------------------------------------------------------------
 
 [profile]
-def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
+def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : EntityId {
     if (data == null) {
         return INVALID_ENTITY_ID
     }
 
-    let entity_count = length(data.entities)
-    if (entity_count == 0 || data.entities[0].parent != -1) {
+    let entity_count = length(data.nodes)
+    if (entity_count == 0 || data.nodes[0].parent != -1) {
         print("[PREFAB ERROR] compiled prefab '{data.path}' has no root\n")
         return INVALID_ENTITY_ID
     }
@@ -306,8 +306,8 @@ def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
     resize(entity_ids, entity_count)
 
     for (entity_index in range(entity_count)) {
-        let entity = data.entities[entity_index]
-        assume entity_obj = entity.config.value as _object
+        let node = data.nodes[entity_index]
+        assume entity_obj = node.config.value as _object
 
         // The prefab stores local TRS; only the root is moved to the spawn point.
         // Children keep their authored local transform, and UpdateWorldTransforms
@@ -329,7 +329,7 @@ def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
                 let cf = entity_obj?[field_name] ?? null
                 if (!ApplyDecsConfigField(cmp, field_name, cf, cf != null ? cf.typeName : "")) {
                     print(
-                        "[PREFAB WARNING] entity {entity.local_id}: field '{field_name}' was not applied\n"
+                        "[PREFAB WARNING] entity {node.local_id}: field '{field_name}' was not applied\n"
                     )
                 }
             }
@@ -338,11 +338,11 @@ def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
     }
 
     for (entity_index in range(entity_count)) {
-        let entity = data.entities[entity_index]
-        let parent_eid = entity.parent >= 0 ? entity_ids[entity.parent] : INVALID_ENTITY_ID
-        let first_eid = entity.first_child >= 0 ? entity_ids[entity.first_child] : INVALID_ENTITY_ID
-        let prev_eid = entity.prev >= 0 ? entity_ids[entity.prev] : INVALID_ENTITY_ID
-        let next_eid = entity.next >= 0 ? entity_ids[entity.next] : INVALID_ENTITY_ID
+        let node = data.nodes[entity_index]
+        let parent_eid = node.parent >= 0 ? entity_ids[node.parent] : INVALID_ENTITY_ID
+        let first_eid = node.first_child >= 0 ? entity_ids[node.first_child] : INVALID_ENTITY_ID
+        let prev_eid = node.prev >= 0 ? entity_ids[node.prev] : INVALID_ENTITY_ID
+        let next_eid = node.next >= 0 ? entity_ids[node.next] : INVALID_ENTITY_ID
 
         update_entity(entity_ids[entity_index]) @(eid, cmp) {
             apply_decs_template(cmp, Relationship(
@@ -371,7 +371,7 @@ def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0
         print("[PREFAB ERROR] prefab '{name_or_path}' was not preloaded; add it to the LoaderRequest or call Prefab::LoadPrefabFile() first\n")
         return INVALID_ENTITY_ID
     }
-    return SpawnPrefabData(g_prefabs[path], origin)
+    return SpawnPrefabTemplate(g_prefabs[path], origin)
 }
 
 // ---------------------------------------------------------------------------
@@ -402,7 +402,7 @@ def public SpawnPrefab(path : string; origin : float3) : EntityId {
     }
 
     let canonical = Content::ResolvePath(ContentKind.Prefab, path)
-    yield SpawnPrefabData(g_prefabs[canonical], origin)
+    yield SpawnPrefabTemplate(g_prefabs[canonical], origin)
 }
 
 // ---------------------------------------------------------------------------
@@ -528,7 +528,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
         entity_obj["parentLocalId"] = parent_id_cf
 
         var entity_cf = CF(entity_obj)
-        entity_cf.typeName = "PrefabEntity"
+        entity_cf.typeName = "PrefabNode"
         entities |> push(entity_cf)
     }
 
@@ -551,7 +551,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     root_obj["configRow"] = config_row_cf
 
     var entities_cf = CF(entities)
-    entities_cf.typeName = "PrefabEntity[]"
+    entities_cf.typeName = "PrefabNode[]"
     entities_cf.name = "entities"
     root_obj["entities"] = entities_cf
 

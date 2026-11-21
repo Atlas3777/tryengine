@@ -119,7 +119,7 @@ def private DrawDetails() {
         return
     }
 
-    let data = Prefab::GetPrefabData(g_selected_path)
+    let data = Prefab::GetPrefabTemplate(g_selected_path)
     if (data == null) {
         text("Not loaded: {g_selected_path}")
         return
@@ -127,11 +127,11 @@ def private DrawDetails() {
 
     text("{data.name}")
     text_disabled("{data.path}")
-    text("Entities: {length(data.entities)}")
+    text("Entities: {length(data.nodes)}")
     separator()
 
-    for (entity_index in range(length(data.entities))) {
-        let entity = data.entities[entity_index]
+    for (entity_index in range(length(data.nodes))) {
+        let entity = data.nodes[entity_index]
         assume fields = entity.config.value as _object
 
         var entity_label = "[{entity.local_id}]"

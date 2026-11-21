@@ -599,7 +599,7 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
         }
 
         entities.elements.push_back(
-            MakePrefabField("", "PrefabEntity", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(entity)))));
+            MakePrefabField("", "PrefabNode", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(entity)))));
     }
 
     ConfigObject root;
@@ -607,7 +607,7 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     root.fields.push_back(MakeStringField("name", stem_string));
     root.fields.push_back(MakeStringField("configType", {}));
     root.fields.push_back(MakeStringField("configRow", {}));
-    root.fields.push_back(MakePrefabField("entities", "PrefabEntity[]",
+    root.fields.push_back(MakePrefabField("entities", "PrefabNode[]",
                                           ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(entities)))));
 
     return WriteConfig(root);

@@ -2,7 +2,7 @@ version: u32 = 1
 name: string = "light"
 configType: string = ""
 configRow: string = ""
-entities: PrefabEntity[] = [
+entities: PrefabNode[] = [
 	{
 		Transform_position: f32x3 = [0 0 0]
 		Transform_rotation: f32x4 = [0 0 0 1]

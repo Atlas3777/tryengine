@@ -194,8 +194,9 @@
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
 - Кеш префабов живёт в `tryengine/Prefab.das`, а не в C++ `ResourceManager`: префаб нужен
   DECS в daslang, у content-файлов нет guid в игре, а `spawn` синхронный. На диске файл
-  остаётся ConfigFormat-текстом; в памяти лежит `PrefabData` — распарсенный `StructField`
-  плюс parent/sibling индексы, поэтому повторный спавн не читает файл и не парсит.
+  остаётся ConfigFormat-текстом; в памяти лежит `PrefabTemplate` — распарсенный `StructField`
+  плюс узлы `PrefabNode` с parent/sibling индексами, поэтому повторный спавн не читает файл
+  и не парсит.
 - Полного прогрева префабов больше нет: `Prefab::RefreshContent` и
   `Assets::ContentManifest` удалены. `Prefab::LoadPrefabFile(path)` читает и компилирует
   один `.prefab` через `tryengine/Content`; `Prefab::Spawn("props/sword.prefab", origin)`
