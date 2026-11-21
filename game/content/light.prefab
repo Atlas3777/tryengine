@@ -1,7 +1,5 @@
-version: u32 = 2
+version: u32 = 3
 name: string = "light"
-configType: string = ""
-configRow: string = ""
 nodes: PrefabNode[] = [
 	{
 		Transform_position: f32x3 = [0 0 0]

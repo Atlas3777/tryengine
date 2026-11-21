@@ -603,10 +603,8 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     }
 
     ConfigObject root;
-    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{2})));
+    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{3})));
     root.fields.push_back(MakeStringField("name", stem_string));
-    root.fields.push_back(MakeStringField("configType", {}));
-    root.fields.push_back(MakeStringField("configRow", {}));
     root.fields.push_back(
         MakePrefabField("nodes", "PrefabNode[]", ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(nodes)))));
 

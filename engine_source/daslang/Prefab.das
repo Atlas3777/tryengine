@@ -43,7 +43,7 @@ require tryengine/Serializable
 require tryengine/TransformSystem
 require tryengine/Types
 
-let public PREFAB_VERSION : uint = 2u
+let public PREFAB_VERSION : uint = 3u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
 
 // One node of a compiled prefab. `config` points into the parsed ConfigFormat tree;
@@ -119,13 +119,6 @@ def private CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
     let version = from_CF(root_obj?["version"] ?? null, type<uint>)
     if (version != PREFAB_VERSION) {
         print("[PREFAB ERROR] unsupported version {version}, expected {PREFAB_VERSION}\n")
-        return null
-    }
-
-    let config_type = from_CF(root_obj?["configType"] ?? null, type<string>)
-    let config_row = from_CF(root_obj?["configRow"] ?? null, type<string>)
-    if (!empty(config_type) && empty(config_row)) {
-        print("[PREFAB ERROR] configRow is required when configType is set ('{config_type}')\n")
         return null
     }
 
@@ -541,14 +534,6 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     var name_cf = CF(name)
     name_cf.name = "name"
     root_obj["name"] = name_cf
-
-    var config_type_cf = CF("")
-    config_type_cf.name = "configType"
-    root_obj["configType"] = config_type_cf
-
-    var config_row_cf = CF("")
-    config_row_cf.name = "configRow"
-    root_obj["configRow"] = config_row_cf
 
     var nodes_cf = CF(nodes)
     nodes_cf.typeName = "PrefabNode[]"
