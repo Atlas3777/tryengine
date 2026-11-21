@@ -163,18 +163,13 @@ def start_load(){
             return
         }
 
-        // Старый указатель без маркера: считаем, что он соответствует meshGuid.
-        if (has_mesh && !has_load) {
-            update_entity(eid) @(eid, cmp) {
-                cmp |> set(MESH_LOAD_FIELD, guid)
-            }
-            return
-        }
         if (has_mesh && has_load && load_guid == guid) {
             return
         }
 
-        let changed = has_load && load_guid != guid
+        // A pointer is only ever set together with its marker. A pointer without one is
+        // stale, so it is dropped instead of trusted.
+        let changed = has_mesh && (!has_load || load_guid != guid)
         let requested = has_load && load_guid == guid
         let ready = ResourceIsReadyMesh(guid)
         var mesh_ptr : TryMesh? = null
@@ -223,20 +218,14 @@ def start_load(){
             return
         }
 
-        // Старый указатель без маркера: считаем, что он соответствует materialRef.
-        if (has_material && !has_load) {
-            update_entity(eid) @(eid, cmp) {
-                cmp |> set(MATERIAL_LOAD_FIELD, material_guid)
-            }
-            return
-        }
         if (has_material && has_load && load_guid == material_guid) {
             return
         }
 
-        // Новый материал: старый указатель снимаем сразу, чтобы кадр не рисовал
-        // прошлый материал; новый подставится, когда ResourceIsReadyMaterial.
-        let changed = has_load && load_guid != material_guid
+        // A pointer without a marker is stale by definition. When materialRef changes, the
+        // old pointer is dropped right away so the frame does not draw the previous material;
+        // the new one is installed once ResourceIsReadyMaterial returns true.
+        let changed = has_material && (!has_load || load_guid != material_guid)
         let requested = has_load && load_guid == material_guid
         let ready = ResourceIsReadyMaterial(material_guid)
         var mat_ptr : TryMat? = null
