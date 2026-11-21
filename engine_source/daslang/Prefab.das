@@ -11,7 +11,8 @@ module Prefab shared public
 //! derived while spawning, so they are not data.
 //!
 //! Invariants checked here:
-//!  * exactly one root (a node without `parentLocalId`);
+//!  * exactly one root: the first node, which stores no `parentLocalId`; writing the root
+//!    parent id is an error, the format has no compatibility path for it;
 //!  * `localId`s are unique, the root is first;
 //!  * a parent exists and is stored before its child (pre-order);
 //!  * `eid`, `relationship` and every other runtime-only component are forbidden.
@@ -47,7 +48,7 @@ require tryengine/Serializable
 require tryengine/TransformSystem
 require tryengine/Types
 
-let public PREFAB_VERSION : uint = 4u
+let public PREFAB_VERSION : uint = 5u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
 
 // One node of a compiled prefab. `values` is the component map already resolved from
@@ -178,9 +179,17 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             return null
         }
 
-        // The root has no parent, so the field is absent for it and names no stored node.
+        // A child names its parent by local id. The root names nothing: an explicit
+        // `PREFAB_ROOT_PARENT` in the file is an error, not a second way to spell it.
         let parent_cf = node_obj?["parentLocalId"] ?? null
-        let parent_local_id = parent_cf != null ? NodeParentLocalId(parent_cf) : PREFAB_ROOT_PARENT
+        var parent_local_id = PREFAB_ROOT_PARENT
+        if (parent_cf != null) {
+            parent_local_id = NodeParentLocalId(parent_cf)
+            if (parent_local_id == PREFAB_ROOT_PARENT) {
+                print("[PREFAB ERROR] node #{node_index}: the root must not store parentLocalId\n")
+                return null
+            }
+        }
 
         var parent_index = -1
         if (parent_local_id == PREFAB_ROOT_PARENT) {

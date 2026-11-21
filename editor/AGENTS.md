@@ -305,8 +305,8 @@
   после спавна, без прохода. Сцена после `commit()` зовёт `UpdateWorldTransforms()` сама:
   редактор грузит сцену уже после `EngineUpdate`, иначе дети один кадр показывались бы в
   локальных позах.
-- Формат префаба — `version: u32 = 4`, трансформ узла пишется как `transform: Transform = {
-  position: ..., rotation: ..., scale: ... }`. Импортёр glTF (`GetVersion() == 8`) пишет тот
+- Формат префаба — `version: u32 = 5`, трансформ узла пишется как `transform: Transform = {
+  position: ..., rotation: ..., scale: ... }`. Импортёр glTF (`GetVersion() == 9`) пишет тот
   же формат, поэтому старые артефакты переимпортируются. `Prefab::BuildPrefabTextFromEntity`
   обнуляет `transform.position` корня, rotation/scale сохраняет.
 - Профиль прохода на 10 000 сущностях (JIT): скан двумя `query` ~0.08 µs/сущность, обход с

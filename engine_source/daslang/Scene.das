@@ -95,15 +95,9 @@ def private ScenePath(path : string) : string {
 
 // Scenes store the hierarchy as a local index (`parentLocalId`) on entities that have a
 // parent, exactly like a prefab: DECS assigns fresh `EntityId`s on load, so an absolute id
-// from the file would be stale. A root has no parent and stores no field.
+// from the file would be stale. A root has no parent and stores no field; writing the root
+// parent id is an error, the format has no compatibility path for it.
 let private SCENE_ROOT_PARENT : uint = 4294967295u
-
-def private ParentLocalId(cf : StructField?) : uint {
-    if (cf == null) {
-        return SCENE_ROOT_PARENT
-    }
-    return from_CF(cf, type<uint>)
-}
 
 // The entity id lives in the archetype row. Save needs it to turn an absolute parent id
 // back into a local index; the same read is used for the relationship component.
@@ -320,6 +314,24 @@ def private ApplyDocument(document : Content::Document?) : bool {
         return false
     }
 
+    assume entities_arr = entities_cf.value as _array
+
+    // A root stores no `parentLocalId`; spelling the root parent id out is an error, not a
+    // second way to say the same thing. Validate before the world is cleared, so a bad
+    // document leaves the current scene alone.
+    for (ent_idx in range(length(entities_arr))) {
+        let ent_cf = entities_arr[ent_idx]
+        if (ent_cf == null || !(ent_cf.value is _object)) {
+            continue
+        }
+        assume ent_obj = ent_cf.value as _object
+        let parent_cf = ent_obj?["parentLocalId"] ?? null
+        if (parent_cf != null && from_CF(parent_cf, type<uint>) == SCENE_ROOT_PARENT) {
+            print("[SCENE ERROR] Element #{ent_idx}: a root must not store parentLocalId.\n")
+            return false
+        }
+    }
+
     UnloadActiveScene()
     scene_context.scene_name = Content::Stem(document.path)
     scene_context.scene_path = document.path
@@ -336,7 +348,6 @@ def private ApplyDocument(document : Content::Document?) : bool {
         RequestLoadMaterial(mat_id)
     }
 
-    assume entities_arr = entities_cf.value as _array
     let ent_count = length(entities_arr)
     var total_loaded = 0
     var warnings_count = 0
@@ -369,8 +380,11 @@ def private ApplyDocument(document : Content::Document?) : bool {
             }
         }
 
-        let parent_local_id = ParentLocalId(ent_obj?["parentLocalId"] ?? null)
-        let parent_index = parent_local_id == SCENE_ROOT_PARENT ? -1 : int(parent_local_id)
+        var parent_index = -1
+        let parent_cf = ent_obj?["parentLocalId"] ?? null
+        if (parent_cf != null) {
+            parent_index = int(from_CF(parent_cf, type<uint>))
+        }
 
         local_of[ent_idx] = total_loaded
         var new_eid : EntityId

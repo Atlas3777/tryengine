@@ -448,6 +448,8 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
 // ---------------------------------------------------------------------------
 
 constexpr uint32_t kPrefabRootParent = 0xFFFFFFFFu;
+// Должно совпадать с `PREFAB_VERSION` в `engine_source/daslang/Prefab.das`.
+constexpr uint32_t kPrefabVersion = 5u;
 
 struct PrefabFlatNode {
     uint32_t local_id = 0;
@@ -608,7 +610,7 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     }
 
     ConfigObject root;
-    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{4})));
+    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(kPrefabVersion)));
     root.fields.push_back(MakeStringField("name", stem_string));
     root.fields.push_back(
         MakePrefabField("nodes", "PrefabNode[]", ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(nodes)))));
