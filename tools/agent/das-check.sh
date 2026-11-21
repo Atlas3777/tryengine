@@ -6,7 +6,9 @@
 #   tools/agent/das-check.sh path/to/x.das
 #
 # The gate uses -dry-run (compile + simulate, no execution), not -compile-only, because
-# macro/simulate failures are exactly what breaks the editor at startup. Both the exit code
+# macro/simulate failures are exactly what breaks the editor at startup. Lint stays on:
+# the editor compiles with the lint pass, and `-no-lint` once hid a `type<T>` misuse
+# (error 30264) that only the editor reported. Both the exit code
 # and the printed `error[` lines are checked: daslang can print errors and still exit 0.
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/env.sh"
@@ -55,7 +57,7 @@ for f in "${files[@]}"; do
 
     out="$TMP_DIR/das-check-$(printf '%s' "$f" | tr '/' '_').log"
     start=$SECONDS
-    if timeout "$DAS_TIMEOUT" "$DASLANG" -dry-run -no-lint "${DAS_GATE[@]}" "$abs" >"$out" 2>&1 \
+    if timeout "$DAS_TIMEOUT" "$DASLANG" -dry-run "${DAS_GATE[@]}" "$abs" >"$out" 2>&1 \
         && ! grep -qE 'error\[|panic\(|Simulation failed' "$out"; then
         printf '  %sOK%s   %-50s %ss\n' "$C_GREEN" "$C_RESET" "$f" "$((SECONDS - start))"
     else
