@@ -13,6 +13,5 @@ nodes: PrefabNode[] = [
 		meshGuid: u64 = 12277960924680109874
 		tag: string = "Object_40"
 		localId: u32 = 0
-		parentLocalId: u32 = 4294967295
 	}
 ]

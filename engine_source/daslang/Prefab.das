@@ -5,12 +5,13 @@ module Prefab shared public
 
 //! Prefab format, compiled cache and spawning.
 //!
-//! A prefab is a flat pre-order list of nodes. It stores only `parentLocalId`,
-//! never DECS entity ids: runtime ids are assigned by `create_entity` during spawn.
-//! `first_child`/`prev`/`next` are derived while spawning, so they are not data.
+//! A prefab is a flat pre-order list of nodes. A node with a parent stores `parentLocalId`;
+//! the root has no parent and stores nothing for it. DECS entity ids never reach the file:
+//! runtime ids are assigned by `create_entity` during spawn. `first_child`/`prev`/`next` are
+//! derived while spawning, so they are not data.
 //!
 //! Invariants checked here:
-//!  * exactly one root (`parentLocalId == 0xFFFFFFFF`);
+//!  * exactly one root (a node without `parentLocalId`);
 //!  * `localId`s are unique, the root is first;
 //!  * a parent exists and is stored before its child (pre-order);
 //!  * `eid`, `relationship` and every other runtime-only component are forbidden.
@@ -177,12 +178,9 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             return null
         }
 
+        // The root has no parent, so the field is absent for it and names no stored node.
         let parent_cf = node_obj?["parentLocalId"] ?? null
-        if (parent_cf == null) {
-            print("[PREFAB ERROR] node #{node_index}: parentLocalId is required\n")
-            return null
-        }
-        let parent_local_id = NodeParentLocalId(parent_cf)
+        let parent_local_id = parent_cf != null ? NodeParentLocalId(parent_cf) : PREFAB_ROOT_PARENT
 
         var parent_index = -1
         if (parent_local_id == PREFAB_ROOT_PARENT) {
@@ -692,9 +690,12 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
         local_id_cf.name = "localId"
         node_obj["localId"] = local_id_cf
 
-        var parent_id_cf = CF(parents[node_index])
-        parent_id_cf.name = "parentLocalId"
-        node_obj["parentLocalId"] = parent_id_cf
+        // A child names its parent by local index. The root has none, so nothing is stored.
+        if (parents[node_index] != PREFAB_ROOT_PARENT) {
+            var parent_id_cf = CF(parents[node_index])
+            parent_id_cf.name = "parentLocalId"
+            node_obj["parentLocalId"] = parent_id_cf
+        }
 
         var node_cf = CF(node_obj)
         node_cf.typeName = "PrefabNode"

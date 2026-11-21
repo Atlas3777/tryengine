@@ -98,7 +98,6 @@ entities: Entity[] = [
 			rotation: f32x4 = [-2.9802326e-08 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 4294967295
 	}
 	{
 		tag: string = "root"
@@ -551,7 +550,6 @@ entities: Entity[] = [
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 4294967295
 	}
 	{
 		materialRef: MaterialRef = {
@@ -1174,6 +1172,5 @@ entities: Entity[] = [
 			rotation: f32x4 = [-0.14970732 0 0 0.9887304]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 4294967295
 	}
 ]

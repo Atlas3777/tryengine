@@ -13,6 +13,5 @@ nodes: PrefabNode[] = [
 		meshGuid: u64 = 3081795527557720915
 		tag: string = "Vulcan_Scarlet_Lance_Material_Vulcan_0"
 		localId: u32 = 0
-		parentLocalId: u32 = 4294967295
 	}
 ]

@@ -15,7 +15,6 @@ entities: Entity[] = [
 			rotation: f32x4 = [-0.26240334 0.021278681 -0.005787872 0.96470636]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 4294967295
 	}
 	{
 		materialRef: MaterialRef = {
@@ -28,6 +27,5 @@ entities: Entity[] = [
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 4294967295
 	}
 ]

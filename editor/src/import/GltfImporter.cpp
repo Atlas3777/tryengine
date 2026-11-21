@@ -557,7 +557,9 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     for (const PrefabFlatNode& node : flat) {
         ConfigObject node_obj;
         node_obj.fields.push_back(MakePrefabField("localId", "u32", ConfigValue(node.local_id)));
-        node_obj.fields.push_back(MakePrefabField("parentLocalId", "u32", ConfigValue(node.parent_local_id)));
+        // Корень не имеет родителя, поэтому поле для него не пишется.
+        if (node.parent_local_id != kPrefabRootParent)
+            node_obj.fields.push_back(MakePrefabField("parentLocalId", "u32", ConfigValue(node.parent_local_id)));
 
         tryengine::Transform local_transform;
         eastl::string tag;

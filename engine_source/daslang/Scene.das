@@ -5,8 +5,9 @@ module Scene shared public
 
 //! Scene document: application, saving and the active-scene resource set.
 //!
-//! A scene stores authored components and `parentLocalId` (a local index in `entities`);
-//! `eid` and the derived `relationship` never reach the file.
+//! A scene stores authored components and `parentLocalId` (a local index in `entities`) for
+//! entities that have a parent; a root stores no such field. `eid` and the derived
+//! `relationship` never reach the file.
 //!
 //! A scene is applied from a parsed `Content::Document`; the text is read by whoever owns
 //! the flow (`Scene::LoadAsync` for the editor, `Loader` for preloaded target scenes).
@@ -92,8 +93,9 @@ def private ScenePath(path : string) : string {
     return Content::ResolvePath(DocumentKind.Scene, path)
 }
 
-// Scenes store the hierarchy as a local index (`parentLocalId`), exactly like a prefab:
-// DECS assigns fresh `EntityId`s on load, so an absolute id from the file would be stale.
+// Scenes store the hierarchy as a local index (`parentLocalId`) on entities that have a
+// parent, exactly like a prefab: DECS assigns fresh `EntityId`s on load, so an absolute id
+// from the file would be stale. A root has no parent and stores no field.
 let private SCENE_ROOT_PARENT : uint = 4294967295u
 
 def private ParentLocalId(cf : StructField?) : uint {
@@ -590,7 +592,8 @@ def private save_scene_to_config() : string {
             entity_obj[comp.name] = cf_val
         }
 
-        // The hierarchy is authored as a local index, not as absolute entity ids.
+        // The hierarchy is authored as a local index, not as absolute entity ids. A root has
+        // no parent, so it stores no `parentLocalId`.
         var parent_local = SCENE_ROOT_PARENT
         if (decs::has(decsState.allArchetypes[arch_idx], RELATIONSHIP_FIELD)) {
             if (!key_exists(relationship_index, arch_idx)) {
@@ -606,9 +609,11 @@ def private save_scene_to_config() : string {
                 }
             }
         }
-        var parent_cf = CF(parent_local)
-        parent_cf.name = "parentLocalId"
-        entity_obj["parentLocalId"] = parent_cf
+        if (parent_local != SCENE_ROOT_PARENT) {
+            var parent_cf = CF(parent_local)
+            parent_cf.name = "parentLocalId"
+            entity_obj["parentLocalId"] = parent_cf
+        }
 
         var entity_cf = CF(entity_obj)
         entity_cf.typeName = "Entity"

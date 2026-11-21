@@ -1,6 +1,5 @@
 entities: Entity[] = [
 	{
-		parentLocalId: u32 = 4294967295
 		tag: string = "LoadingCamera"
 		transform: Transform = {
 			position: f32x3 = [10 0 0]
