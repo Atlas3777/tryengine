@@ -54,7 +54,7 @@ def private GetViewportDropPoint() : float3 {
     var origin = float3(0.0f, 0.0f, 0.0f)
     var direction = float3(0.0f, 1.0f, 0.0f)
 
-    query() $(let _world : Transform, let camera : Camera; let editorCameraTag : bool) {
+    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera : Camera) {
         let size = float2(max(scene_viewport_size.x, 1.0f), max(scene_viewport_size.y, 1.0f))
         let ndc_x = scene_viewport_mouse.pos.x / size.x * 2.0f - 1.0f
         let ndc_y = 1.0f - scene_viewport_mouse.pos.y / size.y * 2.0f

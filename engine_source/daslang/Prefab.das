@@ -61,7 +61,7 @@ struct public PrefabNode {
     prev        : int
     next        : int
     local       : Transform = Transform()
-    world       : Transform = Transform()
+    world       : WorldTransform = WorldTransform()
     values      : decs::ComponentMap
 }
 
@@ -219,12 +219,17 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             if (field_name == "localId" || field_name == "parentLocalId") {
                 continue
             }
-            if (!IsSavedComponent(field_name)) {
-                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is runtime-only and forbidden in a prefab\n")
+            if (field_name == "eid") {
+                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is forbidden in a prefab\n")
                 return null
             }
 
             let cf = node_obj?[field_name] ?? null
+            // A plain runtime struct has no writer; it is not authored data.
+            if (cf != null && cf.value is _object && !HasComponentWriter(cf.typeName)) {
+                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is runtime-only and forbidden in a prefab\n")
+                return null
+            }
             if (!ApplyDecsConfigField(node.values, field_name, cf, cf != null ? cf.typeName : "")) {
                 print("[PREFAB ERROR] node #{node_index}: field '{field_name}' has no supported value\n")
                 return null
@@ -266,7 +271,7 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
 
         let parent_index = nodes[node_index].parent
         if (parent_index < 0) {
-            nodes[node_index].world = Transform(
+            nodes[node_index].world = WorldTransform(
                 position = nodes[node_index].local.position,
                 rotation = nodes[node_index].local.rotation,
                 scale = nodes[node_index].local.scale
@@ -446,7 +451,7 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
                 arch,
                 g_spawn_world_index,
                 idx,
-                Transform(
+                WorldTransform(
                     position = data.nodes[node_index].world.position + origin,
                     rotation = data.nodes[node_index].world.rotation,
                     scale = data.nodes[node_index].world.scale
@@ -648,10 +653,10 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
 
         var node_obj : table<string; StructField?>
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            if (comp.info.basicType == Type.tPointer) {
+            if (comp.name == "eid" || comp.info.basicType == Type.tPointer) {
                 continue
             }
-            if (!IsSavedComponent(comp.name)) {
+            if (!HasComponentWriter(comp.info.fullName)) {
                 continue
             }
 

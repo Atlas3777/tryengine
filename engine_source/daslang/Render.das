@@ -5,7 +5,6 @@ module Render shared public
 
 require tryengine/Types
 require tryengine/TransformSystem
-require tryengine/Serializable
 require tryRenderer
 require tryResources
 require daslib/decs
@@ -14,16 +13,14 @@ require daslib/math_boost
 
 require math
 
-// Per-entity load bookkeeping. These components exist only at runtime, so they are not
-// saved and not shown; the policy is declared below, next to the owner.
-let public MESH_LOAD_FIELD : string = "_meshLoadGuid"
-let public MATERIAL_LOAD_FIELD : string = "_materialLoadGuid"
-
-[init]
-def private RegisterComponentPolicies() {
-    MarkComponent(MESH_LOAD_FIELD, ComponentPolicy.Runtime)
-    MarkComponent(MATERIAL_LOAD_FIELD, ComponentPolicy.Runtime)
+// Per-entity load bookkeeping. `LoadMarker` is a plain struct without [DecsSerializable],
+// so the component has no writer: scene/prefab save skip it and the Inspector hides it.
+struct LoadMarker {
+    guid : uint64 = 0ul
 }
+
+let public MESH_LOAD_FIELD : string = "meshLoad"
+let public MATERIAL_LOAD_FIELD : string = "materialLoad"
 
 struct PointLightGPU {
     position_radius : float4
@@ -36,7 +33,7 @@ var lights : array<PointLightGPU>
 def get_lights() : array<PointLightGPU>? {
     lights.clear()
 
-    query() <| $(var _world : Transform; var light : PointLight) {
+    query() <| $(var _world : WorldTransform; var light : PointLight) {
         lights |> push(PointLightGPU(
             position_radius = float4(_world.position.x, _world.position.y, _world.position.z, light.radius),
             color_intensity = float4(light.color.x, light.color.y, light.color.z, light.intensity)
@@ -61,7 +58,7 @@ def get_render_obj() : array<DrawCall>? {
     start_load()
     dcs.clear()
 
-    query() <| $(eid : EntityId, _world : Transform, mesh : TryMesh?, material : TryMat?) {
+    query() <| $(eid : EntityId, _world : WorldTransform, mesh : TryMesh?, material : TryMat?) {
         // Пока новый материал грузится, указателя может не быть — не отдаём полупустой draw call.
         if (mesh == null || material == null) {
             return
@@ -89,7 +86,7 @@ var editor_cameraC : CameraC
 
 [export]
 def GetEditorCamera(viewport_size : float2) : CameraC? {
-    query() <| $(let _world : Transform, let camera : Camera; let editorCameraTag : bool){
+    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera : Camera) {
         editor_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
@@ -114,7 +111,7 @@ var game_cameraC : CameraC
 
 [export]
 def GetGameCamera(viewport_size : float2) : CameraC? {
-    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let _world : Transform, let camera : Camera){
+    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let _world : WorldTransform, let camera : Camera){
         game_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
@@ -137,9 +134,9 @@ def GetGameCamera(viewport_size : float2) : CameraC? {
 
 def start_load(){
     // Загрузка меша и материала разведена: материал не ждёт готовности меша.
-    // _meshLoadGuid/_materialLoadGuid — runtime-only компоненты (политика Runtime:
-    // не сохраняются в сцену и не показываются в инспекторе). Они хранят guid,
-    // для которого загрузка уже запрошена, чтобы не дёргать RequestLoad каждый кадр.
+    // meshLoad/materialLoad — runtime-only: LoadMarker не имеет writer'а, поэтому
+    // сцена/префаб их не сохраняют, а инспектор не рисует. Они хранят guid, для
+    // которого загрузка уже запрошена, чтобы не дёргать RequestLoad каждый кадр.
     query() $(eid : EntityId, let meshGuid : uint64) {
         let guid = meshGuid
         var has_mesh = false
@@ -148,8 +145,8 @@ def start_load(){
         }
         var load_guid = 0ul
         var has_load = false
-        query(eid) $(let _meshLoadGuid : uint64) {
-            load_guid = _meshLoadGuid
+        query(eid) $(let meshLoad : LoadMarker) {
+            load_guid = meshLoad.guid
             has_load = true
         }
 
@@ -180,7 +177,7 @@ def start_load(){
             if (changed) {
                 decs::remove(cmp, "mesh")
             }
-            cmp |> set(MESH_LOAD_FIELD, guid)
+            cmp |> set(MESH_LOAD_FIELD, LoadMarker(guid = guid))
             if (ready) {
                 cmp |> set("mesh", mesh_ptr)
             }
@@ -198,8 +195,8 @@ def start_load(){
         }
         var load_guid = 0ul
         var has_load = false
-        query(eid) $(let _materialLoadGuid : uint64) {
-            load_guid = _materialLoadGuid
+        query(eid) $(let materialLoad : LoadMarker) {
+            load_guid = materialLoad.guid
             has_load = true
         }
 
@@ -236,7 +233,7 @@ def start_load(){
             if (changed) {
                 decs::remove(cmp, "material")
             }
-            cmp |> set(MATERIAL_LOAD_FIELD, material_guid)
+            cmp |> set(MATERIAL_LOAD_FIELD, LoadMarker(guid = material_guid))
             if (ready) {
                 cmp |> set("material", mat_ptr)
             }

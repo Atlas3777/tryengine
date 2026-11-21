@@ -6,7 +6,8 @@ module TransformSystem shared public
 //! Keeps the derived world transform in sync with the authored local hierarchy.
 //!
 //! `Transform` is one authored component (`transform`): the Inspector edits it and scene save
-//! writes it. The derived world transform is the same `Transform` shape in the component `_world`;
+//! writes it. The derived world transform is `WorldTransform` in the component `_world`: a plain
+//! struct without [DecsSerializable], so it has no writer and never reaches a scene or prefab.
 //! `Render.das` reads it.
 //!
 //! `_world` is created together with `transform` and is never added here: adding a component
@@ -24,21 +25,14 @@ require math
 require daslib/decs
 require daslib/decs_boost
 require tryengine/Profiling
-require tryengine/Serializable
 require tryengine/Types
 
 let public TRANSFORM_FIELD : string = "transform"
 let public WORLD_FIELD : string = "_world"
 
-[init]
-def private RegisterComponentPolicy() {
-    // The world transform is derived every frame, never authored.
-    MarkComponent(WORLD_FIELD, ComponentPolicy.Runtime)
-}
-
 //! Composes a child's world transform from its parent's world transform and its local one.
-def public ComposeWorld(parent : Transform; local : Transform) : Transform {
-    var world = Transform()
+def public ComposeWorld(parent : WorldTransform; local : Transform) : WorldTransform {
+    var world = WorldTransform()
     world.position = parent.position + quat_mul_vec(parent.rotation, parent.scale * local.position)
     world.rotation = normalize(quat_mul(parent.rotation, local.rotation))
     world.scale = parent.scale * local.scale
@@ -51,7 +45,11 @@ def public ComposeWorld(parent : Transform; local : Transform) : Transform {
 //! values start as the local ones and the next pass composes the hierarchy.
 def public ApplyEntityTransform(var cmp : ComponentMap; transform : Transform) {
     cmp |> set(TRANSFORM_FIELD, transform)
-    cmp |> set(WORLD_FIELD, transform)
+    cmp |> set(WORLD_FIELD, WorldTransform(
+        position = transform.position,
+        rotation = transform.rotation,
+        scale = transform.scale
+    ))
 }
 
 //! Same, from the three values a creation site usually has at hand.
@@ -59,7 +57,7 @@ def public ApplyEntityTransform(var cmp : ComponentMap; position : float3; rotat
     ApplyEntityTransform(cmp, Transform(position = position, rotation = rotation, scale = scale))
 }
 
-def private SameTransform(a : Transform; b : Transform) : bool {
+def private SameWorld(a : WorldTransform; b : WorldTransform) : bool {
     if (a.position.x != b.position.x) return false
     if (a.position.y != b.position.y) return false
     if (a.position.z != b.position.z) return false
@@ -83,7 +81,7 @@ var private g_parent : array<EntityId>
 var private g_link_ok : array<bool>
 var private g_visited : array<bool>
 // What was last written to `_world`, so an unchanged subtree costs no DECS write.
-var private g_world : array<Transform>
+var private g_world : array<WorldTransform>
 var private g_world_ok : array<bool>
 var private g_world_generation : array<int>
 // Component index of `_world` per archetype, resolved on the first write of that archetype.
@@ -111,7 +109,7 @@ def public ResetWorldTransformCaches() {
     clear(g_world_index)
 }
 
-def private WriteWorld(eid : EntityId; world : Transform) {
+def private WriteWorld(eid : EntityId; world : WorldTransform) {
     if (!decs::is_alive(eid)) {
         return
     }
@@ -161,7 +159,7 @@ def private WriteWorld(eid : EntityId; world : Transform) {
 //! `UpdateWorldTransforms` has already run, but the scene is rendered from `_world` in the
 //! same frame. Waiting for the next tick would render the object one frame behind the
 //! handle that moves it. Only the edited subtree is walked; a full pass is not needed.
-def private RefreshSubtree(eid : EntityId; parent_world : Transform; has_parent : bool; depth : int) {
+def private RefreshSubtree(eid : EntityId; parent_world : WorldTransform; has_parent : bool; depth : int) {
     if (depth > 512 || !decs::is_alive(eid)) {
         return
     }
@@ -175,7 +173,10 @@ def private RefreshSubtree(eid : EntityId; parent_world : Transform; has_parent 
         return
     }
 
-    let world = has_parent ? ComposeWorld(parent_world, local) : local
+    var world = WorldTransform(position = local.position, rotation = local.rotation, scale = local.scale)
+    if (has_parent) {
+        world = ComposeWorld(parent_world, local)
+    }
     WriteWorld(eid, world)
 
     var child = INVALID_ENTITY_ID
@@ -202,20 +203,20 @@ def public RefreshWorldSubtree(eid : EntityId) {
         parent_eid = relationship.parent
     }
     if (parent_eid == INVALID_ENTITY_ID) {
-        RefreshSubtree(eid, Transform(), false, 0)
+        RefreshSubtree(eid, WorldTransform(), false, 0)
         return
     }
 
-    var parent_world = Transform()
+    var parent_world = WorldTransform()
     var has_parent = false
-    query(parent_eid) $(_world : Transform) {
+    query(parent_eid) $(_world : WorldTransform) {
         parent_world = _world
         has_parent = true
     }
     RefreshSubtree(eid, parent_world, has_parent, 0)
 }
 
-def private VisitSubtree(eid : EntityId; parent_world : Transform; has_parent : bool) {
+def private VisitSubtree(eid : EntityId; parent_world : WorldTransform; has_parent : bool) {
     let index = int(eid.id)
     if (index < 0 || index >= length(g_local)) {
         return
@@ -223,7 +224,11 @@ def private VisitSubtree(eid : EntityId; parent_world : Transform; has_parent : 
     g_visited[index] = true
 
     // A root's world transform is its local one; only a parented node needs the compose.
-    var world = g_local[index]
+    var world = WorldTransform(
+        position = g_local[index].position,
+        rotation = g_local[index].rotation,
+        scale = g_local[index].scale
+    )
     if (has_parent) {
         world = ComposeWorld(parent_world, g_local[index])
     }
@@ -231,7 +236,7 @@ def private VisitSubtree(eid : EntityId; parent_world : Transform; has_parent : 
     // A repeated write of the same value is the common case in a static scene, and skipping
     // it is what keeps the pass cheap: compare with what was written last time.
     var dirty = !g_world_ok[index] || g_world_generation[index] != eid.generation
-    dirty = dirty || !SameTransform(g_world[index], world)
+    dirty = dirty || !SameWorld(g_world[index], world)
     if (dirty) {
         WriteWorld(eid, world)
         g_world[index] = world
@@ -306,7 +311,7 @@ def UpdateWorldTransforms() {
 
     // Roots: every transformed entity with no link to a parent. Singletons (no Relationship
     // at all) are roots too and simply take their local transform as the world one.
-    var identity = Transform()
+    var identity = WorldTransform()
     for (index in range(slots)) {
         if (!g_local_ok[index] || g_visited[index]) {
             continue

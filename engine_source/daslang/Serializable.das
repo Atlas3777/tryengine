@@ -49,41 +49,11 @@ def public NormalizeTypeName(name : string) : string {
     return idx >= 0 ? slice(name, idx + 2, length(name)) : name
 }
 
-//! What a component means for authoring. `Saved` components are written to scenes and
-//! prefabs; `Derived` ones are rebuilt from authored data at load and are not stored;
-//! `Runtime` ones are engine state and are neither stored nor shown in the Inspector.
-//! The policy is declared next to the component owner, so no component name is
-//! interpreted by its spelling.
-enum public ComponentPolicy {
-    Saved
-    Derived
-    Runtime
-}
-
-var private g_component_policies : table<string; ComponentPolicy>
-
-//! Declares how a component takes part in authoring. Components without a policy are saved.
-def public MarkComponent(name : string; policy : ComponentPolicy) {
-    g_component_policies[name] = policy
-}
-
-def public ComponentPolicyOf(name : string) : ComponentPolicy {
-    if (key_exists(g_component_policies, name)) {
-        return g_component_policies[name]
-    }
-    return ComponentPolicy.Saved
-}
-
-//! True when scenes and prefabs store the component.
-def public IsSavedComponent(name : string) : bool => ComponentPolicyOf(name) == ComponentPolicy.Saved
-
-//! False for engine-only components the Inspector never shows.
-def public IsVisibleComponent(name : string) : bool => ComponentPolicyOf(name) != ComponentPolicy.Runtime
-
-[init]
-def private RegisterComponentPolicies() {
-    // `eid` is structural: DECS assigns it on creation and every archetype carries it.
-    MarkComponent("eid", ComponentPolicy.Runtime)
+//! True when scenes and prefabs can store a component of this type. Built-in scalars and
+//! [DecsSerializable] structs register a writer; a plain struct does not, which is how
+//! runtime and derived components stay out of authored files.
+def public HasComponentWriter(type_name : string) : bool {
+    return key_exists(g_decs_writers, NormalizeTypeName(type_name))
 }
 
 //! Собирает описания полей структуры TT. Вызывается из сгенерированных функций.

@@ -98,9 +98,11 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 - Новая структура-компонент — с `[decs_template, EcsTemplate]`, чтобы регистрация и
   удаление сгенерировались автоматически. Если значение должно лежать одним компонентом
   (как `Transform`/`Relationship`), это обычная структура + `%ecs~("имя", type<T>)%%`.
-- Что сохраняется в сцену/префаб, решает `tryengine/Serializable`:
-  `MarkComponent(name, ComponentPolicy.Saved/Derived/Runtime)`. Префикс `_` больше ничего
-  не значит; `eid` — Runtime, `relationship` — Derived (собирается из `parentLocalId`).
+- Что сохраняется в сцену/префаб, решает тип: компонент пишется, если у его типа есть
+  writer — встроенный скаляр или `[DecsSerializable]`-структура. Обычная структура
+  (`WorldTransform`, `Relationship`, `LoadMarker`, `EditorCameraTag`) writer'а не имеет,
+  поэтому scene save, prefab compile/save и Inspector её пропускают. `eid` — единственное
+  структурное исключение.
 
 ## Стиль `.das`
 

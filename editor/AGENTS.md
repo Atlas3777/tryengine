@@ -193,10 +193,11 @@
   а не четыре `Relationship_*` компонента: спавн пишет её одним `set_direct_at`.
 - Формат сцены хранит только авторские компоненты и `parentLocalId` — индекс сущности в
   массиве `entities`, как в префабе. `eid` не пишется (DECS всё равно выдаёт новый при
-  создании), а `relationship` собирается при загрузке. Сохранение больше не смотрит на
-  префикс имени: владелец компонента объявляет политику
-  `Serializable::MarkComponent(name, ComponentPolicy.Saved/Derived/Runtime)`, и
-  `Scene`/`Prefab`/`Inspector` спрашивают `IsSavedComponent`/`IsVisibleComponent`.
+  создании), а `relationship` собирается при загрузке. Сохранение определяется типом:
+  компонент пишется, если у его типа есть writer — встроенный скаляр или
+  `[DecsSerializable]`-структура. Обычная структура (`WorldTransform`, `Relationship`,
+  `LoadMarker`, `EditorCameraTag`) writer'а не имеет, поэтому scene save, prefab compile/save
+  и Inspector её пропускают. `eid` — единственное структурное исключение.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
@@ -235,9 +236,9 @@
   Window. Спавн идёт через drag&drop из Asset Browser (`Prefab::SpawnPrefab`) или
   `Prefab::Spawn` как cache-hit.
 - `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
-  выделенную ветку в pre-order и выкидывает всё, что `IsSavedComponent` не считает
-  авторским (`eid`, `relationship`, `_world`, маркеры загрузки, `editorCameraTag`); позиция
-  корня обнуляется (rotation/scale сохраняются), дерево ассетов обновляется.
+  выделенную ветку в pre-order и выкидывает `eid` и всё, у чего нет writer'а
+  (`relationship`, `_world`, `meshLoad`/`materialLoad`, `editorCameraTag`); позиция корня
+  обнуляется (rotation/scale сохраняются), дерево ассетов обновляется.
 - Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
   `common_dto.pak`, вместе с мешами и материалами, которые эти префабы упоминают
   (и их шейдерами/текстурами): иначе `Prefab::Spawn` в игре получил бы текст без ресурсов.
@@ -259,10 +260,11 @@
 
 - `Transform` — один компонент `transform`: обычная структура `position/rotation/scale`
   с identity-дефолтами. Его правит Inspector и сохраняет сцена; `default<Transform>`
-  больше не даёт нулевой scale. `_world` — производный компонент **того же типа**
-  `Transform`: `tryengine/TransformSystem` разворачивает Relationship-иерархию каждый кадр,
-  его читает `Render.das`. `_world` объявлен `ComponentPolicy.Runtime`: не сохраняется и
-  не виден в Inspector.
+  больше не даёт нулевой scale. `_world` — производный компонент **другого типа**
+  `WorldTransform` (та же тройка TRS, но без `[DecsSerializable]`):
+  `tryengine/TransformSystem` разворачивает Relationship-иерархию каждый кадр, его читает
+  `Render.das`. Writer'а у `WorldTransform` нет, поэтому `_world` не сохраняется и не
+  виден в Inspector.
 - **Имя аргумента в `query` — это имя компонента** (для не-шаблонных компонентов). Поэтому
   `query() $(transform : Transform)` видит `transform`, а `$(t : Transform)` — компонент `t`
   и молча не находит ни одной сущности. Для шаблонов (`camera : Camera`) имя не важно: они

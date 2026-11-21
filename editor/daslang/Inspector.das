@@ -148,6 +148,25 @@ def private split_component_name(name : string; var out_prefix : string&; var ou
     return false
 }
 
+// The Inspector draws authored components: a component whose type has a writer, or a
+// runtime component with a custom draw (the relationship graph). `eid` is structural and
+// is never shown; a plain runtime struct (WorldTransform, LoadMarker, EditorCameraTag) has
+// no writer and no override, so it stays hidden.
+def private IsComponentVisible(comp : Component) : bool {
+    if (comp.name == "eid") {
+        return false
+    }
+    if (HasComponentWriter(comp.info.fullName)) {
+        return true
+    }
+    var prefix = ""
+    var field = ""
+    if (split_component_name(comp.name, prefix, field)) {
+        return key_exists(g_overrides, prefix)
+    }
+    return key_exists(g_overrides, comp.name)
+}
+
 [profile]
 def DrawInspector() {
     if (selected_eid != last_selected_eid) {
@@ -184,7 +203,7 @@ def DrawInspector() {
         var processed_groups : table<string; bool>
 
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            if (!IsVisibleComponent(comp.name) || !passes_filter(W_FILTER, comp.name)) {
+            if (!IsComponentVisible(comp) || !passes_filter(W_FILTER, comp.name)) {
                 continue
             }
 

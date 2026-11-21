@@ -376,13 +376,16 @@ def private ApplyDocument(document : Content::Document?) : bool {
             new_eid = create_entity() @(eid : EntityId; var cmp : ComponentMap) {
                 assume cur_ent_obj = ent_cf.value as _object
                 for (field_name in keys(cur_ent_obj)) {
-                    // The hierarchy is structural (written below, after every id exists), and
-                    // runtime/derived components are never authored; `relationship` is rebuilt
-                    // from `parentLocalId` right here.
-                    if (field_name == "parentLocalId" || !IsSavedComponent(field_name)) {
+                    // `eid` is assigned by DECS, and the hierarchy is structural (written
+                    // below, after every id exists).
+                    if (field_name == "eid" || field_name == "parentLocalId") {
                         continue
                     }
                     let cf = cur_ent_obj?[field_name] ?? null
+                    // A plain runtime struct has no writer; it is not authored data.
+                    if (cf != null && cf.value is _object && !HasComponentWriter(cf.typeName)) {
+                        continue
+                    }
                     let type_name = cf != null ? cf.typeName : ""
                     parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, type_name)
                 }
@@ -569,9 +572,12 @@ def private save_scene_to_config() : string {
 
         var entity_obj : table<string; StructField?>
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            // Pointers are runtime references; the policy decides the rest (runtime and
-            // derived components such as `_world` and `relationship` are not authored).
-            if (comp.info.basicType == Type.tPointer || !IsSavedComponent(comp.name)) {
+            // `eid` is structural; pointers are runtime references. The type decides the
+            // rest: a plain struct (WorldTransform, Relationship, LoadMarker) has no writer.
+            if (comp.name == "eid" || comp.info.basicType == Type.tPointer) {
+                continue
+            }
+            if (!HasComponentWriter(comp.info.fullName)) {
                 continue
             }
 

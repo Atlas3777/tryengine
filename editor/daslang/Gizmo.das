@@ -208,7 +208,7 @@ def private GizmoBasis(target : GizmoTarget; mode : GizmoMode; space : GizmoSpac
 
 def private GetGizmoCamera(var camera : GizmoCamera&) : bool {
     var found = false
-    query() $(let _world : Transform, let camera_component : Camera; let editorCameraTag : bool) {
+    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera_component : Camera) {
         camera.position = _world.position
         camera.forward = quat_mul_vec(_world.rotation, float3(0.0f, 1.0f, 0.0f))
         camera.right = quat_mul_vec(_world.rotation, float3(1.0f, 0.0f, 0.0f))
@@ -496,7 +496,7 @@ def private SelectedTarget(var target : GizmoTarget&) : bool {
         return false
     }
     var found = false
-    query(selected_eid) $(let transform : Transform; let _world : Transform) {
+    query(selected_eid) $(let transform : Transform; let _world : WorldTransform) {
         target = GizmoTarget(position = _world.position, rotation = _world.rotation, scale = transform.scale)
         found = true
     }
@@ -718,7 +718,7 @@ def public GizmoEndDrag() {
 // Applying a delta to the selected entity.
 // ---------------------------------------------------------------------------
 
-def private ParentWorld(eid : EntityId; var parent_world : Transform&) : bool {
+def private ParentWorld(eid : EntityId; var parent_world : WorldTransform&) : bool {
     var parent_eid = INVALID_ENTITY_ID
     query(eid) $(relationship : Relationship) {
         parent_eid = relationship.parent
@@ -727,7 +727,7 @@ def private ParentWorld(eid : EntityId; var parent_world : Transform&) : bool {
         return false
     }
     var has_parent = false
-    query(parent_eid) $(_world : Transform) {
+    query(parent_eid) $(_world : WorldTransform) {
         parent_world = _world
         has_parent = true
     }
@@ -749,7 +749,7 @@ def private ApplyDeltaToSelection(delta : GizmoDelta) {
         return
     }
 
-    var parent_transform = Transform()
+    var parent_transform = WorldTransform()
     let has_parent = ParentWorld(selected_eid, parent_transform)
 
     let start = g_drag.target

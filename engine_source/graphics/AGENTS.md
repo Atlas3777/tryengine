@@ -61,12 +61,12 @@
 
 - `start_load` разведён на два прохода: `meshGuid` и `materialRef` загружаются
   независимо, материал не ждёт готовности меша.
-- Для каждого guid в компонентах `_meshLoadGuid` / `_materialLoadGuid` лежит маркер:
+- Для каждого guid в компонентах `meshLoad` / `materialLoad` лежит `LoadMarker`:
   загрузка уже запрошена. Это не даёт вызывать `RequestLoad*` каждый кадр (он
   увеличивает ref_count).
-- `_meshLoadGuid` / `_materialLoadGuid` объявлены `ComponentPolicy.Runtime` в
-  `tryengine/Serializable`: `Scene.das` не пишет их в сцену и не читает из неё,
-  `Inspector.das` не рисует. Имя с `_` — только соглашение, правило задаёт политика.
+- `LoadMarker` — обычная структура без `[DecsSerializable]`, writer'а у неё нет:
+  `Scene.das` не пишет её в сцену, `Inspector.das` не рисует, prefab её не авторит.
+  Правило задаёт тип, а не префикс имени.
 - Указатель `mesh`/`material` ставится только вместе с маркером. Указатель без маркера
   считается устаревшим и снимается; ветки «старый указатель без маркера» больше нет.
 - При смене `materialRef` старый указатель `material` снимается сразу, маркер

@@ -19,21 +19,21 @@ require tryengine/TransformSystem
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
-require tryengine/Serializable
 require tryeditor/QuadTreeDebugWindow
 
 require tryResources
 
 require imgui
 require daslib/decs
+require daslib/decs_boost
 
 var is_playing : bool = false
 var is_paused  : bool = false
 
-[init]
-def private RegisterComponentPolicies() {
-    // The editor camera marker is editor state; it never reaches a scene or a prefab.
-    MarkComponent("editorCameraTag", ComponentPolicy.Runtime)
+// Editor state. A plain struct has no writer, so the marker never reaches a scene or a
+// prefab and the Inspector does not draw it.
+struct private EditorCameraTag {
+    enabled : bool = true
 }
 
 // The editor owns its clock and hangs it off the engine root: editor tools (camera, gizmos)
@@ -54,7 +54,7 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
     // while Mover and the Scene viewport keep working during Play.
     create_entity() @(eid : EntityId; var cmp : ComponentMap) {
         cmp.tag := "EditorCamera"
-        cmp |> set("editorCameraTag", true)
+        cmp |> set("editorCameraTag", EditorCameraTag(enabled = true))
         ApplyEntityTransform(cmp, float3(0, 0, 0), float4(0, 0, 0, 1), float3(1, 1, 1))
         apply_decs_template(cmp, Camera())
         cmp |> set(RELATIONSHIP_FIELD, Relationship())
@@ -72,7 +72,7 @@ def private OnSceneUnloaded() {
     // Play runs GameStart unchanged; the editor camera is editor state layered on top.
     // It is tagged `editorCameraTag`, so the game camera query and GameUpdate ignore it,
     // while Mover and the Scene viewport keep working during Play.
-    query()$(eid : EntityId, editorCameraTag : bool, transform : Transform, camera : Camera){
+    query() $[REQUIRE(editorCameraTag)] (eid : EntityId, transform : Transform, camera : Camera) {
         delete_entity(eid)
     }
     decs::commit()
