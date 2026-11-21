@@ -13,7 +13,7 @@ module Prefab shared public
 //!  * exactly one root (`parentLocalId == 0xFFFFFFFF`);
 //!  * `localId`s are unique, the root is first;
 //!  * a parent exists and is stored before its child (pre-order);
-//!  * `eid` and `Relationship_*` fields are forbidden.
+//!  * `eid`, `relationship` and every other runtime-only component are forbidden.
 //!
 //! Node fields are plain ConfigFormat component names (`tag`, `meshGuid`, `transform`,
 //! `materialRef`, ...). Transforms are local to the parent. The compiled template also
@@ -85,12 +85,6 @@ struct public PrefabTemplate {
 // Compiled prefabs live in `tryengine/AssetCache`, one typed record per canonical path.
 // The template is self-contained: it holds resolved components and the strings they
 // reference, so neither the parsed document nor a separate document cache is needed.
-
-//! `_`-prefixed components are runtime-only (`_world` is derived at compile time), and the
-//! relation links are built from `localId`/`parentLocalId`, so a file may not author either.
-def private IsReservedNodeField(name : string) : bool {
-    return name == "eid" || starts_with(name, "Relationship_") || starts_with(name, "_")
-}
 
 def private NodeLocalId(cf : StructField?) : uint {
     return from_CF(cf, type<uint>)
@@ -217,16 +211,16 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
 
         // Resolve every authored field once, here. Spawn used to do this per entity and per
         // field: name lookup, type dispatch, `from_CF` and `make_component`. The defaults
-        // come first so every node has the relationship links and an identity transform even
-        // when the file omits them.
-        apply_decs_template(node.values, Relationship())
+        // come first so every node has an unlinked relationship and an identity transform
+        // even when the file omits them.
+        node.values |> set(RELATIONSHIP_FIELD, Relationship())
         node.values |> set(TRANSFORM_FIELD, Transform())
         for (field_name in keys(node_obj)) {
             if (field_name == "localId" || field_name == "parentLocalId") {
                 continue
             }
-            if (IsReservedNodeField(field_name)) {
-                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is forbidden in a prefab\n")
+            if (!IsSavedComponent(field_name)) {
+                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is runtime-only and forbidden in a prefab\n")
                 return null
             }
 
@@ -481,9 +475,9 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
     )
 
     // The links are known only once the ids exist, and `update_entity` would copy a whole
-    // entity row to change four fields: write them straight into archetype storage, with the
-    // component indices resolved once per archetype.
-    var link_cache : table<int; array<int>>
+    // entity row to change one component: write it straight into archetype storage, with
+    // the component index resolved once per archetype.
+    var relationship_index : table<int; int>
     for (entity_index in range(entity_count)) {
         let eid = g_spawn_ids[entity_index]
         let record = decsState.entityLookup[int(eid.id)]
@@ -494,17 +488,20 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
         let prev_index = data.nodes[entity_index].prev
         let next_index = data.nodes[entity_index].next
 
-        apply_decs_template_arch(
+        if (!key_exists(relationship_index, arch_index)) {
+            relationship_index[arch_index] = decs::find_component_index(
+                decsState.allArchetypes[arch_index], RELATIONSHIP_FIELD)
+        }
+        decs::set_direct_at(
             decsState.allArchetypes[arch_index],
+            relationship_index[arch_index],
             int(record.index),
-            eid,
             Relationship(
                 parent = parent_index >= 0 ? g_spawn_ids[parent_index] : INVALID_ENTITY_ID,
                 first_child = first_child >= 0 ? g_spawn_ids[first_child] : INVALID_ENTITY_ID,
                 prev = prev_index >= 0 ? g_spawn_ids[prev_index] : INVALID_ENTITY_ID,
                 next = next_index >= 0 ? g_spawn_ids[next_index] : INVALID_ENTITY_ID
-            ),
-            link_cache[arch_index]
+            )
         )
     }
 
@@ -589,11 +586,6 @@ def private GetEntityLocation(eid : EntityId; var out_arch_idx : int&; var out_i
     return true
 }
 
-// Runtime-only components and the derived hierarchy are never authored into a prefab.
-def private IsSkippedPrefabComponent(name : string) : bool {
-    return IsReservedNodeField(name) || starts_with(name, "_") || name == "eid" || name == "editorCameraTag"
-}
-
 def private CollectSubtree(eid : EntityId;
                            parent_local : uint;
                            var order : array<EntityId>;
@@ -609,16 +601,16 @@ def private CollectSubtree(eid : EntityId;
     parents |> push(parent_local)
 
     var child = INVALID_ENTITY_ID
-    query(eid) $(rel : Relationship) {
-        child = rel.first_child
+    query(eid) $(relationship : Relationship) {
+        child = relationship.first_child
     }
 
     while (child != INVALID_ENTITY_ID) {
         CollectSubtree(child, local_id, order, parents, visited)
 
         var next = INVALID_ENTITY_ID
-        query(child) $(rel : Relationship) {
-            next = rel.next
+        query(child) $(relationship : Relationship) {
+            next = relationship.next
         }
         child = next
     }
@@ -659,7 +651,7 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
             if (comp.info.basicType == Type.tPointer) {
                 continue
             }
-            if (IsSkippedPrefabComponent(comp.name)) {
+            if (!IsSavedComponent(comp.name)) {
                 continue
             }
 

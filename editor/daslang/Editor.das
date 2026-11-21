@@ -19,6 +19,7 @@ require tryengine/TransformSystem
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
+require tryengine/Serializable
 require tryeditor/QuadTreeDebugWindow
 
 require tryResources
@@ -28,6 +29,12 @@ require daslib/decs
 
 var is_playing : bool = false
 var is_paused  : bool = false
+
+[init]
+def private RegisterComponentPolicies() {
+    // The editor camera marker is editor state; it never reaches a scene or a prefab.
+    MarkComponent("editorCameraTag", ComponentPolicy.Runtime)
+}
 
 // The editor owns its clock and hangs it off the engine root: editor tools (camera, gizmos)
 // keep running while the game is paused, and play mode never slows them down.
@@ -50,7 +57,7 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
         cmp |> set("editorCameraTag", true)
         ApplyEntityTransform(cmp, float3(0, 0, 0), float4(0, 0, 0, 1), float3(1, 1, 1))
         apply_decs_template(cmp, Camera())
-        apply_decs_template(cmp, Relationship())
+        cmp |> set(RELATIONSHIP_FIELD, Relationship())
     }
     decs::commit()
 }

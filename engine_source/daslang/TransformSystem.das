@@ -24,10 +24,17 @@ require math
 require daslib/decs
 require daslib/decs_boost
 require tryengine/Profiling
+require tryengine/Serializable
 require tryengine/Types
 
 let public TRANSFORM_FIELD : string = "transform"
 let public WORLD_FIELD : string = "_world"
+
+[init]
+def private RegisterComponentPolicy() {
+    // The world transform is derived every frame, never authored.
+    MarkComponent(WORLD_FIELD, ComponentPolicy.Runtime)
+}
 
 //! Composes a child's world transform from its parent's world transform and its local one.
 def public ComposeWorld(parent : Transform; local : Transform) : Transform {
@@ -172,8 +179,8 @@ def private RefreshSubtree(eid : EntityId; parent_world : Transform; has_parent 
     WriteWorld(eid, world)
 
     var child = INVALID_ENTITY_ID
-    query(eid) $(rel : Relationship) {
-        child = rel.first_child
+    query(eid) $(relationship : Relationship) {
+        child = relationship.first_child
     }
     while (child != INVALID_ENTITY_ID) {
         if (!decs::is_alive(child)) {
@@ -181,8 +188,8 @@ def private RefreshSubtree(eid : EntityId; parent_world : Transform; has_parent 
         }
         RefreshSubtree(child, world, true, depth + 1)
         var next = INVALID_ENTITY_ID
-        query(child) $(rel : Relationship) {
-            next = rel.next
+        query(child) $(relationship : Relationship) {
+            next = relationship.next
         }
         child = next
     }
@@ -191,8 +198,8 @@ def private RefreshSubtree(eid : EntityId; parent_world : Transform; has_parent 
 [profile]
 def public RefreshWorldSubtree(eid : EntityId) {
     var parent_eid = INVALID_ENTITY_ID
-    query(eid) $(rel : Relationship) {
-        parent_eid = rel.parent
+    query(eid) $(relationship : Relationship) {
+        parent_eid = relationship.parent
     }
     if (parent_eid == INVALID_ENTITY_ID) {
         RefreshSubtree(eid, Transform(), false, 0)
@@ -286,14 +293,14 @@ def UpdateWorldTransforms() {
         return
     }
 
-    query() $(eid : EntityId, rel : Relationship) {
+    query() $(eid : EntityId, relationship : Relationship) {
         let index = int(eid.id)
         if (index < 0 || index >= slots) {
             return
         }
-        g_first_child[index] = rel.first_child
-        g_next_sibling[index] = rel.next
-        g_parent[index] = rel.parent
+        g_first_child[index] = relationship.first_child
+        g_next_sibling[index] = relationship.next
+        g_parent[index] = relationship.parent
         g_link_ok[index] = true
     }
 

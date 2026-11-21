@@ -117,22 +117,22 @@ def register_override(name : string; draw : ComponentDrawFn) {
 }
 
 def draw_relationship_override(eid : EntityId) {
-    query(eid) $(rel : Relationship) {
-        text("parent:      [{rel.parent.id}]")
-        if (rel.parent != INVALID_ENTITY_ID) {
+    query(eid) $(relationship : Relationship) {
+        text("parent:      [{relationship.parent.id}]")
+        if (relationship.parent != INVALID_ENTITY_ID) {
             same_line()
             if (button(BT_GO, (text = "Go"))) {
-                selected_eid = rel.parent
+                selected_eid = relationship.parent
             }
         }
-        text("first_child: [{rel.first_child.id}]")
-        text("next:        [{rel.next.id}]")
+        text("first_child: [{relationship.first_child.id}]")
+        text("next:        [{relationship.next.id}]")
     }
 }
 
 [init]
 def register_default_overrides() {
-    register_override("Relationship", @@draw_relationship_override)
+    register_override(RELATIONSHIP_FIELD, @@draw_relationship_override)
 }
 
 // ---------------------------------------------------------------------
@@ -184,7 +184,7 @@ def DrawInspector() {
         var processed_groups : table<string; bool>
 
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            if (comp.name == "eid" || starts_with(comp.name, "_") || !passes_filter(W_FILTER, comp.name)) {
+            if (!IsVisibleComponent(comp.name) || !passes_filter(W_FILTER, comp.name)) {
                 continue
             }
 

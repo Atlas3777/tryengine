@@ -8,14 +8,7 @@ requireMaterials: string[] = [
 ]
 entities: Entity[] = [
 	{
-		Relationship_first_child: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		eid: EntityId = {
-			id: u32 = 1
-			generation: i32 = 1
-		}
+		parentLocalId: u32 = 4294967295
 		tag: string = "Object_40"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -23,31 +16,12 @@ entities: Entity[] = [
 			scale: f32x3 = [1 1 1]
 		}
 		meshGuid: u64 = 12277960924680109874
-		Relationship_parent: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
 		materialRef: MaterialRef = {
 			path: string = "guid:367643668121773679"
 		}
-		Relationship_next: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Relationship_prev: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
 	}
 	{
-		Relationship_first_child: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		eid: EntityId = {
-			id: u32 = 2
-			generation: i32 = 1
-		}
+		parentLocalId: u32 = 4294967295
 		tag: string = "Vulcan_Scarlet_Lance_Material_Vulcan_0"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -55,23 +29,12 @@ entities: Entity[] = [
 			scale: f32x3 = [1 1 1]
 		}
 		meshGuid: u64 = 3081795527557720915
-		Relationship_parent: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
 		materialRef: MaterialRef = {
 			path: string = "guid:17036954862819815981"
 		}
-		Relationship_next: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
-		Relationship_prev: EntityId = {
-			id: u32 = 0
-			generation: i32 = 0
-		}
 	}
 	{
+		parentLocalId: u32 = 4294967295
 		tag: string = "GameCamera"
 		transform: Transform = {
 			position: f32x3 = [0 -20 10]

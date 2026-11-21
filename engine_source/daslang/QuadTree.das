@@ -4,7 +4,6 @@ options relaxed_assign = false
 module QuadTree shared public
 
 require daslib/decs
-require daslib/decs_boost
 require math
 require tryengine/TransformSystem
 require tryengine/Types
@@ -73,7 +72,7 @@ def public load_node_entity(var tree : QuadTree&; nodeIdx : int) {
             float4(0.0f, 0.0f, 0.0f, 1.0f),
             float3(halfSize, halfSize, 1.0f)
         )
-        apply_decs_template(cmp, Relationship())
+        cmp |> set(RELATIONSHIP_FIELD, Relationship())
     }
 
     tree.nodes[nodeIdx].ownedEntities |> push(eid)

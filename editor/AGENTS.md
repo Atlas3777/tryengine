@@ -184,11 +184,19 @@
   компонует из них мировые `_world` в шаблоне, поэтому спавн не зависит от прохода.
 - Оба артефакта — `target = Editor` и лежат в `artifacts/editor/<guid>/`: в пак они не
   попадают. Runtime спавнит `.prefab`, а не glb; glb можно дропнуть только в редакторе.
-- `tryengine/Prefab.das` — единственный парсер/спавнер префаба. В файле нет `eid` и
-  `Relationship_*`: хранятся только `localId`/`parentLocalId`, а `first_child`/`prev`/`next`
-  выводятся из порядка массива. Проверяются один корень, уникальность `localId` и то, что
-  родитель записан раньше ребёнка. `transform` в префабе локальный; мировые TRS
-  компонуются при компиляции и едут в шаблоне готовыми компонентами (`_world`).
+- `tryengine/Prefab.das` — единственный парсер/спавнер префаба. В файле нет `eid`,
+  `relationship` и других runtime-компонентов: хранятся только `localId`/`parentLocalId`,
+  а `first_child`/`prev`/`next` выводятся из порядка массива. Проверяются один корень,
+  уникальность `localId` и то, что родитель записан раньше ребёнка. `transform` в префабе
+  локальный; мировые TRS компонуются при компиляции и едут в шаблоне готовыми
+  компонентами (`_world`). `relationship` — одна структура `Relationship` на сущность,
+  а не четыре `Relationship_*` компонента: спавн пишет её одним `set_direct_at`.
+- Формат сцены хранит только авторские компоненты и `parentLocalId` — индекс сущности в
+  массиве `entities`, как в префабе. `eid` не пишется (DECS всё равно выдаёт новый при
+  создании), а `relationship` собирается при загрузке. Сохранение больше не смотрит на
+  префикс имени: владелец компонента объявляет политику
+  `Serializable::MarkComponent(name, ComponentPolicy.Saved/Derived/Runtime)`, и
+  `Scene`/`Prefab`/`Inspector` спрашивают `IsSavedComponent`/`IsVisibleComponent`.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
@@ -204,8 +212,8 @@
   делают `AssetCache::Refresh` и читают файл заново.
 - Спавн идёт группами по набору компонентов (`PrefabTemplate.groups`, считается в
   `CompilePrefab`): на группу один `create_entities_from_cmp` вместо `create_entity` на
-  сущность, компоненты копируются в архетип готовыми байтами, `Relationship_*` пишется
-  `apply_decs_template_arch`, позиция корня — `set_direct_at`. `update_entity` в спавне не
+  сущность, компоненты копируются в архетип готовыми байтами, `relationship` пишется
+  одним `set_direct_at`, позиция корня — тоже `set_direct_at`. `update_entity` в спавне не
   используется: он копирует всю строку сущности, чтобы поменять четыре ссылки. Порядок
   компонентов в архетипе позиционный, поэтому шаблон не должен опираться на порядок `set`
   в другом коде. `CompilePrefab` — публичная точка «разобранный документ →
@@ -227,8 +235,9 @@
   Window. Спавн идёт через drag&drop из Asset Browser (`Prefab::SpawnPrefab`) или
   `Prefab::Spawn` как cache-hit.
 - `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
-  выделенную ветку в pre-order, выкидывает `eid`/`Relationship_*`/`_*`/`editorCameraTag`,
-  обнуляет позицию корня (rotation/scale сохраняются) и обновляет дерево ассетов.
+  выделенную ветку в pre-order и выкидывает всё, что `IsSavedComponent` не считает
+  авторским (`eid`, `relationship`, `_world`, маркеры загрузки, `editorCameraTag`); позиция
+  корня обнуляется (rotation/scale сохраняются), дерево ассетов обновляется.
 - Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
   `common_dto.pak`, вместе с мешами и материалами, которые эти префабы упоминают
   (и их шейдерами/текстурами): иначе `Prefab::Spawn` в игре получил бы текст без ресурсов.
@@ -252,7 +261,8 @@
   с identity-дефолтами. Его правит Inspector и сохраняет сцена; `default<Transform>`
   больше не даёт нулевой scale. `_world` — производный компонент **того же типа**
   `Transform`: `tryengine/TransformSystem` разворачивает Relationship-иерархию каждый кадр,
-  его читает `Render.das`. `_world` не сохраняется и не виден в Inspector (префикс `_`).
+  его читает `Render.das`. `_world` объявлен `ComponentPolicy.Runtime`: не сохраняется и
+  не виден в Inspector.
 - **Имя аргумента в `query` — это имя компонента** (для не-шаблонных компонентов). Поэтому
   `query() $(transform : Transform)` видит `transform`, а `$(t : Transform)` — компонент `t`
   и молча не находит ни одной сущности. Для шаблонов (`camera : Camera`) имя не важно: они
@@ -267,7 +277,7 @@
   (editor-камера, `Hierarchy` → New Entity, `QuadTree`), `CompilePrefab` кладёт готовый
   `_world` в шаблон, `Scene::Load` — при разборе полей сущности. Сущность, созданная без
   `_world`, — ошибка создания: первый `WriteWorld` упадёт на `find_component_index`.
-- `UpdateWorldTransforms` обходит лес **вниз**: корни — `Relationship_parent == INVALID` или
+- `UpdateWorldTransforms` обходит лес **вниз**: корни — `relationship.parent == INVALID` или
   родитель без `transform` (сирота), дети — по `first_child`/`next`, поэтому родитель всегда
   скомпонован раньше потомка. После любого `decs::restart` (загрузка сцены, Play/Stop)
   вызывай `TransformSystem::ResetWorldTransformCaches`: `decs` переиспользует индексы

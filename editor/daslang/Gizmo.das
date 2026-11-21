@@ -720,8 +720,8 @@ def public GizmoEndDrag() {
 
 def private ParentWorld(eid : EntityId; var parent_world : Transform&) : bool {
     var parent_eid = INVALID_ENTITY_ID
-    query(eid) $(rel : Relationship) {
-        parent_eid = rel.parent
+    query(eid) $(relationship : Relationship) {
+        parent_eid = relationship.parent
     }
     if (parent_eid == INVALID_ENTITY_ID) {
         return false

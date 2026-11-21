@@ -86,8 +86,9 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 `apply_decs_template`, `EcsRegister`, а также reader-макрос `%ecs~("Имя", type<T>)%%` для
 объявления одиночного компонента. Типы компонентов приходят из `tryengine/Types`:
 
-- `Types.das` — `[decs_template, EcsTemplate]`-структуры `Transform`, `Camera`,
-  `PointLight`, `Relationship` и объявления `HP`/`Mana`;
+- `Types.das` — одиночные компоненты-структуры `Transform` и `Relationship` (объявлены
+  через `%ecs~`), `[decs_template, EcsTemplate]`-структуры `Camera`/`PointLight` и
+  объявления `HP`/`Mana`;
 - `game/scripts/Game.das` — живой пример `create_entity`, `query`, `commit`.
 
 Правила:
@@ -95,7 +96,11 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 - Создание/изменение — внутри `create_entity`/`update_entity` с последующим `commit()`.
 - Чтение — через `query()$(...)`; не тащи C++-реестр сущностей, его нет.
 - Новая структура-компонент — с `[decs_template, EcsTemplate]`, чтобы регистрация и
-  удаление сгенерировались автоматически.
+  удаление сгенерировались автоматически. Если значение должно лежать одним компонентом
+  (как `Transform`/`Relationship`), это обычная структура + `%ecs~("имя", type<T>)%%`.
+- Что сохраняется в сцену/префаб, решает `tryengine/Serializable`:
+  `MarkComponent(name, ComponentPolicy.Saved/Derived/Runtime)`. Префикс `_` больше ничего
+  не значит; `eid` — Runtime, `relationship` — Derived (собирается из `parentLocalId`).
 
 ## Стиль `.das`
 

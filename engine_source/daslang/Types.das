@@ -50,12 +50,25 @@ struct Transform {
 
 %ecs~("transform", type<Transform>) %%
 
-[decs_template, EcsTemplate, DecsSerializable]
+// Relationship, one component named "relationship": the four links travel as one struct, so
+// a write is one memcpy and a query reads one contiguous value. The fields default to
+// INVALID_ENTITY_ID, so `Relationship()` is an unlinked node. The links are derived from the
+// authored hierarchy (`parentLocalId` in scenes and prefabs), so the component is not saved;
+// the Inspector still shows it because it explains why an entity moves with its parent.
 struct Relationship {
     parent      : EntityId = INVALID_ENTITY_ID
     first_child : EntityId = INVALID_ENTITY_ID
     prev        : EntityId = INVALID_ENTITY_ID
     next        : EntityId = INVALID_ENTITY_ID
+}
+
+let public RELATIONSHIP_FIELD : string = "relationship"
+
+%ecs~(RELATIONSHIP_FIELD, type<Relationship>) %%
+
+[init]
+def private RegisterRelationshipPolicy() {
+    MarkComponent(RELATIONSHIP_FIELD, ComponentPolicy.Derived)
 }
 
 [decs_template, EcsTemplate, DecsSerializable]

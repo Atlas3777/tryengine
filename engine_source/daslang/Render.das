@@ -5,6 +5,7 @@ module Render shared public
 
 require tryengine/Types
 require tryengine/TransformSystem
+require tryengine/Serializable
 require tryRenderer
 require tryResources
 require daslib/decs
@@ -12,6 +13,17 @@ require daslib/decs_boost
 require daslib/math_boost
 
 require math
+
+// Per-entity load bookkeeping. These components exist only at runtime, so they are not
+// saved and not shown; the policy is declared below, next to the owner.
+let public MESH_LOAD_FIELD : string = "_meshLoadGuid"
+let public MATERIAL_LOAD_FIELD : string = "_materialLoadGuid"
+
+[init]
+def private RegisterComponentPolicies() {
+    MarkComponent(MESH_LOAD_FIELD, ComponentPolicy.Runtime)
+    MarkComponent(MATERIAL_LOAD_FIELD, ComponentPolicy.Runtime)
+}
 
 struct PointLightGPU {
     position_radius : float4
@@ -125,8 +137,8 @@ def GetGameCamera(viewport_size : float2) : CameraC? {
 
 def start_load(){
     // Загрузка меша и материала разведена: материал не ждёт готовности меша.
-    // _meshLoadGuid/_materialLoadGuid — runtime-only компоненты (имя с "_" не
-    // сохраняется в сцену и не показывается в инспекторе). Они хранят guid,
+    // _meshLoadGuid/_materialLoadGuid — runtime-only компоненты (политика Runtime:
+    // не сохраняются в сцену и не показываются в инспекторе). Они хранят guid,
     // для которого загрузка уже запрошена, чтобы не дёргать RequestLoad каждый кадр.
     query() $(eid : EntityId, let meshGuid : uint64) {
         let guid = meshGuid
@@ -145,7 +157,7 @@ def start_load(){
             if (has_mesh || has_load) {
                 update_entity(eid) @(eid, cmp) {
                     decs::remove(cmp, "mesh")
-                    decs::remove(cmp, "_meshLoadGuid")
+                    decs::remove(cmp, MESH_LOAD_FIELD)
                 }
             }
             return
@@ -154,7 +166,7 @@ def start_load(){
         // Старый указатель без маркера: считаем, что он соответствует meshGuid.
         if (has_mesh && !has_load) {
             update_entity(eid) @(eid, cmp) {
-                cmp |> set("_meshLoadGuid", guid)
+                cmp |> set(MESH_LOAD_FIELD, guid)
             }
             return
         }
@@ -173,7 +185,7 @@ def start_load(){
             if (changed) {
                 decs::remove(cmp, "mesh")
             }
-            cmp |> set("_meshLoadGuid", guid)
+            cmp |> set(MESH_LOAD_FIELD, guid)
             if (ready) {
                 cmp |> set("mesh", mesh_ptr)
             }
@@ -204,7 +216,7 @@ def start_load(){
                 if (has_material || has_load) {
                     update_entity(eid) @(eid, cmp) {
                         decs::remove(cmp, "material")
-                        decs::remove(cmp, "_materialLoadGuid")
+                        decs::remove(cmp, MATERIAL_LOAD_FIELD)
                     }
                 }
             }
@@ -214,7 +226,7 @@ def start_load(){
         // Старый указатель без маркера: считаем, что он соответствует materialRef.
         if (has_material && !has_load) {
             update_entity(eid) @(eid, cmp) {
-                cmp |> set("_materialLoadGuid", material_guid)
+                cmp |> set(MATERIAL_LOAD_FIELD, material_guid)
             }
             return
         }
@@ -235,7 +247,7 @@ def start_load(){
             if (changed) {
                 decs::remove(cmp, "material")
             }
-            cmp |> set("_materialLoadGuid", material_guid)
+            cmp |> set(MATERIAL_LOAD_FIELD, material_guid)
             if (ready) {
                 cmp |> set("material", mat_ptr)
             }

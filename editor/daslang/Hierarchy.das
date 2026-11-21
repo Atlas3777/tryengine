@@ -56,8 +56,8 @@ def private UpdateSelectionReveal() {
         g_selection_chain |> push(current)
 
         var parent = INVALID_ENTITY_ID
-        query(current) $(rel : Relationship) {
-            parent = rel.parent
+        query(current) $(relationship : Relationship) {
+            parent = relationship.parent
         }
         current = parent
         depth++
@@ -82,7 +82,7 @@ def DrawHierarchy() {
             let new_eid = create_entity() @(eid, cmp) {
                 cmp.tag := "New Entity"
                 ApplyEntityTransform(cmp, float3(0.0f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.0f, 1.0f), float3(1.0f, 1.0f, 1.0f))
-                apply_decs_template(cmp, Relationship())
+                cmp |> set(RELATIONSHIP_FIELD, Relationship())
             }
             commit()                       // иначе query в этом кадре не увидит новую entity
             selected_eid = new_eid
@@ -96,8 +96,8 @@ def DrawHierarchy() {
         UpdateSelectionReveal()
 
         // Отрисовка корневых сущностей
-        query() $(eid : EntityId; rel : Relationship) {
-            if (rel.parent == INVALID_ENTITY_ID) {
+        query() $(eid : EntityId; relationship : Relationship) {
+            if (relationship.parent == INVALID_ENTITY_ID) {
                 DrawEntityNode(eid)
             }
         }
@@ -117,8 +117,8 @@ def DrawEntityNode(eid : EntityId) {
 
     var has_children = false
     var first_child = INVALID_ENTITY_ID
-    query(eid) $(rel : Relationship) {
-        first_child = rel.first_child
+    query(eid) $(relationship : Relationship) {
+        first_child = relationship.first_child
         has_children = (first_child != INVALID_ENTITY_ID)
     }
 
@@ -157,8 +157,8 @@ def DrawEntityNode(eid : EntityId) {
                     DrawEntityNode(curr)
 
                     var next_sibling = INVALID_ENTITY_ID
-                    query(curr) $(rel : Relationship) {
-                        next_sibling = rel.next
+                    query(curr) $(relationship : Relationship) {
+                        next_sibling = relationship.next
                     }
                     curr = next_sibling
                 }

@@ -5,6 +5,9 @@ module Scene shared public
 
 //! Scene document: application, saving and the active-scene resource set.
 //!
+//! A scene stores authored components and `parentLocalId` (a local index in `entities`);
+//! `eid` and the derived `relationship` never reach the file.
+//!
 //! A scene is applied from a parsed `Content::Document`; the text is read by whoever owns
 //! the flow (`Scene::LoadAsync` for the editor, `Loader` for preloaded target scenes).
 //! `Scene::Load` is the synchronous apply step: it never reads the disk and never waits.
@@ -23,7 +26,6 @@ require daslib/async_boost
 require daslib/decs
 require daslib/decs_boost
 require daslib/linq
-require strings
 
 struct Scene {
     requireMeshs : array<uint64>
@@ -88,6 +90,33 @@ def private SceneNoop() {
 // always explicit and is never appended here.
 def private ScenePath(path : string) : string {
     return Content::ResolvePath(DocumentKind.Scene, path)
+}
+
+// Scenes store the hierarchy as a local index (`parentLocalId`), exactly like a prefab:
+// DECS assigns fresh `EntityId`s on load, so an absolute id from the file would be stale.
+let private SCENE_ROOT_PARENT : uint = 4294967295u
+
+def private ParentLocalId(cf : StructField?) : uint {
+    if (cf == null) {
+        return SCENE_ROOT_PARENT
+    }
+    return from_CF(cf, type<uint>)
+}
+
+// The entity id lives in the archetype row. Save needs it to turn an absolute parent id
+// back into a local index; the same read is used for the relationship component.
+def private EntityIdAt(var arch : Archetype&; index : int64) : EntityId {
+    unsafe {
+        let comp & = arch.components[arch.eidIndex]
+        return *addr<EntityId?>(comp.data[index * int64(comp.stride)])
+    }
+}
+
+def private RelationshipAt(var arch : Archetype&; comp_idx : int; index : int64) : Relationship {
+    unsafe {
+        let comp & = arch.components[comp_idx]
+        return *addr<Relationship?>(comp.data[index * int64(comp.stride)])
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +339,16 @@ def private ApplyDocument(document : Content::Document?) : bool {
     var total_loaded = 0
     var warnings_count = 0
 
+    // A hierarchy link names a position in the file, so it is resolved after every entity
+    // exists. `local_of` maps a file index to a loaded entity (skipped elements leave holes).
+    var entity_ids : array<EntityId>
+    var entity_tags : array<string>
+    var parent_file : array<int>
+    var local_of : table<int; int>
+    entity_ids |> reserve(ent_count)
+    entity_tags |> reserve(ent_count)
+    parent_file |> reserve(ent_count)
+
     for (ent_idx in range(ent_count)) {
         let ent_cf = entities_arr[ent_idx]
         if (ent_cf == null || !(ent_cf.value is _object)) {
@@ -328,24 +367,110 @@ def private ApplyDocument(document : Content::Document?) : bool {
             }
         }
 
+        let parent_local_id = ParentLocalId(ent_obj?["parentLocalId"] ?? null)
+        let parent_index = parent_local_id == SCENE_ROOT_PARENT ? -1 : int(parent_local_id)
+
+        local_of[ent_idx] = total_loaded
+        var new_eid : EntityId
         unsafe {
-            create_entity() @(eid : EntityId; var cmp : ComponentMap) {
+            new_eid = create_entity() @(eid : EntityId; var cmp : ComponentMap) {
                 assume cur_ent_obj = ent_cf.value as _object
                 for (field_name in keys(cur_ent_obj)) {
-                    if (starts_with(field_name, "_")) {
+                    // The hierarchy is structural (written below, after every id exists), and
+                    // runtime/derived components are never authored; `relationship` is rebuilt
+                    // from `parentLocalId` right here.
+                    if (field_name == "parentLocalId" || !IsSavedComponent(field_name)) {
                         continue
                     }
                     let cf = cur_ent_obj?[field_name] ?? null
                     let type_name = cf != null ? cf.typeName : ""
                     parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, type_name)
                 }
+                cmp |> set(RELATIONSHIP_FIELD, Relationship())
                 ApplyWorldTransform(cmp)
             }
         }
+        entity_ids |> push(new_eid)
+        entity_tags |> push(entity_tag)
+        parent_file |> push(parent_index)
         total_loaded++
     }
 
     commit()
+
+    // Resolve file indices to loaded entities and build the sibling graph. A parent that is
+    // missing, skipped or points at the entity itself leaves the entity as a root.
+    var parent_local : array<int>
+    resize(parent_local, total_loaded)
+    for (i in range(total_loaded)) {
+        let file_parent = parent_file[i]
+        var local_parent = -1
+        if (file_parent >= 0 && key_exists(local_of, file_parent)) {
+            local_parent = local_of[file_parent]
+            if (local_parent == i) {
+                local_parent = -1
+            }
+        }
+        if (file_parent >= 0 && local_parent < 0) {
+            print("[SCENE WARNING] Entity '{entity_tags[i]}': parentLocalId {file_parent} does not name a loaded entity; treated as a root.\n")
+            warnings_count++
+        }
+        parent_local[i] = local_parent
+    }
+
+    var first_child, prev_sibling, next_sibling : array<int>
+    resize(first_child, total_loaded)
+    resize(prev_sibling, total_loaded)
+    resize(next_sibling, total_loaded)
+    for (i in range(total_loaded)) {
+        first_child[i] = -1
+        prev_sibling[i] = -1
+        next_sibling[i] = -1
+    }
+
+    var last_child : table<int; int>
+    for (i in range(total_loaded)) {
+        let p = parent_local[i]
+        if (p < 0) {
+            continue
+        }
+        if (key_exists(last_child, p)) {
+            let previous = last_child[p]
+            next_sibling[previous] = i
+            prev_sibling[i] = previous
+        } else {
+            first_child[p] = i
+        }
+        last_child[p] = i
+    }
+
+    // The one relationship component goes straight into archetype storage: `update_entity`
+    // would copy a whole entity row to change it.
+    var relationship_index : table<int; int>
+    for (i in range(total_loaded)) {
+        let eid = entity_ids[i]
+        let record = decsState.entityLookup[int(eid.id)]
+        let arch_index = int(decsState.archetypeLookup[record.archetype]) - 1
+        if (!key_exists(relationship_index, arch_index)) {
+            relationship_index[arch_index] = decs::find_component_index(
+                decsState.allArchetypes[arch_index], RELATIONSHIP_FIELD)
+        }
+        let p = parent_local[i]
+        let c = first_child[i]
+        let pv = prev_sibling[i]
+        let nx = next_sibling[i]
+        decs::set_direct_at(
+            decsState.allArchetypes[arch_index],
+            relationship_index[arch_index],
+            int(record.index),
+            Relationship(
+                parent = p >= 0 ? entity_ids[p] : INVALID_ENTITY_ID,
+                first_child = c >= 0 ? entity_ids[c] : INVALID_ENTITY_ID,
+                prev = pv >= 0 ? entity_ids[pv] : INVALID_ENTITY_ID,
+                next = nx >= 0 ? entity_ids[nx] : INVALID_ENTITY_ID
+            )
+        )
+    }
 
     // A loaded scene is rendered in the frame it finishes, and the editor loads scenes after
     // the engine tick: compose the hierarchy once here instead of showing local transforms
@@ -416,40 +541,72 @@ def public SaveSceneAsync(path : string) : void {
 }
 
 def private save_scene_to_config() : string {
+    // The saved order defines `parentLocalId`, so collect the rows first and write after.
+    var saved_arch : array<int>
+    var saved_index : array<int64>
+    var entity_ids : array<EntityId>
+    var local_of : table<uint; int>
+
+    for (arch_idx in range(length(decsState.allArchetypes))) {
+        // The editor camera is editor state, not scene content.
+        if (decs::has(decsState.allArchetypes[arch_idx], "editorCameraTag")) {
+            continue
+        }
+        for (i in range64(decsState.allArchetypes[arch_idx].size)) {
+            let eid = EntityIdAt(decsState.allArchetypes[arch_idx], i)
+            saved_arch |> push(arch_idx)
+            saved_index |> push(i)
+            entity_ids |> push(eid)
+            local_of[eid.id] = length(entity_ids) - 1
+        }
+    }
+
     var entities_list : array<StructField?>
+    var relationship_index : table<int; int>
+    for (entity_idx in range(length(entity_ids))) {
+        let arch_idx = saved_arch[entity_idx]
+        let row = saved_index[entity_idx]
 
-    for (arch in decsState.allArchetypes) {
-        for (i in range64(arch.size)) {
-            var entity_obj : table<string; StructField?>
-
-            for (comp in arch.components) {
-                // Pointers (mesh/material) are runtime references and are never authored.
-                if (comp.info.basicType == Type.tPointer) {
-                    continue
-                }
-                // Components starting with "_" are runtime-only (resource load markers etc.).
-                if (starts_with(comp.name, "_")) {
-                    continue
-                }
-
-                var cf_val = DecsComponentToCF(comp, i)
-                if (cf_val == null) {
-                    print("[SCENE WARNING] Component '{comp.name}' of type '{comp.info.fullName}' is not registered for saving; skipped. Mark the struct [DecsSerializable].\n")
-                    continue
-                }
-                cf_val.name = comp.name
-                entity_obj[comp.name] = cf_val
-            }
-
-            // The editor camera is editor state, not scene content.
-            if (entity_obj |> key_exists("editorCameraTag")) {
+        var entity_obj : table<string; StructField?>
+        for (comp in decsState.allArchetypes[arch_idx].components) {
+            // Pointers are runtime references; the policy decides the rest (runtime and
+            // derived components such as `_world` and `relationship` are not authored).
+            if (comp.info.basicType == Type.tPointer || !IsSavedComponent(comp.name)) {
                 continue
             }
 
-            var entity_cf = CF(entity_obj)
-            entity_cf.typeName = "Entity"
-            entities_list |> push(entity_cf)
+            var cf_val = DecsComponentToCF(comp, row)
+            if (cf_val == null) {
+                print("[SCENE WARNING] Component '{comp.name}' of type '{comp.info.fullName}' is not registered for saving; skipped. Mark the struct [DecsSerializable].\n")
+                continue
+            }
+            cf_val.name = comp.name
+            entity_obj[comp.name] = cf_val
         }
+
+        // The hierarchy is authored as a local index, not as absolute entity ids.
+        var parent_local = SCENE_ROOT_PARENT
+        if (decs::has(decsState.allArchetypes[arch_idx], RELATIONSHIP_FIELD)) {
+            if (!key_exists(relationship_index, arch_idx)) {
+                relationship_index[arch_idx] = decs::find_component_index(
+                    decsState.allArchetypes[arch_idx], RELATIONSHIP_FIELD)
+            }
+            let rel = RelationshipAt(
+                decsState.allArchetypes[arch_idx], relationship_index[arch_idx], row)
+            if (rel.parent != INVALID_ENTITY_ID && key_exists(local_of, rel.parent.id)) {
+                let parent_idx = local_of[rel.parent.id]
+                if (entity_ids[parent_idx].generation == rel.parent.generation) {
+                    parent_local = uint(parent_idx)
+                }
+            }
+        }
+        var parent_cf = CF(parent_local)
+        parent_cf.name = "parentLocalId"
+        entity_obj["parentLocalId"] = parent_cf
+
+        var entity_cf = CF(entity_obj)
+        entity_cf.typeName = "Entity"
+        entities_list |> push(entity_cf)
     }
 
     active_scene.requireMeshs |> clear()
