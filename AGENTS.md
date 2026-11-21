@@ -214,24 +214,28 @@ daslang -dry-run -no-lint \
   расширение обязательно. Бандл — авторская группа префабов; билд
   кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
   шаг предзагрузки префабов.
-- `Game.das` — единая явная точка входа, которую вызывают и игра, и редактор. Загрузка —
-  ручной сценарий игры, а не состояние загрузчика: `GameStart` запускает `BootContent`-
-  корутину, та читает текст loading-сцены через `Assets::ReadText`, кладёт его в
-  `Content::Cache` и синхронно применяет `Scene::Load(LOADING_SCENE, @@OnLoadingScene)`;
-  затем `var request <- LoaderRequest()` с `AddBundle`, `AddScene`, `AddPrefab`,
-  `SetBlocking` и `Loader::Invoke(request, @@OnLoadingFinished)`. Загрузчик не применяет
-  сцены и не знает про loading-screen. `Loader::Update` в `GameUpdate` читает тексты,
-  разворачивает бандлы, компилирует префабы и ждёт меши/материалы; состояние — `Phase()`,
-  `PhaseName(phase)`, `Progress()` и `Progress(phase) : float2` (done/total, например
-  `10/23` для `LoaderPhase.Prefabs`). Когда запрос готов, игра сама входит в target-сцену:
-  `Scene::Load(STARTUP_SCENE, @@StartGameScene)`, затем `Loader::Finish()`;
-  `Scene::Load(path, callback)` — scene-specific hook, вызывается после создания DECS-мира.
-  `blocking` — контракт: пока `Loader::IsBlocking()`, игра не продолжает gameplay; флаг не
-  блокирует поток и не останавливает `Update`. `GameApp::Init` ничего не прогревает: только
-  паки и `script_pak`. В редакторе Play тот же путь; Play снимает снимок
-  DECS-heap/`SceneState`/selection, а Stop вызывает `Game::StopGame()` (гасит boot-корутину
-  и `Loader::Abort`) и возвращает снимок. `tryengine/startup` автоматически не загружается.
-  Подробности — `engine_source/daslang/LOADER.md`.
+- `Game.das` — только игра: игровые часы, `GameStart` (`RegisterGameTime` +
+  `Boot::Start(@@OnGameSceneLoaded)`), `GameUpdate` (`Boot::Update` решает, отдавать ли
+  кадр gameplay) и `UpdateGameplay`. Здесь нет загрузчика, loading-сцены, hot reload и
+  фикстур под редактор.
+- `game/scripts/Boot.das` — стартовая политика и последовательность загрузки:
+  `STARTUP_SCENE`, `LOADING_SCENE`, `STARTUP_BUNDLE`, `MIN_LOADING_SECONDS`,
+  `WAIT_FOR_SPACE`. `Boot::Start` запрашивает текст loading-сцены через
+  `Assets::RequestText`; `Boot::Update` опрашивает `Assets::TextIsReady`, забирает текст
+  через `TakeText`, кладёт его в `Content::Cache` и синхронно применяет
+  `Scene::Load(LOADING_SCENE)`, затем вызывает `Loader::Invoke` с `AddBundle`, `AddScene`,
+  `SetBlocking`. Дальше `Boot::Update` гоняет `Loader::Update`, ждёт callback, держит экран
+  `MIN_LOADING_SECONDS`/Space и входит в target-сцену через `Scene::Load(STARTUP_SCENE,
+  @@OnGameSceneLoaded)`, затем `Loader::Finish`. Это опрос, а не корутина: у boot-потока
+  нет ни стоп-флага, ни счётчика поколений, а `PlayMode.EndPlay` просто делает
+  `Loader::Abort` и перестаёт вызывать `GameUpdate`. `blocking` — контракт: пока
+  `Loader::IsBlocking()`, gameplay не продолжается; флаг не блокирует поток.
+  `GameApp::Init` ничего не прогревает: только паки и `script_pak`.
+- Камера — часть сцены: `loading.scene` и `test.scene` содержат свою `Camera`, игровой код
+  её двигает, а не создаёт и не чинит отсутствующую. `Scene::Load(path, callback)` —
+  scene-specific hook: `OnGameSceneLoaded` спавнит игровые объекты и обновляет
+  world-трансформы. `tryengine/startup` автоматически не загружается. Подробности —
+  `engine_source/daslang/LOADER.md`.
 - Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 
 ## 7. Стиль кода

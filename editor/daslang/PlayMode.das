@@ -12,6 +12,7 @@ module PlayMode shared public
 
 require daslib/archive
 require daslib/decs
+require tryengine/Loader
 require tryengine/Scene
 require tryengine/Time
 require trygame/Game
@@ -44,9 +45,10 @@ def public EndPlay() {
     is_paused = false
     TimeSetPaused(game_clock, false)
 
-    // The game may be stopped in the middle of its loading step. Cancel its boot
-    // coroutine and drop the loader references before the editor scene takes over.
-    StopGame()
+    // The game may be stopped in the middle of its loading step. Aborting the loader is
+    // the editor's job: the game's boot flow is polled from GameUpdate, so it stops
+    // touching the scene as soon as the editor stops calling it.
+    Loader::Abort()
 
     // Release the play scene's references, install the editor scene again, and then
     // restore the heap. The resource cache keeps the meshes/materials: only the

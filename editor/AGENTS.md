@@ -223,17 +223,15 @@
   скриптов, поэтому `Loader::Update` читает сцены, бандлы и префабы через тот же
   `tryengine/Assets`, что и редактор; игра не читает loose-файлы и не перечисляет контент.
 - `game_client` не прогревает контент: `GameApp::Init` только монтирует паки и грузит
-  `script_pak`, а `GameStart` запускает boot-корутину игры. `Game::BootContent` читает текст
-  loading-сцены через `Assets::ReadText`, кладёт его в `Content::Cache` и синхронно
-  применяет `Scene::Load`; затем собирает `LoaderRequest` и вызывает
-  `Loader::Invoke(request, @@OnLoadingFinished)`. `Loader::Update` (из `GameUpdate`)
-  асинхронно читает документы, разворачивает бандлы, компилирует префабы, запрашивает
-  меши/материалы и отдаёт `Phase()`/`Progress(phase)`. Сцену загрузчик не применяет:
-  target-сцену игра входит сама через `Scene::Load`, её текст уже лежит в `Content`.
-  В редакторе Play тот же путь: loose-файл читается тем же API. `PlayMode.BeginPlay` до
-  `GameStart` снимает снимок (DECS-heap, `SceneState`, выделение), а `EndPlay` сначала
-  вызывает `Game::StopGame` (гасит boot-корутину и `Loader::Abort`), затем возвращает
-  снимок, включая несохранённые правки.
+  `script_pak`, а `GameStart` передаёт загрузку в `game/scripts/Boot.das`. `Boot::Start`
+  запрашивает текст loading-сцены через `Assets::RequestText`, кладёт его в
+  `Content::Cache`, синхронно применяет `Scene::Load` и вызывает
+  `Loader::Invoke(request, @@OnContentReady)`. `Boot::Update` (из `GameUpdate`) опрашивает
+  текст, гоняет `Loader::Update`, ждёт готовности, держит экран и входит в target-сцену
+  через `Scene::Load`, после чего делает `Loader::Finish`. В редакторе Play тот же путь:
+  loose-файл читается тем же API. `PlayMode.BeginPlay` до `GameStart` снимает снимок
+  (DECS-heap, `SceneState`, выделение), а `EndPlay` не просит игру остановиться: он делает
+  `Loader::Abort` и возвращает снимок, включая несохранённые правки.
 
 ## Transform и editor camera
 

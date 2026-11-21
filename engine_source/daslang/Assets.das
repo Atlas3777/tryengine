@@ -14,7 +14,9 @@ module Assets shared public
 //
 // This module is storage only: it resolves paths, exposes the text asynchronously and
 // registers loose files from editor dialogs. Parsed documents and their dependencies
-// live in `tryengine/Content`.
+// live in `tryengine/Content`. Text can be consumed as a coroutine (`ReadText`) or as a
+// pollable request (`RequestText`/`TextIsReady`/`TakeText`), which is what the loader and
+// the game boot use.
 
 require daslib/async_boost
 require strings
@@ -90,28 +92,65 @@ def public RegisterPath(path : string) : uint64 {
     return RegisterAssetPath(AssetPath(path))
 }
 
-// Full text of one asset. Returns "" when the path is unknown or the chunk failed:
-// callers treat that as a missing/invalid file, never as an empty document.
-[async]
-def public ReadText(path : string) : string {
+//! Starts an asynchronous text read and returns its asset id. `0` means the path is
+//! unknown. The caller owns one reference and must finish with `TakeText` or
+//! `CancelText`; this is the pollable form used by the loader and the game boot.
+def public RequestText(path : string) : uint64 {
     let id = ResolveAssetPath(AssetPath(path))
     if (id == 0ul) {
-        yield ""
+        return 0ul
     }
 
     // Content is authored: a file may have been rewritten since the last read, and the
     // pak chunk is cheap enough to re-read. Never serve a stale document to a loader.
     InvalidateAssetText(id)
     RequestLoadAssetText(id)
-    while (!AssetTextIsReady(id)) {
-        if (AssetTextIsFailed(id)) {
-            InvalidateAssetText(id)
+    return id
+}
+
+def public TextIsReady(id : uint64) : bool {
+    return id != 0ul && AssetTextIsReady(id)
+}
+
+def public TextIsFailed(id : uint64) : bool {
+    return id != 0ul && AssetTextIsFailed(id)
+}
+
+//! Copies the text and releases the reference taken by `RequestText`.
+def public TakeText(id : uint64) : string {
+    if (id == 0ul) {
+        return ""
+    }
+    var text = GetAssetText(id)
+    ReleaseAssetText(id)
+    return <- text
+}
+
+//! Releases a read that will not be consumed.
+def public CancelText(id : uint64) {
+    if (id == 0ul) {
+        return
+    }
+    ReleaseAssetText(id)
+    InvalidateAssetText(id)
+}
+
+// Full text of one asset. Returns "" when the path is unknown or the chunk failed:
+// callers treat that as a missing/invalid file, never as an empty document.
+[async]
+def public ReadText(path : string) : string {
+    let id = RequestText(path)
+    if (id == 0ul) {
+        yield ""
+    }
+
+    while (!TextIsReady(id)) {
+        if (TextIsFailed(id)) {
+            CancelText(id)
             yield ""
         }
         await_next_frame()
     }
 
-    let text = GetAssetText(id)
-    ReleaseAssetText(id)
-    yield text
+    yield TakeText(id)
 }

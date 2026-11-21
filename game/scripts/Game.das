@@ -4,21 +4,15 @@ options rtti = true
 
 module Game shared public
 
-require daslib/async_boost
 require daslib/decs
 require daslib/decs_boost
-require tryengine/Assets
-require tryengine/AsyncTaskManager
-require tryengine/Content
 require tryengine/Types
 require tryengine/Input
-require tryengine/Engine
-require tryengine/Loader
 require tryengine/Prefab
 require tryengine/Profiling
-require tryengine/Scene
 require tryengine/Time
 require tryengine/TransformSystem
+require trygame/Boot
 require math
 
 // === engine convention ===
@@ -26,27 +20,11 @@ let front_raw = float3(0.0f, 1.0f, 0.0f)   // local Y (forward)
 let up_raw    = float3(0.0f, 0.0f, 1.0f)   // local Z (up)
 let world_up  = float3(0.0f, 0.0f, 1.0f)
 
-// === the explicit startup schema ===
-// A new project gets this file. Change the paths here, not in C++: the engine does not
-// load a scene on startup, does not preload game content, and does not pick what the
-// player sees while loading. This block is the whole startup policy.
-//
-// For a standalone build, select both .scene files in BuildSettings: only selected
-// scenes get their own pak. Prefabs, bundles and data files are in the common pak.
-let STARTUP_SCENE = "content/test.scene"
-let LOADING_SCENE = "content/loading.scene"
-let STARTUP_BUNDLE = "data/bundles/startup.bundle"
-let LOADING_VISUAL_PREFAB = "prefabl.prefab"
-
-// Purely a feel knob. The loader reports readiness as soon as the assets are there;
-// this holds the loading screen for at least this long. Set it to 0.0f to enter as fast
-// as possible, or make it large for a fake, atmospheric screen.
-let MIN_LOADING_SECONDS = 1.5f
-
-// false: enter the startup scene as soon as it is ready.
-// true:  hold the ready loading screen until Space; the same hook is where a "press any
-//        key" prompt, a network handshake or a title screen would live.
-let WAIT_FOR_SPACE = true
+// === gameplay content ===
+// The startup policy (loading scene, startup scene, bundle, hold time) lives in
+// `trygame/Boot.das`; this file is gameplay only. The prefab is preloaded by the
+// startup bundle before the startup scene is applied.
+let GAMEPLAY_PREFAB = "prefabl.prefab"
 
 // === orbit parameters ===
 var  orbit_angle  = 0.0f
@@ -66,202 +44,38 @@ var game_clock       = GameClock()
 var game_world_clock = GameWorldClock()
 var game_ui_clock    = GameUIClock()
 
-var private g_loading_visual : EntityId = INVALID_ENTITY_ID
-var private g_loading_visual_spawned : bool = false
-var private g_content_ready : bool = false
-// Incremented on every GameStart/StopGame so a boot coroutine that is still reading a
-// document cannot apply its scene over an editor snapshot restored after Stop.
-var private g_boot_generation : int = 0
-
 def RegisterGameTime() {
     TimeAttach(game_clock)
     TimeRegister(game_world_clock, game_clock)
     TimeRegister(game_ui_clock, game_clock)
 }
 
-[export]
-def TestTestTest(){
-    print("Test build works\n")
-}
-
-// Explicit entry point, shared by the standalone game and editor Play. The engine calls
-// this before the first frame; GameStart only schedules the boot sequence, and the slow
-// work happens in coroutines and Loader::Update, driven by GameUpdate.
+// Explicit entry point, shared by the standalone game and editor Play. GameStart only
+// wires the game clocks and hands the slow startup flow to `Boot`; a boot session is
+// stopped by the editor, not by the game.
 [export]
 def GameStart(){
     print("Game Start\n")
     RegisterGameTime()
-    g_boot_generation++
-    StartTask(BootContent(g_boot_generation))
-}
-
-// Stops the runtime side of the game: cancels the boot coroutine, drops the loader
-// references and forgets the loading visual. Called by the editor's PlayMode.EndPlay
-// before it restores the editor snapshot; the standalone game exits its loop instead.
-def public StopGame() {
-    g_boot_generation++
-    g_content_ready = false
-    g_loading_visual = INVALID_ENTITY_ID
-    g_loading_visual_spawned = false
-    Loader::Abort()
-}
-
-// Boot flow, owned by the game:
-//   1. read the loading scene text, cache it, apply the scene synchronously;
-//   2. start the asynchronous content request in that scene;
-//   3. the request callback marks content ready, and GameUpdate enters the target scene
-//      when the feel knobs below allow it.
-// The engine does not pick a scene and the loader does not apply one.
-[async]
-def private BootContent(generation : int) : void {
-    let loading_text : string <- await(Assets::ReadText(LOADING_SCENE))
-    if (generation == g_boot_generation) {
-        if (empty(loading_text)) {
-            print("[GAME ERROR] loading scene '{LOADING_SCENE}' is not available\n")
-        } else {
-            Content::Cache(ContentKind.Scene, LOADING_SCENE, loading_text)
-            if (!Scene::Load(LOADING_SCENE, @@OnLoadingScene)) {
-                print("[GAME ERROR] loading scene '{LOADING_SCENE}' failed to load\n")
-            } else {
-                var request <- LoaderRequest()
-                request.SetBlocking(true)
-                request.AddBundle(STARTUP_BUNDLE)
-                request.AddScene(STARTUP_SCENE)
-
-                if (!Loader::Invoke(request, @@OnLoadingFinished)) {
-                    print("[GAME ERROR] failed to start the loader\n")
-                }
-            }
-        }
-    }
-}
-
-// The loading scene is applied: the ECS world exists and the loading visuals can be
-// spawned as soon as the prefab phase of the request has cached them.
-def private OnLoadingScene() {
-    g_loading_visual = INVALID_ENTITY_ID
-    g_loading_visual_spawned = false
-}
-
-// Loader completion hook. It only flips the game's readiness flag: entering the target
-// scene stays a game decision (minimum screen time / "press Space"), not a loader one.
-def private OnLoadingFinished() {
-    g_content_ready = true
+    Boot::Start(@@OnGameSceneLoaded)
 }
 
 [export, profile]
 def GameUpdate() {
-    if (Loader::IsActive()) {
-        Loader::Update()
-        UpdateLoadingVisuals()
-
-        if (Loader::IsFailed()) {
-            if (Loader::IsBlocking()) {
-                return
-            }
-        } else {
-            EnterStartupScene()
-            if (Loader::IsActive() && Loader::IsBlocking()) {
-                return
-            }
-        }
+    if (!Boot::Update(TimeTotal(game_clock))) {
+        return
     }
-
     UpdateGameplay()
 }
 
-// The game decides when the loaded request becomes the visible scene. `Scene::Load` is the
-// synchronous apply step; its callback is the scene-specific hook.
-def private EnterStartupScene() {
-    if (!g_content_ready
-        || TimeTotal(game_clock) < double(MIN_LOADING_SECONDS)
-        || (WAIT_FOR_SPACE && !pressed(Key.Space))) {
-        return
-    }
-
-    g_content_ready = false
-    if (!Scene::Load(STARTUP_SCENE, @@StartGameScene)) {
-        Loader::Fail("startup scene '{STARTUP_SCENE}' failed to load")
-    } else {
-        Loader::Finish()
-    }
-}
-
-// The loading scene is ordinary game content: a camera and whatever the game wants to
-// show. The visual prefab is cached by the prefab phase of the request; spawn it once
-// assets are being tracked, then animate it with the real progress value.
-def private UpdateLoadingVisuals() {
-    if (!g_loading_visual_spawned && Prefab::IsPrefabCached(LOADING_VISUAL_PREFAB)) {
-        g_loading_visual = Prefab::Spawn(LOADING_VISUAL_PREFAB, float3(0.0f, 0.0f, 0.0f))
-        g_loading_visual_spawned = true
-    }
-
-    let t = float(TimeTotal(game_clock))
-    let angle = t * 0.6f
-
-    query() $[REQUIRE_NOT(editorCameraTag)] (var transform : Transform, let camera : Camera) {
-        transform.position = float3(cos(angle) * 10.0f, sin(angle) * 10.0f, 0.0f)
-        transform.rotation = quat_from_unit_vec_ang(float3(0.0f, 0.0f, 1.0f), angle + 1.5707963f)
-    }
-
-    // The prefab phase is the loading screen's own progress: it grows while bundles are
-    // expanded into prefab jobs and the prefabs are read and compiled.
-    let prefab_progress = Loader::Progress(LoaderPhase.Prefabs)
-    let prefab_fraction = prefab_progress.y > 0.0f ? prefab_progress.x / prefab_progress.y : 0.0f
-    query() $(var transform : Transform; let meshGuid : uint64) {
-        transform.rotation = quat_from_unit_vec_ang(float3(0.0f, 0.0f, 1.0f), t * 1.5f)
-        let pulse = 0.9f + 0.2f * prefab_fraction
-        transform.scale = float3(pulse, pulse, pulse)
-    }
-}
-
-// The game has no editor camera. A scene may ship its own camera, but a scene without
-// one (or editor Play, which runs this same entry point) still needs an active camera
-// for Render.das.
-def private EnsureGameCamera() {
-    var has_active = false
-    query() $(let cam : Camera; let active_camera : bool) {
-        has_active = true
-    }
-    if (has_active) {
-        return
-    }
-
-    create_entity() @(eid, cmp){
-        cmp.tag := "GameCamera"
-        apply_decs_template(cmp, Transform(
-            position = float3(0.0f, -20.0f, 10.0f),
-            rotation = float4(0f, 0f, 0f, 1f),
-            scale = float3(1.0f, 1.0f, 1.0f)
-        ))
-        apply_decs_template(cmp, Camera(
-            fov = 35.0f,
-            near_plane = 0.01f,
-            far_plane = 500.0f
-        ))
-        cmp.active_camera := true
-        apply_decs_template(cmp, Relationship())
-    }
-    commit()
-}
-
-// Scene-specific setup. `Scene::Load(path, @@StartGameScene)` calls this after the DECS
-// world of the target scene exists, so this is the only place that decides what the
-// startup scene spawns and which camera it uses.
-def private StartGameScene() {
-    g_loading_visual = INVALID_ENTITY_ID
-    g_loading_visual_spawned = false
-    g_content_ready = false
-    EnsureGameCamera()
-    SpawnGameplayPrefabs()
-    UpdateWorldTransforms()
-}
-
-def private SpawnGameplayPrefabs() {
-    let spawned = Prefab::Spawn(LOADING_VISUAL_PREFAB, float3(10.0f, 0.0f, 0.0f))
+// Scene-specific setup: `Scene::Load` calls this after the startup scene's DECS world
+// exists. The startup scene owns its camera; this hook only spawns gameplay objects.
+def private OnGameSceneLoaded() {
+    let spawned = Prefab::Spawn(GAMEPLAY_PREFAB, float3(10.0f, 0.0f, 0.0f))
     if (spawned == INVALID_ENTITY_ID) {
-        print("[GAME ERROR] failed to spawn prefab '{LOADING_VISUAL_PREFAB}'\n")
+        print("[GAME ERROR] failed to spawn prefab '{GAMEPLAY_PREFAB}'\n")
     }
+    UpdateWorldTransforms()
 }
 
 def private UpdateGameplay() {
@@ -296,7 +110,7 @@ def private UpdateGameplay() {
     let q2 = quat_from_unit_vec_ang(f, roll)
     let q  = quat_mul(q2, q1)
 
-    query()$(var t : Transform, var cam : Camera, let active_camera : bool) {
+    query()$(var t : Transform, let camera : Camera) {
         t.position = eye
         t.rotation = q
     }

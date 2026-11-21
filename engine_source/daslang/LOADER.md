@@ -8,10 +8,11 @@
 
 | Слой | Отвечает за | Не делает |
 | --- | --- | --- |
-| `game/scripts/Game.das` | порядок загрузки, loading-сцена, момент входа в target-сцену | не парсит контент и не ждёт ресурсы вручную |
+| `game/scripts/Boot.das` | стартовая политика, loading-сцена, запрос к Loader, момент входа в target | не парсит контент и не ждёт ресурсы вручную |
+| `game/scripts/Game.das` | gameplay и игровые часы | не управляет загрузкой |
 | `tryengine/Loader.das` | очередь документов, бандлы, префабы, меши/материалы, прогресс | не применяет сцены, не знает про loading-screen |
 | `tryengine/Content.das` | путь по виду документа, stem, `Find`, разбор ConfigFormat, общие `AssetRefs`, кеш документов | не грузит ресурсы и не спавнит |
-| `tryengine/Assets.das` | loose-файл или чанк пака, асинхронный текст, регистрация пути из диалога | не знает форматов документов |
+| `tryengine/Assets.das` | loose-файл или чанк пака, `RequestText`/`TextIsReady`/`TakeText` и корутина `ReadText`, регистрация пути из диалога | не знает форматов документов |
 | `tryengine/Bundle.das` | формат `.bundle` и список префабов | не загружает префабы |
 | `tryengine/Scene.das` | применение сцены, кеш-независимый `Scene::Load`, сохранение | не читает текст в `Load` |
 | `tryengine/Prefab.das` | проверка формата, компилированный кеш, `Spawn` | не делает I/O в `Spawn` |
@@ -62,39 +63,45 @@ Loader::Error()
 
 ## Loading-сцена и вход в target
 
-Loading-сцена — обычный сценарий игры, а не состояние загрузчика:
+`game/scripts/Boot.das` — единственное место, где живёт стартовая политика: пути
+`STARTUP_SCENE`, `LOADING_SCENE`, `STARTUP_BUNDLE`, время `MIN_LOADING_SECONDS` и
+`WAIT_FOR_SPACE`. `Game.das` их не знает.
 
 ```das
-[export]
-def GameStart() {
-    StartTask(BootContent())
-}
+// GameStart
+RegisterGameTime()
+Boot::Start(@@OnGameSceneLoaded)
 
-[async]
-def private BootContent() : void {
-    let text : string <- await(Assets::ReadText(LOADING_SCENE))
+// Boot::Start
+g_loading_text_id = Assets::RequestText(LOADING_SCENE)
+
+// Boot::Update, фаза ReadingLoadingScene
+if (Assets::TextIsReady(g_loading_text_id)) {
+    let text <- Assets::TakeText(g_loading_text_id)
     Content::Cache(ContentKind.Scene, LOADING_SCENE, text)
-    Scene::Load(LOADING_SCENE, @@OnLoadingScene)   // DECS-мир готов, callback вызван
+    Scene::Load(LOADING_SCENE)                     // DECS-мир loading-сцены готов
 
     var request <- LoaderRequest()
     request.SetBlocking(true)
     request.AddBundle(STARTUP_BUNDLE)
     request.AddScene(STARTUP_SCENE)
-    Loader::Invoke(request, @@OnLoadingFinished)
+    Loader::Invoke(request, @@OnContentReady)
 }
 
-def private OnLoadingFinished() {
-    // запрос готов; игра решает, когда входить в target-сцену
+def private OnContentReady() {
+    // запрос готов; вход в target-сцену — решение игры
 }
 ```
 
-Пока loading-сцена на экране, `GameUpdate` вызывает `Loader::Update()` и читает
-`Loader::Progress(LoaderPhase.Prefabs)` и т.п. Когда запрос готов, игра применяет
-target-сцену синхронно:
+`Boot::Update` вызывается из `GameUpdate` и возвращает `true`, когда кадр принадлежит
+gameplay. Пока идёт чтение, `Loader::Update()` не вызывается; пока запрос активен, именно
+`Boot::Update` гоняет `Loader::Update` и читает его состояние. Когда запрос готов, boot
+держит loading-сцену `MIN_LOADING_SECONDS` (и Space, если `WAIT_FOR_SPACE`), затем
+синхронно применяет target:
 
 ```das
-if (!Scene::Load(STARTUP_SCENE, @@StartGameScene)) {
-    Loader::Fail("startup scene failed to load")
+if (!Scene::Load(STARTUP_SCENE, on_playing)) {
+    FailBoot("startup scene failed to apply")
 } else {
     Loader::Finish()
 }
@@ -102,13 +109,19 @@ if (!Scene::Load(STARTUP_SCENE, @@StartGameScene)) {
 
 `Scene::Load(path, callback)` — синхронное применение уже разобранного документа;
 callback вызывается после создания DECS-мира новой сцены. Это scene-specific hook: здесь
-спавнятся объекты, выбирается камера, запускается музыка.
+спавнятся объекты, выбирается камера, запускается музыка. Loading-сцена и target-сцена сами
+содержат свои камеры; игровой код их только двигает.
 
 `Scene::Load` не читает диск. Текст должен быть получен заранее:
 - `Scene::LoadAsync(path, callback)` — редакторский Open Scene: асинхронный текст +
   синхронное применение;
 - `LoaderRequest::AddScene` — текст сцены в `Content`-кеше, применение позже;
-- boot-корутина игры — `Assets::ReadText` + `Content::Cache` для loading-сцены.
+- boot игры — `Assets::RequestText` + `TextIsReady`/`TakeText`, затем `Content::Cache` для loading-сцены.
+
+У boot-потока нет ни корутины, ни стоп-флага, ни счётчика поколений: `Boot::Update` — это
+опрос. Остановка сессии — задача редактора: `PlayMode.EndPlay` делает `Loader::Abort()` и
+перестаёт вызывать `GameUpdate`, поэтому boot больше не трогает сцену. Текст, который
+остался запрошенным в момент Stop, освобождает следующий `Boot::Start`.
 
 ## Бандлы
 
@@ -141,10 +154,10 @@ prefabs: string[] = [
 ## Редактор
 
 Play использует тот же путь: `PlayMode.BeginPlay` снимает снимок DECS-heap/`SceneState`/
-selection, затем `GameStart` запускает boot-корутину. `EditorUpdate` вызывает `GameUpdate`,
-`Loader::Update` читает тексты (loose в редакторе, pak в игре), а `Scene::Load` создаёт
-editor-камеру через `NotifySceneLoaded`. Stop вызывает `Game::StopGame` (гасит boot-корутину
-и `Loader::Abort`) и восстанавливает снимок.
+selection, затем `GameStart` запускает `Boot`. `EditorUpdate` вызывает `GameUpdate`,
+`Boot::Update` гоняет `Loader::Update` (loose в редакторе, pak в игре), а `Scene::Load`
+создаёт editor-камеру через `NotifySceneLoaded`. Stop не вызывает игру: `EndPlay` делает
+`Loader::Abort` и восстанавливает снимок, а boot просто перестаёт опрашиваться.
 
 Панель `Prefab Inspector` не прогревает все префабы: она следует за выделением в Asset
 Browser, грузит выбранный `.prefab` через `Prefab::LoadPrefabFile` и показывает его дерево.

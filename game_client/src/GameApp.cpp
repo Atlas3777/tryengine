@@ -64,8 +64,8 @@ void GameApp::Init() {
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
     rm.RegisterType<TextAsset>(TextAssetLoader{});
 
-    // Паки монтируются до старта скриптов: манифест и тексты читаются через тот же API,
-    // что и в редакторе. GameStart только планирует загрузку; она идёт в GameUpdate.
+    // Паки монтируются до старта скриптов: тексты читаются через тот же API, что и в
+    // редакторе. GameStart передаёт загрузку в Boot, а Boot::Update идёт из GameUpdate.
     auto paks_task = RunPollable(ThreadPool(), pak_manager.LoadAllAsync());
     while (!paks_task.IsReady()) {
         fm.Pull();
@@ -88,8 +88,8 @@ void GameApp::Init() {
     engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
 
-    // Прогрева контента здесь нет: GameStart только планирует загрузку, а Loader::Update
-    // читает тексты и запрашивает меши/материалы из GameUpdate.
+    // Прогрева контента здесь нет: GameStart только запускает Boot, а Loader::Update
+    // читает тексты и запрашивает меши/материалы из Boot::Update.
     engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     // У игры нет ImGui: смотреть на её кадры можно только по файлам в logs/. Каптион пишет
