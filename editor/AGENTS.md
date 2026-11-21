@@ -180,39 +180,53 @@
 
 - Импорт glTF пишет два editor-артефакта: `10` — `ModelAssetMap` (локальные трансформы,
   дети, `scene_roots`), `11` — плоскую pre-order композицию в формате `.prefab`
-  (`EditorArtifactGuid::Prefab`). В артефакте `11` лежат локальные TRS; спавн пишет их в
-  `Transform`, а иерархию в мировые трансформы разворачивает `tryengine/TransformSystem`.
+  (`EditorArtifactGuid::Prefab`). В артефакте `11` лежат локальные TRS; `CompilePrefab`
+  компонует из них мировые `_world` в шаблоне, поэтому спавн не зависит от прохода.
 - Оба артефакта — `target = Editor` и лежат в `artifacts/editor/<guid>/`: в пак они не
   попадают. Runtime спавнит `.prefab`, а не glb; glb можно дропнуть только в редакторе.
 - `tryengine/Prefab.das` — единственный парсер/спавнер префаба. В файле нет `eid` и
   `Relationship_*`: хранятся только `localId`/`parentLocalId`, а `first_child`/`prev`/`next`
   выводятся из порядка массива. Проверяются один корень, уникальность `localId` и то, что
-  родитель записан раньше ребёнка. `Transform_*` в префабе локальные: спавн пишет их в
-  авторский `Transform`, а мировые TRS считает `tryengine/TransformSystem`.
+  родитель записан раньше ребёнка. `transform` в префабе локальный; мировые TRS
+  компонуются при компиляции и едут в шаблоне готовыми компонентами (`_world`).
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
-- Кеш префабов живёт в `tryengine/Prefab.das`, а не в C++ `ResourceManager`: префаб нужен
-  DECS в daslang, у content-файлов нет guid в игре, а `spawn` синхронный. На диске файл
-  остаётся ConfigFormat-текстом; в памяти лежит `PrefabTemplate` — распарсенный `StructField`
-  плюс узлы `PrefabNode` с parent/sibling индексами, поэтому повторный спавн не читает файл
-  и не парсит.
+- Кеш префабов живёт в `tryengine/AssetCache.das` (типизированная таблица `PrefabTemplate`
+  в `tryengine/Prefab.das`), а не в C++ `ResourceManager`: префаб нужен DECS в daslang, у
+  content-файлов нет guid в игре, а `spawn` синхронный. На диске файл остаётся
+  ConfigFormat-текстом; в памяти лежит `PrefabTemplate` — узлы `PrefabNode` с parent/sibling
+  индексами, авторской локальной позицией и готовым `ComponentMap`, поэтому повторный спавн
+  не читает файл, не парсит и не разбирает имена полей. CF-дерево после компиляции
+  выбрасывается; строки, запечённые в байты компонентов, держит
+  `PrefabTemplate.strings` (`ComponentValue` их не считает). После сохранения префаба
+  `AssetCache::Store` кладёт новое значение сразу, а `Prefab::LoadPrefabFile`/`SpawnPrefab`
+  делают `AssetCache::Refresh` и читают файл заново.
+- Спавн идёт группами по набору компонентов (`PrefabTemplate.groups`, считается в
+  `CompilePrefab`): на группу один `create_entities_from_cmp` вместо `create_entity` на
+  сущность, компоненты копируются в архетип готовыми байтами, `Relationship_*` пишется
+  `apply_decs_template_arch`, позиция корня — `set_direct_at`. `update_entity` в спавне не
+  используется: он копирует всю строку сущности, чтобы поменять четыре ссылки. Порядок
+  компонентов в архетипе позиционный, поэтому шаблон не должен опираться на порядок `set`
+  в другом коде. `CompilePrefab` — публичная точка «разобранный документ →
+  `PrefabTemplate`», через неё пробники гоняют реальный префаб из текста без файлов.
 - Полного прогрева префабов больше нет: `Prefab::RefreshContent` и
   `Assets::ContentManifest` удалены. `Prefab::LoadPrefabFile(path)` читает и компилирует
   один `.prefab` через `tryengine/Content`; `Prefab::Spawn("props/sword.prefab", origin)`
   после этого — hit кеша и `EntityId`. Путь пишется относительно `content/` или полным;
   расширение обязательно. Игра читает только запрошенные префабы через
-  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кеширует документ и добавляет
-  меши/материалы в прогресс.
+  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кладёт значение в `AssetCache` и
+  добавляет меши/материалы в прогресс.
 - `SpawnPrefab(path)` (drag&drop) каждый раз читает текст через asset API и обновляет кеш,
   поэтому изменённый prefab не спавнится старым. `Prefab::SavePrefabFromEntity` пишет текст
   через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в
   кеш и обновляет дерево ассетов.
-- `editor/daslang/PrefabInspector.das` (Window → Prefab Inspector) — не браузер, а
-  инспектор выбранного в Asset Browser `.prefab`: своего списка, поиска и Refresh у него
-  нет. Выбранный путь приходит из `AssetBrowser::GetSelectedFile`; панель грузит документ
-  точечно и показывает дерево узлов/компонентов и `Spawn at origin`.
-  `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
+- `editor/daslang/PrefabInspector.das` выключен: панель обходила CF-дерево префаба, а его
+  больше нет (компилированный префаб хранит готовые компоненты), и её модель
+  взаимодействия всё равно требует переделки. Файл оставлен заглушкой, панели нет в меню
+  Window. Спавн идёт через drag&drop из Asset Browser (`Prefab::SpawnPrefab`) или
+  `Prefab::Spawn` как cache-hit.
+- `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
   выделенную ветку в pre-order, выкидывает `eid`/`Relationship_*`/`_*`/`editorCameraTag`,
   обнуляет позицию корня (rotation/scale сохраняются) и обновляет дерево ассетов.
 - Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
@@ -227,20 +241,57 @@
   `script_pak`, а `GameStart` собирает `LoaderRequest` и запускает
   `StartTask(Loader::Load(request, @@OnLoaded))`. Задача читает сцены, бандлы и префабы
   через `tryengine/Assets`; когда всё готово, `OnLoaded` синхронно применяет сцену из
-  `Content`-кеша и спавнит префабы. В редакторе Play тот же путь: loose-файл читается тем
+  `AssetCache` и спавнит префабы. В редакторе Play тот же путь: loose-файл читается тем
   же API. `PlayMode.BeginPlay` до `GameStart` снимает снимок (DECS-heap, `SceneState`,
   выделение), а `EndPlay` делает `Loader::Abort` и возвращает снимок, включая
   несохранённые правки.
 
 ## Transform и editor camera
 
-- `Transform` — авторский локальный трансформ (его правит Inspector и сохраняет сцена).
-  `WorldTransform` (`_world_*`, `tryengine/Types`) — производный: `tryengine/TransformSystem`
-  разворачивает Relationship-иерархию каждый кадр и пишет мировые TRS, их читает
-  `Render.das`. Компоненты `_world_*` не сохраняются и не видны в Inspector.
+- `Transform` — один компонент `transform`: обычная структура `position/rotation/scale`
+  с identity-дефолтами. Его правит Inspector и сохраняет сцена; `default<Transform>`
+  больше не даёт нулевой scale. `_world` — производный компонент **того же типа**
+  `Transform`: `tryengine/TransformSystem` разворачивает Relationship-иерархию каждый кадр,
+  его читает `Render.das`. `_world` не сохраняется и не виден в Inspector (префикс `_`).
+- **Имя аргумента в `query` — это имя компонента** (для не-шаблонных компонентов). Поэтому
+  `query() $(transform : Transform)` видит `transform`, а `$(t : Transform)` — компонент `t`
+  и молча не находит ни одной сущности. Для шаблонов (`camera : Camera`) имя не важно: они
+  разворачиваются по префиксу. Опечатка не диагностируется — проверяй имена.
 - `UpdateWorldTransforms` вызывает `EngineUpdate` (то есть `engine_source/daslang/Engine.das`)
   до того, как кадр дойдёт до `EditorUpdate`/`GameUpdate` и `Render`; это единственное место,
-  где считается иерархия. Меняешь сцену из скрипта — правь `Transform`, не `_world_*`.
+  где считается иерархия. Меняешь сцену из скрипта — правь `transform`, не `_world`.
+- **Проход никогда не добавляет `_world`.** Добавление компонента переводит сущность в
+  другой архетип и копирует всю строку; на первом проходе после создания это стоило
+  ~6.6 µs/сущность — дороже всего остального прохода. Поэтому `transform` и `_world`
+  применяются вместе в момент создания: `TransformSystem::ApplyEntityTransform(cmp, ...)`
+  (editor-камера, `Hierarchy` → New Entity, `QuadTree`), `CompilePrefab` кладёт готовый
+  `_world` в шаблон, `Scene::Load` — при разборе полей сущности. Сущность, созданная без
+  `_world`, — ошибка создания: первый `WriteWorld` упадёт на `find_component_index`.
+- `UpdateWorldTransforms` обходит лес **вниз**: корни — `Relationship_parent == INVALID` или
+  родитель без `transform` (сирота), дети — по `first_child`/`next`, поэтому родитель всегда
+  скомпонован раньше потомка. `_world` пишется прямо в архетип одним `set_direct_at` и только
+  если значение изменилось; `update_entity`/`commit` в проходе нет вообще. Цикл в
+  `Relationship` защищён флагом посещения. Замер на 100 узлах (JIT): статический проход 0.49
+  µs/сущность, первый проход после спавна 0.60 (кэш ещё пуст, поэтому значения пишутся один
+  раз), сдвинутый корень (пересчёт всего поддерева) 0.59 µs/сущность — было 0.55 / 6.63 /
+  0.72 на трёх компонентах.
+- `CompilePrefab` компонует мировые TRS один раз (узлы pre-order, родитель раньше ребёнка) и
+  хранит их и в `values` как `_world`, и в `PrefabNode.world`. Спавн копирует готовые байты
+  и сдвигает `_world.position` каждого узла на `origin`, поэтому префаб стоит на месте сразу
+  после спавна, без прохода. Сцена после `commit()` зовёт `UpdateWorldTransforms()` сама:
+  редактор грузит сцену уже после `EngineUpdate`, иначе дети один кадр показывались бы в
+  локальных позах.
+- Формат префаба — `version: u32 = 4`, трансформ узла пишется как `transform: Transform = {
+  position: ..., rotation: ..., scale: ... }`. Импортёр glTF (`GetVersion() == 8`) пишет тот
+  же формат, поэтому старые артефакты переимпортируются. `Prefab::BuildPrefabTextFromEntity`
+  обнуляет `transform.position` корня, rotation/scale сохраняет.
+- Профиль прохода на 10 000 сущностях (JIT): скан двумя `query` ~0.08 µs/сущность, обход с
+  композицией и сравнением ~0.27. Прямой обход `decsState.allArchetypes[...]` пробовали — на
+  скане он *медленнее* (0.21 µs/сущность: ручной `memcpy` и поэлементные копии дороже
+  страйд-итератора `query`), а скан — только ~20% стоимости прохода, так что смысла в нём
+  нет. Реальная цена — вызов обхода на сущность и `SameTransform`. Если сцена вырастет, надо
+  оптимизировать обход (без рекурсии, векторное сравнение) или вводить dirty-метки от
+  писателей `transform`, а не менять скан.
 - `EditorStart` подписывается на `RegisterSceneLoadedListener` и вызывает `LoadEmptyScene`:
   начальная пустая сцена — такой же load-event, как файл. Event создаёт editor-камеру на
   любой загрузке сцены, включая Play: камера помечена `editorCameraTag`, поэтому game

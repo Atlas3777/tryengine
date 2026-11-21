@@ -113,7 +113,7 @@ tools/agent/verify.sh --tidy     # ещё и clang-tidy по изменённы�
 ### Гейт `.das`
 
 ```bash
-daslang -dry-run -no-lint \
+daslang -dry-run \
   -project project.das_project \
   -load_module "$PWD/modules/tryRenderer" \
   -load_module "$PWD/modules/tryResources" \
@@ -136,6 +136,9 @@ daslang -dry-run -no-lint \
   требует `daslib/just_in_time`; без модуля LLVM симуляция падает с
   `LLVM JIT: the emitter module llvm/daslib/llvm_macro did not load`.
 - `-dry-run` компилирует и симулирует (строже, чем `-compile-only`), но не выполняет код.
+- Линт **не выключай**: редактор компилирует с ним, и `-no-lint` однажды скрыл
+  `error[30264] type expression result is used` на `type<T>`; `type<T>` — no-storage тег,
+  его можно передать, но нельзя читать.
 - Проверяй и код возврата, **и** наличие `error[` в выводе: daslang умеет печатать ошибки
   и завершаться с кодом 0.
 - `daslang -tool lint <файл>` не видит нативные модули этого проекта (печатает
@@ -186,6 +189,10 @@ daslang -dry-run -no-lint \
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
+  У не-шаблонного компонента имя аргумента `query` и есть имя компонента:
+  `query() $(transform : Transform)` читает `transform`, а `$(t : Transform)` ищет `t` и
+  молча не находит ничего. У `decs_template` имя аргумента ничего не значит — поля берутся
+  по префиксу типа.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
@@ -194,21 +201,30 @@ daslang -dry-run -no-lint \
   дописывается. Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
 - Общий слой документов: `tryengine/Content.das`. Здесь живут путь по виду документа
   (`DocumentKind.Scene/Prefab/Bundle`), stem, `Find` через `Assets::Exists`, разбор
-  ConfigFormat, общий сбор `meshGuid`/`materialRef` в `Dependencies` и кеш разобранных
-  `Document` (текст + корень + зависимости). Scene/Prefab/Bundle отвечают только за свой
-  формат и действие; Loader читает все документы одним конвейером. `Content::Cache`
-  сохраняет документ после `Loader::Finish`, поэтому предзагруженную сцену можно применить
-  позже, а скомпилированный префаб держит свой корень.
-- Префабы: `tryengine/Prefab.das` — формат, компилированный кеш и спавн.
+  ConfigFormat и общий сбор `meshGuid`/`materialRef` в `Dependencies`. `Content` документы
+  не кеширует: готовые значения живут в `tryengine/AssetCache.das`.
+- `tryengine/AssetCache.das` — один кеш на все виды ассетов: общая ledger-таблица
+  (`state`, `deps`, запрос текста) плюс типизированная `table<string; T?>` в модуле вида.
+  Вид публикует `AssetKindOps` из `[init]`, поэтому Loader, прогресс и `ClearAll` не знают
+  типов. Новый ассет = таблица значений + compile-функция + `RegisterKind`; центрального
+  реестра типов нет. `Invalidate`/`Clear`/`ClearAll` идут через типизированную таблицу вида
+  и `AssetKindOps`.
+- Префабы: `tryengine/Prefab.das` — формат, компиляция и спавн.
   `Prefab::LoadPrefabFile(path)` читает и компилирует один `.prefab` по требованию;
   `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`.
   Префаб адресуется путём относительно `content/` (`prefabl.prefab`,
-  `props/sword.prefab`) или полным путём; расширение обязательно. C++-кеш
-  `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
-  сырой текст читает его `SourceText`. Игра не прогревает все префабы:
-  `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное (пути
-  `content/...` и `data/...`). Полного `RefreshContent` больше нет: редакторская панель
-  `Prefab Inspector` показывает выбранный в Asset Browser префаб и грузит его точечно.
+  `props/sword.prefab`) или полным путём; расширение обязательно. Компилированный
+  `PrefabTemplate` лежит в `AssetCache`, а не в C++ `ResourceManager`: данные нужны DECS а
+  не C++-типу, а сырой текст читается разово (`TextRequests`) и не кешируется. Шаблон
+  хранит готовые `ComponentValue` на узел: спавн не разбирает ConfigFormat, а
+  `PrefabTemplate.strings` держит строки, запечённые в байты компонентов. Спавн создаёт
+  сущности группами по набору компонентов (`create_entities_from_cmp`), а не по одной.
+  `CompilePrefab` компонует мировые `_world` и кладёт их в шаблон, поэтому спавн не
+  вызывает `UpdateWorldTransforms`: он только сдвигает мир на `origin`. Игра не
+  прогревает все префабы: `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное
+  (пути `content/...` и `data/...`). Полного `RefreshContent` больше нет: префаб грузится
+  точечно через `Prefab::LoadPrefabFile`, а редакторская панель `Prefab Inspector`
+  выключена и будет переделана под готовые компоненты.
 - Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/**/*.bundle` (ConfigFormat,
   `version = 1`, `name`, `prefabs: string[]`). В `prefabs` лежат пути `content/...`;
   расширение обязательно. Бандл — авторская группа префабов; билд
@@ -228,7 +244,8 @@ daslang -dry-run -no-lint \
   callback не вызывается, фаза остаётся `Failed`, доступны `IsFailed()`/`Error()`.
   `GameApp::Init` ничего не прогревает: только паки и `script_pak`. В редакторе Play тот
   же путь; `PlayMode.EndPlay` делает `Loader::Abort`, а задача `Load` завершается по
-  своему поколению.
+  своему поколению. `LoaderRequest::AddAsset(kind, path)` принимает любой вид из
+  `AssetCache`, поэтому новый ассет не требует правок загрузчика.
 - Камера — часть сцены: `test.scene` содержит свою `Camera`, игровой код её двигает, а не
   создаёт и не чинит отсутствующую. `Scene::Load(path)` не принимает callback: успех —
   это `bool`, а scene-specific setup идёт сразу после него. `tryengine/startup`
