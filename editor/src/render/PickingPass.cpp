@@ -88,6 +88,13 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
         return;
 
     auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
+
+    // A gizmo handle owns the click that started its drag: clicking an arrow must not also
+    // select whatever opaque mesh happens to be behind the gizmo.
+    auto gizmo_drag = script.SimpleReturnUnsafe<bool>("IsGizmoDragging");
+    if (gizmo_drag.has_value() && *gizmo_drag)
+        return;
+
     auto size = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
     if (!size.has_value())
         return;

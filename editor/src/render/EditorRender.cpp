@@ -1,6 +1,7 @@
 #include "editor/render/EditorRender.hpp"
 
 #include "editor/render/DebugPass.hpp"
+#include "editor/render/GizmoPass.hpp"
 #include "editor/render/GridPass.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "editor/render/PickingPass.hpp"
@@ -35,6 +36,10 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
         engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(6143497954727599506ULL);
     TRY_ASSERT(grid_shader.has_value(), "Нет шейдера grid");
 
+    auto gizmo_shader =
+        engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(6337896318201644930ULL);
+    TRY_ASSERT(gizmo_shader.has_value(), "Нет шейдера gizmo");
+
     rg_.AddNode<ImGuiPass>(kEditorScope, rg_, device, swapchain);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kEditorScope);
     // Сетка идёт сразу после opaque: depth-тест уже есть, отладочные линии и picking
@@ -43,6 +48,9 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
     rg_.AddNode<GridPass>(kEditorScope, *grid_shader);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kGameScope);
     rg_.AddNode<DebugPass>(kEditorScope, *deb_shader);
+    // The gizmo is an overlay over everything already in SceneColor: it ignores depth,
+    // so it goes after the grid and debug lines and before the picking readback.
+    rg_.AddNode<GizmoPass>(kEditorScope, *gizmo_shader);
     rg_.AddNode<PickingPass>(kEditorScope, device, *pick_shader);
     rg_.AddNode<tryengine::graphics::PresentPass>(kEditorScope);
 }

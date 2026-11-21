@@ -22,6 +22,7 @@ require tryeditor/BuildManager
 require tryeditor/Material
 require tryeditor/PrefabAuthoring
 require tryeditor/ProfilerWindow
+require tryeditor/Gizmo
 require tryeditor/EditorActions
 
 require imgui
@@ -120,6 +121,31 @@ def DrawMainMenu() {
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
+        }
+
+        menu(GIZMO_MENU, (text = "Gizmo", enabled = true)) {
+            if (menu_label(GIZMO_MOVE_ITEM,
+                           (text = "Move", shortcut = "W", selected = gizmo_mode == GizmoMode.Translate))) {
+                SetGizmoMode(GizmoMode.Translate)
+            }
+            if (menu_label(GIZMO_ROTATE_ITEM,
+                           (text = "Rotate", shortcut = "E", selected = gizmo_mode == GizmoMode.Rotate))) {
+                SetGizmoMode(GizmoMode.Rotate)
+            }
+            if (menu_label(GIZMO_SCALE_ITEM,
+                           (text = "Scale", shortcut = "R", selected = gizmo_mode == GizmoMode.Scale))) {
+                SetGizmoMode(GizmoMode.Scale)
+            }
+            separator(GIZMO_SEP_1)
+            if (menu_label(GIZMO_LOCAL_ITEM,
+                           (text = "Local Space", shortcut = "X", selected = gizmo_space == GizmoSpace.Local))) {
+                ToggleGizmoSpace()
+            }
+            if (menu_label(GIZMO_DISTANCE_ITEM,
+                           (text = "Scale With Distance", shortcut = "V",
+                            selected = gizmo_scale_with_distance))) {
+                ToggleGizmoScaleWithDistance()
+            }
         }
 
         separator(MAIN_MENU_SEP_1)

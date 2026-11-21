@@ -15,6 +15,7 @@ require daslib/decs
 require tryengine/Loader
 require tryengine/Scene
 require tryengine/Time
+require tryengine/TransformSystem
 require trygame/Game
 require tryeditor/Editor
 require tryeditor/Hierarchy
@@ -55,6 +56,7 @@ def public EndPlay() {
     Scene::ApplyState(g_saved_scene)
     decs::restart()
     mem_archive_load(g_saved_decs, decsState)
+    ResetWorldTransformCaches()
 
     selected_eid = g_saved_selected_eid
 }

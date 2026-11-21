@@ -282,6 +282,16 @@ void* GetEditorImGuiContext() {
     return ImGui::GetCurrentContext();
 }
 
+// EditorUpdate идёт до того, как контекст ImGui кадра станет текущим; обращение к IO в этот
+// момент разыменовало бы null. Горячие клавиши спрашивают это, чтобы не срабатывать в вводе.
+// Именно WantTextInput, а не WantCaptureKeyboard: при включённой навигации ImGui второй
+// выставлен почти всегда и глушил бы все хоткеи.
+bool IsEditorTextInputActive() {
+    if (ImGui::GetCurrentContext() == nullptr)
+        return false;
+    return ImGui::GetIO().WantTextInput;
+}
+
 //! Переключатель VSync из панели: сам по себе он не пересоздаёт swapchain, а просит
 //! EditorRender сделать это в начале следующего кадра.
 bool EditorIsVSync(das::Context* ctx) {
@@ -359,6 +369,8 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetEditorImGuiContext)>(*this, lib, "GetEditorImGuiContext", das::SideEffects::none,
                                                             "GetEditorImGuiContext");
+        das::addExtern<DAS_BIND_FUN(IsEditorTextInputActive)>(
+            *this, lib, "IsEditorTextInputActive", das::SideEffects::accessGlobal, "IsEditorTextInputActive");
         das::addExtern<DAS_BIND_FUN(EditorIsVSync)>(*this, lib, "EditorIsVSync", das::SideEffects::accessGlobal,
                                                     "EditorIsVSync");
         das::addExtern<DAS_BIND_FUN(EditorSetVSync)>(*this, lib, "EditorSetVSync", das::SideEffects::accessGlobal,

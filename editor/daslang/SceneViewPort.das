@@ -20,6 +20,7 @@ require TryEditor
 require tryeditor/EditorInput
 require tryeditor/FileSystemUtils
 require tryeditor/Hierarchy
+require tryeditor/Gizmo
 
 var scene_viewport_size : float2 = float2(600, 600)
 var scene_viewport_mouse : Mouse
@@ -153,6 +154,12 @@ def DrawSceneViewPort(){
             scene_viewport_mouse.is_down = is_hovered && IsMouseDown(ImGuiMouseButton.Left)
             scene_viewport_mouse.pressed = is_hovered && IsMouseClicked(ImGuiMouseButton.Left)
 
+            // The gizmo consumes its own clicks; PickingPass skips selection while a handle
+            // drag is active. `down` is not tied to hover so a drag keeps running when the
+            // cursor leaves the viewport.
+            SetGizmoViewport(scene_viewport_size)
+            UpdateGizmoInteraction(scene_viewport_mouse.pos, scene_viewport_size, is_hovered,
+                                   IsMouseClicked(ImGuiMouseButton.Left), IsMouseDown(ImGuiMouseButton.Left))
 
             drag_drop_target(TARGET_DD) {
                 let payload = AcceptDragDropPayload("Asset", ImGuiDragDropFlags.None)

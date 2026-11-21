@@ -8,6 +8,7 @@ namespace tryengine::graphics {
 // Раньше этот блок на ~40 строк был скопирован в каждый пасс.
 struct RasterState {
     VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
+    bool depth_test = true;
     bool depth_write = true;
     VkCompareOp depth_compare = VK_COMPARE_OP_LESS;
     VkColorComponentFlags color_write_mask =
@@ -25,7 +26,7 @@ inline void ApplyRasterState(VkCommandBuffer cmd, const RasterState& s = {}) {
     // BDA без стандартных Vertex Buffers
     vkCmdSetVertexInputEXT(cmd, 0, nullptr, 0, nullptr);
 
-    vkCmdSetDepthTestEnableEXT(cmd, VK_TRUE);
+    vkCmdSetDepthTestEnableEXT(cmd, s.depth_test ? VK_TRUE : VK_FALSE);
     vkCmdSetDepthWriteEnableEXT(cmd, s.depth_write ? VK_TRUE : VK_FALSE);
     vkCmdSetDepthCompareOpEXT(cmd, s.depth_compare);
     vkCmdSetDepthBiasEnableEXT(cmd, VK_FALSE);

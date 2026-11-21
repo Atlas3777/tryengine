@@ -7,6 +7,7 @@ require tryeditor/Mover
 require tryeditor/DebugRender
 require tryeditor/EditorHotkeys
 require tryeditor/Hierarchy
+require tryeditor/Gizmo
 
 require trygame/Game
 
@@ -82,7 +83,11 @@ def EditorStart(){
 [export, profile]
 def EditorUpdate(){
     ProcessHotkeys()
+    ProcessGizmoHotkeys()
     Move(TimeDelta(editor_clock))
+    // The gizmo state is built before the frame is rendered; interaction happens later in
+    // DrawSceneViewPort, so the next frame draws the handle the user is already dragging.
+    UpdateGizmoDrawState()
 
     // A paused game clock is a zero delta, and a system that integrates time has no
     // business running on a zero delta at all.

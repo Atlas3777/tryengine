@@ -5,6 +5,7 @@ module EditorHotkeys shared public
 
 require tryengine/Input
 require tryeditor/EditorInput
+require TryEditor
 
 // Общая система горячих клавиш редактора.
 //
@@ -44,11 +45,19 @@ def private IsCtrlDown() : bool => is_down(Key.LCtrl) || is_down(Key.RCtrl)
 def private IsShiftDown() : bool => is_down(Key.LShift) || is_down(Key.RShift)
 def private IsAltDown() : bool => is_down(Key.LAlt) || is_down(Key.RAlt)
 
+def private IsTextInputActive() : bool {
+    // Only a focused text field should swallow a hotkey. ImGui's WantCaptureKeyboard is true
+    // almost always with keyboard navigation enabled, which used to block W/E/R entirely.
+    return IsEditorTextInputActive()
+}
+
 def ProcessHotkeys() {
     let captured = IsGameViewportFocused()
+    let text_input_active = IsTextInputActive()
 
     for (h in g_hotkeys) {
-        if ((captured && !h.system)
+        if ((text_input_active && !h.system)
+            || (captured && !h.system)
             || !pressed(h.key)
             || IsCtrlDown() != h.ctrl
             || IsShiftDown() != h.shift
