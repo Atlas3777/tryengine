@@ -1,0 +1,27 @@
+================ SHADER REFLECTION DUMP ================
+
+========================================================
+  VERTEX SHADER BINDINGS
+========================================================
+  <No resources bound for this stage>
+
+========================================================
+  FRAGMENT SHADER BINDINGS
+========================================================
+  <No resources bound for this stage>
+
+========================================================
+  FULL PROGRAM COMBINED BINDINGS
+========================================================
+Resource: "pc" (Hash: 0x4E4E5564)
+  - Scope: Pass (Set 0) | Kind: UniformBuffer
+  - Set: 0, Binding: 0, Size: 32 bytes
+  - Members:
+      * "camera" | Offset: 0 | Size: 8 | Type: Float
+      * "screenSize" | Offset: 8 | Size: 8 | Type: Vec2
+      * "cellSize" | Offset: 16 | Size: 4 | Type: Float
+      * "minPixelsBetweenCells" | Offset: 20 | Size: 4 | Type: Float
+      * "gridSize" | Offset: 24 | Size: 4 | Type: Float
+      * "_pad" | Offset: 28 | Size: 4 | Type: Float
+--------------------------------------------------------
+

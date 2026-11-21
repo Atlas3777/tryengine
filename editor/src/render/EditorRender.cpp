@@ -1,6 +1,7 @@
 #include "editor/render/EditorRender.hpp"
 
 #include "editor/render/DebugPass.hpp"
+#include "editor/render/GridPass.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "editor/render/PickingPass.hpp"
 #include "engine/core/Assert.hpp"
@@ -30,8 +31,16 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
         engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(4250482409988402633ULL);
     TRY_ASSERT(pick_shader.has_value(), "Нет шейдера picking");
 
+    auto grid_shader =
+        engine.Get<tryengine::resources::ResourceManager>().Get<tryengine::graphics::Shader>(6143497954727599506ULL);
+    TRY_ASSERT(grid_shader.has_value(), "Нет шейдера grid");
+
     rg_.AddNode<ImGuiPass>(kEditorScope, rg_, device, swapchain);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kEditorScope);
+    // Сетка идёт сразу после opaque: depth-тест уже есть, отладочные линии и picking
+    // рисуются поверх неё. Порядок задаёт порядок AddNode — граф разводит пассы по
+    // зависимостям, а у обоих писателей SceneColor зависимостей нет.
+    rg_.AddNode<GridPass>(kEditorScope, *grid_shader);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kGameScope);
     rg_.AddNode<DebugPass>(kEditorScope, *deb_shader);
     rg_.AddNode<PickingPass>(kEditorScope, device, *pick_shader);
