@@ -9,13 +9,14 @@
 #include "engine/core/TypeRegistry.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceCache.hpp"
+#include "engine/resources/TextRequests.hpp"
 
 namespace tryengine::resources {
 
 class ResourceManager {
 public:
     ResourceManager(AsyncFileManager& file_manager, AssetRegistry& registry)
-        : file_manager_(file_manager), registry_(registry) {}
+        : file_manager_(file_manager), registry_(registry), text_requests_(file_manager, registry) {}
 
     ~ResourceManager() {
         LogInfo("Resource manager destructor");
@@ -99,14 +100,6 @@ public:
         return cache ? cache->Invalidate(guid) : false;
     }
 
-    // Удаляет ресурс из кеша без retired. Безопасно только для типов, которые не отдают
-    // наружу сырые указатели (SourceText): иначе старый указатель в компоненте повиснет.
-    template <typename T>
-    bool Discard(uint64_t guid) {
-        auto* cache = GetTypedCache<T>();
-        return cache ? cache->Discard(guid) : false;
-    }
-
     template <typename T>
     void Release(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
@@ -125,6 +118,12 @@ public:
         return registry_;
     }
 
+    //! Разовые чтения текста (не кеш): документ разбирается скриптом один раз, и
+    //! держать его копию в C++ больше не нужно.
+    TextRequests& GetTextRequests() {
+        return text_requests_;
+    }
+
 private:
     template <typename T>
     IResourceCache<T>* GetTypedCache() {
@@ -139,6 +138,7 @@ private:
     AsyncFileManager& file_manager_;
     AssetRegistry& registry_;
     eastl::vector<std::unique_ptr<ICacheBase>> caches_;
+    TextRequests text_requests_;
 };
 
 }  // namespace tryengine::resources

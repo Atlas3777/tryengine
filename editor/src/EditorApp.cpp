@@ -26,7 +26,6 @@
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/PendingLoadQueue.hpp"
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/resources/SourceText.hpp"
 
 namespace tryeditor {
 
@@ -57,7 +56,6 @@ void EditorApp::Init() {
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
-    rm.RegisterType<SourceText>(SourceTextLoader{});
 
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
 

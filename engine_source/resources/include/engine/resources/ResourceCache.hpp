@@ -8,6 +8,7 @@
 #include "engine/async/RunAndForget.hpp"
 #include "engine/async/Task.hpp"
 #include "engine/core/MakeError.hpp"
+#include "engine/resources/AssetBytes.hpp"
 #include "engine/resources/AssetRegistry.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
 #include "engine/resources/ResourceControlBlock.hpp"
@@ -22,7 +23,6 @@ public:
     // Убирает ресурс из кеша, не уничтожая его: старые handles продолжают жить.
     // Нужен редактору для перезагрузки материала после правки файла.
     virtual bool Invalidate(uint64_t guid) = 0;
-    virtual bool Discard(uint64_t guid) = 0;
     virtual void RequestLoad(uint64_t guid) = 0;
     virtual bool IsReady(uint64_t guid) = 0;
     virtual bool IsFailed(uint64_t guid) = 0;
@@ -126,21 +126,8 @@ public:
         return registry_.GetAssetLocation(guid).has_value();
     }
 
-    // Удаляет ресурс без retired, если на него нет ссылок. Только для value-типов,
-    // чьи указатели не утекают наружу (SourceText): текст копируется в строку скрипта.
-    bool Discard(uint64_t guid) override {
-        std::lock_guard lock(cache_mutex_);
-        auto it = cache_.find(guid);
-        if (it == cache_.end())
-            return false;
-        if (it->second->state.load(std::memory_order_acquire) == ResourceState::Loading)
-            return false;
-        if (it->second->ref_count.load(std::memory_order_acquire) != 0)
-            return false;
-        cache_.erase(it);
-        return true;
-    }
-
+    // Убирает ресурс из кеша, не уничтожая его: старые handles продолжают жить.
+    // Следующий RequestLoad/GetAsync по тому же guid создаст новый ресурс.
     bool Invalidate(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
@@ -218,64 +205,22 @@ private:
             co_return LogAndMakeError("Path for guid {} not found", guid);
         }
 
-        const auto& location = *asset_location_res;
-
-        // 1. Проверяем, является ли локация файлом на диске
-        if (const auto* loose = eastl::get_if<LooseFileLocation>(&location)) {
-            const char* path = loose->path.c_str();
-            FileHandle stat_handle = file_manager_.GetStatAsync(path);
-            co_await stat_handle;
-
-            if (stat_handle.IsFailed()) {
-                NotifyFailed(cb);
-                co_return LogAndMakeError("Failed to stat artifact path: '{}'", loose->path);
-            }
-
-            FileHandle read_handle = file_manager_.ReadChunkAsync(path, 0, stat_handle.GetFileSize());
-            file_manager_.Submit();
-            co_await read_handle;
-
-            if (read_handle.IsFailed()) {
-                NotifyFailed(cb);
-                co_return LogAndMakeError("Failed to read artifact: {}", path);
-            }
-
-            auto parse_result = co_await loader_.Parse(read_handle.GetData());
-
-            if (!parse_result.has_value()) {
-                NotifyFailed(cb);
-                co_return LogAndMakeError("Failed to parse asset GUID {}: {}", guid, parse_result.error());
-            }
-
-            cb->data = new T(std::move(*parse_result));
-            cb->state.store(ResourceState::Ready, std::memory_order_release);
-
-            ResumeWaiters(cb);
-            co_return {};
+        auto bytes = co_await ReadAssetBytes(file_manager_, registry_, guid);
+        if (!bytes.has_value()) {
+            NotifyFailed(cb);
+            co_return LogAndMakeError("Failed to read asset GUID {}: {}", guid, bytes.error());
         }
 
-        // 2. Проверяем, находится ли ресурс в PAK-архиве
-        if (const auto* pak = eastl::get_if<PakChunkLocation>(&location)) {
-            FileHandle read_handle = file_manager_.ReadChunkFDAsync(pak->fd_slot, pak->offset, pak->size);
-            co_await read_handle;
-
-            if (read_handle.IsFailed()) {
-                NotifyFailed(cb);
-                co_return LogAndMakeError("Failed to read artifact for guid: {}", guid);
-            }
-
-            auto parse_result = co_await loader_.Parse(read_handle.GetData());
-
-            if (!parse_result.has_value()) {
-                NotifyFailed(cb);
-                co_return LogAndMakeError("Failed to parse asset GUID {}: {}", guid, parse_result.error());
-            }
-
-            cb->data = new T(std::move(*parse_result));
-            cb->state.store(ResourceState::Ready, std::memory_order_release);
-
-            ResumeWaiters(cb);
+        auto parse_result = co_await loader_.Parse(eastl::span<const uint8_t>(bytes->data(), bytes->size()));
+        if (!parse_result.has_value()) {
+            NotifyFailed(cb);
+            co_return LogAndMakeError("Failed to parse asset GUID {}: {}", guid, parse_result.error());
         }
+
+        cb->data = new T(std::move(*parse_result));
+        cb->state.store(ResourceState::Ready, std::memory_order_release);
+
+        ResumeWaiters(cb);
         co_return {};
     }
 

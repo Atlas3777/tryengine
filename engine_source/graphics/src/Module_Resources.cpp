@@ -6,7 +6,6 @@
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/resources/SourceText.hpp"
 
 using namespace tryengine::core;
 using das::LineInfoArg;
@@ -127,12 +126,6 @@ bool IsImportedAsset(uint64_t id, das::Context* ctx) {
     return res_manager ? res_manager->GetAssetRegistry().IsImported(id) : false;
 }
 
-// ---------------------------------------------------------------------------
-// Content text API
-// ---------------------------------------------------------------------------
-// Единственная точка чтения content-файлов для скриптов. В редакторе источник — loose
-// файл, в игре — чанк пака; разницу скрывает AssetRegistry + ResourceManager.
-
 uint64_t AssetPathId(const char* path) {
     if (!path || !*path)
         return 0;
@@ -164,41 +157,41 @@ uint64_t RegisterAssetPath(const char* path, das::Context* ctx) {
     return resolved.has_value() ? *resolved : registry.RegisterAuthoritative(path);
 }
 
-void RequestLoadSourceText(uint64_t id, das::Context* ctx) {
-    if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->RequestLoad<tryengine::resources::SourceText>(id);
-}
+// ---------------------------------------------------------------------------
+// Content text API
+// ---------------------------------------------------------------------------
+// Единственная точка чтения content-файлов для скриптов. В редакторе источник — loose
+// файл, в игре — чанк пака; разницу скрывает AssetRegistry. Текст не кешируется:
+// handle — это запрос, который живёт до TakeAssetText/CancelTextRequest, потому что
+// документ всё равно разбирается скриптом один раз.
 
-bool SourceTextIsReady(uint64_t id, das::Context* ctx) {
+uint64_t RequestLoadText(uint64_t asset_id, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
-    return res_manager ? res_manager->IsReady<tryengine::resources::SourceText>(id) : false;
+    return res_manager ? res_manager->GetTextRequests().Request(asset_id) : 0;
 }
 
-bool SourceTextIsFailed(uint64_t id, das::Context* ctx) {
+bool TextRequestIsReady(uint64_t handle, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
-    return res_manager ? res_manager->IsFailed<tryengine::resources::SourceText>(id) : false;
+    return res_manager ? res_manager->GetTextRequests().IsReady(handle) : false;
 }
 
-char* GetSourceText(uint64_t id, das::Context* ctx, LineInfoArg* at) {
+bool TextRequestIsFailed(uint64_t handle, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->GetTextRequests().IsFailed(handle) : false;
+}
+
+char* TakeAssetText(uint64_t handle, das::Context* ctx, LineInfoArg* at) {
     auto* res_manager = GetResourceManager(ctx);
     if (!res_manager)
         return nullptr;
-    auto* text = res_manager->GetPointerExplicit<tryengine::resources::SourceText>(id);
-    if (!text)
-        return nullptr;
-    return ctx->allocateString(text->text.c_str(), text->text.size(), at);
+
+    const eastl::string text = res_manager->GetTextRequests().Take(handle);
+    return ctx->allocateString(text.c_str(), text.size(), at);
 }
 
-void ReleaseSourceText(uint64_t id, das::Context* ctx) {
+void CancelTextRequest(uint64_t handle, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->Release<tryengine::resources::SourceText>(id);
-}
-
-// Drops a cached text. Discard, not Invalidate: a source text hands out no raw pointers,
-// so the old copy can be destroyed immediately instead of growing retired_.
-void InvalidateSourceText(uint64_t id, das::Context* ctx) {
-    if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->Discard<tryengine::resources::SourceText>(id);
+        res_manager->GetTextRequests().Cancel(handle);
 }
 
 class Module_Resources : public das::Module {
@@ -265,23 +258,20 @@ public:
         das::addExtern<DAS_BIND_FUN(RegisterAssetPath)>(*this, lib, "RegisterAssetPath", das::SideEffects::accessGlobal,
                                                         "RegisterAssetPath");
 
-        das::addExtern<DAS_BIND_FUN(RequestLoadSourceText)>(*this, lib, "RequestLoadSourceText",
-                                                            das::SideEffects::accessGlobal, "RequestLoadSourceText");
+        das::addExtern<DAS_BIND_FUN(RequestLoadText)>(*this, lib, "RequestLoadText", das::SideEffects::accessGlobal,
+                                                      "RequestLoadText");
 
-        das::addExtern<DAS_BIND_FUN(SourceTextIsReady)>(*this, lib, "SourceTextIsReady", das::SideEffects::accessGlobal,
-                                                        "SourceTextIsReady");
+        das::addExtern<DAS_BIND_FUN(TextRequestIsReady)>(*this, lib, "TextRequestIsReady",
+                                                         das::SideEffects::accessGlobal, "TextRequestIsReady");
 
-        das::addExtern<DAS_BIND_FUN(SourceTextIsFailed)>(*this, lib, "SourceTextIsFailed",
-                                                         das::SideEffects::accessGlobal, "SourceTextIsFailed");
+        das::addExtern<DAS_BIND_FUN(TextRequestIsFailed)>(*this, lib, "TextRequestIsFailed",
+                                                          das::SideEffects::accessGlobal, "TextRequestIsFailed");
 
-        das::addExtern<DAS_BIND_FUN(GetSourceText)>(*this, lib, "GetSourceText", das::SideEffects::accessGlobal,
-                                                    "GetSourceText");
+        das::addExtern<DAS_BIND_FUN(TakeAssetText)>(*this, lib, "TakeAssetText", das::SideEffects::accessGlobal,
+                                                    "TakeAssetText");
 
-        das::addExtern<DAS_BIND_FUN(ReleaseSourceText)>(*this, lib, "ReleaseSourceText", das::SideEffects::accessGlobal,
-                                                        "ReleaseSourceText");
-
-        das::addExtern<DAS_BIND_FUN(InvalidateSourceText)>(*this, lib, "InvalidateSourceText",
-                                                           das::SideEffects::accessGlobal, "InvalidateSourceText");
+        das::addExtern<DAS_BIND_FUN(CancelTextRequest)>(*this, lib, "CancelTextRequest", das::SideEffects::accessGlobal,
+                                                        "CancelTextRequest");
 
         verifyAotReady();
     }

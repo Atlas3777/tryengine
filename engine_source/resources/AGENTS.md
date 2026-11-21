@@ -36,14 +36,19 @@
 - Ссылки в сцене не нужно переписывать в `guid:`: `AssetRegistry::ResolvePath` сначала
   смотрит таблицу путей, а затем пробует `PathId(путь)` в `locations_`. В игре это находит
   content-чанк, в редакторе — зарегистрированный авторский файл.
-- Единая точка чтения текста для скриптов — `SourceText` + биндинги `tryResources`
-  (`ResolveAssetPath`, `RequestLoadSourceText`, `SourceTextIsReady/IsFailed`,
-  `GetSourceText`). `ResourceManager` сам выбирает `LooseFileLocation` или
-  `PakChunkLocation`, поэтому Content/Scene/Prefab/Assets.das не знают, откуда читается
-  файл. Синхронного чтения текста нет: `Assets::RequestText`/`TextIsReady`/`TakeText`
-  отдают его опросом (так работает задача `Loader::Load`), а `Assets::ReadText` —
-  корутина для `Scene::LoadAsync`. `Scene::Load` применяет уже разобранный
-  `Content::Document` и диск не читает.
+- Единая точка чтения ассета — `ReadAssetBytes` (`AssetBytes.hpp`): `ResourceManager`
+  сам выбирает `LooseFileLocation` или `PakChunkLocation`, поэтому Content/Scene/Prefab/
+  Assets.das не знают, откуда читается файл, и loose/pak-ветки не расходятся. Текст
+  скриптам отдают разовые запросы `TextRequests`: `Assets::RequestText(path)` возвращает
+  **handle запроса**, а не id ассета, и текст живёт до `TakeText`/`CancelText`. Кеша
+  текста нет: разобранный документ — единственная его форма, которая остаётся.
+  Синхронного чтения нет: `TextIsReady`/`TextIsFailed` опрашиваются (так работает
+  `Loader::Load`), а `Assets::ReadText` — корутина для `Scene::LoadAsync`.
+  `Scene::Load` применяет уже разобранный `Content::Document` и диск не читает.
+- Готовые документы и префабы кеширует не C++ и не `Content`, а `tryengine/AssetCache.das`:
+  одна ledger-таблица на все виды плюс типизированная таблица значений в модуле вида.
+  Поэтому «ресурс» в `ResourceManager` — это то, что нужно кадру (Mesh/Material/Shader/
+  Texture), а всё, что нужно DECS и скриптам, живёт в скриптовом кеше.
 - Сцена (`engine_source/daslang/Scene.das`) хранит авторские ссылки: компонент
   `materialRef: MaterialRef`, список `requireMaterials: string[]`. `GetSceneHeader` и
   `Content::CollectDependencies` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки

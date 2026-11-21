@@ -9,9 +9,9 @@
 
 #include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
+#include "engine/resources/AssetBytes.hpp"
 #include "engine/resources/AssetPak.hpp"
 #include "engine/resources/ContentAssets.hpp"
-#include "engine/resources/SourceText.hpp"
 
 namespace tryeditor {
 
@@ -163,22 +163,19 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
             continue;
 
         const uint64_t id = tryengine::core::PathId(path);
-        res_m_.Discard<tryengine::resources::SourceText>(id);
-        auto text_res = co_await res_m_.GetAsync<tryengine::resources::SourceText>(id);
-        if (!text_res.has_value()) {
+        auto bytes = co_await tryengine::resources::ReadAssetBytes(file_m_, res_m_.GetAssetRegistry(), id);
+        if (!bytes.has_value()) {
             LogError("Content file '{}' is not readable; skipped", path.c_str());
             continue;
         }
 
-        const auto& text = (*text_res)->text;
-
         ContentFile file;
         file.path = path;
         file.id = id;
-        const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
-        file.data = eastl::vector<uint8_t>(begin, begin + text.size());
+        file.data = eastl::move(*bytes);
 
         if (is_prefab) {
+            const eastl::string_view text(reinterpret_cast<const char*>(file.data.data()), file.data.size());
             tryengine::resources::ContentDependencies deps;
             tryengine::resources::CollectPrefabDependencies(text, res_m_.GetAssetRegistry(), deps);
             AppendUnique(common_dto.meshes, eastl::move(deps.meshes));
@@ -263,18 +260,14 @@ tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
     auto& registry = res_m_.GetAssetRegistry();
 
     // Текст сцены — такой же content-файл, как префаб: id = PathId(путь), данные — текст.
-    // Читается через общий SourceText, поэтому игра грузит сцену без loose-файлов.
+    // Читается напрямую, без кеша: сцена могла быть сохранена в этой же сессии редактора,
+    // и закешированная копия запаковала бы прошлую ревизию.
     if (!scene.path.empty()) {
         const uint64_t scene_id = tryengine::core::PathId(scene.path);
-        // Сцена могла быть сохранена в этой же сессии редактора: закешированный текст
-        // запаковал бы прошлую ревизию.
-        res_m_.Discard<tryengine::resources::SourceText>(scene_id);
-        auto text_res = co_await res_m_.GetAsync<tryengine::resources::SourceText>(scene_id);
-        if (text_res.has_value()) {
-            const auto& text = (*text_res)->text;
-            const auto* begin = reinterpret_cast<const uint8_t*>(text.data());
+        auto bytes = co_await tryengine::resources::ReadAssetBytes(file_m_, registry, scene_id);
+        if (bytes.has_value()) {
             pak.contents.push_back(scene_id);
-            pak.contents_data.push_back(eastl::vector<uint8_t>(begin, begin + text.size()));
+            pak.contents_data.push_back(eastl::move(*bytes));
         } else {
             LogError("Scene text '{}' is not readable", scene.path.c_str());
         }
