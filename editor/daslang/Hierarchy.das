@@ -10,6 +10,7 @@ require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
 require tryengine/Profiling
+require tryengine/TransformSystem
 require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
@@ -80,11 +81,7 @@ def DrawHierarchy() {
         if (button(BT_GO, (text = "+ New Entity"))) {
             let new_eid = create_entity() @(eid, cmp) {
                 cmp.tag := "New Entity"
-                apply_decs_template(cmp, Transform(
-                    position = float3(0.0f, 0.0f, 0.0f),
-                    rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-                    scale = float3(1.0f, 1.0f, 1.0f)
-                ))
+                ApplyEntityTransform(cmp, float3(0.0f, 0.0f, 0.0f), float4(0.0f, 0.0f, 0.0f, 1.0f), float3(1.0f, 1.0f, 1.0f))
                 apply_decs_template(cmp, Relationship())
             }
             commit()                       // иначе query в этом кадре не увидит новую entity

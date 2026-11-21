@@ -13,7 +13,6 @@ require tryengine/Prefab
 require tryengine/Profiling
 require tryengine/Scene
 require tryengine/Time
-require tryengine/TransformSystem
 require tryengine/Types
 require math
 
@@ -94,7 +93,6 @@ def private OnLoaded() {
     if (spawned == INVALID_ENTITY_ID) {
         print("[GAME ERROR] failed to spawn prefab '{GAMEPLAY_PREFAB}'\n")
     }
-    UpdateWorldTransforms()
 }
 
 def private UpdateGameplay() {
@@ -131,13 +129,13 @@ def private UpdateGameplay() {
 
     // The editor camera is editor state: in Play it sits next to the game camera and
     // must not be moved by gameplay.
-    query() $[REQUIRE_NOT(editorCameraTag)] (var t : Transform, let camera : Camera) {
-        t.position = eye
-        t.rotation = q
+    query() $[REQUIRE_NOT(editorCameraTag)] (var transform : Transform, let camera : Camera) {
+        transform.position = eye
+        transform.rotation = q
     }
 
     // ================== player input ==================
-    query()$(var t : Transform, var inputState : float3){
+    query()$(var transform : Transform, var inputState : float3){
         inputState = float3(0, 0, 0)
         if (is_down(Key.I)) { inputState.y =  1.0f }
         if (is_down(Key.K)) { inputState.y = -1.0f }
@@ -145,7 +143,7 @@ def private UpdateGameplay() {
         if (is_down(Key.L)) { inputState.x =  1.0f }
     }
 
-    query()$(var t : Transform, inputState : float3, speed : float){
-        t.position += inputState * 4.8f * speed * dt;
+    query()$(var transform : Transform, inputState : float3, speed : float){
+        transform.position += inputState * 4.8f * speed * dt;
     }
 }

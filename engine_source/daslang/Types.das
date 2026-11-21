@@ -35,22 +35,20 @@ struct PointLight {
     radius    : float
 }
 
-[decs_template, EcsTemplate, DecsSerializable]
+// Transform, one component named "transform" when authored and one named "_world" when
+// derived. The three TRS values travel as one struct: a write is one memcpy, a query reads
+// one contiguous value, and the type is an ordinary copyable struct. The defaults are the
+// identity, so `default<Transform>` and a missing field in a document are both usable instead
+// of a zero scale. `_world` is what the renderer reads and TransformSystem writes; the leading
+// underscore keeps it out of scene save and the Inspector.
+[DecsSerializable]
 struct Transform {
-    position : float3
-    rotation : float4
-    scale    : float3
+    position : float3 = float3(0.0f, 0.0f, 0.0f)
+    rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
+    scale    : float3 = float3(1.0f, 1.0f, 1.0f)
 }
 
-// Derived world transform. The prefix starts with "_", so Scene.das never saves it and
-// the Inspector never shows it: Transform is the authored local transform, this one is
-// recomputed from the Relationship hierarchy every frame and is what the renderer reads.
-[decs_template(prefix = "_world_")]
-struct WorldTransform {
-    position : float3
-    rotation : float4
-    scale    : float3
-}
+%ecs~("transform", type<Transform>) %%
 
 [decs_template, EcsTemplate, DecsSerializable]
 struct Relationship {

@@ -16,7 +16,7 @@ public:
 
     // Поднимай при изменении того, что попадает в артефакты: все модели переимпортируются.
     [[nodiscard]] uint32_t GetVersion() const override {
-        return 7;
+        return 8;
     }
 
     [[nodiscard]] tryengine::async::Task<ImportResult> Import(ImportContext ctx) const override;

@@ -14,6 +14,7 @@ require math
 require tryengine/Scene
 require tryengine/Profiling
 require tryengine/Time
+require tryengine/TransformSystem
 require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
@@ -46,7 +47,7 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
     create_entity() @(eid : EntityId; var cmp : ComponentMap) {
         cmp.tag := "EditorCamera"
         cmp |> set("editorCameraTag", true)
-        apply_decs_template(cmp, Transform(position = float3(0, 0, 0), rotation =  float4(0, 0, 0, 1), scale = float3(1, 1, 1)))
+        ApplyEntityTransform(cmp, float3(0, 0, 0), float4(0, 0, 0, 1), float3(1, 1, 1))
         apply_decs_template(cmp, Camera())
         apply_decs_template(cmp, Relationship())
     }
@@ -63,7 +64,7 @@ def private OnSceneUnloaded() {
     // Play runs GameStart unchanged; the editor camera is editor state layered on top.
     // It is tagged `editorCameraTag`, so the game camera query and GameUpdate ignore it,
     // while Mover and the Scene viewport keep working during Play.
-    query()$(eid : EntityId, editorCameraTag : bool, tf : Transform, camera : Camera){
+    query()$(eid : EntityId, editorCameraTag : bool, transform : Transform, camera : Camera){
         delete_entity(eid)
     }
     decs::commit()

@@ -6,6 +6,7 @@ module QuadTree shared public
 require daslib/decs
 require daslib/decs_boost
 require math
+require tryengine/TransformSystem
 require tryengine/Types
 
 // ===========================================================================
@@ -66,11 +67,12 @@ def public load_node_entity(var tree : QuadTree&; nodeIdx : int) {
 
     let eid = create_entity() @(e, cmp) {
         cmp |> set("tag", "QuadChunk_D{depth}_{nodeIdx}")
-        apply_decs_template(cmp, Transform(
-            position = float3(center.x, center.y, 0.0f),
-            rotation = float4(0.0f, 0.0f, 0.0f, 1.0f),
-            scale = float3(halfSize, halfSize, 1.0f)
-        ))
+        ApplyEntityTransform(
+            cmp,
+            float3(center.x, center.y, 0.0f),
+            float4(0.0f, 0.0f, 0.0f, 1.0f),
+            float3(halfSize, halfSize, 1.0f)
+        )
         apply_decs_template(cmp, Relationship())
     }
 

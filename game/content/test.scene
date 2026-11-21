@@ -17,7 +17,11 @@ entities: Entity[] = [
 			generation: i32 = 1
 		}
 		tag: string = "Object_40"
-		Transform_rotation: f32x4 = [0 0 0 1]
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
 		meshGuid: u64 = 12277960924680109874
 		Relationship_parent: EntityId = {
 			id: u32 = 0
@@ -30,8 +34,6 @@ entities: Entity[] = [
 			id: u32 = 0
 			generation: i32 = 0
 		}
-		Transform_position: f32x3 = [0 0 0]
-		Transform_scale: f32x3 = [1 1 1]
 		Relationship_prev: EntityId = {
 			id: u32 = 0
 			generation: i32 = 0
@@ -47,7 +49,11 @@ entities: Entity[] = [
 			generation: i32 = 1
 		}
 		tag: string = "Vulcan_Scarlet_Lance_Material_Vulcan_0"
-		Transform_rotation: f32x4 = [0 0 0 1]
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
 		meshGuid: u64 = 3081795527557720915
 		Relationship_parent: EntityId = {
 			id: u32 = 0
@@ -60,8 +66,6 @@ entities: Entity[] = [
 			id: u32 = 0
 			generation: i32 = 0
 		}
-		Transform_position: f32x3 = [0 0 0]
-		Transform_scale: f32x3 = [1 1 1]
 		Relationship_prev: EntityId = {
 			id: u32 = 0
 			generation: i32 = 0
@@ -69,9 +73,11 @@ entities: Entity[] = [
 	}
 	{
 		tag: string = "GameCamera"
-		Transform_position: f32x3 = [0 -20 10]
-		Transform_rotation: f32x4 = [0 0 0 1]
-		Transform_scale: f32x3 = [1 1 1]
+		transform: Transform = {
+			position: f32x3 = [0 -20 10]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
 		Camera_fov: f32 = 35
 		Camera_near_plane: f32 = 0.01
 		Camera_far_plane: f32 = 500

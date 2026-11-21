@@ -5,10 +5,20 @@ module TransformSystem shared public
 
 //! Keeps the derived world transform in sync with the authored local hierarchy.
 //!
-//! `Transform` is the authored local transform (saved to scenes, edited in the
-//! Inspector). `WorldTransform` is runtime-only (`_world_*` components, skipped by
-//! scene save and the Inspector) and is what Render.das reads. Every frame this
-//! module walks Relationship parents and writes the composed world TRS.
+//! `Transform` is one authored component (`transform`): the Inspector edits it and scene save
+//! writes it. The derived world transform is the same `Transform` shape in the component `_world`;
+//! `Render.das` reads it.
+//!
+//! `_world` is created together with `transform` and is never added here: adding a component
+//! moves the entity to another archetype and copies its whole row, which used to cost more
+//! than the rest of the pass. Prefabs bake it into the compiled template, scenes and editor
+//! entities apply it next to `transform`; an entity created without it is a creation bug and
+//! the first write panics with the missing `_world`.
+//!
+//! The pass walks the Relationship forest downwards from its roots (`first_child`/`next`),
+//! so a parent is always composed before its children and no parent table is needed.
+//! `_world` is written straight into archetype storage as one struct and only when the value
+//! actually changed, so a static scene costs one scan and no DECS writes at all.
 
 require math
 require daslib/decs
@@ -16,23 +26,33 @@ require daslib/decs_boost
 require tryengine/Profiling
 require tryengine/Types
 
-// Plain value holder: Transform/WorldTransform are decs_template types, and a whole
-// template value cannot be stored in a table. The render structs stay field-only.
-struct TransformData {
-    position : float3
-    rotation : float4
-    scale    : float3
-}
+let public TRANSFORM_FIELD : string = "transform"
+let public WORLD_FIELD : string = "_world"
 
-def private ComposeWorld(parent : TransformData; local : TransformData) : TransformData {
-    var world : TransformData
+//! Composes a child's world transform from its parent's world transform and its local one.
+def public ComposeWorld(parent : Transform; local : Transform) : Transform {
+    var world = Transform()
     world.position = parent.position + quat_mul_vec(parent.rotation, parent.scale * local.position)
     world.rotation = normalize(quat_mul(parent.rotation, local.rotation))
     world.scale = parent.scale * local.scale
     return <- world
 }
 
-def private SameTransform(a : TransformData; b : TransformData) : bool {
+//! Applies the authored `transform` and the derived `_world` in one call. The pass never adds
+//! `_world` to an existing entity (that moves it to another archetype and copies its whole
+//! row), so both components are always applied together when the entity is created. The world
+//! values start as the local ones and the next pass composes the hierarchy.
+def public ApplyEntityTransform(var cmp : ComponentMap; transform : Transform) {
+    cmp |> set(TRANSFORM_FIELD, transform)
+    cmp |> set(WORLD_FIELD, transform)
+}
+
+//! Same, from the three values a creation site usually has at hand.
+def public ApplyEntityTransform(var cmp : ComponentMap; position : float3; rotation : float4; scale : float3) {
+    ApplyEntityTransform(cmp, Transform(position = position, rotation = rotation, scale = scale))
+}
+
+def private SameTransform(a : Transform; b : Transform) : bool {
     if (a.position.x != b.position.x) return false
     if (a.position.y != b.position.y) return false
     if (a.position.z != b.position.z) return false
@@ -46,119 +66,132 @@ def private SameTransform(a : TransformData; b : TransformData) : bool {
     return true
 }
 
-def private ResolveWorld(index : int;
-                         var locals : array<TransformData>;
-                         var parents : array<int>;
-                         var worlds : array<TransformData>;
-                         var state : array<uint8>) : TransformData {
-    if (state[index] == 2u8) {
-        return worlds[index]
-    }
-    if (state[index] == 1u8) {
-        // A cycle in Relationship: keep the authored local instead of recursing forever.
-        return locals[index]
-    }
+// Sparse scratch reused between frames, indexed by entity id. Nothing here allocates once
+// the arrays are grown: a frame is one scan, the forest walk and the writes that are needed.
+var private g_local : array<Transform>
+var private g_local_ok : array<bool>
+var private g_first_child : array<EntityId>
+var private g_next_sibling : array<EntityId>
+var private g_parent : array<EntityId>
+var private g_link_ok : array<bool>
+var private g_visited : array<bool>
+// What was last written to `_world`, so an unchanged subtree costs no DECS write.
+var private g_world : array<Transform>
+var private g_world_ok : array<bool>
+var private g_world_generation : array<int>
+// Component index of `_world` per archetype, resolved on the first write of that archetype.
+var private g_world_index : table<int; int>
 
-    state[index] = 1u8
-    let parent_index = parents[index]
-    var world = locals[index]
-    if (parent_index >= 0 && parent_index != index) {
-        let parent_world = ResolveWorld(parent_index, locals, parents, worlds, state)
-        world = ComposeWorld(parent_world, locals[index])
+def private WriteWorld(eid : EntityId; world : Transform) {
+    let record = decsState.entityLookup[int(eid.id)]
+    let arch_index = int(decsState.archetypeLookup[record.archetype]) - 1
+    if (!key_exists(g_world_index, arch_index)) {
+        g_world_index[arch_index] = decs::find_component_index(decsState.allArchetypes[arch_index], WORLD_FIELD)
     }
-
-    worlds[index] = world
-    state[index] = 2u8
-    return <- world
+    decs::set_direct_at(decsState.allArchetypes[arch_index], g_world_index[arch_index], int(record.index), world)
 }
 
-//! Recomputes `_world_*` for every entity with a local Transform. Runs once per frame
-//! after game/editor logic and before rendering.
-[export, profile]
-def UpdateWorldTransforms() {
-    var entity_ids : array<EntityId>
-    var locals : array<TransformData>
-    var index_of : table<uint; int>
+def private VisitSubtree(eid : EntityId; parent_world : Transform; has_parent : bool) {
+    let index = int(eid.id)
+    g_visited[index] = true
 
-    query() $(eid : EntityId; transform : Transform) {
-        index_of[eid.id] = length(entity_ids)
-        entity_ids |> push(eid)
-        locals |> emplace(TransformData(
-            position = transform.position,
-            rotation = transform.rotation,
-            scale = transform.scale
-        ))
+    // A root's world transform is its local one; only a parented node needs the compose.
+    var world = g_local[index]
+    if (has_parent) {
+        world = ComposeWorld(parent_world, g_local[index])
     }
 
-    let count = length(entity_ids)
-    if (count == 0) {
+    // A repeated write of the same value is the common case in a static scene, and skipping
+    // it is what keeps the pass cheap: compare with what was written last time.
+    var dirty = !g_world_ok[index] || g_world_generation[index] != eid.generation
+    dirty = dirty || !SameTransform(g_world[index], world)
+    if (dirty) {
+        WriteWorld(eid, world)
+        g_world[index] = world
+        g_world_ok[index] = true
+        g_world_generation[index] = eid.generation
+    }
+
+    if (!g_link_ok[index]) {
         return
     }
 
-    var parents : array<int>
-    resize(parents, count)
-    for (i in range(count)) {
-        parents[i] = -1
+    var child = g_first_child[index]
+    while (child != INVALID_ENTITY_ID) {
+        let child_index = int(child.id)
+        if (child_index < length(g_local_ok) && !g_visited[child_index] && g_local_ok[child_index]) {
+            VisitSubtree(child, world, true)
+        }
+        // A child without a Relationship (or a broken link) ends the sibling chain.
+        if (child_index >= length(g_link_ok) || !g_link_ok[child_index]) {
+            break
+        }
+        child = g_next_sibling[child_index]
+    }
+}
+
+//! Recomputes `_world` for every entity with a local Transform. Runs once per frame after
+//! game/editor logic and before rendering. Only changed transforms are written.
+[export, profile]
+def UpdateWorldTransforms() {
+    let slots = length(decsState.entityLookup)
+    if (slots == 0) {
+        return
     }
 
-    query() $(eid : EntityId; rel : Relationship) {
-        if (rel.parent == INVALID_ENTITY_ID) {
+    resize(g_local, slots)
+    resize(g_local_ok, slots)
+    resize(g_first_child, slots)
+    resize(g_next_sibling, slots)
+    resize(g_parent, slots)
+    resize(g_link_ok, slots)
+    resize(g_visited, slots)
+    resize(g_world, slots)
+    resize(g_world_ok, slots)
+    resize(g_world_generation, slots)
+
+    var has_local = 0
+    query() $(eid : EntityId, transform : Transform) {
+        let index = int(eid.id)
+        g_local[index] = transform
+        g_local_ok[index] = true
+        g_visited[index] = false
+        g_link_ok[index] = false
+        has_local++
+    }
+
+    if (has_local == 0) {
+        return
+    }
+
+    query() $(eid : EntityId, rel : Relationship) {
+        let index = int(eid.id)
+        if (index >= slots) {
             return
         }
-        if (!key_exists(index_of, eid.id) || !key_exists(index_of, rel.parent.id)) {
-            return
-        }
-        parents[index_of[eid.id]] = index_of[rel.parent.id]
+        g_first_child[index] = rel.first_child
+        g_next_sibling[index] = rel.next
+        g_parent[index] = rel.parent
+        g_link_ok[index] = true
     }
 
-    var current : array<TransformData>
-    var has_current : array<bool>
-    resize(current, count)
-    resize(has_current, count)
-    for (i in range(count)) {
-        has_current[i] = false
-    }
-
-    query() $(eid : EntityId; world : WorldTransform) {
-        if (!key_exists(index_of, eid.id)) {
-            return
-        }
-        let index = index_of[eid.id]
-        current[index] = TransformData(
-            position = world.position,
-            rotation = world.rotation,
-            scale = world.scale
-        )
-        has_current[index] = true
-    }
-
-    var worlds : array<TransformData>
-    var state : array<uint8>
-    resize(worlds, count)
-    resize(state, count)
-    for (i in range(count)) {
-        state[i] = 0u8
-    }
-
-    var changed = false
-    for (index in range(count)) {
-        let world = ResolveWorld(index, locals, parents, worlds, state)
-        if (has_current[index] && SameTransform(current[index], world)) {
+    // Roots: every transformed entity with no link to a parent. Singletons (no Relationship
+    // at all) are roots too and simply take their local transform as the world one.
+    var identity = Transform()
+    for (index in range(slots)) {
+        if (!g_local_ok[index] || g_visited[index]) {
             continue
         }
-
-        let eid = entity_ids[index]
-        update_entity(eid) @(eid, cmp) {
-            apply_decs_template(cmp, WorldTransform(
-                position = world.position,
-                rotation = world.rotation,
-                scale = world.scale
-            ))
+        // A parented entity is reached from its root. An orphan (parent deleted or without a
+        // Transform) is a root itself, otherwise its subtree would never be visited.
+        if (g_link_ok[index] && g_parent[index] != INVALID_ENTITY_ID) {
+            let parent_index = int(g_parent[index].id)
+            if (parent_index < slots && g_local_ok[parent_index]) {
+                continue
+            }
         }
-        changed = true
-    }
 
-    if (changed) {
-        commit()
+        let eid = EntityId(id = uint(index), generation = decsState.entityLookup[index].generation)
+        VisitSubtree(eid, identity, false)
     }
 }

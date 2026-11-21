@@ -24,9 +24,9 @@ var lights : array<PointLightGPU>
 def get_lights() : array<PointLightGPU>? {
     lights.clear()
 
-    query() <| $(var world : WorldTransform; var light : PointLight) {
+    query() <| $(var _world : Transform; var light : PointLight) {
         lights |> push(PointLightGPU(
-            position_radius = float4(world.position.x, world.position.y, world.position.z, light.radius),
+            position_radius = float4(_world.position.x, _world.position.y, _world.position.z, light.radius),
             color_intensity = float4(light.color.x, light.color.y, light.color.z, light.intensity)
         ))
     }
@@ -49,7 +49,7 @@ def get_render_obj() : array<DrawCall>? {
     start_load()
     dcs.clear()
 
-    query() <| $(eid : EntityId, world : WorldTransform, mesh : TryMesh?, material : TryMat?) {
+    query() <| $(eid : EntityId, _world : Transform, mesh : TryMesh?, material : TryMat?) {
         // Пока новый материал грузится, указателя может не быть — не отдаём полупустой draw call.
         if (mesh == null || material == null) {
             return
@@ -58,7 +58,7 @@ def get_render_obj() : array<DrawCall>? {
         dcs.push(DrawCall(
             mesh_id = mesh,
             material_id = material,
-            matrix = compose(world.position, world.rotation, world.scale),
+            matrix = compose(_world.position, _world.rotation, _world.scale),
             entity_id = id
         ))
     }
@@ -77,15 +77,15 @@ var editor_cameraC : CameraC
 
 [export]
 def GetEditorCamera(viewport_size : float2) : CameraC? {
-    query() <| $(let world : WorldTransform, let camera : Camera; let editorCameraTag : bool){
-        editor_cameraC.position = world.position
+    query() <| $(let _world : Transform, let camera : Camera; let editorCameraTag : bool){
+        editor_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
-        let forward = quat_mul_vec(world.rotation, float3(0.0f, 1.0f, 0.0f))
-        let up      = quat_mul_vec(world.rotation, float3(0.0f, 0.0f, 1.0f))
-        let target  = world.position + forward
+        let forward = quat_mul_vec(_world.rotation, float3(0.0f, 1.0f, 0.0f))
+        let up      = quat_mul_vec(_world.rotation, float3(0.0f, 0.0f, 1.0f))
+        let target  = _world.position + forward
 
-        editor_cameraC.view = look_at_rh(world.position, target, up)
+        editor_cameraC.view = look_at_rh(_world.position, target, up)
 
         let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)
@@ -102,15 +102,15 @@ var game_cameraC : CameraC
 
 [export]
 def GetGameCamera(viewport_size : float2) : CameraC? {
-    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let world : WorldTransform, let camera : Camera){
-        game_cameraC.position = world.position
+    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let _world : Transform, let camera : Camera){
+        game_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
-        let forward = quat_mul_vec(world.rotation, float3(0.0f, 1.0f, 0.0f))
-        let up      = quat_mul_vec(world.rotation, float3(0.0f, 0.0f, 1.0f))
-        let target  = world.position + forward
+        let forward = quat_mul_vec(_world.rotation, float3(0.0f, 1.0f, 0.0f))
+        let up      = quat_mul_vec(_world.rotation, float3(0.0f, 0.0f, 1.0f))
+        let target  = _world.position + forward
 
-        game_cameraC.view = look_at_rh(world.position, target, up)
+        game_cameraC.view = look_at_rh(_world.position, target, up)
 
         let aspect = viewport_size.x / viewport_size.y
         let fov_rad = radians(camera.fov)

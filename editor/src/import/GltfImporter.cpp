@@ -575,17 +575,20 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
 
         node_obj.fields.push_back(MakeStringField("tag", eastl::move(tag)));
 
-        node_obj.fields.push_back(
-            MakePrefabField("Transform_position", "f32x3",
+        ConfigObject transform;
+        transform.fields.push_back(
+            MakePrefabField("position", "f32x3",
                             ConfigValue(ConfigFloat3{local_transform.position.x, local_transform.position.y,
                                                      local_transform.position.z})));
-        node_obj.fields.push_back(
-            MakePrefabField("Transform_rotation", "f32x4",
+        transform.fields.push_back(
+            MakePrefabField("rotation", "f32x4",
                             ConfigValue(ConfigFloat4{local_transform.rotation.x, local_transform.rotation.y,
                                                      local_transform.rotation.z, local_transform.rotation.w})));
-        node_obj.fields.push_back(MakePrefabField(
-            "Transform_scale", "f32x3",
+        transform.fields.push_back(MakePrefabField(
+            "scale", "f32x3",
             ConfigValue(ConfigFloat3{local_transform.scale.x, local_transform.scale.y, local_transform.scale.z})));
+        node_obj.fields.push_back(MakePrefabField(
+            "transform", "Transform", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(transform)))));
 
         if (mesh_id != 0) {
             node_obj.fields.push_back(MakePrefabField("meshGuid", "u64", ConfigValue(mesh_id)));
@@ -603,7 +606,7 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     }
 
     ConfigObject root;
-    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{3})));
+    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{4})));
     root.fields.push_back(MakeStringField("name", stem_string));
     root.fields.push_back(
         MakePrefabField("nodes", "PrefabNode[]", ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(nodes)))));
