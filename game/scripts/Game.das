@@ -6,13 +6,15 @@ module Game shared public
 
 require daslib/decs
 require daslib/decs_boost
-require tryengine/Types
+require tryengine/AsyncTaskManager
 require tryengine/Input
+require tryengine/Loader
 require tryengine/Prefab
 require tryengine/Profiling
+require tryengine/Scene
 require tryengine/Time
 require tryengine/TransformSystem
-require trygame/Boot
+require tryengine/Types
 require math
 
 // === engine convention ===
@@ -20,10 +22,12 @@ let front_raw = float3(0.0f, 1.0f, 0.0f)   // local Y (forward)
 let up_raw    = float3(0.0f, 0.0f, 1.0f)   // local Z (up)
 let world_up  = float3(0.0f, 0.0f, 1.0f)
 
-// === gameplay content ===
-// The startup policy (loading scene, startup scene, bundle, hold time) lives in
-// `trygame/Boot.das`; this file is gameplay only. The prefab is preloaded by the
-// startup bundle before the startup scene is applied.
+// === content loaded at startup ===
+// The request is the whole startup policy: everything listed here is read and compiled
+// before `OnLoaded` runs. `OnLoaded` then applies the scene and spawns gameplay from the
+// cache; neither `Scene::Load` nor `Prefab::Spawn` touches the disk.
+let STARTUP_SCENE = "content/test.scene"
+let STARTUP_BUNDLE = "data/bundles/startup.bundle"
 let GAMEPLAY_PREFAB = "prefabl.prefab"
 
 // === orbit parameters ===
@@ -44,33 +48,48 @@ var game_clock       = GameClock()
 var game_world_clock = GameWorldClock()
 var game_ui_clock    = GameUIClock()
 
+// Gameplay runs only after `OnLoaded` applied the startup scene. This is game state,
+// not loader state: the loader task owns the request and disappears when it is done.
+var private g_scene_ready = false
+
 def RegisterGameTime() {
     TimeAttach(game_clock)
     TimeRegister(game_world_clock, game_clock)
     TimeRegister(game_ui_clock, game_clock)
 }
 
-// Explicit entry point, shared by the standalone game and editor Play. GameStart only
-// wires the game clocks and hands the slow startup flow to `Boot`; a boot session is
-// stopped by the editor, not by the game.
+// Explicit entry point, shared by the standalone game and editor Play. The request says
+// what this game needs at startup; the loader task reads and compiles it, then calls
+// `OnLoaded` synchronously in the cache.
 [export]
 def GameStart(){
     print("Game Start\n")
     RegisterGameTime()
-    Boot::Start(@@OnGameSceneLoaded)
+    g_scene_ready = false
+
+    var request <- LoaderRequest()
+    request.AddBundle(STARTUP_BUNDLE)
+    request.AddScene(STARTUP_SCENE)
+    StartTask(Loader::Load(request, @@OnLoaded))
 }
 
 [export, profile]
 def GameUpdate() {
-    if (!Boot::Update(TimeTotal(game_clock))) {
+    if (!g_scene_ready) {
         return
     }
     UpdateGameplay()
 }
 
-// Scene-specific setup: `Scene::Load` calls this after the startup scene's DECS world
-// exists. The startup scene owns its camera; this hook only spawns gameplay objects.
-def private OnGameSceneLoaded() {
+// The loader callback: everything in the request is in `Content`/`Prefab` caches.
+// Applying the scene is a separate synchronous step, exactly like spawning a prefab.
+def private OnLoaded() {
+    if (!Scene::Load(STARTUP_SCENE)) {
+        print("[GAME ERROR] startup scene '{STARTUP_SCENE}' was not preloaded\n")
+        return
+    }
+    g_scene_ready = true
+
     let spawned = Prefab::Spawn(GAMEPLAY_PREFAB, float3(10.0f, 0.0f, 0.0f))
     if (spawned == INVALID_ENTITY_ID) {
         print("[GAME ERROR] failed to spawn prefab '{GAMEPLAY_PREFAB}'\n")
@@ -110,7 +129,9 @@ def private UpdateGameplay() {
     let q2 = quat_from_unit_vec_ang(f, roll)
     let q  = quat_mul(q2, q1)
 
-    query()$(var t : Transform, let camera : Camera) {
+    // The editor camera is editor state: in Play it sits next to the game camera and
+    // must not be moved by gameplay.
+    query() $[REQUIRE_NOT(editorCameraTag)] (var t : Transform, let camera : Camera) {
         t.position = eye
         t.rotation = q
     }

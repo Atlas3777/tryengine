@@ -214,28 +214,25 @@ daslang -dry-run -no-lint \
   расширение обязательно. Бандл — авторская группа префабов; билд
   кладёт все `game/data` в common-пак, а `LoaderRequest::AddBundle` разворачивает список в тот же
   шаг предзагрузки префабов.
-- `Game.das` — только игра: игровые часы, `GameStart` (`RegisterGameTime` +
-  `Boot::Start(@@OnGameSceneLoaded)`), `GameUpdate` (`Boot::Update` решает, отдавать ли
-  кадр gameplay) и `UpdateGameplay`. Здесь нет загрузчика, loading-сцены, hot reload и
-  фикстур под редактор.
-- `game/scripts/Boot.das` — стартовая политика и последовательность загрузки:
-  `STARTUP_SCENE`, `LOADING_SCENE`, `STARTUP_BUNDLE`, `MIN_LOADING_SECONDS`,
-  `WAIT_FOR_SPACE`. `Boot::Start` запрашивает текст loading-сцены через
-  `Assets::RequestText`; `Boot::Update` опрашивает `Assets::TextIsReady`, забирает текст
-  через `TakeText`, кладёт его в `Content::Cache` и синхронно применяет
-  `Scene::Load(LOADING_SCENE)`, затем вызывает `Loader::Invoke` с `AddBundle`, `AddScene`,
-  `SetBlocking`. Дальше `Boot::Update` гоняет `Loader::Update`, ждёт callback, держит экран
-  `MIN_LOADING_SECONDS`/Space и входит в target-сцену через `Scene::Load(STARTUP_SCENE,
-  @@OnGameSceneLoaded)`, затем `Loader::Finish`. Это опрос, а не корутина: у boot-потока
-  нет ни стоп-флага, ни счётчика поколений, а `PlayMode.EndPlay` просто делает
-  `Loader::Abort` и перестаёт вызывать `GameUpdate`. `blocking` — контракт: пока
-  `Loader::IsBlocking()`, gameplay не продолжается; флаг не блокирует поток.
-  `GameApp::Init` ничего не прогревает: только паки и `script_pak`.
-- Камера — часть сцены: `loading.scene` и `test.scene` содержат свою `Camera`, игровой код
-  её двигает, а не создаёт и не чинит отсутствующую. `Scene::Load(path, callback)` —
-  scene-specific hook: `OnGameSceneLoaded` спавнит игровые объекты и обновляет
-  world-трансформы. `tryengine/startup` автоматически не загружается. Подробности —
-  `engine_source/daslang/LOADER.md`.
+- `Game.das` — игра и точка входа. `GameStart` собирает `LoaderRequest` из игровых
+  констант (`STARTUP_SCENE`, `STARTUP_BUNDLE`) и запускает
+  `StartTask(Loader::Load(request, @@OnLoaded))`; `GameUpdate` не знает про загрузку и
+  обновляет gameplay только после `g_scene_ready`. `OnLoaded` — callback загрузчика:
+  `Scene::Load(STARTUP_SCENE)` синхронно применяет уже разобранный документ из кеша,
+  затем `Prefab::Spawn`. Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск.
+- `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
+  которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
+  `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно
+  (`10/26` и т.п.), а `PhaseName(phase)` — имя. Callback вызывается один раз на `Ready`;
+  после его возврата загрузчик сам делает `Finish` и освобождает ссылки. При ошибке
+  callback не вызывается, фаза остаётся `Failed`, доступны `IsFailed()`/`Error()`.
+  `GameApp::Init` ничего не прогревает: только паки и `script_pak`. В редакторе Play тот
+  же путь; `PlayMode.EndPlay` делает `Loader::Abort`, а задача `Load` завершается по
+  своему поколению.
+- Камера — часть сцены: `test.scene` содержит свою `Camera`, игровой код её двигает, а не
+  создаёт и не чинит отсутствующую. `Scene::Load(path)` не принимает callback: успех —
+  это `bool`, а scene-specific setup идёт сразу после него. `tryengine/startup`
+  автоматически не загружается. Подробности — `engine_source/daslang/LOADER.md`.
 - Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 
 ## 7. Стиль кода

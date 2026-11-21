@@ -368,7 +368,7 @@ def public SpawnPrefabData(data : PrefabData?; origin : float3) : EntityId {
 def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0f)) : EntityId {
     let path = ResolvePrefabPath(name_or_path)
     if (empty(path)) {
-        print("[PREFAB ERROR] prefab '{name_or_path}' is not loaded; add it to a LoaderRequest or call Prefab::LoadPrefabFile() first\n")
+        print("[PREFAB ERROR] prefab '{name_or_path}' was not preloaded; add it to the LoaderRequest or call Prefab::LoadPrefabFile() first\n")
         return INVALID_ENTITY_ID
     }
     return SpawnPrefabData(g_prefabs[path], origin)

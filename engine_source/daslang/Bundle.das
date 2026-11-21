@@ -5,7 +5,7 @@ module Bundle shared public
 
 //! Asset bundle: a developer-authored list of prefabs stored as ConfigFormat text in
 //! `game/data`. The build puts every data file into the common pak, so a bundle is
-//! available before the first `Loader::Invoke`.
+//! available before the first `Loader::Load`.
 //!
 //! A bundle does not load anything itself. `LoaderRequest::AddBundle` resolves the path,
 //! reads the text asynchronously and expands the prefab list into the same prefab preload

@@ -220,18 +220,16 @@
   Тексты сцен — в пак своей сцены. Пак не хранит ни списка путей, ни стартовой сцены:
   layout — это `id -> {offset, size}`, а `id` content-файла равен `PathId(путь)`, поэтому
   игра находит файл по хешу того же авторского пути. `PakManager` монтирует paks до запуска
-  скриптов, поэтому `Loader::Update` читает сцены, бандлы и префабы через тот же
+  скриптов, поэтому задача `Loader::Load` читает сцены, бандлы и префабы через тот же
   `tryengine/Assets`, что и редактор; игра не читает loose-файлы и не перечисляет контент.
 - `game_client` не прогревает контент: `GameApp::Init` только монтирует паки и грузит
-  `script_pak`, а `GameStart` передаёт загрузку в `game/scripts/Boot.das`. `Boot::Start`
-  запрашивает текст loading-сцены через `Assets::RequestText`, кладёт его в
-  `Content::Cache`, синхронно применяет `Scene::Load` и вызывает
-  `Loader::Invoke(request, @@OnContentReady)`. `Boot::Update` (из `GameUpdate`) опрашивает
-  текст, гоняет `Loader::Update`, ждёт готовности, держит экран и входит в target-сцену
-  через `Scene::Load`, после чего делает `Loader::Finish`. В редакторе Play тот же путь:
-  loose-файл читается тем же API. `PlayMode.BeginPlay` до `GameStart` снимает снимок
-  (DECS-heap, `SceneState`, выделение), а `EndPlay` не просит игру остановиться: он делает
-  `Loader::Abort` и возвращает снимок, включая несохранённые правки.
+  `script_pak`, а `GameStart` собирает `LoaderRequest` и запускает
+  `StartTask(Loader::Load(request, @@OnLoaded))`. Задача читает сцены, бандлы и префабы
+  через `tryengine/Assets`; когда всё готово, `OnLoaded` синхронно применяет сцену из
+  `Content`-кеша и спавнит префабы. В редакторе Play тот же путь: loose-файл читается тем
+  же API. `PlayMode.BeginPlay` до `GameStart` снимает снимок (DECS-heap, `SceneState`,
+  выделение), а `EndPlay` делает `Loader::Abort` и возвращает снимок, включая
+  несохранённые правки.
 
 ## Transform и editor camera
 

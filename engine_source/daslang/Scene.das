@@ -187,19 +187,15 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
     }
 }
 
-//! Synchronous scene apply from the parsed-document cache. The caller must have read or
-//! preloaded the text first: `Scene::LoadAsync`, or a `LoaderRequest` with `AddScene`.
+//! Synchronous scene apply from the parsed-document cache. It never reads the disk and
+//! never waits: the caller must have preloaded the text first (`Loader::Load` with
+//! `AddScene`, or `Scene::LoadAsync`). Returns false and prints what was missing when the
+//! scene was not preloaded.
 def public Load(path : string) : bool {
-    return Load(path, @@SceneNoop)
-}
-
-//! Applies the scene and then calls `on_loaded`. The callback is the scene-specific hook:
-//! this is where gameplay setup for that scene belongs, instead of a global load event.
-def public Load(path : string; on_loaded : SceneCallback) : bool {
     let resolved = ScenePath(path)
     let document = Content::Get(ContentKind.Scene, resolved)
     if (document == null) {
-        print("[SCENE ERROR] Scene '{resolved}' is not loaded; call Scene::LoadAsync or add it to a LoaderRequest first.\n")
+        print("[SCENE ERROR] Scene '{resolved}' was not preloaded; add it to the LoaderRequest before Scene::Load.\n")
         return false
     }
 
@@ -208,7 +204,6 @@ def public Load(path : string; on_loaded : SceneCallback) : bool {
     }
 
     NotifySceneLoaded(scene_context.scene_name, resolved, false)
-    invoke(on_loaded)
     return true
 }
 

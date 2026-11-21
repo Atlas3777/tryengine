@@ -5,16 +5,18 @@ module Loader shared public
 
 //! Asynchronous content loader.
 //!
-//! The caller builds a `LoaderRequest` (bundles, scenes, prefabs) and calls `Invoke` with
-//! a completion callback. The loader reads document texts through `tryengine/Content`,
-//! expands bundles, compiles prefabs, collects mesh/material dependencies and waits for
-//! the resources. It never applies a scene and never switches what the player sees:
-//! scene entry is `Scene::Load` and belongs to the caller.
+//! The caller builds a `LoaderRequest` (bundles, scenes, prefabs), starts
+//! `Loader::Load(request, @@OnLoaded)` as a task and reads `GetProgress(phase)` while it
+//! runs. The loader reads document texts through `tryengine/Content`, expands bundles,
+//! compiles prefabs, collects mesh/material dependencies and waits for the resources.
+//! It never applies a scene and never switches what the player sees: scene entry is
+//! `Scene::Load` and belongs to the callback.
 //!
-//! `blocking` is a caller contract: while `IsBlocking()` is true, gameplay should not
-//! advance. The loader itself always runs through `Update`, so a loading screen stays
-//! interactive and can read `Progress(phase)` / `PhaseName(phase)`.
+//! `Load` owns the request lifetime: it invokes the callback once on `Ready` and then
+//! releases its references. On failure the phase stays `Failed`, `Error()` is available
+//! and the callback is not called.
 
+require daslib/async_boost
 require strings
 require tryengine/Assets
 require tryengine/Bundle
@@ -23,7 +25,7 @@ require tryengine/Prefab
 require tryengine/Profiling
 require tryResources
 
-enum public LoaderPhase {
+enum public LoadPhase {
     Idle
     Bundles
     Scenes
@@ -37,11 +39,10 @@ enum public LoaderPhase {
 //! `Error`; the callback is not called for a failed request.
 typedef public LoaderCallback = function<() : void>
 
-// Builder. Array fields are filled in place; the request is consumed by `Invoke`.
+// Builder. Array fields are filled in place; the request is consumed by `Loader::Load`.
 // All paths are relative to the game directory: scenes and prefabs use `content/...`,
 // bundles use `data/...`. Extensions are explicit; `game/` is implied.
 struct public LoaderRequest {
-    blocking : bool = true
     prefabs : array<string>
     bundles : array<string>
     scenes : array<string>
@@ -56,10 +57,6 @@ struct public LoaderRequest {
 
     def static AddScene(var self : LoaderRequest; path : string) {
         self.scenes |> push(path)
-    }
-
-    def static SetBlocking(var self : LoaderRequest; blocking : bool) {
-        self.blocking = blocking
     }
 }
 
@@ -85,8 +82,10 @@ struct private LoaderAsset {
 }
 
 var private g_active = false
-var private g_phase = LoaderPhase.Idle
-var private g_blocking = true
+var private g_phase = LoadPhase.Idle
+// Incremented whenever a request starts or is released. A running `Load` task carries
+// its own value, so an aborted request cannot advance the next one.
+var private g_generation : uint64 = 0ul
 var private g_documents : array<LoaderDocument>
 var private g_assets : array<LoaderAsset>
 var private g_error = ""
@@ -107,57 +106,19 @@ def private IsDataPath(path : string) : bool {
     return starts_with(path, "data/")
 }
 
-// Phase layout of the overall progress bar. Phases with no documents are skipped, so a
-// request with only prefabs jumps straight to the prefab span.
-def private PhaseBase(phase : LoaderPhase) : float {
-    if (phase == LoaderPhase.Bundles) {
-        return 0.0f
-    }
-    if (phase == LoaderPhase.Scenes) {
-        return 0.10f
-    }
-    if (phase == LoaderPhase.Prefabs) {
-        return 0.30f
-    }
-    if (phase == LoaderPhase.Assets) {
-        return 0.60f
-    }
-    return 1.0f
-}
-
-def private PhaseSpan(phase : LoaderPhase) : float {
-    if (phase == LoaderPhase.Bundles) {
-        return 0.10f
-    }
-    if (phase == LoaderPhase.Scenes) {
-        return 0.20f
-    }
-    if (phase == LoaderPhase.Prefabs) {
-        return 0.30f
-    }
-    if (phase == LoaderPhase.Assets) {
-        return 0.40f
-    }
-    return 0.0f
-}
-
-//! Items done and total for one phase. `Loader::Progress(LoaderPhase.Prefabs)` returns
+//! Items done and total for one phase. `Loader::GetProgress(LoadPhase.Prefabs)` returns
 //! e.g. `float2(10, 23)` while 23 prefabs were requested and 10 are ready. A phase that
-//! has not started yet returns `float2(0, total)` as soon as its items are known; an
-//! unknown phase returns `float2(0, 0)`.
-def public Progress(phase : LoaderPhase) : float2 {
-    if (phase == LoaderPhase.Ready) {
-        return float2(1.0f, 1.0f)
-    }
-
+//! has not started yet returns `float2(0, total)` as soon as its items are known; a phase
+//! with no items, and `Idle`/`Failed`, returns `float2(0, 0)`.
+def public GetProgress(phase : LoadPhase) : float2 {
     var done = 0
     var total = 0
 
-    if (phase == LoaderPhase.Bundles || phase == LoaderPhase.Scenes || phase == LoaderPhase.Prefabs) {
+    if (phase == LoadPhase.Bundles || phase == LoadPhase.Scenes || phase == LoadPhase.Prefabs) {
         var kind = ContentKind.Bundle
-        if (phase == LoaderPhase.Scenes) {
+        if (phase == LoadPhase.Scenes) {
             kind = ContentKind.Scene
-        } elif (phase == LoaderPhase.Prefabs) {
+        } elif (phase == LoadPhase.Prefabs) {
             kind = ContentKind.Prefab
         }
         for (document in g_documents) {
@@ -169,7 +130,7 @@ def public Progress(phase : LoaderPhase) : float2 {
                 done++
             }
         }
-    } elif (phase == LoaderPhase.Assets) {
+    } elif (phase == LoadPhase.Assets) {
         total = length(g_assets)
         for (asset in g_assets) {
             if (asset.done) {
@@ -181,38 +142,23 @@ def public Progress(phase : LoaderPhase) : float2 {
     return float2(float(done), float(total))
 }
 
-//! Overall progress 0..1. A phase with no items counts as complete.
-def public Progress() : float {
-    if (!g_active || g_phase == LoaderPhase.Idle || g_phase == LoaderPhase.Failed) {
-        return 0.0f
-    }
-    if (g_phase == LoaderPhase.Ready) {
-        return 1.0f
-    }
-
-    let phase_progress = Progress(g_phase)
-    let total = phase_progress.y
-    let fraction = total <= 0.0f ? 1.0f : phase_progress.x / total
-    return PhaseBase(g_phase) + PhaseSpan(g_phase) * fraction
-}
-
-def public PhaseName(phase : LoaderPhase) : string {
-    if (phase == LoaderPhase.Bundles) {
+def public PhaseName(phase : LoadPhase) : string {
+    if (phase == LoadPhase.Bundles) {
         return "Bundles"
     }
-    if (phase == LoaderPhase.Scenes) {
+    if (phase == LoadPhase.Scenes) {
         return "Scenes"
     }
-    if (phase == LoaderPhase.Prefabs) {
+    if (phase == LoadPhase.Prefabs) {
         return "Prefabs"
     }
-    if (phase == LoaderPhase.Assets) {
+    if (phase == LoadPhase.Assets) {
         return "Assets"
     }
-    if (phase == LoaderPhase.Ready) {
+    if (phase == LoadPhase.Ready) {
         return "Ready"
     }
-    if (phase == LoaderPhase.Failed) {
+    if (phase == LoadPhase.Failed) {
         return "Failed"
     }
     return "Idle"
@@ -267,8 +213,8 @@ def private ReleaseAll() {
 
 def private ResetState() {
     g_active = false
-    g_phase = LoaderPhase.Idle
-    g_blocking = true
+    g_phase = LoadPhase.Idle
+    g_generation++
     g_error = ""
     g_on_loaded = @@LoaderNoop
     g_notified = false
@@ -320,23 +266,23 @@ def private HasKind(kind : ContentKind) : bool {
     return false
 }
 
-def private NextPhase(phase : LoaderPhase) : LoaderPhase {
-    if (phase == LoaderPhase.Idle) {
+def private NextPhase(phase : LoadPhase) : LoadPhase {
+    if (phase == LoadPhase.Idle) {
         if (HasKind(ContentKind.Bundle)) {
-            return LoaderPhase.Bundles
+            return LoadPhase.Bundles
         }
     }
-    if (phase == LoaderPhase.Idle || phase == LoaderPhase.Bundles) {
+    if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles) {
         if (HasKind(ContentKind.Scene)) {
-            return LoaderPhase.Scenes
+            return LoadPhase.Scenes
         }
     }
-    if (phase == LoaderPhase.Idle || phase == LoaderPhase.Bundles || phase == LoaderPhase.Scenes) {
+    if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles || phase == LoadPhase.Scenes) {
         if (HasKind(ContentKind.Prefab)) {
-            return LoaderPhase.Prefabs
+            return LoadPhase.Prefabs
         }
     }
-    return LoaderPhase.Assets
+    return LoadPhase.Assets
 }
 
 def private AllDocumentsDone(kind : ContentKind) : bool {
@@ -424,22 +370,16 @@ def private NotifyReady() {
     invoke(g_on_loaded)
 }
 
-//! Starts a request. The loader must be idle; call `Abort` or `Finish` first. All document
-//! texts are requested immediately; bundles are expanded when their text arrives. The
-//! callback runs once, after the phase becomes `Ready`.
-def public Invoke(var request : LoaderRequest) : bool {
-    return Invoke(request, @@LoaderNoop)
-}
-
-def public Invoke(var request : LoaderRequest; on_loaded : LoaderCallback) : bool {
+// Starts a request and records its callback. The loader must be idle. All document texts
+// are requested immediately; bundles are expanded when their text arrives.
+def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : bool {
     if (g_active) {
-        print("[LOADER ERROR] a request is already active; call Abort or Finish first\n")
+        print("[LOADER ERROR] a request is already active; call Abort first\n")
         return false
     }
 
     ResetState()
     g_active = true
-    g_blocking = request.blocking
     g_on_loaded = on_loaded
 
     for (bundle_path in request.bundles) {
@@ -475,21 +415,60 @@ def public Invoke(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
         }
     }
 
-    g_phase = NextPhase(LoaderPhase.Idle)
+    g_phase = NextPhase(LoadPhase.Idle)
     return true
 }
 
-//! One frame of loading. Text reads, bundle expansion, dependency collection and asset
-//! polling all happen here. Does nothing after Ready/Failed.
+//! Starts one request and returns its task. Use it with `StartTask`:
+//!
+//!     var request <- LoaderRequest()
+//!     request.AddScene("content/main.scene")
+//!     StartTask(Loader::Load(request, @@OnLoaded))
+//!
+//! `on_loaded` runs once when every requested document and asset is ready; `Scene::Load`
+//! and `Prefab::Spawn` are synchronous cache hits there. After the callback returns, the
+//! loader releases its references. On failure the callback is not called and the phase
+//! stays `Failed` for `IsFailed()`/`Error()`.
+def public Load(var request : LoaderRequest; on_loaded : LoaderCallback) : auto {
+    if (!Begin(request, on_loaded)) {
+        return <- NoopTask()
+    }
+    let generation = g_generation
+    return <- LoadTask(generation)
+}
+
+[async]
+def private NoopTask() : void {
+}
+
+// The task carries the generation of the request it started. `Abort` and `Finish` bump
+// the loader generation, so a task that was queued before a Stop or a new request exits
+// without touching the next session.
+[async]
+def private LoadTask(generation : uint64) : void {
+    while (g_generation == generation && g_active && g_phase != LoadPhase.Ready && g_phase != LoadPhase.Failed) {
+        Advance()
+        if (g_phase == LoadPhase.Ready || g_phase == LoadPhase.Failed) {
+            break
+        }
+        await_next_frame()
+    }
+    if (g_generation == generation && g_phase == LoadPhase.Ready) {
+        Finish()
+    }
+}
+
+// One frame of loading. Text reads, bundle expansion, dependency collection and asset
+// polling all happen here. Does nothing after Ready/Failed.
 [profile]
-def public Update() {
-    if (!g_active || g_phase == LoaderPhase.Ready || g_phase == LoaderPhase.Failed) {
+def private Advance() {
+    if (!g_active || g_phase == LoadPhase.Ready || g_phase == LoadPhase.Failed) {
         return
     }
 
-    if (g_phase == LoaderPhase.Bundles) {
+    if (g_phase == LoadPhase.Bundles) {
         ProcessDocuments(ContentKind.Bundle)
-        if (g_phase == LoaderPhase.Failed) {
+        if (g_phase == LoadPhase.Failed) {
             return
         }
         if (AllDocumentsDone(ContentKind.Bundle)) {
@@ -497,9 +476,9 @@ def public Update() {
         }
     }
 
-    if (g_phase == LoaderPhase.Scenes) {
+    if (g_phase == LoadPhase.Scenes) {
         ProcessDocuments(ContentKind.Scene)
-        if (g_phase == LoaderPhase.Failed) {
+        if (g_phase == LoadPhase.Failed) {
             return
         }
         if (AllDocumentsDone(ContentKind.Scene)) {
@@ -507,9 +486,9 @@ def public Update() {
         }
     }
 
-    if (g_phase == LoaderPhase.Prefabs) {
+    if (g_phase == LoadPhase.Prefabs) {
         ProcessDocuments(ContentKind.Prefab)
-        if (g_phase == LoaderPhase.Failed) {
+        if (g_phase == LoadPhase.Failed) {
             return
         }
         if (AllDocumentsDone(ContentKind.Prefab)) {
@@ -517,7 +496,7 @@ def public Update() {
         }
     }
 
-    if (g_phase == LoaderPhase.Assets) {
+    if (g_phase == LoadPhase.Assets) {
         RequestAssets()
 
         var complete = true
@@ -550,19 +529,19 @@ def public Update() {
         }
 
         if (complete) {
-            g_phase = LoaderPhase.Ready
+            g_phase = LoadPhase.Ready
         }
     }
 
-    if (g_phase == LoaderPhase.Ready) {
+    if (g_phase == LoadPhase.Ready) {
         NotifyReady()
     }
 }
 
-//! Releases the loader's references. Preloaded documents stay in `Content`'s cache and
-//! compiled prefabs stay in `Prefab`'s cache, so a later `Scene::Load` / `Prefab::Spawn`
-//! still works. Call it after the target scene was applied.
-def public Finish() {
+// Releases the loader's references after the callback. Preloaded documents stay in
+// `Content`'s cache and compiled prefabs stay in `Prefab`'s cache, so a later
+// `Scene::Load` / `Prefab::Spawn` still works.
+def private Finish() {
     if (!g_active) {
         return
     }
@@ -570,22 +549,22 @@ def public Finish() {
     ResetState()
 }
 
-//! Cancels the request. Content and prefab caches are not touched.
+//! Cancels the request. Content and prefab caches are not touched. Also invalidates a
+//! task that was started but has not run yet.
 def public Abort() {
-    if (!g_active) {
-        return
+    if (g_active) {
+        ReleaseAll()
     }
-    ReleaseAll()
     ResetState()
 }
 
-//! Marks the request failed and releases its references. The phase stays `Failed` so the
-//! caller can read `Error`; `Finish`/`Abort` clear it.
-def public Fail(reason : string) {
+// Marks the request failed and releases its references. The phase stays `Failed` so the
+// caller can read `Error`; `Finish`/`Abort` clear it.
+def private Fail(reason : string) {
     if (!g_active) {
         return
     }
-    g_phase = LoaderPhase.Failed
+    g_phase = LoadPhase.Failed
     g_error = reason
     ReleaseAll()
     print("[LOADER ERROR] {reason}\n")
@@ -596,18 +575,14 @@ def public IsActive() : bool {
 }
 
 def public IsReady() : bool {
-    return g_active && g_phase == LoaderPhase.Ready
+    return g_active && g_phase == LoadPhase.Ready
 }
 
 def public IsFailed() : bool {
-    return g_active && g_phase == LoaderPhase.Failed
+    return g_active && g_phase == LoadPhase.Failed
 }
 
-def public IsBlocking() : bool {
-    return g_blocking
-}
-
-def public Phase() : LoaderPhase {
+def public Phase() : LoadPhase {
     return g_phase
 }
 

@@ -45,9 +45,8 @@ def public EndPlay() {
     is_paused = false
     TimeSetPaused(game_clock, false)
 
-    // The game may be stopped in the middle of its loading step. Aborting the loader is
-    // the editor's job: the game's boot flow is polled from GameUpdate, so it stops
-    // touching the scene as soon as the editor stops calling it.
+    // The game may be stopped while `Loader::Load` is still running. Abort releases its
+    // references; the task carries its own generation and exits on the next frame.
     Loader::Abort()
 
     // Release the play scene's references, install the editor scene again, and then

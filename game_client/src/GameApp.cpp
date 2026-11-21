@@ -65,7 +65,7 @@ void GameApp::Init() {
     rm.RegisterType<TextAsset>(TextAssetLoader{});
 
     // Паки монтируются до старта скриптов: тексты читаются через тот же API, что и в
-    // редакторе. GameStart передаёт загрузку в Boot, а Boot::Update идёт из GameUpdate.
+    // редакторе. GameStart собирает LoaderRequest и запускает задачу Loader::Load.
     auto paks_task = RunPollable(ThreadPool(), pak_manager.LoadAllAsync());
     while (!paks_task.IsReady()) {
         fm.Pull();
@@ -88,8 +88,8 @@ void GameApp::Init() {
     engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
     engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
 
-    // Прогрева контента здесь нет: GameStart только запускает Boot, а Loader::Update
-    // читает тексты и запрашивает меши/материалы из Boot::Update.
+    // Прогрева контента здесь нет: GameStart запускает задачу Loader::Load, а она
+    // читает тексты и запрашивает меши/материалы; GameUpdate не знает про загрузку.
     engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
 
     // У игры нет ImGui: смотреть на её кадры можно только по файлам в logs/. Каптион пишет

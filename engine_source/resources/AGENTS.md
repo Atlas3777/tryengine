@@ -40,9 +40,10 @@
   (`ResolveAssetPath`, `RequestLoadAssetText`, `AssetTextIsReady/IsFailed`,
   `GetAssetText`). `ResourceManager` сам выбирает `LooseFileLocation` или
   `PakChunkLocation`, поэтому Content/Scene/Prefab/Assets.das не знают, откуда читается
-  файл. Синхронного чтения текста нет: `Assets::ReadText` — корутина, и текст всегда
-  приходит через `RequestLoadAssetText` в `Loader::Update` или `Scene::LoadAsync`.
-  `Scene::Load` применяет уже разобранный `Content::Document` и диск не читает.
+  файл. Синхронного чтения текста нет: `Assets::RequestText`/`TextIsReady`/`TakeText`
+  отдают его опросом (так работает задача `Loader::Load`), а `Assets::ReadText` —
+  корутина для `Scene::LoadAsync`. `Scene::Load` применяет уже разобранный
+  `Content::Document` и диск не читает.
 - Сцена (`engine_source/daslang/Scene.das`) хранит авторские ссылки: компонент
   `materialRef: MaterialRef`, список `requireMaterials: string[]`. `GetSceneHeader` и
   `Content::CollectRefs` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки
