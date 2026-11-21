@@ -14,9 +14,10 @@ module Assets shared public
 //
 // This module is storage only: it resolves paths, exposes the text asynchronously and
 // registers loose files from editor dialogs. Parsed documents and their dependencies
-// live in `tryengine/Content`. Text can be consumed as a coroutine (`ReadText`) or as a
-// pollable request (`RequestText`/`TextIsReady`/`TakeText`), which is what the loader and
-// the game boot use.
+// live in `tryengine/Content`. Text is never cached: a request owns its text until
+// `TakeText` or `CancelText`, because the caller parses it once and the parsed form is
+// what stays. The pollable form (`RequestText`/`TextIsReady`/`TakeText`) is what the
+// loader and the game boot use.
 
 require daslib/async_boost
 require strings
@@ -76,15 +77,6 @@ def public IdOf(path : string) : uint64 {
     return ResolveAssetPath(AssetPath(path))
 }
 
-// Drops a cached text so the next read comes from the current source. Reads in this
-// module are always fresh; Save paths call this explicitly after writing.
-def public Invalidate(path : string) {
-    let id = ResolveAssetPath(AssetPath(path))
-    if (id != 0ul) {
-        InvalidateSourceText(id)
-    }
-}
-
 // Editor-only: makes a loose file known to the registry when it came from a file dialog
 // (an absolute path, or a file created after the last tree rebuild). The game never
 // calls this: its paths are already in the pak.
@@ -92,65 +84,57 @@ def public RegisterPath(path : string) : uint64 {
     return RegisterAssetPath(AssetPath(path))
 }
 
-//! Starts an asynchronous text read and returns its asset id. `0` means the path is
-//! unknown. The caller owns one reference and must finish with `TakeText` or
-//! `CancelText`; this is the pollable form used by the loader and the game boot.
+//! Starts an asynchronous text read and returns its request handle. `0` means the path
+//! is unknown. The caller owns the text and must finish with `TakeText` or `CancelText`;
+//! the text is freed with the request, so nothing survives the parse.
 def public RequestText(path : string) : uint64 {
     let id = ResolveAssetPath(AssetPath(path))
     if (id == 0ul) {
         return 0ul
     }
 
-    // Content is authored: a file may have been rewritten since the last read, and the
-    // pak chunk is cheap enough to re-read. Never serve a stale document to a loader.
-    InvalidateSourceText(id)
-    RequestLoadSourceText(id)
-    return id
+    return RequestLoadText(id)
 }
 
-def public TextIsReady(id : uint64) : bool {
-    return id != 0ul && SourceTextIsReady(id)
+def public TextIsReady(handle : uint64) : bool {
+    return handle != 0ul && TextRequestIsReady(handle)
 }
 
-def public TextIsFailed(id : uint64) : bool {
-    return id != 0ul && SourceTextIsFailed(id)
+def public TextIsFailed(handle : uint64) : bool {
+    return handle != 0ul && TextRequestIsFailed(handle)
 }
 
-//! Copies the text and releases the reference taken by `RequestText`.
-def public TakeText(id : uint64) : string {
-    if (id == 0ul) {
+//! Copies the text and releases the request.
+def public TakeText(handle : uint64) : string {
+    if (handle == 0ul) {
         return ""
     }
-    var text = GetSourceText(id)
-    ReleaseSourceText(id)
-    return <- text
+    return TakeAssetText(handle)
 }
 
-//! Releases a read that will not be consumed.
-def public CancelText(id : uint64) {
-    if (id == 0ul) {
-        return
+//! Releases a request whose text will not be consumed.
+def public CancelText(handle : uint64) {
+    if (handle != 0ul) {
+        CancelTextRequest(handle)
     }
-    ReleaseSourceText(id)
-    InvalidateSourceText(id)
 }
 
 // Full text of one asset. Returns "" when the path is unknown or the chunk failed:
 // callers treat that as a missing/invalid file, never as an empty document.
 [async]
 def public ReadText(path : string) : string {
-    let id = RequestText(path)
-    if (id == 0ul) {
+    let handle = RequestText(path)
+    if (handle == 0ul) {
         yield ""
     }
 
-    while (!TextIsReady(id)) {
-        if (TextIsFailed(id)) {
-            CancelText(id)
+    while (!TextIsReady(handle)) {
+        if (TextIsFailed(handle)) {
+            CancelText(handle)
             yield ""
         }
         await_next_frame()
     }
 
-    yield TakeText(id)
+    yield TakeText(handle)
 }

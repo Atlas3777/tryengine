@@ -12,11 +12,12 @@
 | --- | --- | --- |
 | `game/scripts/Game.das` | `LoaderRequest` (что грузить), callback, `Scene::Load`/`Prefab::Spawn`, gameplay | не читает текст и не парсит контент |
 | `tryengine/Loader.das` | задача `Load`, очередь документов, бандлы, прогресс, callback, освобождение | не применяет сцены, не спавнит префабы |
-| `tryengine/Content.das` | путь по виду документа, stem, `Find`, разбор ConfigFormat, общие `Dependencies`, кеш документов | не грузит ресурсы и не спавнит |
-| `tryengine/Assets.das` | loose-файл или чанк пака, `RequestText`/`TextIsReady`/`TakeText` и корутина `ReadText` | не знает форматов документов |
+| `tryengine/Content.das` | путь по виду документа, stem, `Find`, разбор ConfigFormat, общие `Dependencies` | не кеширует и не грузит ресурсы |
+| `tryengine/AssetCache.das` | ledger состояний, разовые чтения текста, компиляция значения, `AssetKindOps` для видов | не знает форматов документов |
+| `tryengine/Assets.das` | loose-файл или чанк пака, разовый `RequestText`/`TextIsReady`/`TakeText` и корутина `ReadText` | не знает форматов документов, не кеширует текст |
 | `tryengine/Bundle.das` | формат `.bundle` и список префабов | не загружает префабы |
 | `tryengine/Scene.das` | синхронное применение сцены, сохранение | не читает текст в `Load` |
-| `tryengine/Prefab.das` | проверка формата, компилированный кеш, `Spawn` | не делает I/O в `Spawn` |
+| `tryengine/Prefab.das` | проверка формата, компиляция, `Spawn` | не делает I/O в `Spawn` |
 
 `GameApp::Init` только монтирует паки и `script_pak`; контент не прогревается.
 
@@ -34,6 +35,10 @@ StartTask(Loader::Load(request, @@OnLoaded))
 - `AddBundle` — путь к `.bundle` относительно `game/`: `data/bundles/startup.bundle`.
 - `AddScene` — путь к сцене относительно `game/`: `content/main.scene`.
 - `AddPrefab` — путь к префабу: `content/props/sword.prefab`.
+- `AddAsset(kind, path)` — любой вид, зарегистрированный в `AssetCache`
+  (`request.AddAsset("material", "data/materials/standard.mat")`). Для нового вида не
+  нужны ни поле в запросе, ни правка загрузчика: он публикует `AssetKindOps` из `[init]`,
+  а `kind` в запросе — та же строка.
 - Пути всегда начинаются с `content/` или `data/`; `game/` подразумевается. Расширение
   указывается явно, загрузчик его не дописывает.
 - `request` потребляется задачей: после `Load` его не читают.
@@ -114,13 +119,24 @@ prefabs: string[] = [
 
 ## Где грузятся префабы
 
-1. `AddPrefab`/`AddBundle` ставят `.prefab` в очередь.
-2. Задача `Load` читает текст, `Content::Cache` разбирает документ и собирает
-   `meshGuid`/`materialRef`, `Prefab::CachePrefabDocument` проверяет формат и кладёт
-   `PrefabTemplate` в кеш.
-3. Ссылки попадают в фазу `Resources`, загрузчик их запрашивает и опрашивает.
+1. `AddPrefab`/`AddBundle` ставят `.prefab` в очередь. `AssetCache::Request` проверяет
+   ledger: если запись уже есть (Loading/Ready/Failed), текст не читается и не парсится —
+   задача только прогоняет шаг вида.
+2. `AssetCache::Advance` забирает текст (`Assets::TakeText`), `Content::Parse` разбирает
+   документ и собирает `meshGuid`/`materialRef`, compile-функция вида (`Prefab::CompilePrefab`)
+   проверяет формат и разрешает поля узлов в готовые компоненты DECS: `PrefabTemplate`
+   хранит `ComponentValue` на узел, а CF-дерево выбрасывается. Текст освобождается вместе с
+   запросом: в памяти остаётся только готовое значение.
+3. Ссылки (`AssetCache::Dependencies`) попадают в фазу `Resources`, загрузчик их
+   запрашивает и опрашивает.
 4. `Prefab::Spawn` — только cache-hit. Если префаба нет в запросе и он не загружен
    `Prefab::LoadPrefabFile`, `Spawn` вернёт `INVALID_ENTITY_ID`.
+
+Повторный `Loader::Load` (Play, рестарт, повторный вход в сцену) для неизменённого
+контента не делает ни одного чтения: `AssetCache::Request` видит готовые записи, меши и
+материалы уже готовы в `ResourceManager`, и запрос завершается на первом же шаге задачи.
+Свежесть контента обеспечивают редакторские Save-пути: они заново кладут значение в
+`AssetCache` (`Refresh` или `Store`).
 
 ## Редактор
 
@@ -130,12 +146,14 @@ selection, затем `GameStart` запускает `Loader::Load`. `EditorUpda
 через `NotifySceneLoaded`. Stop не вызывает игру: `EndPlay` делает `Loader::Abort` и
 восстанавливает снимок, а задача `Load` завершается по своему поколению.
 
-Панель `Prefab Inspector` не прогревает все префабы: она следует за выделением в Asset
-Browser, грузит выбранный `.prefab` через `Prefab::LoadPrefabFile` и показывает его дерево.
+Никто не прогревает все префабы: `Prefab::LoadPrefabFile` грузит один выбранный `.prefab`
+по требованию. Панель `Prefab Inspector` выключена (её дерево строилось на CF-документе,
+которого в компилированном префабе больше нет) и будет переделана под готовые компоненты.
 
 ## Совместимость
 
 Формат намеренно без legacy-веток: только `materialRef: MaterialRef`, только строковые
 `requireMaterials`. `materialGuid`, `materialRef: string` и старые числовые массивы не
 поддерживаются. Синхронного чтения текста из пака нет: текст приходит через
-`Assets::RequestText`/`ReadText`, а `Scene::Load` применяет уже разобранный документ.
+`Assets::RequestText`/`ReadText` (handle запроса, не id ассета), а `Scene::Load`
+применяет уже разобранный документ.

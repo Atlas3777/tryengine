@@ -13,6 +13,7 @@ module Bundle shared public
 //! `tryengine/Content`; this module owns only the `.bundle` document shape.
 
 require daslib/linq
+require tryengine/AssetCache
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
@@ -28,7 +29,7 @@ struct public BundleData {
 //! Parses a parsed bundle document. `document.path` is kept for diagnostics and for the
 //! cache key. Every prefab entry is an authored `content/...` path with an explicit
 //! extension; the loader resolves it through `Content::Find` when it queues the prefab.
-def public Parse(document : Content::Document?) : BundleData? {
+def public Parse(var document : Content::Document?) : BundleData? {
     if (document == null || document.root == null || !(document.root.value is _object)) {
         print("[BUNDLE ERROR] document root is not an object\n")
         return null
@@ -67,4 +68,59 @@ def public Parse(document : Content::Document?) : BundleData? {
     }
 
     return new BundleData(path = data.path, name = data.name, prefabs <- data.prefabs)
+}
+
+// ---------------------------------------------------------------------------
+// AssetCache kind
+// ---------------------------------------------------------------------------
+// A bundle is a plan fragment, not a runtime value: its ready form is the prefab list that
+// the loader expands. It is still cached the same way as every other kind, so a hit costs
+// no read and no parse.
+
+var private g_values : table<string; BundleData?>
+
+def private RequestAsset(path : string) : bool {
+    return AssetCache::Request("bundle", path)
+}
+
+def private AdvanceAsset(path : string) : AssetCache::AssetState {
+    return AssetCache::Advance(g_values, path, Content::ItemsField(DocumentKind.Bundle),
+                               @@Bundle::Parse)
+}
+
+def private AssetDeps(path : string) : Content::Dependencies {
+    return <- AssetCache::Dependencies(path)
+}
+
+//! The loader expands a ready bundle into prefab jobs through this.
+def private ExpandAsset(path : string) : array<string> {
+    var out : array<string>
+    if (AssetCache::State(path) != AssetCache::AssetState.Ready) {
+        return <- out
+    }
+    let data = g_values[path]
+    for (prefab in data.prefabs) {
+        out |> push(prefab)
+    }
+    return <- out
+}
+
+def private CancelAsset(path : string) {
+    AssetCache::Cancel(g_values, path)
+}
+
+def private ClearAssets() {
+    AssetCache::Clear(g_values, "bundle")
+}
+
+[init]
+def private RegisterAssetKind() {
+    AssetCache::RegisterKind("bundle", AssetCache::AssetKindOps(
+        request = @@RequestAsset,
+        advance = @@AdvanceAsset,
+        deps = @@AssetDeps,
+        expands = @@ExpandAsset,
+        cancel = @@CancelAsset,
+        clear = @@ClearAssets
+    ))
 }

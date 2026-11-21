@@ -7,8 +7,9 @@ module Content shared public
 //!
 //! `tryengine/Assets` answers where the bytes are (a loose file in the editor, a pak chunk
 //! in the game). `Content` answers what a document is: which root its authored path belongs
-//! to, its file stem, whether it is registered, how its ConfigFormat text is parsed, which
-//! meshes and materials it depends on, and which documents were already parsed.
+//! to, its file stem, whether it is registered, how its ConfigFormat text is parsed, and
+//! which meshes and materials it depends on. It does not keep parsed documents:
+//! `tryengine/AssetCache` owns the ready (or almost ready) values, one typed record per path.
 //!
 //! Scene, Prefab and Bundle keep their own format rules and runtime actions. Everything
 //! they share lives here, so a path is resolved, a document is parsed and a dependency set
@@ -163,8 +164,8 @@ def private CollectObjectDependencies(var deps : Dependencies; obj : table<strin
 }
 
 // Authored array of items differs by kind: a scene lists entities, a prefab document
-// lists nodes, a bundle has no item array.
-def private ItemsField(kind : DocumentKind) : string {
+// lists nodes, a bundle has no item array. A plain config asset passes "".
+def public ItemsField(kind : DocumentKind) : string {
     if (kind == DocumentKind.Scene) {
         return "entities"
     }
@@ -177,7 +178,7 @@ def private ItemsField(kind : DocumentKind) : string {
 //! Parsed dependency set of one document. Header arrays are authoritative, but a scene
 //! saved by an older editor may list deps only on its entities, so both are read.
 //! Prefabs have no header arrays and contribute their node deps only.
-def public CollectDependencies(kind : DocumentKind; root : StructField?) : Dependencies {
+def public CollectDependencies(items_field : string; root : StructField?) : Dependencies {
     var deps : Dependencies
     if (root == null || !(root.value is _object)) {
         return <- deps
@@ -192,7 +193,6 @@ def public CollectDependencies(kind : DocumentKind; root : StructField?) : Depen
         AddMaterialDependency(deps, id)
     }
 
-    let items_field = ItemsField(kind)
     if (!empty(items_field)) {
         let items_cf = root_obj?[items_field] ?? null
         if (items_cf != null && items_cf.value is _array) {
@@ -213,21 +213,19 @@ def public CollectDependencies(kind : DocumentKind; root : StructField?) : Depen
 //! One parsed document. `root` owns the ConfigFormat tree the typed modules read;
 //! `deps` is the dependency set collected while parsing. The source text is not kept:
 //! the tree is all the scene/prefab/bundle code needs after parsing.
+//!
+//! `Content` does not cache documents: `tryengine/AssetCache` does, one typed record per
+//! path. This module only knows how a document is shaped and parsed.
 struct public Document {
-    kind : DocumentKind
     path : string
     root : StructField?
     deps : Dependencies
 }
 
-// Canonical path -> parsed document. The cache survives `Loader::Finish`: a preloaded scene
-// text can be applied later, and a compiled prefab keeps its parsed root alive.
-var private g_documents : table<string; Document?>
-
-//! Parses a document and collects its dependencies. Returns null when the text is not a
-//! ConfigFormat object; the typed module decides whether the object is a valid scene,
-//! prefab or bundle.
-def public Parse(kind : DocumentKind; path : string; text : string) : Document? {
+//! Parses a document and collects its dependencies from `items_field` (see `ItemsField`).
+//! Returns null when the text is not a ConfigFormat object; the typed module decides
+//! whether the object is a valid scene, prefab, bundle or plain asset.
+def public Parse(path : string; text : string; items_field : string) : Document? {
     var error : string
     var root = read_config(text, error)
     if (!empty(error) || root == null || !(root.value is _object)) {
@@ -236,42 +234,14 @@ def public Parse(kind : DocumentKind; path : string; text : string) : Document? 
     }
 
     return new Document(
-        kind = kind,
         path = path,
         root = root,
-        deps <- CollectDependencies(kind, root)
+        deps <- CollectDependencies(items_field, root)
     )
 }
 
-//! Parses and stores a document under its canonical path.
-def public Cache(kind : DocumentKind; path : string; text : string) : Document? {
-    let resolved = ResolvePath(kind, path)
-    if (empty(resolved)) {
-        return null
-    }
-
-    var document = Parse(kind, resolved, text)
-    if (document == null) {
-        return null
-    }
-
-    g_documents[resolved] = document
-    return document
-}
-
-//! Cached document for an authored or canonical path, or null when it was not parsed yet.
-def public Get(kind : DocumentKind; path : string) : Document? {
-    let resolved = ResolvePath(kind, path)
-    if (empty(resolved) || !key_exists(g_documents, resolved)) {
-        return null
-    }
-    return g_documents[resolved]
-}
-
-//! Drops a cached document, for example after its file was overwritten.
-def public Invalidate(kind : DocumentKind; path : string) {
-    let resolved = ResolvePath(kind, path)
-    if (!empty(resolved)) {
-        erase(g_documents, resolved)
-    }
+//! Same parse for one of the authored kinds; the kind only selects the item array whose
+//! components contribute dependencies.
+def public ParseFor(kind : DocumentKind; path : string; text : string) : Document? {
+    return Parse(path, text, ItemsField(kind))
 }

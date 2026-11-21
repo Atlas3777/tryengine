@@ -9,11 +9,13 @@ module Scene shared public
 //! the flow (`Scene::LoadAsync` for the editor, `Loader` for preloaded target scenes).
 //! `Scene::Load` is the synchronous apply step: it never reads the disk and never waits.
 
+require tryengine/AssetCache
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
 require tryengine/FileReader
 require tryengine/Serializable
+require tryengine/TransformSystem
 require tryengine/Types
 require tryResources
 
@@ -21,7 +23,6 @@ require daslib/async_boost
 require daslib/decs
 require daslib/decs_boost
 require daslib/linq
-require tryengine/Assets
 require strings
 
 struct Scene {
@@ -87,6 +88,59 @@ def private SceneNoop() {
 // always explicit and is never appended here.
 def private ScenePath(path : string) : string {
     return Content::ResolvePath(DocumentKind.Scene, path)
+}
+
+// ---------------------------------------------------------------------------
+// AssetCache kind
+// ---------------------------------------------------------------------------
+// The ready value of a scene is its parsed document; applying it stays in this module.
+
+var private g_values : table<string; Content::Document?>
+
+def private CompileSceneDocument(var document : Content::Document?) : Content::Document? {
+    return <- document
+}
+
+def private RequestAsset(path : string) : bool {
+    return AssetCache::Request("scene", path)
+}
+
+def private AdvanceAsset(path : string) : AssetCache::AssetState {
+    return AssetCache::Advance(g_values, path, Content::ItemsField(DocumentKind.Scene),
+                               @@CompileSceneDocument)
+}
+
+def private AssetDeps(path : string) : Content::Dependencies {
+    return <- AssetCache::Dependencies(path)
+}
+
+// Reading the scene's own table is a plain non-generic access; the generic cache only
+// writes values, so the returned document keeps its non-const type.
+def private CachedDocument(resolved : string) : Content::Document? {
+    if (AssetCache::State(resolved) != AssetCache::AssetState.Ready) {
+        return null
+    }
+    return g_values[resolved]
+}
+
+def private CancelAsset(path : string) {
+    AssetCache::Cancel(g_values, path)
+}
+
+def private ClearAssets() {
+    AssetCache::Clear(g_values, "scene")
+}
+
+[init]
+def private RegisterAssetKind() {
+    AssetCache::RegisterKind("scene", AssetCache::AssetKindOps(
+        request = @@RequestAsset,
+        advance = @@AdvanceAsset,
+        deps = @@AssetDeps,
+        expands = @@AssetCache::NoExpansion,
+        cancel = @@CancelAsset,
+        clear = @@ClearAssets
+    ))
 }
 
 //! The editor's first load: there is no file yet, but it is still a scene load.
@@ -163,8 +217,8 @@ def public ApplyState(var state : SceneState) {
 
 //! Reads a scene document asynchronously, parses it, applies it and then calls
 //! `on_loaded`. This is the editor's Open Scene path: the text read is the only
-//! asynchronous part; the world swap is synchronous. A game that already owns the text
-//! (the boot flow) calls `Content::Cache` and then synchronous `Scene::Load` instead.
+//! asynchronous part; the world swap is synchronous. A game that already loaded the scene
+//! through `Loader::Load` calls synchronous `Scene::Load` instead of this.
 [async]
 def public LoadAsync(path : string) : void {
     await(LoadAsync(path, @@SceneNoop))
@@ -173,11 +227,17 @@ def public LoadAsync(path : string) : void {
 [async]
 def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
     let resolved = ScenePath(path)
-    let text : string <- await(Assets::ReadText(resolved))
-    if (empty(text)) {
-        print("[SCENE ERROR] Scene '{resolved}' is not available.\n")
+    AssetCache::Refresh(g_values, "scene", resolved)
+
+    while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
+                               @@CompileSceneDocument) == AssetCache::AssetState.Loading) {
+        await_next_frame()
+    }
+
+    let document = CachedDocument(resolved)
+    if (document == null) {
+        print("[SCENE ERROR] Scene '{resolved}' is not available or not a valid scene document.\n")
     } else {
-        let document = Content::Cache(DocumentKind.Scene, resolved, text)
         if (!ApplyDocument(document)) {
             print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
         } else {
@@ -187,13 +247,13 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
     }
 }
 
-//! Synchronous scene apply from the parsed-document cache. It never reads the disk and
-//! never waits: the caller must have preloaded the text first (`Loader::Load` with
-//! `AddScene`, or `Scene::LoadAsync`). Returns false and prints what was missing when the
-//! scene was not preloaded.
+//! Synchronous scene apply from the asset cache. It never reads the disk and never waits:
+//! the caller must have preloaded the scene first (`Loader::Load` with `AddScene`, or
+//! `Scene::LoadAsync`). Returns false and prints what was missing when the scene was not
+//! preloaded.
 def public Load(path : string) : bool {
     let resolved = ScenePath(path)
-    let document = Content::Get(DocumentKind.Scene, resolved)
+    let document = CachedDocument(resolved)
     if (document == null) {
         print("[SCENE ERROR] Scene '{resolved}' was not preloaded; add it to the LoaderRequest before Scene::Load.\n")
         return false
@@ -278,6 +338,7 @@ def private ApplyDocument(document : Content::Document?) : bool {
                     let type_name = cf != null ? cf.typeName : ""
                     parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, type_name)
                 }
+                ApplyWorldTransform(cmp)
             }
         }
         total_loaded++
@@ -285,8 +346,23 @@ def private ApplyDocument(document : Content::Document?) : bool {
 
     commit()
 
+    // A loaded scene is rendered in the frame it finishes, and the editor loads scenes after
+    // the engine tick: compose the hierarchy once here instead of showing local transforms
+    // for one frame.
+    UpdateWorldTransforms()
+
     print("[SCENE] '{scene_context.scene_path}': {total_loaded} entities, {length(active_scene.requireMeshs)} mesh(es), {length(active_scene.requireMaterials)} material(s), {warnings_count} warning(s)\n")
     return true
+}
+
+// `_world` is derived, but it must exist from the moment the entity does: the transform pass
+// never adds a component. Its value starts as the local transform; the pass that runs right
+// after the load composes the hierarchy into it.
+def private ApplyWorldTransform(var cmp : ComponentMap) {
+    if (!decs::has(cmp, TRANSFORM_FIELD)) {
+        return
+    }
+    ApplyEntityTransform(cmp, decs::get(cmp, TRANSFORM_FIELD, Transform()))
 }
 
 def private parse_and_apply_field(var cmp : ComponentMap;
@@ -332,7 +408,7 @@ def public SaveSceneAsync(path : string) : void {
         if (!written) {
             print("[SCENE ERROR] Failed to write scene to '{target}'.\n")
         } else {
-            Content::Invalidate(DocumentKind.Scene, target)
+            AssetCache::Invalidate(g_values, target)
             print("[SCENE] Scene saved successfully to '{target}'.\n")
         }
     }
@@ -417,14 +493,15 @@ struct SceneHeader {
 [async]
 def public GetSceneHeader(path : string) : SceneHeader {
     let resolved = ScenePath(path)
-    let text : string <- await(Assets::ReadText(resolved))
-    var empty_header : SceneHeader
-    if (empty(text)) {
-        print("[SCENE ERROR] Scene '{resolved}' is not available.\n")
-        yield <- empty_header
+    AssetCache::Refresh(g_values, "scene", resolved)
+
+    while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
+                               @@CompileSceneDocument) == AssetCache::AssetState.Loading) {
+        await_next_frame()
     }
 
-    let document = Content::Cache(DocumentKind.Scene, resolved, text)
+    var empty_header : SceneHeader
+    let document = CachedDocument(resolved)
     if (document == null) {
         print("[SCENE ERROR] Scene '{resolved}' is not a valid scene document.\n")
         yield <- empty_header
