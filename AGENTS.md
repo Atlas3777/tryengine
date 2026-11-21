@@ -187,8 +187,11 @@ daslang -dry-run \
 - Точки входа — `[export] def Name()`; C++ вызывает их по имени через
   `ScriptSystem::InvokeFunctionFast/Safe`, поэтому переименование молча ломает C++ сторону.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
-  `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
-  компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
+  `apply_decs_template`, `EcsRegister`, `[EcsComponent]`, `[EcsTemplate]`), см.
+  `engine_source/daslang/EcsMacro.das`, компоненты в `engine_source/daslang/Types.das`,
+  живой пример — `game/scripts/Game.das`. Одиночная структура-компонент объявляется
+  `[EcsComponent(name = "...")]` на самой структуре; `%ecs~` — только для встроенных
+  типов, которые нельзя аннотировать.
   У не-шаблонного компонента имя аргумента `query` и есть имя компонента:
   `query() $(transform : Transform)` читает `transform`, а `$(t : Transform)` ищет `t` и
   молча не находит ничего. У `decs_template` имя аргумента ничего не значит — поля берутся

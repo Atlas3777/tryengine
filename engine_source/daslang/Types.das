@@ -27,15 +27,14 @@ struct PointLight {
 }
 
 // Authored local transform. The type is [DecsSerializable], so a component of this type is
-// written to scenes and prefabs; `%ecs~` adds it to the Inspector's component list.
-[DecsSerializable]
+// written to scenes and prefabs; [EcsComponent] registers it in the Inspector's component
+// list under "transform".
+[DecsSerializable, EcsComponent(name = "transform")]
 struct Transform {
     position : float3 = float3(0.0f, 0.0f, 0.0f)
     rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
     scale    : float3 = float3(1.0f, 1.0f, 1.0f)
 }
-
-%ecs~("transform", type<Transform>) %%
 
 // Derived world transform. Same TRS shape as Transform, but a distinct type without
 // [DecsSerializable]: a component of this type has no writer, so scene/prefab save and
@@ -49,6 +48,7 @@ struct WorldTransform {
 // Relationship, one component named "relationship". A plain struct has no writer, so the
 // links are runtime-only by type; the Inspector still shows them through a custom draw.
 // The links are derived from the authored hierarchy (`parentLocalId` in scenes and prefabs).
+[EcsComponent(name = "relationship")]
 struct Relationship {
     parent      : EntityId = INVALID_ENTITY_ID
     first_child : EntityId = INVALID_ENTITY_ID
@@ -57,8 +57,6 @@ struct Relationship {
 }
 
 let public RELATIONSHIP_FIELD : string = "relationship"
-
-%ecs~(RELATIONSHIP_FIELD, type<Relationship>) %%
 
 [decs_template, EcsTemplate, DecsSerializable]
 struct Camera {

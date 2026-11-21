@@ -83,11 +83,13 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 не нужно: все сущности, компоненты и запросы живут в daslang.
 
 `engine_source/daslang/EcsMacro.das` даёт макросы `create_entity`, `update_entity`,
-`apply_decs_template`, `EcsRegister`, а также reader-макрос `%ecs~("Имя", type<T>)%%` для
-объявления одиночного компонента. Типы компонентов приходят из `tryengine/Types`:
+`apply_decs_template`, `EcsRegister`, аннотации `[EcsComponent(name = "...")]` (одиночная
+структура-компонент) и `[EcsTemplate]` (шаблон из `[decs_template]`), а также reader-макрос
+`%ecs~("Имя", type<T>)%%` — он нужен только для встроенных типов (`uint`, `int?`), которые
+аннотировать нельзя. Типы компонентов приходят из `tryengine/Types`:
 
 - `Types.das` — одиночные компоненты-структуры `Transform` и `Relationship` (объявлены
-  через `%ecs~`), `[decs_template, EcsTemplate]`-структуры `Camera`/`PointLight` и
+  через `[EcsComponent]`), `[decs_template, EcsTemplate]`-структуры `Camera`/`PointLight` и
   объявления `HP`/`Mana`;
 - `game/scripts/Game.das` — живой пример `create_entity`, `query`, `commit`.
 
@@ -97,7 +99,8 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 - Чтение — через `query()$(...)`; не тащи C++-реестр сущностей, его нет.
 - Новая структура-компонент — с `[decs_template, EcsTemplate]`, чтобы регистрация и
   удаление сгенерировались автоматически. Если значение должно лежать одним компонентом
-  (как `Transform`/`Relationship`), это обычная структура + `%ecs~("имя", type<T>)%%`.
+  (как `Transform`/`Relationship`), это обычная структура с
+  `[EcsComponent(name = "имя")]`; `%ecs~` остаётся для встроенных типов.
 - Что сохраняется в сцену/префаб, решает тип: компонент пишется, если у его типа есть
   writer — встроенный скаляр или `[DecsSerializable]`-структура. Обычная структура
   (`WorldTransform`, `Relationship`, `LoadMarker`, `EditorCameraTag`) writer'а не имеет,

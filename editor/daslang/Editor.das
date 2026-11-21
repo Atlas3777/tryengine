@@ -55,7 +55,7 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
     create_entity() @(eid : EntityId; var cmp : ComponentMap) {
         cmp.tag := "EditorCamera"
         cmp |> set("editorCameraTag", EditorCameraTag(enabled = true))
-        ApplyEntityTransform(cmp, float3(0, 0, 0), float4(0, 0, 0, 1), float3(1, 1, 1))
+        ApplyEntityTransform(cmp, float3(0, 5, 0), float4(0, 0, 0, 1), float3(1, 1, 1))
         apply_decs_template(cmp, Camera())
         cmp |> set(RELATIONSHIP_FIELD, Relationship())
     }

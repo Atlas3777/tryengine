@@ -1,0 +1,33 @@
+requireMeshs: u64[] = [
+	12277960924680109874
+]
+requireMaterials: string[] = [
+	"guid:367643668121773679"
+]
+entities: Entity[] = [
+	{
+		Camera_far_plane: f32 = 1000
+		Camera_fov: f32 = 70
+		Camera_near_plane: f32 = 0.1
+		tag: string = "New Entity"
+		transform: Transform = {
+			position: f32x3 = [-0.4425795 5.2314706 1.923791]
+			rotation: f32x4 = [-0.26240334 0.021278681 -0.005787872 0.96470636]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 4294967295
+	}
+	{
+		materialRef: MaterialRef = {
+			path: string = "guid:367643668121773679"
+		}
+		meshGuid: u64 = 12277960924680109874
+		tag: string = "Object_40"
+		transform: Transform = {
+			position: f32x3 = [-0.00847739 8.121715 -0.012298226]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 4294967295
+	}
+]
