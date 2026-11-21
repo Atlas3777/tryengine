@@ -52,6 +52,20 @@ public:
             miss_handler_->OnRegistered(guid);
     }
 
+    // Артефакт без собственного guid (editor/<main>/<sub>): sub в нём — вид артефакта,
+    // а не идентичность, и он повторяется у всех ассетов. Поэтому id выводится из пути,
+    // как у авторитетного файла, но происхождение остаётся Imported.
+    void RegisterLooseArtifactPath(eastl::string_view path) {
+        const uint64_t id = core::PathId(path);
+        {
+            std::lock_guard lock(mutex_);
+            path_index_[id] = id;
+            locations_[id] = LooseFileLocation{eastl::string(path.data(), path.size()), AssetOrigin::Imported};
+        }
+        if (miss_handler_)
+            miss_handler_->OnRegistered(id);
+    }
+
     // Путь -> id. Нужен редактору, чтобы резолвить авторские ссылки, не зная заранее,
     // авторитетный это файл или артефакт импорта.
     eastl::optional<uint64_t> ResolvePath(eastl::string_view path) const {

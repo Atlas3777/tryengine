@@ -120,6 +120,11 @@ private:
     void RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t main_guid,
                                const eastl::vector<uint64_t>& sub_assets) const;
 
+    // Editor-артефакты адресуются путём, а не guid: sub в их пути — вид артефакта
+    // (10 — карта модели, 11 — префаб), одинаковый у всех ассетов. Регистрируем их
+    // на старте, без реимпорта, иначе drag&drop модели не прочитает артефакт.
+    void RegisterEditorArtifactPaths(const AssetMountPoint& mount, const eastl::vector<eastl::string>& rel_paths) const;
+
     mutable std::mutex db_mutex_;
     eastl::hash_map<uint64_t, uint64_t> path_to_guid_;  // ключ: PathId(путь)
 

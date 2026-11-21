@@ -100,6 +100,18 @@ void AssetPipeline::RegisterArtifactPaths(const AssetMountPoint& mount, uint64_t
     }
 }
 
+void AssetPipeline::RegisterEditorArtifactPaths(const AssetMountPoint& mount,
+                                                const eastl::vector<eastl::string>& rel_paths) const {
+    for (const eastl::string& rel_path : rel_paths) {
+        const eastl::string_view view(rel_path.data(), rel_path.size());
+        if (!view.starts_with("editor/"))
+            continue;
+
+        registry_.RegisterLooseArtifactPath(
+            tryengine::fmt::format("{}/{}", mount.artifacts_dir.c_str(), rel_path.c_str()));
+    }
+}
+
 Task<void> AssetPipeline::ImportEngineContent(AsyncFileManager& file_manager) {
     const StorageRoot& root = RootOf(StorageDomain::Engine);
     AssetMountPoint engine_mount{.name = "engine", .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
@@ -444,6 +456,7 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
 
     // 7. Регистрация артефактов и обновление карт под мьютексом
     RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
+    RegisterEditorArtifactPaths(mount, CollectArtifactPaths(res));
 
     {
         std::lock_guard lock(db_mutex_);
@@ -501,6 +514,10 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
         co_return eastl::move(stamp_result.error());
 
     const eastl::optional<ImportStamp>& stamp = *stamp_result;
+    // Editor-артефакты регистрируются до проверки реимпорта: они нужны редактору и на
+    // обычном старте, когда ни один ассет не переимпортируется.
+    if (stamp.has_value())
+        RegisterEditorArtifactPaths(mount, stamp->artifacts);
     if (!stamp.has_value()) {
         need_reimport = true;
         LogInfo(LogCategory::Importer, "Reimport {}: нет штампа импорта", asset_path.c_str());
@@ -589,6 +606,7 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
     }
 
     RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
+    RegisterEditorArtifactPaths(mount, CollectArtifactPaths(res));
     co_return {};
 }
 

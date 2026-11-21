@@ -20,8 +20,11 @@
 - `AssetRegistry` хранит `id -> AssetLocation` и `PathId(путь) -> id`. Авторитетные файлы
   регистрирует `AssetPipeline::BuildTreeFromDisk` при сканировании домена
   (`RegisterAuthoritative`), артефакты импорта — `RegisterArtifactPaths`
-  (`RegisterLooseArtifact`). `ResolvePath` — единственный способ получить id из авторского
-  пути; `RegisterMaterialFile` не вычисляет id сам.
+  (`RegisterLooseArtifact`). Editor-артефакты (`artifacts/editor/<main>/<sub>`) регистрирует
+  `RegisterEditorArtifactPaths` (`RegisterLooseArtifactPath`): их `sub` — вид артефакта
+  (10/11), один на все ассеты, а не идентичность, поэтому id выводится из пути.
+  `ResolvePath` — единственный способ получить id из авторского пути;
+  `RegisterMaterialFile` не вычисляет id сам.
 - Авторская ссылка (`AssetRef.hpp`) — одна строка: голый путь для авторитетного файла или
   `guid:<u64>` для импортируемого. В компонентах/сценах лежит именно она, а не id.
   `ResolveRef` переводит её в id, `AssetRefOf` — обратно; `IsImported(id)` отличает
