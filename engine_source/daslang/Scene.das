@@ -86,7 +86,7 @@ def private SceneNoop() {
 // Scenes live in content, so a bare path is relative to `content/`. The extension is
 // always explicit and is never appended here.
 def private ScenePath(path : string) : string {
-    return Content::ResolvePath(ContentKind.Scene, path)
+    return Content::ResolvePath(DocumentKind.Scene, path)
 }
 
 //! The editor's first load: there is no file yet, but it is still a scene load.
@@ -177,7 +177,7 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
     if (empty(text)) {
         print("[SCENE ERROR] Scene '{resolved}' is not available.\n")
     } else {
-        let document = Content::Cache(ContentKind.Scene, resolved, text)
+        let document = Content::Cache(DocumentKind.Scene, resolved, text)
         if (!ApplyDocument(document)) {
             print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
         } else {
@@ -193,7 +193,7 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
 //! scene was not preloaded.
 def public Load(path : string) : bool {
     let resolved = ScenePath(path)
-    let document = Content::Get(ContentKind.Scene, resolved)
+    let document = Content::Get(DocumentKind.Scene, resolved)
     if (document == null) {
         print("[SCENE ERROR] Scene '{resolved}' was not preloaded; add it to the LoaderRequest before Scene::Load.\n")
         return false
@@ -234,8 +234,8 @@ def private ApplyDocument(document : Content::Document?) : bool {
 
     // The dependency set was collected once while parsing the document (header arrays and
     // entity components together), so the active scene releases exactly what it requested.
-    clone(active_scene.requireMeshs, document.refs.meshes)
-    clone(active_scene.requireMaterials, document.refs.materials)
+    clone(active_scene.requireMeshs, document.deps.meshes)
+    clone(active_scene.requireMaterials, document.deps.materials)
 
     for (mesh_id in active_scene.requireMeshs) {
         RequestLoadMesh(mesh_id)
@@ -332,7 +332,7 @@ def public SaveSceneAsync(path : string) : void {
         if (!written) {
             print("[SCENE ERROR] Failed to write scene to '{target}'.\n")
         } else {
-            Content::Invalidate(ContentKind.Scene, target)
+            Content::Invalidate(DocumentKind.Scene, target)
             print("[SCENE] Scene saved successfully to '{target}'.\n")
         }
     }
@@ -424,7 +424,7 @@ def public GetSceneHeader(path : string) : SceneHeader {
         yield <- empty_header
     }
 
-    let document = Content::Cache(ContentKind.Scene, resolved, text)
+    let document = Content::Cache(DocumentKind.Scene, resolved, text)
     if (document == null) {
         print("[SCENE ERROR] Scene '{resolved}' is not a valid scene document.\n")
         yield <- empty_header
@@ -433,7 +433,7 @@ def public GetSceneHeader(path : string) : SceneHeader {
     var header <- SceneHeader()
     header.name = Content::Stem(resolved)
     header.path = resolved
-    clone(header.requireMeshs, document.refs.meshes)
-    clone(header.requireMaterials, document.refs.materials)
+    clone(header.requireMeshs, document.deps.meshes)
+    clone(header.requireMaterials, document.deps.materials)
     yield <- header
 }

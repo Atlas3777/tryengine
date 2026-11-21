@@ -31,9 +31,9 @@ require tryeditor/AssetBrowser
 require tryeditor/FileSystemUtils
 require tryeditor/Hierarchy
 
-var PREFAB_ENTITY_NODE : TreeNodeState
+var PREFAB_NODE_TREE : TreeNodeState
 // Component rows are repeated at the same call site: one NarrativeState per
-// (entity, component) keeps dasImgui's single-global render check happy.
+// (node, component) keeps dasImgui's single-global render check happy.
 var private PREFAB_COMPONENT_TEXT : table<string; NarrativeState>
 
 var private g_selected_path : string
@@ -105,7 +105,7 @@ def private DrawToolbar() {
     }
 }
 
-def private EntityTag(fields : table<string; StructField?> const) : string {
+def private NodeTag(fields : table<string; StructField?> const) : string {
     let tag_cf = fields?["tag"] ?? null
     if (tag_cf == null) {
         return ""
@@ -127,22 +127,22 @@ def private DrawDetails() {
 
     text("{data.name}")
     text_disabled("{data.path}")
-    text("Entities: {length(data.nodes)}")
+    text("Nodes: {length(data.nodes)}")
     separator()
 
-    for (entity_index in range(length(data.nodes))) {
-        let entity = data.nodes[entity_index]
-        assume fields = entity.config.value as _object
+    for (node_index in range(length(data.nodes))) {
+        let node = data.nodes[node_index]
+        assume fields = node.config.value as _object
 
-        var entity_label = "[{entity.local_id}]"
-        let tag = EntityTag(fields)
+        var node_label = "[{node.local_id}]"
+        let tag = NodeTag(fields)
         if (!empty(tag)) {
-            entity_label = "{entity_label} {tag}"
+            node_label = "{node_label} {tag}"
         }
 
-        with_id("prefab_entity_{entity_index}") {
+        with_id("prefab_node_{node_index}") {
             let flags = ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.SpanAvailWidth | ImGuiTreeNodeFlags.DefaultOpen
-            let opened = tree_node_ex(PREFAB_ENTITY_NODE, (text = entity_label, flags = flags))
+            let opened = tree_node_ex(PREFAB_NODE_TREE, (text = node_label, flags = flags))
             if (opened) {
                 var inscope names : array<string>
                 for (name in keys(fields)) {
@@ -153,7 +153,7 @@ def private DrawDetails() {
                 }
                 sort(names)
                 for (name in names) {
-                    let component_key = "{entity_index}/{name}"
+                    let component_key = "{node_index}/{name}"
                     text(PREFAB_COMPONENT_TEXT[component_key], (text = "{name}"))
                 }
                 tree_pop()

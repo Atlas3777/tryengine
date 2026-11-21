@@ -28,7 +28,7 @@ require tryengine/ConfigFormatBoost
 require tryengine/Types
 require tryResources
 
-enum public ContentKind {
+enum public DocumentKind {
     Scene
     Prefab
     Bundle
@@ -38,8 +38,8 @@ let public CONTENT_ROOT = "content"
 let public DATA_ROOT = "data"
 
 //! Authored root of a kind: scenes and prefabs live under `content/`, bundles under `data/`.
-def public RootOf(kind : ContentKind) : string {
-    if (kind == ContentKind.Bundle) {
+def public RootOf(kind : DocumentKind) : string {
+    if (kind == DocumentKind.Bundle) {
         return DATA_ROOT
     }
     return CONTENT_ROOT
@@ -47,7 +47,7 @@ def public RootOf(kind : ContentKind) : string {
 
 //! Authored path -> canonical registry path. A bare path is relative to the kind's root;
 //! the extension is never guessed or appended.
-def public ResolvePath(kind : ContentKind; path : string) : string {
+def public ResolvePath(kind : DocumentKind; path : string) : string {
     return Assets::ResolveGamePath(path, RootOf(kind))
 }
 
@@ -66,7 +66,7 @@ def public Stem(path : string) : string {
 }
 
 //! Canonical path of a registered document, or "" when the storage layer does not know it.
-def public Find(kind : ContentKind; path : string) : string {
+def public Find(kind : DocumentKind; path : string) : string {
     let resolved = ResolvePath(kind, path)
     if (empty(resolved) || !Assets::Exists(resolved)) {
         return ""
@@ -75,33 +75,32 @@ def public Find(kind : ContentKind; path : string) : string {
 }
 
 //! Human name of a kind, used in diagnostics and in a loading screen.
-def public KindName(kind : ContentKind) : string {
-    if (kind == ContentKind.Scene) {
+def public KindName(kind : DocumentKind) : string {
+    if (kind == DocumentKind.Scene) {
         return "scene"
-    } elif (kind == ContentKind.Prefab) {
+    } elif (kind == DocumentKind.Prefab) {
         return "prefab"
     }
     return "bundle"
 }
 
-// Binary assets one content document needs before it can be shown: meshes and materials
+// Resource ids one content document needs before it can be shown: meshes and materials
 // are the heavy, asynchronous part of loading. The collector below fills this from the
 // authored document; the loading state machine requests the ids and waits for them.
-struct public AssetRefs {
-    meshes : array<uint64>
+struct public Dependencies {
+    meshes    : array<uint64>
     materials : array<uint64>
-    parsed : bool
 }
 
-def public AddMeshRef(var refs : AssetRefs; id : uint64) {
-    if (id != 0ul && !refs.meshes.contains(id)) {
-        refs.meshes |> push(id)
+def public AddMeshDependency(var deps : Dependencies; id : uint64) {
+    if (id != 0ul && !deps.meshes.contains(id)) {
+        deps.meshes |> push(id)
     }
 }
 
-def public AddMaterialRef(var refs : AssetRefs; id : uint64) {
-    if (id != 0ul && !refs.materials.contains(id)) {
-        refs.materials |> push(id)
+def public AddMaterialDependency(var deps : Dependencies; id : uint64) {
+    if (id != 0ul && !deps.materials.contains(id)) {
+        deps.materials |> push(id)
     }
 }
 
@@ -150,62 +149,75 @@ def private ParseAssetRefArray(cf : StructField?) : array<uint64> {
     return <- res
 }
 
-// Refs live on the entity as components. `materialRef` is the only material form.
-def private CollectEntityRefs(var refs : AssetRefs; entity_obj : table<string; StructField?> const) {
-    AddMeshRef(refs, from_CF(entity_obj?["meshGuid"] ?? null, type<uint64>))
+// Dependencies live on the item's components. `materialRef` is the only material form.
+def private CollectObjectDependencies(var deps : Dependencies; obj : table<string; StructField?> const) {
+    AddMeshDependency(deps, from_CF(obj?["meshGuid"] ?? null, type<uint64>))
 
-    let material_cf = entity_obj?["materialRef"] ?? null
+    let material_cf = obj?["materialRef"] ?? null
     if (material_cf != null && material_cf.value is _object) {
         let material = from_CF(material_cf, type<MaterialRef>)
         if (!empty(material.path)) {
-            AddMaterialRef(refs, ResolveAssetRef(material.path))
+            AddMaterialDependency(deps, ResolveAssetRef(material.path))
         }
     }
+}
+
+// Authored array of items differs by kind: a scene lists entities, a prefab document
+// lists nodes, a bundle has no item array.
+def private ItemsField(kind : DocumentKind) : string {
+    if (kind == DocumentKind.Scene) {
+        return "entities"
+    }
+    if (kind == DocumentKind.Prefab) {
+        return "nodes"
+    }
+    return ""
 }
 
 //! Parsed dependency set of one document. Header arrays are authoritative, but a scene
-//! saved by an older editor may list refs only on its entities, so both are read. Prefabs
-//! have no header arrays and contribute their entity refs only. `parsed` is false when the
-//! root is not a document object.
-def public CollectRefs(root : StructField?) : AssetRefs {
-    var refs : AssetRefs
+//! saved by an older editor may list deps only on its entities, so both are read.
+//! Prefabs have no header arrays and contribute their node deps only.
+def public CollectDependencies(kind : DocumentKind; root : StructField?) : Dependencies {
+    var deps : Dependencies
     if (root == null || !(root.value is _object)) {
-        return <- refs
+        return <- deps
     }
 
     assume root_obj = root.value as _object
-    refs.parsed = true
 
     for (id in ParseUInt64Array(root_obj?["requireMeshs"] ?? null)) {
-        AddMeshRef(refs, id)
+        AddMeshDependency(deps, id)
     }
     for (id in ParseAssetRefArray(root_obj?["requireMaterials"] ?? null)) {
-        AddMaterialRef(refs, id)
+        AddMaterialDependency(deps, id)
     }
 
-    let entities_cf = root_obj?["entities"] ?? null
-    if (entities_cf != null && entities_cf.value is _array) {
-        assume entities_arr = entities_cf.value as _array
-        for (entity_cf in entities_arr) {
-            if (entity_cf == null || !(entity_cf.value is _object)) {
-                continue
+    let items_field = ItemsField(kind)
+    if (!empty(items_field)) {
+        let items_cf = root_obj?[items_field] ?? null
+        if (items_cf != null && items_cf.value is _array) {
+            assume items_arr = items_cf.value as _array
+            for (item_cf in items_arr) {
+                if (item_cf == null || !(item_cf.value is _object)) {
+                    continue
+                }
+                assume item_obj = item_cf.value as _object
+                CollectObjectDependencies(deps, item_obj)
             }
-            assume entity_obj = entity_cf.value as _object
-            CollectEntityRefs(refs, entity_obj)
         }
     }
 
-    return <- refs
+    return <- deps
 }
 
 //! One parsed document. `root` owns the ConfigFormat tree the typed modules read;
-//! `refs` is the dependency set collected while parsing. The source text is not kept:
+//! `deps` is the dependency set collected while parsing. The source text is not kept:
 //! the tree is all the scene/prefab/bundle code needs after parsing.
 struct public Document {
-    kind : ContentKind
+    kind : DocumentKind
     path : string
     root : StructField?
-    refs : AssetRefs
+    deps : Dependencies
 }
 
 // Canonical path -> parsed document. The cache survives `Loader::Finish`: a preloaded scene
@@ -215,7 +227,7 @@ var private g_documents : table<string; Document?>
 //! Parses a document and collects its dependencies. Returns null when the text is not a
 //! ConfigFormat object; the typed module decides whether the object is a valid scene,
 //! prefab or bundle.
-def public Parse(kind : ContentKind; path : string; text : string) : Document? {
+def public Parse(kind : DocumentKind; path : string; text : string) : Document? {
     var error : string
     var root = read_config(text, error)
     if (!empty(error) || root == null || !(root.value is _object)) {
@@ -227,12 +239,12 @@ def public Parse(kind : ContentKind; path : string; text : string) : Document? {
         kind = kind,
         path = path,
         root = root,
-        refs <- CollectRefs(root)
+        deps <- CollectDependencies(kind, root)
     )
 }
 
 //! Parses and stores a document under its canonical path.
-def public Cache(kind : ContentKind; path : string; text : string) : Document? {
+def public Cache(kind : DocumentKind; path : string; text : string) : Document? {
     let resolved = ResolvePath(kind, path)
     if (empty(resolved)) {
         return null
@@ -248,7 +260,7 @@ def public Cache(kind : ContentKind; path : string; text : string) : Document? {
 }
 
 //! Cached document for an authored or canonical path, or null when it was not parsed yet.
-def public Get(kind : ContentKind; path : string) : Document? {
+def public Get(kind : DocumentKind; path : string) : Document? {
     let resolved = ResolvePath(kind, path)
     if (empty(resolved) || !key_exists(g_documents, resolved)) {
         return null
@@ -257,7 +269,7 @@ def public Get(kind : ContentKind; path : string) : Document? {
 }
 
 //! Drops a cached document, for example after its file was overwritten.
-def public Invalidate(kind : ContentKind; path : string) {
+def public Invalidate(kind : DocumentKind; path : string) {
     let resolved = ResolvePath(kind, path)
     if (!empty(resolved)) {
         erase(g_documents, resolved)

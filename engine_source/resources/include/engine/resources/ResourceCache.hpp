@@ -127,7 +127,7 @@ public:
     }
 
     // Удаляет ресурс без retired, если на него нет ссылок. Только для value-типов,
-    // чьи указатели не утекают наружу (TextAsset): текст копируется в строку скрипта.
+    // чьи указатели не утекают наружу (SourceText): текст копируется в строку скрипта.
     bool Discard(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);

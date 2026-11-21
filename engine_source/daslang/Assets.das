@@ -81,7 +81,7 @@ def public IdOf(path : string) : uint64 {
 def public Invalidate(path : string) {
     let id = ResolveAssetPath(AssetPath(path))
     if (id != 0ul) {
-        InvalidateAssetText(id)
+        InvalidateSourceText(id)
     }
 }
 
@@ -103,17 +103,17 @@ def public RequestText(path : string) : uint64 {
 
     // Content is authored: a file may have been rewritten since the last read, and the
     // pak chunk is cheap enough to re-read. Never serve a stale document to a loader.
-    InvalidateAssetText(id)
-    RequestLoadAssetText(id)
+    InvalidateSourceText(id)
+    RequestLoadSourceText(id)
     return id
 }
 
 def public TextIsReady(id : uint64) : bool {
-    return id != 0ul && AssetTextIsReady(id)
+    return id != 0ul && SourceTextIsReady(id)
 }
 
 def public TextIsFailed(id : uint64) : bool {
-    return id != 0ul && AssetTextIsFailed(id)
+    return id != 0ul && SourceTextIsFailed(id)
 }
 
 //! Copies the text and releases the reference taken by `RequestText`.
@@ -121,8 +121,8 @@ def public TakeText(id : uint64) : string {
     if (id == 0ul) {
         return ""
     }
-    var text = GetAssetText(id)
-    ReleaseAssetText(id)
+    var text = GetSourceText(id)
+    ReleaseSourceText(id)
     return <- text
 }
 
@@ -131,8 +131,8 @@ def public CancelText(id : uint64) {
     if (id == 0ul) {
         return
     }
-    ReleaseAssetText(id)
-    InvalidateAssetText(id)
+    ReleaseSourceText(id)
+    InvalidateSourceText(id)
 }
 
 // Full text of one asset. Returns "" when the path is unknown or the chunk failed:

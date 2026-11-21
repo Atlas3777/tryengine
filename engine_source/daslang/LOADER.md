@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `game/scripts/Game.das` | `LoaderRequest` (что грузить), callback, `Scene::Load`/`Prefab::Spawn`, gameplay | не читает текст и не парсит контент |
 | `tryengine/Loader.das` | задача `Load`, очередь документов, бандлы, прогресс, callback, освобождение | не применяет сцены, не спавнит префабы |
-| `tryengine/Content.das` | путь по виду документа, stem, `Find`, разбор ConfigFormat, общие `AssetRefs`, кеш документов | не грузит ресурсы и не спавнит |
+| `tryengine/Content.das` | путь по виду документа, stem, `Find`, разбор ConfigFormat, общие `Dependencies`, кеш документов | не грузит ресурсы и не спавнит |
 | `tryengine/Assets.das` | loose-файл или чанк пака, `RequestText`/`TextIsReady`/`TakeText` и корутина `ReadText` | не знает форматов документов |
 | `tryengine/Bundle.das` | формат `.bundle` и список префабов | не загружает префабы |
 | `tryengine/Scene.das` | синхронное применение сцены, сохранение | не читает текст в `Load` |
@@ -68,7 +68,7 @@ callback работает только кеш:
 ```das
 Loader::GetProgress(LoadPhase.Prefabs)   // float2(done, total), например 10 из 26
 Loader::GetProgress(LoadPhase.Scenes)
-Loader::GetProgress(LoadPhase.Assets)
+Loader::GetProgress(LoadPhase.Resources)
 Loader::PhaseName(Loader::Phase())       // "Bundles", "Scenes", ...
 ```
 
@@ -118,7 +118,7 @@ prefabs: string[] = [
 2. Задача `Load` читает текст, `Content::Cache` разбирает документ и собирает
    `meshGuid`/`materialRef`, `Prefab::CachePrefabDocument` проверяет формат и кладёт
    `PrefabTemplate` в кеш.
-3. Ссылки попадают в фазу `Assets`, загрузчик их запрашивает и опрашивает.
+3. Ссылки попадают в фазу `Resources`, загрузчик их запрашивает и опрашивает.
 4. `Prefab::Spawn` — только cache-hit. Если префаба нет в запросе и он не загружен
    `Prefab::LoadPrefabFile`, `Spawn` вернёт `INVALID_ENTITY_ID`.
 

@@ -211,7 +211,7 @@
 - `editor/daslang/PrefabInspector.das` (Window → Prefab Inspector) — не браузер, а
   инспектор выбранного в Asset Browser `.prefab`: своего списка, поиска и Refresh у него
   нет. Выбранный путь приходит из `AssetBrowser::GetSelectedFile`; панель грузит документ
-  точечно и показывает дерево сущностей/компонентов и `Spawn at origin`.
+  точечно и показывает дерево узлов/компонентов и `Spawn at origin`.
   `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
   выделенную ветку в pre-order, выкидывает `eid`/`Relationship_*`/`_*`/`editorCameraTag`,
   обнуляет позицию корня (rotation/scale сохраняются) и обновляет дерево ассетов.

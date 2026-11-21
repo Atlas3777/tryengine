@@ -30,7 +30,7 @@ enum public LoadPhase {
     Bundles
     Scenes
     Prefabs
-    Assets
+    Resources
     Ready
     Failed
 }
@@ -60,22 +60,23 @@ struct public LoaderRequest {
     }
 }
 
-enum private LoaderAssetKind {
+enum private ResourceJobKind {
     Mesh
     Material
 }
 
-// One requested document. `kind` selects both the parse rule and the phase it belongs to.
-struct private LoaderDocument {
-    kind : ContentKind
+// One requested document job. `kind` selects both the parse rule and the phase it belongs to.
+struct private DocumentJob {
+    kind : DocumentKind
     path : string
     id : uint64
     held : bool
     done : bool
 }
 
-struct private LoaderAsset {
-    kind : LoaderAssetKind
+// One mesh/material the requested documents depend on.
+struct private ResourceJob {
+    kind : ResourceJobKind
     id : uint64
     held : bool
     done : bool
@@ -86,8 +87,8 @@ var private g_phase = LoadPhase.Idle
 // Incremented whenever a request starts or is released. A running `Load` task carries
 // its own value, so an aborted request cannot advance the next one.
 var private g_generation : uint64 = 0ul
-var private g_documents : array<LoaderDocument>
-var private g_assets : array<LoaderAsset>
+var private g_document_jobs : array<DocumentJob>
+var private g_resource_jobs : array<ResourceJob>
 var private g_error = ""
 var private g_on_loaded : LoaderCallback = @@LoaderNoop
 var private g_notified = false
@@ -115,25 +116,25 @@ def public GetProgress(phase : LoadPhase) : float2 {
     var total = 0
 
     if (phase == LoadPhase.Bundles || phase == LoadPhase.Scenes || phase == LoadPhase.Prefabs) {
-        var kind = ContentKind.Bundle
+        var kind = DocumentKind.Bundle
         if (phase == LoadPhase.Scenes) {
-            kind = ContentKind.Scene
+            kind = DocumentKind.Scene
         } elif (phase == LoadPhase.Prefabs) {
-            kind = ContentKind.Prefab
+            kind = DocumentKind.Prefab
         }
-        for (document in g_documents) {
-            if (document.kind != kind) {
+        for (job in g_document_jobs) {
+            if (job.kind != kind) {
                 continue
             }
             total++
-            if (document.done) {
+            if (job.done) {
                 done++
             }
         }
-    } elif (phase == LoadPhase.Assets) {
-        total = length(g_assets)
-        for (asset in g_assets) {
-            if (asset.done) {
+    } elif (phase == LoadPhase.Resources) {
+        total = length(g_resource_jobs)
+        for (job in g_resource_jobs) {
+            if (job.done) {
                 done++
             }
         }
@@ -152,8 +153,8 @@ def public PhaseName(phase : LoadPhase) : string {
     if (phase == LoadPhase.Prefabs) {
         return "Prefabs"
     }
-    if (phase == LoadPhase.Assets) {
-        return "Assets"
+    if (phase == LoadPhase.Resources) {
+        return "Resources"
     }
     if (phase == LoadPhase.Ready) {
         return "Ready"
@@ -164,7 +165,7 @@ def public PhaseName(phase : LoadPhase) : string {
     return "Idle"
 }
 
-def private AddDocument(kind : ContentKind; path : string) : bool {
+def private AddDocumentJob(kind : DocumentKind; path : string) : bool {
     let resolved = Content::Find(kind, path)
     if (empty(resolved)) {
         return false
@@ -175,39 +176,39 @@ def private AddDocument(kind : ContentKind; path : string) : bool {
         return false
     }
 
-    for (document in g_documents) {
-        if (document.id == id) {
+    for (job in g_document_jobs) {
+        if (job.id == id) {
             return true
         }
     }
 
-    InvalidateAssetText(id)
-    RequestLoadAssetText(id)
-    g_documents |> push(LoaderDocument(kind = kind, path = resolved, id = id, held = true))
+    InvalidateSourceText(id)
+    RequestLoadSourceText(id)
+    g_document_jobs |> push(DocumentJob(kind = kind, path = resolved, id = id, held = true))
     return true
 }
 
-def private ReleaseDocument(var document : LoaderDocument) {
-    if (document.held) {
-        ReleaseAssetText(document.id)
-        document.held = false
+def private ReleaseDocumentJob(var job : DocumentJob) {
+    if (job.held) {
+        ReleaseSourceText(job.id)
+        job.held = false
     }
 }
 
 def private ReleaseAll() {
-    for (index in range(length(g_documents))) {
-        ReleaseDocument(g_documents[index])
+    for (index in range(length(g_document_jobs))) {
+        ReleaseDocumentJob(g_document_jobs[index])
     }
-    for (index in range(length(g_assets))) {
-        if (!g_assets[index].held) {
+    for (index in range(length(g_resource_jobs))) {
+        if (!g_resource_jobs[index].held) {
             continue
         }
-        if (g_assets[index].kind == LoaderAssetKind.Mesh) {
-            ReleaseMeshResource(g_assets[index].id)
+        if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
+            ReleaseMeshResource(g_resource_jobs[index].id)
         } else {
-            ReleaseMaterialResource(g_assets[index].id)
+            ReleaseMaterialResource(g_resource_jobs[index].id)
         }
-        g_assets[index].held = false
+        g_resource_jobs[index].held = false
     }
 }
 
@@ -218,48 +219,48 @@ def private ResetState() {
     g_error = ""
     g_on_loaded = @@LoaderNoop
     g_notified = false
-    clear(g_documents)
-    clear(g_assets)
+    clear(g_document_jobs)
+    clear(g_resource_jobs)
 }
 
-def private AddAsset(kind : LoaderAssetKind; id : uint64) {
+def private AddResourceJob(kind : ResourceJobKind; id : uint64) {
     if (id == 0ul) {
         return
     }
-    for (asset in g_assets) {
-        if (asset.kind == kind && asset.id == id) {
+    for (job in g_resource_jobs) {
+        if (job.kind == kind && job.id == id) {
             return
         }
     }
-    g_assets |> push(LoaderAsset(kind = kind, id = id))
+    g_resource_jobs |> push(ResourceJob(kind = kind, id = id))
 }
 
-def private AddRefs(refs : AssetRefs) {
-    for (mesh in refs.meshes) {
-        AddAsset(LoaderAssetKind.Mesh, mesh)
+def private AddDependencies(deps : Dependencies) {
+    for (mesh in deps.meshes) {
+        AddResourceJob(ResourceJobKind.Mesh, mesh)
     }
-    for (material in refs.materials) {
-        AddAsset(LoaderAssetKind.Material, material)
+    for (material in deps.materials) {
+        AddResourceJob(ResourceJobKind.Material, material)
     }
 }
 
-def private RequestAssets() {
-    for (index in range(length(g_assets))) {
-        if (g_assets[index].held) {
+def private RequestResources() {
+    for (index in range(length(g_resource_jobs))) {
+        if (g_resource_jobs[index].held) {
             continue
         }
-        if (g_assets[index].kind == LoaderAssetKind.Mesh) {
-            RequestLoadMesh(g_assets[index].id)
+        if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
+            RequestLoadMesh(g_resource_jobs[index].id)
         } else {
-            RequestLoadMaterial(g_assets[index].id)
+            RequestLoadMaterial(g_resource_jobs[index].id)
         }
-        g_assets[index].held = true
+        g_resource_jobs[index].held = true
     }
 }
 
-def private HasKind(kind : ContentKind) : bool {
-    for (document in g_documents) {
-        if (document.kind == kind) {
+def private HasKind(kind : DocumentKind) : bool {
+    for (job in g_document_jobs) {
+        if (job.kind == kind) {
             return true
         }
     }
@@ -268,26 +269,26 @@ def private HasKind(kind : ContentKind) : bool {
 
 def private NextPhase(phase : LoadPhase) : LoadPhase {
     if (phase == LoadPhase.Idle) {
-        if (HasKind(ContentKind.Bundle)) {
+        if (HasKind(DocumentKind.Bundle)) {
             return LoadPhase.Bundles
         }
     }
     if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles) {
-        if (HasKind(ContentKind.Scene)) {
+        if (HasKind(DocumentKind.Scene)) {
             return LoadPhase.Scenes
         }
     }
     if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles || phase == LoadPhase.Scenes) {
-        if (HasKind(ContentKind.Prefab)) {
+        if (HasKind(DocumentKind.Prefab)) {
             return LoadPhase.Prefabs
         }
     }
-    return LoadPhase.Assets
+    return LoadPhase.Resources
 }
 
-def private AllDocumentsDone(kind : ContentKind) : bool {
-    for (document in g_documents) {
-        if (document.kind == kind && !document.done) {
+def private AllDocumentsDone(kind : DocumentKind) : bool {
+    for (job in g_document_jobs) {
+        if (job.kind == kind && !job.done) {
             return false
         }
     }
@@ -295,13 +296,13 @@ def private AllDocumentsDone(kind : ContentKind) : bool {
 }
 
 // Expands a parsed bundle into prefab jobs, compiles a prefab, and adds scene/prefab
-// dependencies to the asset phase. Returns false after `Fail` was called.
+// dependencies to the resource phase. Returns false after `Fail` was called.
 def private HandleDocument(var document : Content::Document?) : bool {
     if (document == null) {
         return false
     }
 
-    if (document.kind == ContentKind.Bundle) {
+    if (document.kind == DocumentKind.Bundle) {
         let bundle = Bundle::Parse(document)
         if (bundle == null) {
             Fail("'{document.path}' is not a valid bundle")
@@ -313,19 +314,19 @@ def private HandleDocument(var document : Content::Document?) : bool {
                 Fail("bundle '{document.path}': prefab '{prefab_path}' must be a content/... path")
                 return false
             }
-            if (!AddDocument(ContentKind.Prefab, prefab_path)) {
+            if (!AddDocumentJob(DocumentKind.Prefab, prefab_path)) {
                 Fail("bundle '{document.path}': prefab '{prefab_path}' was not found; check the content/ path")
                 return false
             }
         }
-    } elif (document.kind == ContentKind.Prefab) {
+    } elif (document.kind == DocumentKind.Prefab) {
         if (!Prefab::CachePrefabDocument(document)) {
             Fail("'{document.path}' is not a valid prefab")
             return false
         }
-        AddRefs(document.refs)
+        AddDependencies(document.deps)
     } else {
-        AddRefs(document.refs)
+        AddDependencies(document.deps)
     }
 
     return true
@@ -333,27 +334,27 @@ def private HandleDocument(var document : Content::Document?) : bool {
 
 // Polls the texts of one phase, parses each ready document and runs its kind-specific
 // step. Documents of another kind are ignored, so the three document phases share one loop.
-def private ProcessDocuments(kind : ContentKind) {
-    let count = length(g_documents)
+def private ProcessDocuments(kind : DocumentKind) {
+    let count = length(g_document_jobs)
     for (index in range(count)) {
-        let document = g_documents[index]
-        if (document.kind != kind || document.done) {
+        let job = g_document_jobs[index]
+        if (job.kind != kind || job.done) {
             continue
         }
-        if (AssetTextIsFailed(document.id)) {
-            Fail("'{document.path}' failed to read")
+        if (SourceTextIsFailed(job.id)) {
+            Fail("'{job.path}' failed to read")
             return
         }
-        if (!AssetTextIsReady(document.id)) {
+        if (!SourceTextIsReady(job.id)) {
             continue
         }
 
-        let text = GetAssetText(document.id)
-        var parsed = Content::Cache(kind, document.path, text)
-        ReleaseDocument(g_documents[index])
-        g_documents[index].done = true
+        let text = GetSourceText(job.id)
+        var parsed = Content::Cache(kind, job.path, text)
+        ReleaseDocumentJob(g_document_jobs[index])
+        g_document_jobs[index].done = true
         if (parsed == null) {
-            Fail("'{document.path}' is not a valid {Content::KindName(kind)} document")
+            Fail("'{job.path}' is not a valid {Content::KindName(kind)} document")
             return
         }
         if (!HandleDocument(parsed)) {
@@ -387,7 +388,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("bundle '{bundle_path}' must be a data/... path")
             return false
         }
-        if (!AddDocument(ContentKind.Bundle, bundle_path)) {
+        if (!AddDocumentJob(DocumentKind.Bundle, bundle_path)) {
             Fail("bundle '{bundle_path}' was not found; check the data/ path")
             return false
         }
@@ -398,7 +399,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("scene '{scene_path}' must be a content/... path")
             return false
         }
-        if (!AddDocument(ContentKind.Scene, scene_path)) {
+        if (!AddDocumentJob(DocumentKind.Scene, scene_path)) {
             Fail("scene '{scene_path}' was not found; check the content/ path")
             return false
         }
@@ -409,7 +410,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("prefab '{prefab_path}' must be a content/... path")
             return false
         }
-        if (!AddDocument(ContentKind.Prefab, prefab_path)) {
+        if (!AddDocumentJob(DocumentKind.Prefab, prefab_path)) {
             Fail("prefab '{prefab_path}' was not found; check the content/ path")
             return false
         }
@@ -425,7 +426,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
 //!     request.AddScene("content/main.scene")
 //!     StartTask(Loader::Load(request, @@OnLoaded))
 //!
-//! `on_loaded` runs once when every requested document and asset is ready; `Scene::Load`
+//! `on_loaded` runs once when every requested document and resource is ready; `Scene::Load`
 //! and `Prefab::Spawn` are synchronous cache hits there. After the callback returns, the
 //! loader releases its references. On failure the callback is not called and the phase
 //! stays `Failed` for `IsFailed()`/`Error()`.
@@ -458,7 +459,7 @@ def private LoadTask(generation : uint64) : void {
     }
 }
 
-// One frame of loading. Text reads, bundle expansion, dependency collection and asset
+// One frame of loading. Text reads, bundle expansion, dependency collection and resource
 // polling all happen here. Does nothing after Ready/Failed.
 [profile]
 def private Advance() {
@@ -467,51 +468,51 @@ def private Advance() {
     }
 
     if (g_phase == LoadPhase.Bundles) {
-        ProcessDocuments(ContentKind.Bundle)
+        ProcessDocuments(DocumentKind.Bundle)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllDocumentsDone(ContentKind.Bundle)) {
+        if (AllDocumentsDone(DocumentKind.Bundle)) {
             g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoadPhase.Scenes) {
-        ProcessDocuments(ContentKind.Scene)
+        ProcessDocuments(DocumentKind.Scene)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllDocumentsDone(ContentKind.Scene)) {
+        if (AllDocumentsDone(DocumentKind.Scene)) {
             g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoadPhase.Prefabs) {
-        ProcessDocuments(ContentKind.Prefab)
+        ProcessDocuments(DocumentKind.Prefab)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllDocumentsDone(ContentKind.Prefab)) {
+        if (AllDocumentsDone(DocumentKind.Prefab)) {
             g_phase = NextPhase(g_phase)
         }
     }
 
-    if (g_phase == LoadPhase.Assets) {
-        RequestAssets()
+    if (g_phase == LoadPhase.Resources) {
+        RequestResources()
 
         var complete = true
-        for (index in range(length(g_assets))) {
-            if (g_assets[index].done) {
+        for (index in range(length(g_resource_jobs))) {
+            if (g_resource_jobs[index].done) {
                 continue
             }
-            let id = g_assets[index].id
-            if (g_assets[index].kind == LoaderAssetKind.Mesh) {
+            let id = g_resource_jobs[index].id
+            if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
                 if (ResourceIsFailedMesh(id)) {
                     Fail("mesh {id} failed to load")
                     return
                 }
                 if (ResourceIsReadyMesh(id)) {
-                    g_assets[index].done = true
+                    g_resource_jobs[index].done = true
                 } else {
                     complete = false
                 }
@@ -521,7 +522,7 @@ def private Advance() {
                     return
                 }
                 if (ResourceIsReadyMaterial(id)) {
-                    g_assets[index].done = true
+                    g_resource_jobs[index].done = true
                 } else {
                     complete = false
                 }

@@ -36,9 +36,9 @@
 - Ссылки в сцене не нужно переписывать в `guid:`: `AssetRegistry::ResolvePath` сначала
   смотрит таблицу путей, а затем пробует `PathId(путь)` в `locations_`. В игре это находит
   content-чанк, в редакторе — зарегистрированный авторский файл.
-- Единая точка чтения текста для скриптов — `TextAsset` + биндинги `tryResources`
-  (`ResolveAssetPath`, `RequestLoadAssetText`, `AssetTextIsReady/IsFailed`,
-  `GetAssetText`). `ResourceManager` сам выбирает `LooseFileLocation` или
+- Единая точка чтения текста для скриптов — `SourceText` + биндинги `tryResources`
+  (`ResolveAssetPath`, `RequestLoadSourceText`, `SourceTextIsReady/IsFailed`,
+  `GetSourceText`). `ResourceManager` сам выбирает `LooseFileLocation` или
   `PakChunkLocation`, поэтому Content/Scene/Prefab/Assets.das не знают, откуда читается
   файл. Синхронного чтения текста нет: `Assets::RequestText`/`TextIsReady`/`TakeText`
   отдают его опросом (так работает задача `Loader::Load`), а `Assets::ReadText` —
@@ -46,6 +46,6 @@
   `Content::Document` и диск не читает.
 - Сцена (`engine_source/daslang/Scene.das`) хранит авторские ссылки: компонент
   `materialRef: MaterialRef`, список `requireMaterials: string[]`. `GetSceneHeader` и
-  `Content::CollectRefs` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки
+  `Content::CollectDependencies` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки
   не знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
   отвергаются/не получают материал.

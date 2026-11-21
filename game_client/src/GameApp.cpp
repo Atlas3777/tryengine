@@ -18,7 +18,7 @@
 #include "engine/resources/PendingLoadQueue.hpp"
 #include "engine/resources/ReadFullFile.hpp"
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/resources/TextAsset.hpp"
+#include "engine/resources/SourceText.hpp"
 
 namespace trygame {
 
@@ -62,7 +62,7 @@ void GameApp::Init() {
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
-    rm.RegisterType<TextAsset>(TextAssetLoader{});
+    rm.RegisterType<SourceText>(SourceTextLoader{});
 
     // Паки монтируются до старта скриптов: тексты читаются через тот же API, что и в
     // редакторе. GameStart собирает LoaderRequest и запускает задачу Loader::Load.

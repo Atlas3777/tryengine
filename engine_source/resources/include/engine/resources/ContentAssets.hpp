@@ -11,9 +11,9 @@ namespace tryengine::resources {
 
 // Resource ids a content file references. Build packs them into the same pak; the
 // script-side Loader requests and waits for them before it switches to the target scene.
-struct ContentAssetRefs {
+struct ContentDependencies {
     eastl::vector<uint64_t> meshes;
-    eastl::vector<uint64_t> mats;
+    eastl::vector<uint64_t> materials;
 };
 
 namespace content_detail {
@@ -48,32 +48,34 @@ inline void AddRefArray(const ConfigField* field, const AssetRegistry& registry,
 
 }  // namespace content_detail
 
-// Reads the same fields the prefab spawner applies. A prefab is usable in a game only
-// when its meshes and materials are packed and preloaded as well.
-inline void CollectPrefabAssetRefs(eastl::string_view text, const AssetRegistry& registry, ContentAssetRefs& out) {
+// Reads the nodes of a prefab document - the same fields the prefab spawner applies. A
+// prefab is usable in a game only when its meshes and materials are packed and preloaded
+// as well.
+inline void CollectPrefabDependencies(eastl::string_view text, const AssetRegistry& registry,
+                                      ContentDependencies& out) {
     using namespace content_detail;
 
     auto parsed = ParseConfig(text);
     if (!parsed.has_value()) {
-        LogError("Prefab: failed to parse for asset refs: {}", parsed.error().Message());
+        LogError("Prefab: failed to parse for dependencies: {}", parsed.error().Message());
         return;
     }
 
-    const ConfigField* entities_field = FindField(*parsed, "entities");
-    const ConfigArray* entities = entities_field ? GetArray(entities_field->value) : nullptr;
-    if (!entities)
+    const ConfigField* nodes_field = FindField(*parsed, "nodes");
+    const ConfigArray* nodes = nodes_field ? GetArray(nodes_field->value) : nullptr;
+    if (!nodes)
         return;
 
-    for (const auto& element : entities->elements) {
-        const ConfigObject* entity = GetObject(element.value);
-        if (!entity)
+    for (const auto& element : nodes->elements) {
+        const ConfigObject* node = GetObject(element.value);
+        if (!node)
             continue;
 
-        const uint64_t mesh = ConfigUInt64(FindField(*entity, "meshGuid"));
+        const uint64_t mesh = ConfigUInt64(FindField(*node, "meshGuid"));
         if (mesh != 0)
             out.meshes.push_back(mesh);
 
-        if (const ConfigField* ref_field = FindField(*entity, "materialRef")) {
+        if (const ConfigField* ref_field = FindField(*node, "materialRef")) {
             const ConfigObject* ref_obj = GetObject(ref_field->value);
             if (!ref_obj)
                 continue;
@@ -85,23 +87,23 @@ inline void CollectPrefabAssetRefs(eastl::string_view text, const AssetRegistry&
                 continue;
             const auto id = registry.ResolveRef(*ref);
             if (id.has_value() && *id != 0)
-                out.mats.push_back(*id);
+                out.materials.push_back(*id);
         }
     }
 }
 
 // A scene header lists the meshes and materials it requests on load.
-inline void CollectSceneAssetRefs(eastl::string_view text, const AssetRegistry& registry, ContentAssetRefs& out) {
+inline void CollectSceneDependencies(eastl::string_view text, const AssetRegistry& registry, ContentDependencies& out) {
     using namespace content_detail;
 
     auto parsed = ParseConfig(text);
     if (!parsed.has_value()) {
-        LogError("Scene: failed to parse for asset refs: {}", parsed.error().Message());
+        LogError("Scene: failed to parse for dependencies: {}", parsed.error().Message());
         return;
     }
 
     AddRefArray(FindField(*parsed, "requireMeshs"), registry, out.meshes);
-    AddRefArray(FindField(*parsed, "requireMaterials"), registry, out.mats);
+    AddRefArray(FindField(*parsed, "requireMaterials"), registry, out.materials);
 }
 
 }  // namespace tryengine::resources

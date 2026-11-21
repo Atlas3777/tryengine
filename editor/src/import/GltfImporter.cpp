@@ -442,7 +442,7 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
 // ---------------------------------------------------------------------------
 // Prefab-ready view of a model (editor artifact only).
 //
-// A prefab is a flat pre-order list of entities with local transforms: the
+// A prefab is a flat pre-order list of nodes with local transforms: the
 // spawner composes parent rotation/scale/translation itself. The list lives in
 // artifacts/editor and is never packed; the game spawns prefabs, not glTF nodes.
 // ---------------------------------------------------------------------------
@@ -553,11 +553,11 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
     const eastl::string_view stem = ModelStem(asset_path);
     const eastl::string stem_string(stem.data(), stem.size());
 
-    ConfigArray entities;
+    ConfigArray nodes;
     for (const PrefabFlatNode& node : flat) {
-        ConfigObject entity;
-        entity.fields.push_back(MakePrefabField("localId", "u32", ConfigValue(node.local_id)));
-        entity.fields.push_back(MakePrefabField("parentLocalId", "u32", ConfigValue(node.parent_local_id)));
+        ConfigObject node_obj;
+        node_obj.fields.push_back(MakePrefabField("localId", "u32", ConfigValue(node.local_id)));
+        node_obj.fields.push_back(MakePrefabField("parentLocalId", "u32", ConfigValue(node.parent_local_id)));
 
         tryengine::Transform local_transform;
         eastl::string tag;
@@ -573,42 +573,42 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
             tag = stem_string;
         }
 
-        entity.fields.push_back(MakeStringField("tag", eastl::move(tag)));
+        node_obj.fields.push_back(MakeStringField("tag", eastl::move(tag)));
 
-        entity.fields.push_back(
+        node_obj.fields.push_back(
             MakePrefabField("Transform_position", "f32x3",
                             ConfigValue(ConfigFloat3{local_transform.position.x, local_transform.position.y,
                                                      local_transform.position.z})));
-        entity.fields.push_back(
+        node_obj.fields.push_back(
             MakePrefabField("Transform_rotation", "f32x4",
                             ConfigValue(ConfigFloat4{local_transform.rotation.x, local_transform.rotation.y,
                                                      local_transform.rotation.z, local_transform.rotation.w})));
-        entity.fields.push_back(MakePrefabField(
+        node_obj.fields.push_back(MakePrefabField(
             "Transform_scale", "f32x3",
             ConfigValue(ConfigFloat3{local_transform.scale.x, local_transform.scale.y, local_transform.scale.z})));
 
         if (mesh_id != 0) {
-            entity.fields.push_back(MakePrefabField("meshGuid", "u64", ConfigValue(mesh_id)));
+            node_obj.fields.push_back(MakePrefabField("meshGuid", "u64", ConfigValue(mesh_id)));
             if (material_id != 0) {
                 ConfigObject material;
                 material.fields.push_back(MakeStringField("path", tryengine::fmt::format("guid:{}", material_id)));
-                entity.fields.push_back(
+                node_obj.fields.push_back(
                     MakePrefabField("materialRef", "MaterialRef",
                                     ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(material)))));
             }
         }
 
-        entities.elements.push_back(
-            MakePrefabField("", "PrefabNode", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(entity)))));
+        nodes.elements.push_back(
+            MakePrefabField("", "PrefabNode", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(node_obj)))));
     }
 
     ConfigObject root;
-    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{1})));
+    root.fields.push_back(MakePrefabField("version", "u32", ConfigValue(uint32_t{2})));
     root.fields.push_back(MakeStringField("name", stem_string));
     root.fields.push_back(MakeStringField("configType", {}));
     root.fields.push_back(MakeStringField("configRow", {}));
-    root.fields.push_back(MakePrefabField("entities", "PrefabNode[]",
-                                          ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(entities)))));
+    root.fields.push_back(
+        MakePrefabField("nodes", "PrefabNode[]", ConfigValue(eastl::make_unique<ConfigArray>(eastl::move(nodes)))));
 
     return WriteConfig(root);
 }

@@ -193,8 +193,8 @@ daslang -dry-run -no-lint \
   префикс `game/` подразумевается. Расширение файла указывается всегда явно, ничего не
   дописывается. Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
 - Общий слой документов: `tryengine/Content.das`. Здесь живут путь по виду документа
-  (`ContentKind.Scene/Prefab/Bundle`), stem, `Find` через `Assets::Exists`, разбор
-  ConfigFormat, общий сбор `meshGuid`/`materialRef` в `AssetRefs` и кеш разобранных
+  (`DocumentKind.Scene/Prefab/Bundle`), stem, `Find` через `Assets::Exists`, разбор
+  ConfigFormat, общий сбор `meshGuid`/`materialRef` в `Dependencies` и кеш разобранных
   `Document` (текст + корень + зависимости). Scene/Prefab/Bundle отвечают только за свой
   формат и действие; Loader читает все документы одним конвейером. `Content::Cache`
   сохраняет документ после `Loader::Finish`, поэтому предзагруженную сцену можно применить
@@ -205,7 +205,7 @@ daslang -dry-run -no-lint \
   Префаб адресуется путём относительно `content/` (`prefabl.prefab`,
   `props/sword.prefab`) или полным путём; расширение обязательно. C++-кеш
   `ResourceManager` для префабов не используется: данные нужны DECS, а не C++-типу, но
-  сырой текст читает его `TextAsset`. Игра не прогревает все префабы:
+  сырой текст читает его `SourceText`. Игра не прогревает все префабы:
   `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное (пути
   `content/...` и `data/...`). Полного `RefreshContent` больше нет: редакторская панель
   `Prefab Inspector` показывает выбранный в Asset Browser префаб и грузит его точечно.

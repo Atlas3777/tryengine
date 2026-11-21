@@ -11,7 +11,7 @@
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetPak.hpp"
 #include "engine/resources/ContentAssets.hpp"
-#include "engine/resources/TextAsset.hpp"
+#include "engine/resources/SourceText.hpp"
 
 namespace tryeditor {
 
@@ -163,8 +163,8 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
             continue;
 
         const uint64_t id = tryengine::core::PathId(path);
-        res_m_.Discard<tryengine::resources::TextAsset>(id);
-        auto text_res = co_await res_m_.GetAsync<tryengine::resources::TextAsset>(id);
+        res_m_.Discard<tryengine::resources::SourceText>(id);
+        auto text_res = co_await res_m_.GetAsync<tryengine::resources::SourceText>(id);
         if (!text_res.has_value()) {
             LogError("Content file '{}' is not readable; skipped", path.c_str());
             continue;
@@ -179,10 +179,10 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         file.data = eastl::vector<uint8_t>(begin, begin + text.size());
 
         if (is_prefab) {
-            tryengine::resources::ContentAssetRefs refs;
-            tryengine::resources::CollectPrefabAssetRefs(text, res_m_.GetAssetRegistry(), refs);
-            AppendUnique(common_dto.meshes, eastl::move(refs.meshes));
-            AppendUnique(common_dto.mats, eastl::move(refs.mats));
+            tryengine::resources::ContentDependencies deps;
+            tryengine::resources::CollectPrefabDependencies(text, res_m_.GetAssetRegistry(), deps);
+            AppendUnique(common_dto.meshes, eastl::move(deps.meshes));
+            AppendUnique(common_dto.mats, eastl::move(deps.materials));
         } else if (is_data && EndsWith(path, ".mat")) {
             // A material may be requested at runtime by path even if no scene/prefab
             // references it; its shader and textures belong in common as well.
@@ -263,13 +263,13 @@ tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
     auto& registry = res_m_.GetAssetRegistry();
 
     // Текст сцены — такой же content-файл, как префаб: id = PathId(путь), данные — текст.
-    // Читается через общий TextAsset, поэтому игра грузит сцену без loose-файлов.
+    // Читается через общий SourceText, поэтому игра грузит сцену без loose-файлов.
     if (!scene.path.empty()) {
         const uint64_t scene_id = tryengine::core::PathId(scene.path);
         // Сцена могла быть сохранена в этой же сессии редактора: закешированный текст
         // запаковал бы прошлую ревизию.
-        res_m_.Discard<tryengine::resources::TextAsset>(scene_id);
-        auto text_res = co_await res_m_.GetAsync<tryengine::resources::TextAsset>(scene_id);
+        res_m_.Discard<tryengine::resources::SourceText>(scene_id);
+        auto text_res = co_await res_m_.GetAsync<tryengine::resources::SourceText>(scene_id);
         if (text_res.has_value()) {
             const auto& text = (*text_res)->text;
             const auto* begin = reinterpret_cast<const uint8_t*>(text.data());

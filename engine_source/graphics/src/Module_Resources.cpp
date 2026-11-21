@@ -6,7 +6,7 @@
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/resources/ResourceManager.hpp"
-#include "engine/resources/TextAsset.hpp"
+#include "engine/resources/SourceText.hpp"
 
 using namespace tryengine::core;
 using das::LineInfoArg;
@@ -164,41 +164,41 @@ uint64_t RegisterAssetPath(const char* path, das::Context* ctx) {
     return resolved.has_value() ? *resolved : registry.RegisterAuthoritative(path);
 }
 
-void RequestLoadAssetText(uint64_t id, das::Context* ctx) {
+void RequestLoadSourceText(uint64_t id, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->RequestLoad<tryengine::resources::TextAsset>(id);
+        res_manager->RequestLoad<tryengine::resources::SourceText>(id);
 }
 
-bool AssetTextIsReady(uint64_t id, das::Context* ctx) {
+bool SourceTextIsReady(uint64_t id, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
-    return res_manager ? res_manager->IsReady<tryengine::resources::TextAsset>(id) : false;
+    return res_manager ? res_manager->IsReady<tryengine::resources::SourceText>(id) : false;
 }
 
-bool AssetTextIsFailed(uint64_t id, das::Context* ctx) {
+bool SourceTextIsFailed(uint64_t id, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
-    return res_manager ? res_manager->IsFailed<tryengine::resources::TextAsset>(id) : false;
+    return res_manager ? res_manager->IsFailed<tryengine::resources::SourceText>(id) : false;
 }
 
-char* GetAssetText(uint64_t id, das::Context* ctx, LineInfoArg* at) {
+char* GetSourceText(uint64_t id, das::Context* ctx, LineInfoArg* at) {
     auto* res_manager = GetResourceManager(ctx);
     if (!res_manager)
         return nullptr;
-    auto* text = res_manager->GetPointerExplicit<tryengine::resources::TextAsset>(id);
+    auto* text = res_manager->GetPointerExplicit<tryengine::resources::SourceText>(id);
     if (!text)
         return nullptr;
     return ctx->allocateString(text->text.c_str(), text->text.size(), at);
 }
 
-void ReleaseAssetText(uint64_t id, das::Context* ctx) {
+void ReleaseSourceText(uint64_t id, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->Release<tryengine::resources::TextAsset>(id);
+        res_manager->Release<tryengine::resources::SourceText>(id);
 }
 
-// Drops a cached text. Discard, not Invalidate: a text asset hands out no raw pointers,
+// Drops a cached text. Discard, not Invalidate: a source text hands out no raw pointers,
 // so the old copy can be destroyed immediately instead of growing retired_.
-void InvalidateAssetText(uint64_t id, das::Context* ctx) {
+void InvalidateSourceText(uint64_t id, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
-        res_manager->Discard<tryengine::resources::TextAsset>(id);
+        res_manager->Discard<tryengine::resources::SourceText>(id);
 }
 
 class Module_Resources : public das::Module {
@@ -265,23 +265,23 @@ public:
         das::addExtern<DAS_BIND_FUN(RegisterAssetPath)>(*this, lib, "RegisterAssetPath", das::SideEffects::accessGlobal,
                                                         "RegisterAssetPath");
 
-        das::addExtern<DAS_BIND_FUN(RequestLoadAssetText)>(*this, lib, "RequestLoadAssetText",
-                                                           das::SideEffects::accessGlobal, "RequestLoadAssetText");
+        das::addExtern<DAS_BIND_FUN(RequestLoadSourceText)>(*this, lib, "RequestLoadSourceText",
+                                                            das::SideEffects::accessGlobal, "RequestLoadSourceText");
 
-        das::addExtern<DAS_BIND_FUN(AssetTextIsReady)>(*this, lib, "AssetTextIsReady", das::SideEffects::accessGlobal,
-                                                       "AssetTextIsReady");
+        das::addExtern<DAS_BIND_FUN(SourceTextIsReady)>(*this, lib, "SourceTextIsReady", das::SideEffects::accessGlobal,
+                                                        "SourceTextIsReady");
 
-        das::addExtern<DAS_BIND_FUN(AssetTextIsFailed)>(*this, lib, "AssetTextIsFailed", das::SideEffects::accessGlobal,
-                                                        "AssetTextIsFailed");
+        das::addExtern<DAS_BIND_FUN(SourceTextIsFailed)>(*this, lib, "SourceTextIsFailed",
+                                                         das::SideEffects::accessGlobal, "SourceTextIsFailed");
 
-        das::addExtern<DAS_BIND_FUN(GetAssetText)>(*this, lib, "GetAssetText", das::SideEffects::accessGlobal,
-                                                   "GetAssetText");
+        das::addExtern<DAS_BIND_FUN(GetSourceText)>(*this, lib, "GetSourceText", das::SideEffects::accessGlobal,
+                                                    "GetSourceText");
 
-        das::addExtern<DAS_BIND_FUN(ReleaseAssetText)>(*this, lib, "ReleaseAssetText", das::SideEffects::accessGlobal,
-                                                       "ReleaseAssetText");
+        das::addExtern<DAS_BIND_FUN(ReleaseSourceText)>(*this, lib, "ReleaseSourceText", das::SideEffects::accessGlobal,
+                                                        "ReleaseSourceText");
 
-        das::addExtern<DAS_BIND_FUN(InvalidateAssetText)>(*this, lib, "InvalidateAssetText",
-                                                          das::SideEffects::accessGlobal, "InvalidateAssetText");
+        das::addExtern<DAS_BIND_FUN(InvalidateSourceText)>(*this, lib, "InvalidateSourceText",
+                                                           das::SideEffects::accessGlobal, "InvalidateSourceText");
 
         verifyAotReady();
     }
