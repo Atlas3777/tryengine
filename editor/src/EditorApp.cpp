@@ -134,6 +134,16 @@ void EditorApp::Run() const {
         script_system.InvokeFunctionFast("EngineUpdate");
         script_system.InvokeFunctionFast("EditorUpdate");
 
+        // Перезагрузка запрашивается из UI/хоткея во время EditorUpdate; подменять контекст
+        // можно только когда в нём не выполняется ни одна функция скрипта, то есть здесь.
+        if (script_system.IsReloadRequested()) {
+            TRY_PROFILE_SCOPE("Script.Reload");
+            script_system.ClearReloadRequest();
+            const auto reload = script_system.ReloadMainScript();
+            if (!reload.has_value())
+                LogError(LogCategory::Script, "Перезагрузка скриптов не удалась: {}", reload.error());
+        }
+
         {
             TRY_PROFILE_SCOPE("Async.Submit");
             engine_->Get<AsyncFileManager>().Submit();

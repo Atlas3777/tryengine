@@ -27,6 +27,29 @@ var private g_saved_decs : array<uint8>
 var private g_saved_scene : SceneState
 var private g_saved_selected_eid : EntityId = INVALID_ENTITY_ID
 
+//! Play snapshot as seen by hot reload. While Play is running the DECS heap holds the game
+//! world and the editor snapshot lives only in these globals; both must cross the reload so
+//! that Stop still restores the pre-Play scene.
+struct public PlayReloadState {
+    decs : array<uint8>
+    scene : SceneState
+    selected_eid : EntityId
+}
+
+def public CaptureReloadState() : PlayReloadState {
+    var state : PlayReloadState
+    state.decs <- clone(g_saved_decs)
+    state.scene <- clone(g_saved_scene)
+    state.selected_eid = g_saved_selected_eid
+    return <- state
+}
+
+def public ApplyReloadState(var state : PlayReloadState) {
+    g_saved_decs <- clone(state.decs)
+    g_saved_scene <- clone(state.scene)
+    g_saved_selected_eid = state.selected_eid
+}
+
 def public BeginPlay() {
     g_saved_decs <- mem_archive_save(decsState)
     g_saved_scene <- Scene::CaptureState()

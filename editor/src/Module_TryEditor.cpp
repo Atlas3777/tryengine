@@ -10,6 +10,7 @@
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
+#include "engine/core/ScriptSystem.hpp"
 #include "engine/core/strings/Hash.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
@@ -328,6 +329,108 @@ void* GetGameCameraViewImage(das::Context* ctx) {
 
 using namespace das;
 
+// --- Горячая перезагрузка скриптов ------------------------------------------------------
+//
+// Аннотации повторяют контракт daslang-live: [before_reload]/[after_reload] переименовывают
+// функцию в __before_reload_<имя>/__after_reload_<имя>, и ScriptSystem находит хуки по
+// префиксу. Снимок состояния между старым и новым контекстом живёт здесь, в C++: контексты
+// не делят между собой кучу, поэтому массив байт из старого нельзя прочитать новым.
+
+struct BeforeReloadAnnotation : FunctionAnnotation {
+    BeforeReloadAnnotation() : FunctionAnnotation("before_reload") {}
+
+    bool apply(const FunctionPtr& func, ModuleGroup&, AnnotationArgumentList&, string&) override {
+        func->exports = true;
+        func->name = "__before_reload_" + func->name;
+        return true;
+    }
+
+    bool apply(ExprBlock*, ModuleGroup&, AnnotationArgumentList&, string& err) override {
+        err = "not supported for blocks";
+        return false;
+    }
+
+    bool finalize(const FunctionPtr&, ModuleGroup&, AnnotationArgumentList&, const AnnotationArgumentList&,
+                  string&) override {
+        return true;
+    }
+
+    bool finalize(ExprBlock*, ModuleGroup&, AnnotationArgumentList&, const AnnotationArgumentList&, string&) override {
+        return true;
+    }
+};
+
+struct AfterReloadAnnotation : FunctionAnnotation {
+    AfterReloadAnnotation() : FunctionAnnotation("after_reload") {}
+
+    bool apply(const FunctionPtr& func, ModuleGroup&, AnnotationArgumentList&, string&) override {
+        func->exports = true;
+        func->name = "__after_reload_" + func->name;
+        return true;
+    }
+
+    bool apply(ExprBlock*, ModuleGroup&, AnnotationArgumentList&, string& err) override {
+        err = "not supported for blocks";
+        return false;
+    }
+
+    bool finalize(const FunctionPtr&, ModuleGroup&, AnnotationArgumentList&, const AnnotationArgumentList&,
+                  string&) override {
+        return true;
+    }
+
+    bool finalize(ExprBlock*, ModuleGroup&, AnnotationArgumentList&, const AnnotationArgumentList&, string&) override {
+        return true;
+    }
+};
+
+// Один слот: снимок пишется в старом контексте и читается в новом. Отдельного ключа нет,
+// потому что состояние одно и принадлежит редактору.
+eastl::vector<uint8_t> g_script_reload_state;
+
+void ScriptReloadStoreBytes(const TArray<uint8_t>& data) {
+    g_script_reload_state.assign(data.data, data.data + data.size);
+}
+
+bool ScriptReloadLoadBytes(TArray<uint8_t>& data, Context* ctx) {
+    if (g_script_reload_state.empty())
+        return false;
+
+    const uint32_t size = uint32_t(g_script_reload_state.size());
+    array_resize(*ctx, data, size, sizeof(uint8_t), false, nullptr);
+    if (size > 0)
+        std::memcpy(data.data, g_script_reload_state.data(), size);
+    return true;
+}
+
+bool RequestScriptReload(Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return false;
+
+    auto* script_system = try_ctx->engine.TryGet<tryengine::core::ScriptSystem>();
+    if (!script_system) {
+        LogError("RequestScriptReload: ScriptSystem не зарегистрирован");
+        return false;
+    }
+
+    script_system->RequestReload();
+    return true;
+}
+
+char* ScriptReloadStatus(Context* ctx, LineInfoArg* at) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return ctx->allocateString("", 0, at);
+
+    auto* script_system = try_ctx->engine.TryGet<tryengine::core::ScriptSystem>();
+    if (!script_system)
+        return ctx->allocateString("", 0, at);
+
+    const auto& status = script_system->ReloadStatus();
+    return ctx->allocateString(status.c_str(), uint32_t(status.size()), at);
+}
+
 struct UiFileAnnotation : ManagedStructureAnnotation<tryeditor::UiFile, false> {
     UiFileAnnotation(ModuleLibrary& ml) : ManagedStructureAnnotation("AssetItem", ml) {
         addField<DAS_BIND_MANAGED_FIELD(guid)>("guid", "guid");
@@ -352,6 +455,9 @@ public:
         das::ModuleLibrary lib(this);
 
         addEnumeration(new EnumerationStorageDomain());
+
+        addAnnotation(new BeforeReloadAnnotation());
+        addAnnotation(new AfterReloadAnnotation());
 
         addAnnotation(new UiFileAnnotation(lib));
 
@@ -409,6 +515,15 @@ public:
 
         das::addExtern<DAS_BIND_FUN(TestCompileScriptPak)>(*this, lib, "TestCompileScriptPak",
                                                            das::SideEffects::accessGlobal, "TestCompileScriptPak");
+
+        das::addExtern<DAS_BIND_FUN(ScriptReloadStoreBytes)>(
+            *this, lib, "ScriptReloadStoreBytes", das::SideEffects::modifyExternal, "ScriptReloadStoreBytes");
+        das::addExtern<DAS_BIND_FUN(ScriptReloadLoadBytes)>(
+            *this, lib, "ScriptReloadLoadBytes", das::SideEffects::modifyArgumentAndExternal, "ScriptReloadLoadBytes");
+        das::addExtern<DAS_BIND_FUN(RequestScriptReload)>(*this, lib, "RequestScriptReload",
+                                                          das::SideEffects::accessGlobal, "RequestScriptReload");
+        das::addExtern<DAS_BIND_FUN(ScriptReloadStatus)>(*this, lib, "ScriptReloadStatus",
+                                                         das::SideEffects::accessGlobal, "ScriptReloadStatus");
 
         verifyAotReady();
     }

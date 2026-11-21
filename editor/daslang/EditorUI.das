@@ -12,6 +12,7 @@ require math
 require tryeditor/Editor
 require tryeditor/PlayMode
 require trygame/Game
+require tryeditor/HotReload
 
 require tryeditor/Hierarchy
 require tryeditor/Inspector
@@ -93,6 +94,9 @@ def DrawMainMenu() {
             if (menu_label(FILE_SAVE_PREFAB, (text = "Save Selection as Prefab..."))) {
                 SaveSelectionAsPrefab()
             }
+            if (menu_label(FILE_RELOAD_SCRIPTS, (text = "Reload Scripts", shortcut = "F5"))) {
+                ReloadScripts()
+            }
 
             separator(FILE_SEP_1)
             menu_item(FILE_AUTOSAVE, (text = "Auto-Save"))
@@ -149,6 +153,10 @@ def DrawMainMenu() {
         }
 
         separator(MAIN_MENU_SEP_1)
+        if (button(RELOAD_SCRIPTS_BTN, (text = "Reload Scripts (F5)"))) {
+            ReloadScripts()
+        }
+        same_line()
         DrawPlayControls()
     }
 }

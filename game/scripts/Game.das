@@ -57,6 +57,26 @@ def RegisterGameTime() {
     TimeRegister(game_ui_clock, game_clock)
 }
 
+//! Game state that must survive an editor hot reload. The editor saves it through
+//! Editor HotReload; the standalone game never calls these.
+struct public GameReloadState {
+    scene_ready : bool
+    orbit_angle : float
+}
+
+def public CaptureReloadState() : GameReloadState {
+    return GameReloadState(scene_ready = g_scene_ready, orbit_angle = orbit_angle)
+}
+
+def public ApplyReloadState(var state : GameReloadState) {
+    g_scene_ready = state.scene_ready
+    orbit_angle = state.orbit_angle
+    // A resumed Play needs its clocks back: the new context starts with an empty time tree.
+    if (g_scene_ready) {
+        RegisterGameTime()
+    }
+}
+
 // Explicit entry point, shared by the standalone game and editor Play. The request says
 // what this game needs at startup; the loader task reads and compiles it, then calls
 // `OnLoaded` synchronously in the cache.

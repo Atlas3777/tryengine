@@ -1,5 +1,6 @@
 #include "engine/core/ScriptSystem.hpp"
 
+#include <cstring>
 #include <daScript/ast/dyn_modules.h>
 
 namespace tryengine::core {
@@ -32,46 +33,169 @@ ScriptSystem::~ScriptSystem() {
         delete das_ctx_;
         das_ctx_ = nullptr;
     }
+    // Программа должна пережить контекст, группа модулей — программу.
+    program_ = nullptr;
+    module_group_.reset();
     das::Module::Shutdown();
 }
 
-Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
+Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::string_view path) {
     das::TextPrinter tout;
-    das::ModuleGroup dummy_lib_group;
+    CompiledScript result;
+    result.module_group = std::make_unique<das::ModuleGroup>();
 
     if (config_.prepare_file_access)
         config_.prepare_file_access(*file_access_);
 
-    const auto program = das::compileDaScript(path.data(), file_access_, tout, dummy_lib_group, config_.policies);
+    const das::string script_path(path.data(), path.size());
+    auto program = das::compileDaScript(script_path, file_access_, tout, *result.module_group, config_.policies);
 
     if (!program)
         return LogAndMakeError("Ошибка компиляции скрипта (program == nullptr): {}", path.data());
 
     if (program->failed()) {
-        for (const auto& error : program->errors)
-            LogError(das::reportError(error.at, error.what, error.extra, error.fixme, error.cerr).c_str());
-
-        return LogAndMakeError("Ошибка компиляции скрипта: {}", path.data());
+        eastl::string error_text;
+        for (const auto& error : program->errors) {
+            const auto report = das::reportError(error.at, error.what, error.extra, error.fixme, error.cerr);
+            LogError(LogCategory::Script, "{}", report.c_str());
+            if (!error_text.empty())
+                error_text += "\n";
+            error_text.append(report.c_str(), report.size());
+        }
+        if (error_text.empty())
+            error_text = "Неизвестная ошибка компиляции";
+        return Error(ErrorCode::Unknown, eastl::move(error_text));
     }
 
-    // for (auto* mod : program->thisModuleGroup->getModules())
-    // LogInfo(LogCategory::Script, "LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
-
     auto* new_ctx = config_.create_context(program->getContextStackSize());
+    if (!new_ctx)
+        return LogAndMakeError("Фабрика контекста вернула nullptr: {}", path.data());
+
     if (!program->simulate(*new_ctx, tout)) {
         delete new_ctx;
         return LogAndMakeError("Ошибка симуляции контекста! {}", tout.c_str());
     }
 
-    // for (auto* mod : program->thisModuleGroup->getModules())
-    // LogInfo(LogCategory::Script, "After simul LOADED module: {} [{}]", mod->name.c_str(), mod->fileName.c_str());
+    result.program = eastl::move(program);
+    result.context.reset(new_ctx);
+    return result;
+}
 
-    if (das_ctx_)
-        delete das_ctx_;
+bool ScriptSystem::InvokeReloadHooks(das::Context* ctx, const char* prefix, eastl::string& errors) {
+    if (!ctx || !prefix)
+        return true;
 
-    das_ctx_ = new_ctx;
+    const size_t prefix_len = std::strlen(prefix);
+    bool ok = true;
+
+    // Контекст должен быть чистым: предыдущая ошибка скрипта или исключение в
+    // реинициализации не должны превращать снимок состояния в повторное исключение.
+    ctx->restart();
+
+    const int32_t total = ctx->getTotalFunctions();
+    for (int32_t i = 0; i < total; ++i) {
+        auto* function = ctx->getFunction(i);
+        if (!function || !function->name || !function->debugInfo || function->debugInfo->count != 0)
+            continue;
+        if (std::strncmp(function->name, prefix, prefix_len) != 0)
+            continue;
+
+        ctx->evalWithCatch(function, nullptr);
+        if (const char* ex = ctx->getException()) {
+            LogError(LogCategory::Script, "Хук перезагрузки '{}' упал: {}", function->name, ex);
+            if (!errors.empty())
+                errors += "\n";
+            errors += function->name;
+            errors += ": ";
+            errors += ex;
+            ctx->clearException();
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
+    auto compiled = CompileMainScript(path);
+    if (!compiled.has_value())
+        return std::unexpected(std::move(compiled.error()));
+
+    // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
+    std::unique_ptr<das::Context> old_context(das_ctx_);
+    das::ProgramPtr old_program = eastl::move(program_);
+    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
+
+    das_ctx_ = compiled->context.release();
+    program_ = eastl::move(compiled->program);
+    module_group_ = eastl::move(compiled->module_group);
+    main_script_path_.assign(path.data(), path.size());
+
+    old_context.reset();
+    old_program = nullptr;
+    old_group.reset();
 
     LogInfo(LogCategory::Script, "Скрипт {} успешно скомпилирован", path.data());
+    return {};
+}
+
+Result<void> ScriptSystem::ReloadMainScript() {
+    if (reloading_)
+        return LogAndMakeError("Перезагрузка скриптов уже идёт");
+    if (main_script_path_.empty())
+        return LogAndMakeError("Главный скрипт ещё не загружен");
+    if (!das_ctx_)
+        return LogAndMakeError("Нет активного контекста скриптов");
+
+    reload_requested_ = false;
+    reloading_ = true;
+    reload_status_.clear();
+
+    // Пока новый скрипт компилируется и симулируется, старый продолжает работать:
+    // ошибка компиляции не должна ронять редактор.
+    auto compiled = CompileMainScript(main_script_path_);
+    if (!compiled.has_value()) {
+        const auto message = compiled.error().Message();
+        reload_status_ = "Script reload failed:\n";
+        reload_status_.append(message.data(), message.size());
+        reloading_ = false;
+        return std::unexpected(std::move(compiled.error()));
+    }
+
+    // Снимок состояния делает старый контекст, пока он ещё цел.
+    eastl::string hook_errors;
+    InvokeReloadHooks(das_ctx_, "__before_reload_", hook_errors);
+
+    std::unique_ptr<das::Context> old_context(das_ctx_);
+    das::ProgramPtr old_program = eastl::move(program_);
+    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
+
+    das_ctx_ = compiled->context.release();
+    program_ = eastl::move(compiled->program);
+    module_group_ = eastl::move(compiled->module_group);
+
+    // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
+    // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
+    if (config_.reinit_context)
+        config_.reinit_context(*this);
+    das_ctx_->restart();
+
+    InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
+
+    // Старое поколение уходит последним: его контекст ссылается на программу и модули.
+    old_context.reset();
+    old_program = nullptr;
+    old_group.reset();
+
+    reloading_ = false;
+    if (hook_errors.empty()) {
+        reload_status_ = "Scripts reloaded";
+        LogInfo(LogCategory::Script, "Скрипты перезагружены: {}", main_script_path_);
+        return {};
+    }
+
+    reload_status_ = "Scripts reloaded with hook errors:\n";
+    reload_status_ += hook_errors;
+    LogError(LogCategory::Script, "Перезагрузка скриптов завершилась с ошибками: {}", hook_errors);
     return {};
 }
 
