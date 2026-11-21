@@ -139,25 +139,18 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
 }
 
 Result<void> ScriptSystem::ReloadMainScript() {
-    if (reloading_)
-        return LogAndMakeError("Перезагрузка скриптов уже идёт");
+    if (!reload_extension_)
+        return LogAndMakeError("Горячая перезагрузка не подключена");
     if (main_script_path_.empty())
         return LogAndMakeError("Главный скрипт ещё не загружен");
     if (!das_ctx_)
         return LogAndMakeError("Нет активного контекста скриптов");
 
-    reload_requested_ = false;
-    reloading_ = true;
-    reload_status_.clear();
-
     // Пока новый скрипт компилируется и симулируется, старый продолжает работать:
     // ошибка компиляции не должна ронять редактор.
     auto compiled = CompileMainScript(main_script_path_);
     if (!compiled.has_value()) {
-        const auto message = compiled.error().Message();
-        reload_status_ = "Script reload failed:\n";
-        reload_status_.append(message.data(), message.size());
-        reloading_ = false;
+        reload_extension_->OnReloadFinished(false, compiled.error().Message());
         return std::unexpected(std::move(compiled.error()));
     }
 
@@ -175,8 +168,7 @@ Result<void> ScriptSystem::ReloadMainScript() {
 
     // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
     // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
-    if (config_.reinit_context)
-        config_.reinit_context(*this);
+    reload_extension_->ReinitializeContext(*this);
     das_ctx_->restart();
 
     InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
@@ -186,16 +178,11 @@ Result<void> ScriptSystem::ReloadMainScript() {
     old_program = nullptr;
     old_group.reset();
 
-    reloading_ = false;
-    if (hook_errors.empty()) {
-        reload_status_ = "Scripts reloaded";
+    reload_extension_->OnReloadFinished(true, hook_errors);
+    if (hook_errors.empty())
         LogInfo(LogCategory::Script, "Скрипты перезагружены: {}", main_script_path_);
-        return {};
-    }
-
-    reload_status_ = "Scripts reloaded with hook errors:\n";
-    reload_status_ += hook_errors;
-    LogError(LogCategory::Script, "Перезагрузка скриптов завершилась с ошибками: {}", hook_errors);
+    else
+        LogError(LogCategory::Script, "Перезагрузка скриптов завершилась с ошибками: {}", hook_errors);
     return {};
 }
 

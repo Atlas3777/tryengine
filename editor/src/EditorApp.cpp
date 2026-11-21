@@ -8,6 +8,7 @@
 #include "editor/Editor.hpp"
 #include "editor/EditorInputFilter.hpp"
 #include "editor/EditorScriptSetup.hpp"
+#include "editor/ScriptReload.hpp"
 #include "editor/render/EditorRender.hpp"
 #include "editor/shader/ShaderCompilerSystem.hpp"
 #include "engine/async/GlobalExecutors.hpp"
@@ -75,6 +76,8 @@ void EditorApp::Init() {
     editor_->GetAssetSourceDatabase().BuildAuthoritativeTrees();
 
     auto& script_system = engine_->RegisterSystem<ScriptSystem>(GetEditorScriptConfig(*engine_, *editor_));
+    auto& script_reload = engine_->RegisterSystem<ScriptReload>(script_system);
+    script_system.SetReloadExtension(&script_reload);
 
     script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
 
@@ -136,12 +139,9 @@ void EditorApp::Run() const {
 
         // Перезагрузка запрашивается из UI/хоткея во время EditorUpdate; подменять контекст
         // можно только когда в нём не выполняется ни одна функция скрипта, то есть здесь.
-        if (script_system.IsReloadRequested()) {
+        if (auto* reload = engine_->TryGet<ScriptReload>(); reload && reload->IsReloadRequested()) {
             TRY_PROFILE_SCOPE("Script.Reload");
-            script_system.ClearReloadRequest();
-            const auto reload = script_system.ReloadMainScript();
-            if (!reload.has_value())
-                LogError(LogCategory::Script, "Перезагрузка скриптов не удалась: {}", reload.error());
+            reload->ProcessRequested();
         }
 
         {

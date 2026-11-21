@@ -13,6 +13,16 @@
 
 namespace tryengine::graphics {
 
+// 1x1 белая текстура для сэмплеров, которые материал не привязал. Дескриптор в наборе
+// материала обязан быть валидным, даже если шейдер читает текстуру только в одной ветке:
+// без заглушки vkCmdDrawIndexedIndirect падает с VUID-vkCmdDrawIndexedIndirect-None-08114.
+struct DefaultTexture {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+};
+
 class VulkanDevice {
 public:
     VulkanDevice(uint32_t width, uint32_t height, eastl::string_view title);
@@ -63,12 +73,19 @@ public:
         return present_queue_family_;
     }
 
+    [[nodiscard]] const DefaultTexture& GetDefaultWhiteTexture() const {
+        return default_white_texture_;
+    }
+
     void WaitIdle() const {
         if (device_)
             vkDeviceWaitIdle(device_);
     }
 
 private:
+    void CreateDefaultWhiteTexture();
+    void DestroyDefaultWhiteTexture();
+
     SDL_Window* window_ = nullptr;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debug_messenger_ = VK_NULL_HANDLE;
@@ -81,6 +98,8 @@ private:
     uint32_t graphics_queue_family_ = 0;
     VkQueue present_queue_ = VK_NULL_HANDLE;
     uint32_t present_queue_family_ = 0;
+
+    DefaultTexture default_white_texture_;
 };
 
 }  // namespace tryengine::graphics

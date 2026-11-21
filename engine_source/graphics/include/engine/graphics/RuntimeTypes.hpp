@@ -362,6 +362,8 @@ struct Material {
             shader = std::move(other.shader);
             textures = std::move(other.textures);
             storage_buffers = std::move(other.storage_buffers);
+            default_texture_view = other.default_texture_view;
+            default_texture_sampler = other.default_texture_sampler;
 
             descriptor_set = std::exchange(other.descriptor_set, VK_NULL_HANDLE);
             retired_descriptor_sets = std::move(other.retired_descriptor_sets);
@@ -385,6 +387,11 @@ struct Material {
     eastl::fixed_vector<MaterialTextureBinding, 8, false> textures;
     eastl::fixed_vector<MaterialBufferBinding, 2, false> storage_buffers;
 
+    // Не владеет: 1x1 белая текстура принадлежит VulkanDevice. Подставляется в каждый
+    // сэмплер set 1, который материал не привязал, иначе дескриптор остаётся невалидным.
+    VkImageView default_texture_view = VK_NULL_HANDLE;
+    VkSampler default_texture_sampler = VK_NULL_HANDLE;
+
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
     // Наборы, которые уже могли попасть в записанные command buffer. Не освобождаем их
     // до уничтожения материала: живой материал меняет только указатель descriptor_set.
@@ -402,6 +409,14 @@ struct Material {
     // изменение дескрипторов идёт только через новый набор, а не in-place.
     void FinalizeDescriptors() {
         descriptors_finalized = true;
+    }
+
+    // Текстура-заглушка для сэмплеров set 1, которые материал не привязал: шейдер всё
+    // равно их читает, и дескриптор обязан быть валидным. Вызывать до InitGpuResources,
+    // чтобы первый же UpdateDescriptors записал её в набор.
+    void SetDefaultTexture(VkImageView view, VkSampler sampler) {
+        default_texture_view = view;
+        default_texture_sampler = sampler;
     }
 
     void InitGpuResources(VkDevice device, VkPhysicalDevice phys_device) {
@@ -595,7 +610,7 @@ struct Material {
     void WriteDescriptors(VkDescriptorSet set) {
         eastl::fixed_vector<VkWriteDescriptorSet, 16, false> writes;
         eastl::fixed_vector<VkDescriptorBufferInfo, 4, false> buffer_infos;
-        eastl::fixed_vector<VkDescriptorImageInfo, 8, false> image_infos;
+        eastl::fixed_vector<VkDescriptorImageInfo, 16, false> image_infos;
 
         // 1. Uniform Buffer
         if (uniform_buffer != VK_NULL_HANDLE) {
@@ -635,7 +650,33 @@ struct Material {
             }
         }
 
-        // 3. Storage Buffers
+        // 3. Сэмплеры, которые материал не привязал, получают текстуру-заглушку: шейдер
+        // статически читает их, и валидация требует обновлённый дескриптор на каждый draw.
+        if (default_texture_view != VK_NULL_HANDLE && default_texture_sampler != VK_NULL_HANDLE) {
+            shader->reflection.ForEachMaterialBinding([&](const ShaderReflectedBinding& b) {
+                if (b.kind != ShaderResourceKind::SampledTexture)
+                    return;
+
+                for (const auto& bind : textures)
+                    if (bind.binding == b.binding && bind.texture)
+                        return;
+
+                auto& info = image_infos.push_back();
+                info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                info.imageView = default_texture_view;
+                info.sampler = default_texture_sampler;
+
+                auto& write = writes.push_back();
+                write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                write.dstSet = set;
+                write.dstBinding = b.binding;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo = &info;
+            });
+        }
+
+        // 4. Storage Buffers
         for (const auto& bind : storage_buffers) {
             if (bind.buffer != VK_NULL_HANDLE) {
                 auto& info = buffer_infos.push_back();

@@ -42,14 +42,6 @@ inline tryengine::core::ScriptSystemConfig GetEditorScriptConfig(tryengine::core
             return new TryEditorContext(engine, editor, stack_size);
         },
         .policies = tryengine::core::CreateHeavyJitPolicies(),
-        // После горячей перезагрузки новый контекст должен получить тот же старт, что и
-        // первый: корневой клок и InputSource из EngineStart, подписки и editor-камеру из
-        // EditorStart. [after_reload]-хуки скрипта выполняются уже после этого.
-        .reinit_context =
-            [](tryengine::core::ScriptSystem& script_system) {
-                script_system.InvokeFunctionFast("EngineStart");
-                script_system.InvokeFunctionFast("EditorStart");
-            },
     };
 }
 

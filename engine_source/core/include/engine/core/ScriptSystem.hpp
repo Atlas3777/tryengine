@@ -16,6 +16,21 @@ namespace tryengine::core {
 
 class ScriptSystem;
 
+//! Расширение жизненного цикла скриптов, которое ставит хост. Горячая перезагрузка —
+//! именно расширение: редактор подключает её, игра не подключает и о перезагрузке не знает.
+class IScriptReloadExtension {
+public:
+    virtual ~IScriptReloadExtension() = default;
+
+    //! Новый контекст уже установлен, старый ещё жив. Хост повторяет здесь свои точки
+    //! входа (EngineStart/EditorStart) до того, как выполнятся [after_reload]-хуки.
+    virtual void ReinitializeContext(ScriptSystem& system) = 0;
+
+    //! Попытка перезагрузки завершена. `error` пуст при полном успехе; при `success == true`
+    //! непустой `error` означает, что скрипт перезагружен, но хуки сообщили об ошибке.
+    virtual void OnReloadFinished(bool success, eastl::string_view error) = 0;
+};
+
 // ВАЖНО: порядок полей важен для designated initializers.
 struct ScriptSystemConfig {
     eastl::function<void()> register_modules;
@@ -24,10 +39,6 @@ struct ScriptSystemConfig {
     eastl::function<void(das::FileAccess&)> prepare_file_access;
     eastl::function<das::Context*(uint32_t stack_size)> create_context;
     das::CodeOfPolicies policies;
-    // Необязательный хук горячей перезагрузки: новый контекст уже установлен, нужно
-    // повторить в нём точки входа хоста (EngineStart/EditorStart), но ещё не вызваны
-    // [after_reload]-хуки скрипта.
-    eastl::function<void(ScriptSystem&)> reinit_context;
 };
 
 class ScriptSystem {
@@ -40,34 +51,17 @@ public:
 
     Result<void> LoadMainScript(eastl::string_view path);
 
+    //! Подключает хост-расширение. Без него ReloadMainScript отказывает: перезагрузка
+    //! принадлежит хосту, а не движку.
+    void SetReloadExtension(IScriptReloadExtension* extension) {
+        reload_extension_ = extension;
+    }
+
     //! Пересобирает и симулирует главный скрипт заново, не убивая процесс. Старый контекст
     //! остаётся рабочим до успешной симуляции нового: при ошибке компиляции/симуляции
     //! редактор продолжает жить на старом коде. Перед подменой вызываются функции,
     //! помеченные [before_reload], после подмены и точек входа хоста — [after_reload].
     Result<void> ReloadMainScript();
-
-    //! Запрос на перезагрузку из UI/хоткея. Сама перезагрузка делается в кадровом цикле,
-    //! когда ни одна функция скрипта ещё не выполняется.
-    void RequestReload() {
-        reload_requested_ = true;
-    }
-
-    bool IsReloadRequested() const {
-        return reload_requested_;
-    }
-
-    void ClearReloadRequest() {
-        reload_requested_ = false;
-    }
-
-    bool IsReloading() const {
-        return reloading_;
-    }
-
-    //! Пусто — перезагрузок ещё не было; иначе итог последней попытки.
-    const eastl::string& ReloadStatus() const {
-        return reload_status_;
-    }
 
     template <typename... Args>
     bool InvokeFunctionSafe(eastl::string_view f_name, Args&&... args) {
@@ -154,9 +148,7 @@ private:
     std::unique_ptr<das::ModuleGroup> module_group_;
     das::ProgramPtr program_;
     das::Context* das_ctx_ = nullptr;
-    eastl::string reload_status_;
-    bool reload_requested_ = false;
-    bool reloading_ = false;
+    IScriptReloadExtension* reload_extension_ = nullptr;
 };
 
 }  // namespace tryengine::core

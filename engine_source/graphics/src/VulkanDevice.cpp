@@ -138,6 +138,132 @@ VulkanDevice::VulkanDevice(const uint32_t width, const uint32_t height, const ea
 
     VkResult vma_res = vmaCreateAllocator(&allocator_info, &allocator_);
     TRY_CHECK(vma_res == VK_SUCCESS, "Не удалось создать VmaAllocator");
+
+    CreateDefaultWhiteTexture();
+}
+
+// Заглушка для незанятых сэмплеров материала: 1x1 белая текстура, которую материал
+// подставляет вместо необновлённого дескриптора. Создаётся один раз на устройство.
+void VulkanDevice::CreateDefaultWhiteTexture() {
+    VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    image_info.imageType = VK_IMAGE_TYPE_2D;
+    image_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    image_info.extent = {1, 1, 1};
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo image_alloc_info{};
+    image_alloc_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    TRY_CHECK(vmaCreateImage(allocator_, &image_info, &image_alloc_info, &default_white_texture_.image,
+                             &default_white_texture_.allocation, nullptr) == VK_SUCCESS,
+              "Не удалось создать текстуру-заглушку");
+
+    VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    pool_info.queueFamilyIndex = graphics_queue_family_;
+
+    VkCommandPool cmd_pool = VK_NULL_HANDLE;
+    TRY_CHECK(vkCreateCommandPool(device_, &pool_info, nullptr, &cmd_pool) == VK_SUCCESS,
+              "Не удалось создать command pool для текстуры-заглушки");
+
+    VkCommandBufferAllocateInfo cmd_alloc_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cmd_alloc_info.commandPool = cmd_pool;
+    cmd_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd_alloc_info.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    TRY_CHECK(vkAllocateCommandBuffers(device_, &cmd_alloc_info, &cmd) == VK_SUCCESS,
+              "Не удалось выделить command buffer для текстуры-заглушки");
+
+    VkCommandBufferBeginInfo begin_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &begin_info);
+
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = default_white_texture_.image;
+    barrier.subresourceRange = range;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
+
+    VkClearColorValue clear_color{};
+    clear_color.float32[0] = 1.0f;
+    clear_color.float32[1] = 1.0f;
+    clear_color.float32[2] = 1.0f;
+    clear_color.float32[3] = 1.0f;
+    vkCmdClearColorImage(cmd, default_white_texture_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1,
+                         &range);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &barrier);
+
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submit_info{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &cmd;
+
+    TRY_CHECK(vkQueueSubmit(graphics_queue_, 1, &submit_info, VK_NULL_HANDLE) == VK_SUCCESS,
+              "Не удалось залить текстуру-заглушку");
+    vkQueueWaitIdle(graphics_queue_);
+    vkDestroyCommandPool(device_, cmd_pool, nullptr);
+
+    VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    view_info.image = default_white_texture_.image;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    view_info.subresourceRange = range;
+
+    TRY_CHECK(vkCreateImageView(device_, &view_info, nullptr, &default_white_texture_.view) == VK_SUCCESS,
+              "Не удалось создать image view текстуры-заглушки");
+
+    VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sampler_info.magFilter = VK_FILTER_LINEAR;
+    sampler_info.minFilter = VK_FILTER_LINEAR;
+    sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_info.maxLod = 0.0f;
+
+    TRY_CHECK(vkCreateSampler(device_, &sampler_info, nullptr, &default_white_texture_.sampler) == VK_SUCCESS,
+              "Не удалось создать sampler текстуры-заглушки");
+}
+
+void VulkanDevice::DestroyDefaultWhiteTexture() {
+    if (default_white_texture_.view != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, default_white_texture_.view, nullptr);
+        default_white_texture_.view = VK_NULL_HANDLE;
+    }
+    if (default_white_texture_.sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, default_white_texture_.sampler, nullptr);
+        default_white_texture_.sampler = VK_NULL_HANDLE;
+    }
+    if (default_white_texture_.image != VK_NULL_HANDLE) {
+        vmaDestroyImage(allocator_, default_white_texture_.image, default_white_texture_.allocation);
+        default_white_texture_.image = VK_NULL_HANDLE;
+        default_white_texture_.allocation = VK_NULL_HANDLE;
+    }
 }
 
 VulkanDevice::~VulkanDevice() {
@@ -145,6 +271,8 @@ VulkanDevice::~VulkanDevice() {
         // 1. СНАЧАЛА гарантируем, что GPU закончил ВСЕ работы
         vkDeviceWaitIdle(device_);
     }
+
+    DestroyDefaultWhiteTexture();
 
     if (allocator_) {
         // 2. УДАЛЯЕМ VMA (все VmaAllocation уже должны быть освобождены!)

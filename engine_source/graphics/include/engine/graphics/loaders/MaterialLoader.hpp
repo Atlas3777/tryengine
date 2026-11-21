@@ -188,6 +188,7 @@ public:
         // 2. Создаем материал и сразу его GPU-ресурсы: SetParamRaw пишет значения прямо
         // в замапленный uniform buffer, до InitGpuResources они молча теряются.
         Material material(*shader_res);
+        material.SetDefaultTexture(device_.GetDefaultWhiteTexture().view, device_.GetDefaultWhiteTexture().sampler);
         material.InitGpuResources(device_.GetDevice(), device_.GetPhysicalDevice());
 
         // 3. Значения uniform-параметров (set 1).
@@ -219,7 +220,7 @@ public:
         }
 
         if (material.textures.empty())
-            LogWarn("Material '{}' loaded with 0 textures", config.name.c_str());
+            LogInfo("Material '{}': no textures bound, using the default white texture", config.name.c_str());
 
         // Материал уходит в кадр только после этого: дескрипторы больше не меняются
         // на месте, live-правка выделит новый набор.
