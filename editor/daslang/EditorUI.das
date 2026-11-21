@@ -21,7 +21,6 @@ require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
 require tryeditor/PrefabAuthoring
-require tryeditor/PrefabInspector
 require tryeditor/ProfilerWindow
 require tryeditor/EditorActions
 
@@ -119,7 +118,6 @@ def DrawMainMenu() {
             menu_label(WIN_QUADTREE, (text = "QuadTree Debug", selected = true))
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
-            menu_label(WIN_PREFABS, (text = "Prefab Inspector", selected = true))
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
@@ -185,7 +183,6 @@ def DrawEditor() {
     DrawGameSceneViewPort()
     DrawBuildManager()
     DrawMaterialEditor()
-    DrawPrefabInspector()
     DrawProfilerWindow()
     DrawPlotWindow()
     DrawScopesWindow()
