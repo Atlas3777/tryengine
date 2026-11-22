@@ -6,7 +6,8 @@ module UiSmoke shared public
 
 //! Headless test of the retained UI: no window, no GPU, injected mouse. It exercises the
 //! parts that can be wrong without looking at pixels — id addressing, hit-testing, the
-//! press/click state machine, sound events, `var` write-back and the draw command list.
+//! press/click state machine, sound events, `var` write-back and the draw command list, plus
+//! the two layers above the widgets: the screen registry and the theme.
 //!
 //! Run with tools/agent/ui-smoke.sh. A failure prints every failed check and panics, so the
 //! exit code is non-zero.
@@ -80,6 +81,93 @@ def private Build() {
 
 def private Center(rect : float4) : float2 {
     return float2(rect.x + rect.z * 0.5f, rect.y + rect.w * 0.5f)
+}
+
+// --- screens and theme --------------------------------------------------------------------
+
+var private g_hits_a : int = 0
+var private g_hits_b : int = 0
+
+def private OnHitA() {
+    g_hits_a++
+}
+
+def private OnHitB() {
+    g_hits_b++
+}
+
+// Both screens declare the same local id: the screen name is part of the id, so they are two
+// nodes and a click cannot cross from one screen to the other.
+def private BuildScreenA() {
+    Ui::Button("##shared", "A", @@OnHitA)
+}
+
+def private BuildScreenB() {
+    Ui::Button("##shared", "B", @@OnHitB)
+}
+
+def private ClickInScreen(name : string; point : float2) {
+    Ui::InjectInput(point, true, true, false)
+    Ui::FrameScreen(name)
+    Ui::InjectInput(point, false, false, true)
+    Ui::FrameScreen(name)
+}
+
+def private RunScreenChecks() {
+    Check(!Ui::HasScreen("smoke_missing"), "an unregistered screen is not addressable")
+    Ui::RegisterScreen("smoke_a", @@BuildScreenA)
+    Ui::RegisterScreen("smoke_b", @@BuildScreenB)
+    Check(Ui::HasScreen("smoke_a"), "RegisterScreen makes a screen addressable")
+
+    let names <- Ui::ScreenNames()
+    Check(length(names) == 2, "ScreenNames lists the registered screens")
+    if (length(names) == 2) {
+        Check(names[0] == "smoke_a", "ScreenNames keeps registration order (first)")
+        Check(names[1] == "smoke_b", "ScreenNames keeps registration order (second)")
+    }
+
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    Ui::FrameScreen("smoke_a")
+    Check(Ui::DebugCommandCount() > 0, "FrameScreen draws the registered screen")
+    let rect_a = Ui::DebugRect("##shared", "smoke_a")
+    Check(rect_a.z > 0.0f, "a screen node is addressable through its screen name")
+    Check(Ui::DebugRect("##shared", "smoke_b").z <= 0.0f, "the same path under another screen is a different node")
+
+    // A point well inside the button in both screens (same origin, padding corner).
+    let inside = float2(rect_a.x + 2.0f, rect_a.y + 2.0f)
+    ClickInScreen("smoke_a", inside)
+    Check(g_hits_a == 1 && g_hits_b == 0, "the click reaches only the screen that declared the id")
+    // A node has to exist before it can be pressed: draw B once, then click it. That is the
+    // normal retained-UI rule (the first frame of a screen only creates its nodes).
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    Ui::FrameScreen("smoke_b")
+    ClickInScreen("smoke_b", inside)
+    Check(g_hits_b == 1, "the other screen's button reacts under its own name")
+
+    Ui::FrameScreen("smoke_missing")
+    Check(Ui::DebugCommandCount() == 0, "an unregistered screen draws nothing")
+}
+
+def private ColorNear(a : float4; b : float4) : bool {
+    return abs(a.x - b.x) < 1e-4f && abs(a.y - b.y) < 1e-4f && abs(a.z - b.z) < 1e-4f && abs(a.w - b.w) < 1e-4f
+}
+
+def private RunThemeChecks() {
+    let engine_theme = Ui::Theme()
+    Check(engine_theme.panel.color.w > 0.0f, "the engine theme fills panels")
+    Check(engine_theme.button.text_size > 0.0f, "the engine theme sizes button text")
+
+    // A theme is partial: the kinds and fields it leaves unset keep the engine default.
+    Ui::SetTheme(UiTheme(button = UiStyle(color = float4(0.1f, 0.2f, 0.3f, 1.0f), text_size = 21.0f)))
+    let themed = Ui::Theme()
+    Check(ColorNear(themed.button.color, float4(0.1f, 0.2f, 0.3f, 1.0f)), "SetTheme applies a kind override")
+    Check(abs(themed.button.text_size - 21.0f) < 1e-4f, "SetTheme applies numeric fields")
+    Check(ColorNear(themed.button.text_color, engine_theme.button.text_color),
+          "an unset style field keeps the engine default")
+    Check(ColorNear(themed.panel.color, engine_theme.panel.color), "an unset kind keeps the engine default")
+
+    Ui::SetTheme(UiTheme())
+    Check(ColorNear(Ui::Theme().button.color, engine_theme.button.color), "resetting the theme restores the engine look")
 }
 
 [init]
@@ -171,6 +259,9 @@ def run_smoke() {
     Build()
     Check(Ui::HotId() == 0ul, "an unfocused viewport has no hot node")
     Ui::SetInputViewport(float2(0.0f, 0.0f), float2(800.0f, 600.0f), true)
+
+    RunScreenChecks()
+    RunThemeChecks()
 
     if (g_failures != 0) {
         panic("ui-smoke failed: {g_failures} of {g_checks} checks")
