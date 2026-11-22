@@ -114,6 +114,7 @@ let public kTheme = UiTheme(
 
 let public kTitle : UiStyle = UiStyle(text_size = 24.0f, text_color = kPaper)
 let public kMuted : UiStyle = UiStyle(text_size = 15.0f, text_color = kPaperDim)
+let public kValue : UiStyle = UiStyle(text_size = 18.0f, text_color = kPaper)
 let public kHudPanel : UiStyle = UiStyle(radius = 14.0f, padding = float4(18.0f, 16.0f, 18.0f, 16.0f))
 let public kHpBar : UiStyle = UiStyle(hover_color = kDanger)
 let public kPausePanel : UiStyle = UiStyle(

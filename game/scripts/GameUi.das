@@ -23,6 +23,7 @@ module GameUi shared public
 require math
 require tryengine/Ui
 require trygame/UiTheme
+require trygame/UiWidgets
 
 struct private GameUiState {
     hp : float = 100.0f
@@ -65,8 +66,9 @@ def private PauseLabel(paused : bool) : string {
 def private BuildHud() {
     Ui::Panel("##hud", UiTheme::kHudPanel, UiLayout(offset = float2(24.0f, 24.0f), spacing = 8.0f)) {
         Ui::Label("##title", "tryengine UI", UiTheme::kTitle)
-        Ui::Label("##hp", "HP {int(g_state.hp)} / {int(g_state.hp_max)}", UiTheme::kMuted)
-        Ui::ProgressBar("##hpbar", g_state.hp / g_state.hp_max, "", UiTheme::kHpBar)
+        // Composite widgets: the health meter and the volume row also appear on the pause screen.
+        UiWidgets::MeterRow("##hp", "HP", g_state.hp, g_state.hp_max, UiTheme::kHpBar,
+                            "{int(g_state.hp)} / {int(g_state.hp_max)}")
         Ui::Row("##buttons", UiStyle(), UiLayout(spacing = 8.0f)) {
             Ui::Button(UiTheme::kPrimaryButton, "##fire", @@OnFire)
             Ui::Button(UiTheme::kDangerButton, "##damage", @@OnDamage)
@@ -75,7 +77,7 @@ def private BuildHud() {
             Ui::Checkbox("##paused", g_state.paused)
             Ui::Label("##paused_label", PauseLabel(g_state.paused), UiTheme::kMuted)
         }
-        Ui::Label("##volume_label", "Volume {int(g_state.volume * 100.0f)}%", UiTheme::kMuted)
+        UiWidgets::StatRow("##volume_row", "Volume", "{int(g_state.volume * 100.0f)}%")
         Ui::Slider("##volume", g_state.volume, 0.0f, 1.0f)
     }
     Ui::Label("##counter", "Fire {g_state.clicks} | Damage {g_state.damage_taken}", UiTheme::kMuted,
@@ -93,8 +95,9 @@ def private BuildPause() {
     Ui::Group("##pause", UiTheme::kPauseCurtain, UiLayout(size = Ui::ViewportSize())) {
         Ui::Panel("##menu", UiTheme::kPausePanel, UiLayout(anchor = float2(0.5f, 0.5f), spacing = 12.0f)) {
             Ui::Label("##title", "Paused", UiTheme::kTitle)
-            Ui::Label("##hp", "HP {int(g_state.hp)} / {int(g_state.hp_max)}", UiTheme::kMuted)
-            Ui::Label("##volume_label", "Volume {int(g_state.volume * 100.0f)}%", UiTheme::kMuted)
+            UiWidgets::MeterRow("##hp", "HP", g_state.hp, g_state.hp_max, UiTheme::kHpBar,
+                                "{int(g_state.hp)} / {int(g_state.hp_max)}")
+            UiWidgets::StatRow("##volume_row", "Volume", "{int(g_state.volume * 100.0f)}%")
             Ui::Slider("##volume", g_state.volume, 0.0f, 1.0f)
             Ui::Button(UiTheme::kPrimaryButton, "##resume", "Resume", @@OnResume)
         }
