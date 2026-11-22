@@ -383,6 +383,12 @@
   (`[export] get_ui_draw_cmds`, массив `UiDrawCmd`) и **сам** разворачивает его в вершины:
   глифы текста собираются здесь, а не в daslang (push вершины в скрипте ~45 нс, команды —
   ~60 нс). Один `vkCmdDraw` на серию команд с одинаковыми `(material, scissor)`.
+- Текстура в UI — отдельный материал на guid (`UiSystem::TextureMaterial`): `Material` с тем же
+  шейдером, что и базовый, но `albedo_map` привязан к картинке (как атлас шрифта в базовом).
+  Материал кешируется по guid и пересобирается, если `TextureSampler` перезапечён; старый
+  материал уходит в `retired_texture_materials_`, чтобы записанный command buffer не ссылался
+  на освобождённый descriptor set. Команды UI несут материал указателем, поэтому `UiPass` об
+  этом ничего не знает.
 - Пасс пишет `ForwardColor` своего scope с `LOAD_OP_LOAD`, без depth, с
   премультиплицированным блендингом (`RasterState.blend_enable` +
   `ONE/ONE_MINUS_SRC_ALPHA`). Регистрируется **после** `OpaquePass` в том же scope и должен

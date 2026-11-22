@@ -58,6 +58,17 @@
   не знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
   отвергаются/не получают материал.
 
+## Текстура
+
+- `.png`/`.jpg` — импортируемый ассет: guid из `.meta`, один runtime-артефакт
+  `runtime/<main_guid>/0` в формате `TextureBinary` (шапка 96 Б + таблица мипов + данные),
+  `sub_assets` пустой, поэтому runtime-id совпадает с main guid.
+- Артефакт готовит `TextureProcessor` (BC-сжатие через rdo_bc и несжатые 8-битные форматы),
+  формат/мипы/размер/сэмплер берутся из `TextureImportSettings` в `.meta`.
+- `AssetPak` несёт текстуры по guid. Текстуры, на которые не ссылается ни материал, ни сцена
+  (UI-спрайты), попадают в common-пак через `BuildSettings::ui_textures`, который
+  `CreateBuild` заполняет из `UiConfig::textures`.
+
 ## Шрифт игрового UI
 
 - Импортируемый `.ttf` — обычный ассет: guid из `.meta`, один runtime-артефакт

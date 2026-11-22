@@ -256,6 +256,32 @@ let public kDangerButton = ButtonTemplate(
 `Ui::Button(tpl, "##id", @@Action)`, `Ui::Button(tpl, "##id", "Label", @@Action)`,
 `Ui::ButtonData(tpl, "##id", "Label", @@ActionData, data)`.
 
+## Текстуры
+
+`Ui::ImageTexture(id, guid, size, style)` рисует текстуру по **guid ассета** и не требует файла
+материала: `UiSystem` собирает материал один раз из того же шейдера, что и текст, и привязывает
+картинку туда, где у текста лежит атлас шрифта. Команда не появляется, пока текстура не
+загрузилась, поэтому кадр не ломается на старте.
+
+```das
+Ui::ImageTexture("##logo", UiTheme::kLogoGuid, float2(48.0f, 48.0f))
+Ui::ImageTexture("##dim", UiTheme::kLogoGuid, float2(64.0f, 64.0f), UiStyle(color = float4(1.0f, 1.0f, 1.0f, 0.5f)))
+```
+
+- `style.color` — множитель цвета (по умолчанию белый; альфа тоже множитель), `size` — размер
+  в пикселях цели;
+- guid — число из `.png.meta`. Путь не подходит: в паке нет таблицы путей для импортированных
+  ассетов, поэтому guid — единственная ссылка, которая переживает билд. Один и тот же guid
+  пишется в двух местах: константа в теме игры (адрес для скрипта) и `UiConfig::textures` в
+  C++ (что упаковать в common-пак);
+- настройки импорта (`format`, `generate_mips`, `max_size`, `filter`, `wrap`) лежат в `.meta`
+  ассета, панель **Import Settings** показывает их для выбранного в Asset Browser файла, а
+  `tools/agent/texture-probe.sh` проверяет запекание без редактора. Инструкция —
+  `game/assets/ui/README.md`.
+
+`Ui::Image(id, path, size)` остаётся для материала: когда картинка настраивается в
+`game/data/**/*.mat` и её же использует 3D, материал — общий ресурс.
+
 ## Свои виджеты
 
 Виджет-композиция — обычная функция над примитивами `tryengine/Ui`. Три правила держат её

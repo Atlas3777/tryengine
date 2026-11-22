@@ -410,6 +410,22 @@
   call site на список, состояние на строку. Обычный вызов виджета в цикле паникует
   (`rendered twice`).
 
+## Текстуры и настройки импорта
+
+- `TextureImporter` (`.png`/`.jpg`/`.jpeg`) — обычный импортёр новой архитектуры: настройки в
+  `.meta` (`format`, `generate_mips`, `max_size`, `filter`, `wrap`), один runtime-артефакт `.tex`
+  под main guid. Запекание — `TextureBaker::BakeTexture` (sync, без IO), поэтому
+  `tools/agent/texture-probe.sh` гоняет тот же код без редактора. Меняешь содержимое
+  артефакта — поднимай `TextureImporter::GetVersion()`.
+- `TextureProcessor` теперь умеет и сжатые (BC через rdo_bc), и несжатые 8-битные форматы
+  (`r8`, `rg8`, `rgba8`, sRGB) и принимает `generate_mips`/`max_size`. Для UI спрайтов
+  ставьте `rgba8_srgb`, `generate_mips = false`, `wrap = clamp`.
+- Панель **Import Settings** (`editor/daslang/AssetSettings.das`) показывает сводку `.meta`
+  выбранного в Asset Browser файла: C++ `DescribeAssetMeta` читает `<path>.meta`, форматирует
+  известные настройки (текстура, шрифт) и дописывает сырой JSON. Она только читает: правка
+  `.meta` перезапекается при следующем старте редактора, отдельного «reimport one asset» в
+  `AssetPipeline` пока нет.
+
 ## Шрифты игрового UI
 
 - `FontImporter` (`.ttf`) — единственный импортёр шрифтов: `FontBaker` печёт SDF-атлас

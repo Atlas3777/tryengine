@@ -229,6 +229,13 @@ daslang -dry-run \
 - Шрифт игрового UI — импортируемый ассет: `.ttf` в `game/assets/fonts`, `FontImporter` печёт
   SDF-атлас в артефакт `FontBinary`, `UiConfig.font_guid`/`kDefaultUiFontGuid` его адресует;
   см. `game/assets/fonts/README.md`.
+- Текстуры игрового UI: `Ui::ImageTexture(id, guid, size, style)` адресует текстуру по **guid**
+  (не путём: в паке нет таблицы путей для ассетов) и сам собирает материал из UI-шейдера.
+  `TextureImporter` (`.png`/`.jpg`/`.jpeg`) печёт `TextureBinary` по настройкам из `.meta`
+  (`format`, `generate_mips`, `max_size`, `filter`, `wrap`); guid пишется и в тему игры, и в
+  `UiConfig.textures`, потому что билд кладёт UI-текстуры в common-пак только по этому списку.
+  Настройки импорта видны в панели **Import Settings**; проверка запекания —
+  `tools/agent/texture-probe.sh`; см. `game/assets/ui/README.md`.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
