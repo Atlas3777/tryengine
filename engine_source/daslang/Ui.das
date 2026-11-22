@@ -1157,6 +1157,7 @@ def private DispatchPending() {
 }
 
 //! Closes the frame: layout, drawing, callbacks and sounds, then stale node cleanup.
+[profile(name = "Ui.End")]
 def public End() {
     if (!g_open) {
         return
@@ -1172,7 +1173,7 @@ def public End() {
 
 //! Begin + declaration body + End. A body that returns early skips End; the next Begin reports
 //! and recovers, but prefer the explicit Begin/End in game code.
-[profile]
+[profile(name = "Ui.Frame")]
 def public Frame(blk : block) {
     Begin()
     invoke(blk)
