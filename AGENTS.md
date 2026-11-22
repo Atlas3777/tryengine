@@ -20,7 +20,7 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | Путь | Содержимое |
 | --- | --- |
 | `engine_source/core` | `Engine` (реестр систем), `Result`/`Error`, логи, `ScriptSystem`, script pak, `SlotMap`/`TypeRegistry` |
-| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики; биндинги `tryRenderer` и `tryResources` (`src/Module_Renderer.cpp`, `Module_Resources.cpp`) |
+| `engine_source/graphics` | `VulkanDevice`, `VulkanSwapchain`, `RenderGraph`, проходы, загрузчики, игровой UI (`UiPass`/`UiSystem`); биндинги `tryRenderer`, `tryResources`, `tryUi` (`src/Module_Renderer.cpp`, `Module_Resources.cpp`, `Module_Ui.cpp`) |
 | `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры; биндинг `tryInput` (`src/Module_Input.cpp`) |
 | `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики; биндинг `tryAsyncFile` (`src/Module_AsyncFileManager.cpp`) |
 | `engine_source/async` | корутины `Task<T>`, пул потоков и главный исполнитель, pollable-хендлы |
@@ -84,7 +84,7 @@ cmake --build build-debug --target editor -j "$(nproc)"
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
-  `tryeditor_shared`, `tryPhysics_shared`; агрегат для всех — `das_modules`
+  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`; агрегат для всех — `das_modules`
   (`tools/agent/build.sh modules`).
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
@@ -199,6 +199,17 @@ daslang -dry-run \
   `query() $(transform : Transform)` читает `transform`, а `$(t : Transform)` ищет `t` и
   молча не находит ничего. У `decs_template` имя аргумента ничего не значит — поля берутся
   по префиксу типа.
+- Игровой UI: `tryengine/Ui` (`engine_source/daslang/Ui.das` + `UiTypes.das`) и нативный
+  `tryUi` (`engine_source/graphics/src/Module_Ui.cpp`). Дерево retained: живёт между кадрами в
+  daslang, но объявляется каждый кадр (`Ui::Frame()` из `GameUpdate`), узлы находятся по
+  64-битному id. Layout, состояния и анимации — в скриптах; геометрию строит C++ (`UiPass`),
+  скрипт отдаёт только команды через `[export] get_ui_draw_cmds`. Звук наведения/нажатия —
+  событие (`Ui::OnSound`), не воспроизведение: аудио-подсистемы в движке нет.
+  Шрифт — импортируемый ассет: `.ttf` в `game/assets/fonts`, `FontImporter` печёт SDF-атлас в
+  артефакт `FontBinary`, `UiConfig.font_guid`/`kDefaultUiFontGuid` его адресует; см.
+  `game/assets/fonts/README.md`. UI живёт на своём клоке (`game_ui_clock`/внутренний UiClock),
+  поэтому пауза `game_world_clock` его не останавливает. Точки `Ui::Frame`, `Ui::Begin/End`,
+  `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака

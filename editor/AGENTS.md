@@ -387,3 +387,19 @@
   напрямую в `ProcessGizmoHotkeys`, а не через `EditorHotkeys`: фреймворк регистрации не
   должен быть единственной точкой отказа для базового переключения режимов. `ProcessHotkeys` не срабатывает, пока клавиатуру захватил ImGui-виджет
   (`IsEditorTextInputActive` из `Module_TryEditor.cpp`).
+
+## Шрифты игрового UI
+
+- `FontImporter` (`.ttf`) — единственный импортёр шрифтов: `FontBaker` печёт SDF-атлас
+  (`stbtt_GetGlyphSDF` + `stbrp`) в один runtime-артефакт `FontBinary`, без внешних
+  инструментов и без растеризатора в рантайме. Реализации stb живут в `FontBaker.cpp`,
+  поэтому `tools/font_probe.cpp` собирает тот же TU и проверяет запекание без GUI.
+- Настройки запекания (`em_size`, `px_range`, `padding`, размер атласа, `ranges`) лежат в
+  `.meta` ассета: перезапекание не требует правок кода. Меняешь содержимое артефакта —
+  поднимай `FontImporter::GetVersion()`.
+- Guid из `game/assets/fonts/<Font>.ttf.meta` попадает в `kDefaultUiFontGuid`
+  (`engine_source/graphics/.../UiSystem.hpp`), а сборка кладёт артефакт в common-пак через
+  `BuildSettings.fonts` (заполняется в `Module_TryEditor::CreateBuild` из `UiSystem`).
+  Без этого шрифт в игре не найдётся, хотя в редакторе всё работает (loose-артефакт).
+- Инструкция для человека — `game/assets/fonts/README.md`; проверка —
+  `tools/agent/font-probe.sh game/assets/fonts/<Font>.ttf`.

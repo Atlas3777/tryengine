@@ -376,3 +376,39 @@
   `[export, profile]`. При выключенном C++-профайлере `apply` макроса не трогает тело, и в
   скрипте не остаётся вызовов.
 - Язык `.das` — только английский (см. корневой `AGENTS.md` §7).
+
+## Игровой UI (`UiPass`, `UiSystem`, `tryUi`)
+
+- `UiPass` (`src/UiPass.cpp`, имя пасса `Ui`) читает плоский список команд из скрипта
+  (`[export] get_ui_draw_cmds`, массив `UiDrawCmd`) и **сам** разворачивает его в вершины:
+  глифы текста собираются здесь, а не в daslang (push вершины в скрипте ~45 нс, команды —
+  ~60 нс). Один `vkCmdDraw` на серию команд с одинаковыми `(material, scissor)`.
+- Пасс пишет `ForwardColor` своего scope с `LOAD_OP_LOAD`, без depth, с
+  премультиплицированным блендингом (`RasterState.blend_enable` +
+  `ONE/ONE_MINUS_SRC_ALPHA`). Регистрируется **после** `OpaquePass` в том же scope и должен
+  быть последним писателем `ForwardColor`: явного `DependsOn` у графа нет, порядок держится
+  на индексной стабильности топосорта, а читатели (ImGuiPass, BlitPass) получают ребро
+  через producer. Меняешь порядок `AddNode` — проверь композит вьюпорта и игры.
+- Контракт раскладки: `UiDrawCmd` = 80 Б, `UiVertex` = 64 Б (оба под `static_assert`),
+  push constants `{ VkDeviceAddress vertices; VkDeviceAddress frame; }`,
+  `UiFrameData { viewport, pad, params }`, где `params.x = onedge/255`,
+  `params.y = pixel_dist_scale`. Вершины и кадр едут через транзиентный аллокатор с
+  выравниванием 16 (std430), как в `GizmoPass`.
+- `Ui.slang`: режим лежит в `params.x` вершины — `0` заливка скруглённого прямоугольника,
+  `1` SDF-текст, `2` текстурированный квад, `3` рамка. У фигур `shape.xy` — radius/border,
+  `shape.zw` — половина размера, `uv` — локальные пиксели; у текста `params.y` — px на em.
+  `albedo_map` (set 1) — атлас шрифта; кастомный UI-материал обязан сохранить этот binding.
+- Шрифт — обычный ассет: `.ttf` в `game/assets`, `FontImporter` (editor) печёт
+  `FontBinary` (metrics + вложенный `TextureBinary` с R8 SDF-атласом), `FontLoader`
+  поднимает атлас через `TextureLoader::Parse`. Атлас привязывается к материалу через
+  `Material::SetRawTexture`: это текстура не из `ResourceManager`, и после
+  `FinalizeDescriptors` материал выделяет новый descriptor set, как при live-правке.
+- `UiSystem` — сервис процесса (один на приложение), конфиг `UiConfig{font_guid,
+  material_path}`. Скриптовые биндинги `tryUi` достают его через `UiSystem::ForScripts()`,
+  **без** `das::Context*` и приведения к `TryengineContext`: CLI-контекст — обычный
+  `Context`, и такое приведение падает. Все биндинги регистрируются с
+  `SideEffects::accessGlobal`: с `none` компилятор свернёт вызовы на этапе компиляции
+  (headless — нули) и уронит CLI.
+- `kDefaultUiFontGuid` (в `UiSystem.hpp`) — guid шрифта из `game/assets/fonts/*.ttf.meta`.
+  `0` выключает UI: дерево строится, пасс молчит, в лог уходит одно предупреждение.
+- GPU-строка пасса в профайлере появляется сама (имя `Ui`); CPU-зону вокруг пасса не ставь.

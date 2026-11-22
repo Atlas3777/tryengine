@@ -57,3 +57,12 @@
   `Content::CollectDependencies` резолвят их в u64, поэтому `BuildSystem` и pak про формат ссылки
   не знают. Legacy-форматов (`materialGuid`, `materialRef: string`) нет: старые сцены
   отвергаются/не получают материал.
+
+## Шрифт игрового UI
+
+- Импортируемый `.ttf` — обычный ассет: guid из `.meta`, один runtime-артефакт
+  `runtime/<main_guid>/0` в формате `FontBinary` (шапка + глифы + вложенный
+  `TextureBinary`), `sub_assets` пустой, поэтому runtime-id совпадает с main guid.
+- `AssetPak.fonts`/`fonts_data` кладут этот артефакт в common-пак; список заполняет
+  `BuildSystem` из `BuildSettings.fonts` (UiSystem config), потому что ни сцена, ни префаб
+  на шрифт не ссылаются. Loader — `FontLoader` в graphics, тип `Font` в `ResourceManager`.
