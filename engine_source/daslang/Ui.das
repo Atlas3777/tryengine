@@ -348,11 +348,12 @@ def private ClockDelta() : float {
 var private g_sound_reported : table<string; int>
 
 def private NoopSound(path : string; node_id : uint64) {
-    // The engine has no audio subsystem yet: report the event once per path so a missing hook
-    // is visible without flooding the log.
+    // The engine has no audio subsystem yet. The default sink reports each path once so a missing
+    // hook is visible without flooding the log; the events themselves fire every time, and
+    // `Ui::OnSound` replaces this sink.
     if (!key_exists(g_sound_reported, path)) {
         g_sound_reported[path] = 1
-        print("[UI SOUND] {path}\n")
+        print("[UI SOUND] {path} (first event per path; install Ui::OnSound to handle every event)\n")
     }
 }
 
