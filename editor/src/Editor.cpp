@@ -10,6 +10,7 @@
 #include "editor/import/GltfImporter.hpp"
 #include "editor/import/ImportSystem.hpp"
 #include "editor/import/SlangImporter.hpp"
+#include "editor/import/TextureImporter.hpp"
 #include "editor/shader/ShaderCompilerSystem.hpp"
 #include "engine/graphics/loaders/MaterialConfigLoader.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
@@ -39,6 +40,7 @@ void Editor::RegisterAssetsImporters() const {
     auto& import_system = asset_pipeline_->GetImportSystem();
     import_system.RegisterImporter<GltfImporter, GltfImportSettings>({".glb", ".gltf"});
     import_system.RegisterImporter<FontImporter, FontBakeSettings>({".ttf"});
+    import_system.RegisterImporter<TextureImporter, TextureImportSettings>({".png", ".jpg", ".jpeg"});
     import_system.RegisterImporter<SlangImporter, SlangImportSettings>({".slang"}, engine_.Get<ShaderCompilerSystem>());
 }
 

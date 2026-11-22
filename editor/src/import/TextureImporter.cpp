@@ -1,49 +1,69 @@
-// #include "editor/import/TextureImporter.hpp"
-//
-// #include <fstream>
-// #include <iostream>
-// #include <random>
-//
-// #include "engine/resources/Types.hpp"
-// #include "stb_image.h"
-//
-// namespace tryeditor {
-//
-// bool TextureImporter::GenerateArtifact(const AssetContext& ctx, AssetMetaHeader& header,
-//                                        const TextureImportSettings& settings) {
-//     int width, height, channels;
-//     // Загружаем как RGBA (4 канала) для единообразия в движке
-//     unsigned char* pixels = stbi_load(ctx.asset_path.string().c_str(), &width, &height, &channels, 4);
-//
-//     if (!pixels) {
-//         std::cerr << "[TextureImporter] STBI fail: " << stbi_failure_reason() << " for " << ctx.artifacts_dir
-//                   << std::endl;
-//         return false;
-//     }
-//
-//     std::filesystem::create_directories(ctx.artifacts_dir);
-//
-//     std::string artifactName = std::to_string(header.guid) + ".tex";
-//     std::filesystem::path outPath = ctx.artifacts_dir / artifactName;
-//
-//     std::ofstream os(outPath, std::ios::binary);
-//     if (os.is_open()) {
-//         tryengine::resources::TextureHeader texHeader;
-//         texHeader.width = (uint32_t) width;
-//         texHeader.height = (uint32_t) height;
-//         texHeader.channels = 4;
-//         texHeader.data_size = (uint32_t) (width * height * 4);
-//
-//         os.write(reinterpret_cast<const char*>(&texHeader), sizeof(tryengine::resources::TextureHeader));
-//         os.write(reinterpret_cast<const char*>(pixels), texHeader.data_size);
-//     } else {
-//         stbi_image_free(pixels);
-//         return false;
-//     }
-//
-//     stbi_image_free(pixels);
-//
-//     return true;
-// }
-//
-// }  // namespace tryeditor
+#include "editor/import/TextureImporter.hpp"
+
+#include "engine/core/MakeError.hpp"
+#include "engine/core/Random.hpp"
+#include "engine/resources/Json.hpp"
+
+namespace tryeditor {
+
+using tryengine::core::LogAndMakeError;
+
+AssetMeta<TextureImportSettings> TextureImporter::GenerateDefaultMeta() const {
+    AssetMeta<TextureImportSettings> result;
+    result.header.importer_type = GetName().data();
+    result.header.guid = tryengine::core::random::GenerateInt64();
+    return result;
+}
+
+tryengine::async::Task<ImportResult> TextureImporter::Import(ImportContext ctx) const {
+    ImportResult result{};
+
+    if (ctx.source_bytes.empty())
+        co_return LogAndMakeError("Texture source is empty");
+
+    AssetMeta<TextureImportSettings> meta;
+    if (!ctx.meta_bytes.empty()) {
+        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<TextureImportSettings>>(ctx.meta_bytes);
+        if (parsed_meta.has_value()) {
+            meta = eastl::move(*parsed_meta);
+        } else {
+            // A typo in the settings must not orphan the asset: keep the guid from the header and
+            // bake with defaults, so the texture stays addressable and the log names the problem.
+            auto header = tryengine::resources::Json::DeserializePartial<HeaderOnly>(ctx.meta_bytes);
+            meta.header = header.has_value() ? header->header : GenerateDefaultMeta().header;
+            LogError(LogCategory::Importer, "Texture '{}': .meta settings are invalid; using defaults",
+                     eastl::string(ctx.path.data(), ctx.path.size()).c_str());
+        }
+    } else {
+        meta = GenerateDefaultMeta();
+    }
+
+    auto baked = BakeTexture(ctx.source_bytes, meta.settings);
+    if (!baked.has_value())
+        co_return eastl::move(baked.error());
+
+    const TextureBakeStats& stats = baked->stats;
+    LogInfo(LogCategory::Importer, "Texture '{}': {}x{}, {} mip(s), format {}, {} bytes",
+            eastl::string(ctx.path.data(), ctx.path.size()).c_str(), stats.width, stats.height, stats.mip_count,
+            stats.format, stats.bytes);
+
+    // One runtime artifact under the asset's main guid (an empty sub_assets list in the meta
+    // means the runtime resource id is the guid itself), like the font and shader artifacts.
+    ProducedArtifact artifact{};
+    artifact.sub_guid = 0;
+    artifact.target = ArtifactTarget::Runtime;
+    artifact.extension = ".tex";
+    artifact.bytes = eastl::move(baked->bytes);
+    result.artifacts.push_back(eastl::move(artifact));
+
+    result.main_guid = meta.header.guid;
+
+    auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<TextureImportSettings>>(meta);
+    if (!meta_bytes.has_value())
+        co_return LogAndMakeError("Failed to serialize texture meta");
+    result.meta_bytes = eastl::move(meta_bytes.value());
+
+    co_return result;
+}
+
+}  // namespace tryeditor

@@ -49,8 +49,14 @@ inline tryengine::resources::VkSamplerAddressMode MapGltfWrap(const int gltf_wra
 }
 
 struct TextureProcessSettings {
+    // Compressed (BC1/BC3/BC7 and friends) or uncompressed 8-bit (R8, R8G8, RGBA8, SRGB).
     tryengine::resources::TextureFormat format = tryengine::resources::TextureFormat::VK_FORMAT_A8B8G8R8_UNORM_PACK32;
     tryengine::resources::SamplerDesc sampler;
+    //! Build the whole mip chain. Off keeps one level: UI sprites and pixel art usually want
+    //! that, because a mip-blurred panel reads as soft.
+    bool generate_mips = true;
+    //! Clamp the longest side before mips are generated; 0 keeps the source size.
+    uint32_t max_size = 0;
 };
 
 struct ProcessedTextureResult {

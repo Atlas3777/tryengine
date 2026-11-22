@@ -269,93 +269,246 @@ tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromEncodedMe
     return result;
 }
 
+namespace {
+
+bool IsBcFormat(TextureFormat format) {
+    switch (format) {
+        case TextureFormat::VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC2_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC2_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC3_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC3_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC4_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC4_SNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC5_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC5_SNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC6H_UFLOAT_BLOCK:
+        case TextureFormat::VK_FORMAT_BC6H_SFLOAT_BLOCK:
+        case TextureFormat::VK_FORMAT_BC7_UNORM_BLOCK:
+        case TextureFormat::VK_FORMAT_BC7_SRGB_BLOCK:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool IsSrgbFormat(TextureFormat format) {
+    switch (format) {
+        case TextureFormat::VK_FORMAT_R8_SRGB:
+        case TextureFormat::VK_FORMAT_R8G8_SRGB:
+        case TextureFormat::VK_FORMAT_R8G8B8A8_SRGB:
+        case TextureFormat::VK_FORMAT_B8G8R8A8_SRGB:
+        case TextureFormat::VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC2_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC3_SRGB_BLOCK:
+        case TextureFormat::VK_FORMAT_BC7_SRGB_BLOCK:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Bytes per pixel of an uncompressed 8-bit format stb_image's RGBA can be written to; 0 means
+// the format is not one we produce.
+uint32_t UncompressedBytesPerPixel(TextureFormat format) {
+    switch (format) {
+        case TextureFormat::VK_FORMAT_R8_UNORM:
+        case TextureFormat::VK_FORMAT_R8_SRGB:
+            return 1;
+        case TextureFormat::VK_FORMAT_R8G8_UNORM:
+        case TextureFormat::VK_FORMAT_R8G8_SRGB:
+            return 2;
+        case TextureFormat::VK_FORMAT_R8G8B8A8_UNORM:
+        case TextureFormat::VK_FORMAT_R8G8B8A8_SRGB:
+        case TextureFormat::VK_FORMAT_B8G8R8A8_UNORM:
+        case TextureFormat::VK_FORMAT_B8G8R8A8_SRGB:
+        case TextureFormat::VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+            return 4;
+        default:
+            return 0;
+    }
+}
+
+uint32_t MipCountFor(uint32_t width, uint32_t height) {
+    uint32_t count = 1;
+    uint32_t w = width;
+    uint32_t h = height;
+    while (w > 1 || h > 1) {
+        w = (w > 1) ? (w >> 1) : 1;
+        h = (h > 1) ? (h >> 1) : 1;
+        count++;
+    }
+    return count;
+}
+
+// RGBA bytes -> one uncompressed mip in the target layout. Only B8G8R8A8 reorders channels;
+// R8 and R8G8 drop the trailing ones.
+void WriteUncompressedMip(const uint8_t* rgba, uint32_t width, uint32_t height, TextureFormat format, uint8_t* out) {
+    const uint32_t bpp = UncompressedBytesPerPixel(format);
+    const bool swap_red_blue =
+        format == TextureFormat::VK_FORMAT_B8G8R8A8_UNORM || format == TextureFormat::VK_FORMAT_B8G8R8A8_SRGB;
+    const uint32_t pixels = width * height;
+    for (uint32_t i = 0; i < pixels; ++i) {
+        const uint8_t* px = rgba + static_cast<size_t>(i) * 4;
+        switch (bpp) {
+            case 1:
+                out[i] = px[0];
+                break;
+            case 2:
+                out[i * 2 + 0] = px[0];
+                out[i * 2 + 1] = px[1];
+                break;
+            default:
+                if (swap_red_blue) {
+                    out[i * 4 + 0] = px[2];
+                    out[i * 4 + 1] = px[1];
+                    out[i * 4 + 2] = px[0];
+                    out[i * 4 + 3] = px[3];
+                } else {
+                    std::memcpy(out + static_cast<size_t>(i) * 4, px, 4);
+                }
+                break;
+        }
+    }
+}
+
+}  // namespace
+
 tryengine::Result<eastl::vector<uint8_t>> TextureProcessor::ProcessFromRawPixels(
     const uint8_t* rgba_data, uint32_t width, uint32_t height, const TextureProcessSettings& settings) {
     if (!rgba_data || width == 0 || height == 0)
         return LogAndMakeError("ProcessFromRawPixels: null pixel data or zero-sized image");
 
-    DXGI_FORMAT dxgi_format;
-    bool is_srgb = false;
-    if (!ResolveCompressionFormat(settings.format, dxgi_format, is_srgb))
-        return LogAndMakeError("ProcessFromRawPixels: settings.format is not a supported BC compression format");
+    const bool compressed = IsBcFormat(settings.format);
+    const bool is_srgb = IsSrgbFormat(settings.format);
+    const uint32_t bpp = UncompressedBytesPerPixel(settings.format);
+    if (!compressed && bpp == 0)
+        return LogAndMakeError("ProcessFromRawPixels: texture format {} is not supported by the processor",
+                               static_cast<int>(settings.format));
 
-    // 1. Расчет количества мип-уровней
-    uint32_t mip_count = 1;
-    {
-        uint32_t temp_w = width, temp_h = height;
-        while (temp_w > 1 || temp_h > 1) {
-            temp_w >>= 1;
-            temp_h >>= 1;
-            mip_count++;
-        }
+    // 0. Optional downscale: max_size clamps the longest side and keeps the aspect. It happens
+    //    before mips so every level comes from the final base image.
+    eastl::vector<uint8_t> scaled;
+    const uint8_t* base = rgba_data;
+    uint32_t w = width;
+    uint32_t h = height;
+    if (settings.max_size > 0 && (width > settings.max_size || height > settings.max_size)) {
+        const float scale = static_cast<float>(settings.max_size) / static_cast<float>(eastl::max(width, height));
+        const uint32_t nw = eastl::max(1u, static_cast<uint32_t>(static_cast<float>(width) * scale));
+        const uint32_t nh = eastl::max(1u, static_cast<uint32_t>(static_cast<float>(height) * scale));
+        scaled.resize(static_cast<size_t>(nw) * nh * 4);
+        GenerateNextMip(rgba_data, width, height, scaled.data(), nw, nh, is_srgb);
+        base = scaled.data();
+        w = nw;
+        h = nh;
     }
 
-    // 2. Расчет общего размера сжатых данных
-    uint64_t total_compressed_size = 0;
-    {
-        uint32_t temp_w = width, temp_h = height;
-        for (uint32_t i = 0; i < mip_count; ++i) {
-            total_compressed_size += GetCompressedMipSize(temp_w, temp_h, dxgi_format);
-            temp_w = (temp_w > 1) ? (temp_w >> 1) : 1;
-            temp_h = (temp_h > 1) ? (temp_h >> 1) : 1;
-        }
-    }
+    const uint32_t mip_count = settings.generate_mips ? MipCountFor(w, h) : 1;
 
-    // 3. Аллокация буфера только под "сырые" сжатые мипы
-    eastl::vector<uint8_t> compressed_mips(total_compressed_size);
-    uint8_t* write_ptr = compressed_mips.data();
-
-    // 4. Генерация мипов и сжатие
-    eastl::vector<uint8_t> current_mip_rgba(static_cast<size_t>(width) * height * 4);
-    std::memcpy(current_mip_rgba.data(), rgba_data, current_mip_rgba.size());
-
-    uint32_t temp_w = width;
-    uint32_t temp_h = height;
-    for (uint32_t i = 0; i < mip_count; ++i) {
-        uint64_t expected_size = GetCompressedMipSize(temp_w, temp_h, dxgi_format);
-
-        eastl::string encode_error;
-        auto res =
-            CompressMipLevel(current_mip_rgba.data(), temp_w, temp_h, dxgi_format, is_srgb, write_ptr, expected_size);
-        if (!res.has_value())
-            return LogAndMakeError("ProcessFromRawPixels: failed to compress mip {}", i);
-        write_ptr += expected_size;
-
-        // Генерация следующего уровня
-        if (i < mip_count - 1) {
-            uint32_t next_w = (temp_w > 1) ? (temp_w >> 1) : 1;
-            uint32_t next_h = (temp_h > 1) ? (temp_h >> 1) : 1;
-            eastl::vector<uint8_t> next_mip_rgba(static_cast<size_t>(next_w) * next_h * 4);
-
-            GenerateNextMip(current_mip_rgba.data(), temp_w, temp_h, next_mip_rgba.data(), next_w, next_h, is_srgb);
-
-            current_mip_rgba = std::move(next_mip_rgba);
-            temp_w = next_w;
-            temp_h = next_h;
-        }
-    }
-
-    // 5. Формирование базового заголовка (без полей оффсетов)
+    // 1. Header is the same for both paths; TextureBinary::Pack fills in the mip table.
     TextureHeader header;
-    header.magic = 0x00584554;
-    header.version = 2;
+    header.magic = tryengine::resources::TextureMagic;
+    header.version = tryengine::resources::TextureVersion;
     header.format = settings.format;
     header.type = tryengine::resources::TextureType::VK_IMAGE_TYPE_2D;
-    header.width = width;
-    header.height = height;
+    header.width = w;
+    header.height = h;
     header.depth = 1;
     header.array_size = 1;
     header.face_count = 1;
     header.mip_count = mip_count;
     header.sample_count = tryengine::resources::TextureSampleCount::VK_SAMPLE_COUNT_1_BIT;
     header.flags = 0;
-
     header.sampler = settings.sampler;
 
-    // mip_table_offset и mip_table_size будут рассчитаны внутри TextureBinary::Pack
+    // 2. Compressed path: rdo_bc encodes every mip.
+    if (compressed) {
+        DXGI_FORMAT dxgi_format;
+        bool dxgi_srgb = false;
+        if (!ResolveCompressionFormat(settings.format, dxgi_format, dxgi_srgb))
+            return LogAndMakeError("ProcessFromRawPixels: settings.format is not a supported BC compression format");
 
-    // 6. Передача ответственности за упаковку в TextureBinary
-    return tryengine::resources::TextureBinary::Pack(header, compressed_mips);
+        uint64_t total_compressed_size = 0;
+        {
+            uint32_t temp_w = w, temp_h = h;
+            for (uint32_t i = 0; i < mip_count; ++i) {
+                total_compressed_size += GetCompressedMipSize(temp_w, temp_h, dxgi_format);
+                temp_w = (temp_w > 1) ? (temp_w >> 1) : 1;
+                temp_h = (temp_h > 1) ? (temp_h >> 1) : 1;
+            }
+        }
+
+        eastl::vector<uint8_t> compressed_mips(total_compressed_size);
+        uint8_t* write_ptr = compressed_mips.data();
+
+        eastl::vector<uint8_t> current_mip_rgba(static_cast<size_t>(w) * h * 4);
+        std::memcpy(current_mip_rgba.data(), base, current_mip_rgba.size());
+
+        uint32_t temp_w = w;
+        uint32_t temp_h = h;
+        for (uint32_t i = 0; i < mip_count; ++i) {
+            const uint64_t expected_size = GetCompressedMipSize(temp_w, temp_h, dxgi_format);
+
+            auto res = CompressMipLevel(current_mip_rgba.data(), temp_w, temp_h, dxgi_format, dxgi_srgb, write_ptr,
+                                        expected_size);
+            if (!res.has_value())
+                return LogAndMakeError("ProcessFromRawPixels: failed to compress mip {}", i);
+            write_ptr += expected_size;
+
+            if (i < mip_count - 1) {
+                const uint32_t next_w = (temp_w > 1) ? (temp_w >> 1) : 1;
+                const uint32_t next_h = (temp_h > 1) ? (temp_h >> 1) : 1;
+                eastl::vector<uint8_t> next_mip_rgba(static_cast<size_t>(next_w) * next_h * 4);
+                GenerateNextMip(current_mip_rgba.data(), temp_w, temp_h, next_mip_rgba.data(), next_w, next_h,
+                                dxgi_srgb);
+                current_mip_rgba = std::move(next_mip_rgba);
+                temp_w = next_w;
+                temp_h = next_h;
+            }
+        }
+
+        return tryengine::resources::TextureBinary::Pack(header, compressed_mips);
+    }
+
+    // 3. Uncompressed path: resize each level and write the format's bytes.
+    uint64_t total_size = 0;
+    {
+        uint32_t temp_w = w, temp_h = h;
+        for (uint32_t i = 0; i < mip_count; ++i) {
+            total_size += static_cast<uint64_t>(temp_w) * temp_h * bpp;
+            temp_w = (temp_w > 1) ? (temp_w >> 1) : 1;
+            temp_h = (temp_h > 1) ? (temp_h >> 1) : 1;
+        }
+    }
+
+    eastl::vector<uint8_t> mips(total_size);
+    uint8_t* write_ptr = mips.data();
+
+    eastl::vector<uint8_t> current_mip_rgba(static_cast<size_t>(w) * h * 4);
+    std::memcpy(current_mip_rgba.data(), base, current_mip_rgba.size());
+
+    uint32_t temp_w = w;
+    uint32_t temp_h = h;
+    for (uint32_t i = 0; i < mip_count; ++i) {
+        WriteUncompressedMip(current_mip_rgba.data(), temp_w, temp_h, settings.format, write_ptr);
+        write_ptr += static_cast<uint64_t>(temp_w) * temp_h * bpp;
+
+        if (i < mip_count - 1) {
+            const uint32_t next_w = (temp_w > 1) ? (temp_w >> 1) : 1;
+            const uint32_t next_h = (temp_h > 1) ? (temp_h >> 1) : 1;
+            eastl::vector<uint8_t> next_mip_rgba(static_cast<size_t>(next_w) * next_h * 4);
+            GenerateNextMip(current_mip_rgba.data(), temp_w, temp_h, next_mip_rgba.data(), next_w, next_h, is_srgb);
+            current_mip_rgba = std::move(next_mip_rgba);
+            temp_w = next_w;
+            temp_h = next_h;
+        }
+    }
+
+    return tryengine::resources::TextureBinary::Pack(header, mips);
 }
 
 }  // namespace tryeditor
