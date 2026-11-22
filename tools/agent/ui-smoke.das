@@ -7,7 +7,8 @@ module UiSmoke shared public
 //! Headless test of the retained UI: no window, no GPU, injected mouse. It exercises the
 //! parts that can be wrong without looking at pixels — id addressing, hit-testing, the
 //! press/click state machine, sound events, `var` write-back and the draw command list, plus
-//! the two layers above the widgets: the screen registry and the theme.
+//! the layers above the widgets: the screen registry, the theme, preview mode and modal
+//! backdrops.
 //!
 //! Run with tools/agent/ui-smoke.sh. A failure prints every failed check and panics, so the
 //! exit code is non-zero.
@@ -152,6 +153,131 @@ def private ColorNear(a : float4; b : float4) : bool {
     return abs(a.x - b.x) < 1e-4f && abs(a.y - b.y) < 1e-4f && abs(a.z - b.z) < 1e-4f && abs(a.w - b.w) < 1e-4f
 }
 
+// --- preview mode and modal layers ---------------------------------------------------------
+
+var private g_preview_clicks : int = 0
+var private g_preview_button_true : bool = false
+var private g_preview_checked : bool = false
+var private g_preview_value : float = 0.25f
+var private g_base_clicks : int = 0
+var private g_modal_clicks : int = 0
+
+def private OnPreviewClick() {
+    g_preview_clicks++
+}
+
+def private OnBaseClick() {
+    g_base_clicks++
+}
+
+def private OnModalClick() {
+    g_modal_clicks++
+}
+
+def private BuildPreviewScreen() {
+    Ui::Row("##row", UiStyle(), UiLayout(spacing = 6.0f)) {
+        if (Ui::Button("##go", "Go", @@OnPreviewClick, kButtonStyle)) {
+            g_preview_button_true = true
+        }
+        Ui::Checkbox("##check", g_preview_checked, UiStyle())
+        Ui::Slider("##slider", g_preview_value, 0.0f, 1.0f, UiStyle())
+    }
+}
+
+def private BuildBaseScreen() {
+    Ui::Button("##under", "Under", @@OnBaseClick, kButtonStyle)
+}
+
+def private BuildModalScreen() {
+    Ui::Backdrop("##modal", UiStyle(color = float4(0.0f, 0.0f, 0.0f, 0.5f))) {
+        Ui::Panel("##box", UiStyle(), UiLayout(anchor = float2(0.5f, 0.5f))) {
+            Ui::Button("##inside", "Inside", @@OnModalClick, kButtonStyle)
+        }
+    }
+}
+
+def private RunPreviewChecks() {
+    Ui::RegisterScreen("preview", @@BuildPreviewScreen)
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    Ui::FrameScreen("preview")
+
+    let go = Ui::DebugRect("##row/##go", "preview")
+    let check = Ui::DebugRect("##row/##check", "preview")
+    let slider = Ui::DebugRect("##row/##slider", "preview")
+    Check(go.z > 0.0f && check.z > 0.0f && slider.z > 0.0f, "the preview screen lays out its widgets")
+
+    // Preview: the pointer still presses and hovers, nothing leaves the tree.
+    Ui::SetPreviewMode(true)
+    Check(Ui::IsPreviewing(), "preview mode reports itself")
+    ClickInScreen("preview", Center(go))
+    Check(g_preview_clicks == 0, "preview mode invokes no action")
+    Check(!g_preview_button_true, "Button returns false in preview mode")
+
+    ClickInScreen("preview", Center(check))
+    Check(!g_preview_checked, "the checkbox does not write its variable in preview mode")
+
+    let slider_low = float2(slider.x + slider.z * 0.2f, slider.y + slider.w * 0.5f)
+    let slider_high = float2(slider.x + slider.z * 0.8f, slider.y + slider.w * 0.5f)
+    Ui::InjectInput(slider_low, true, true, false)
+    Ui::FrameScreen("preview")
+    Ui::InjectInput(slider_high, true, false, false)
+    Ui::FrameScreen("preview")
+    Ui::InjectInput(slider_high, false, false, true)
+    Ui::FrameScreen("preview")
+    Check(g_preview_value == 0.25f, "the slider does not write its variable in preview mode")
+
+    // Hover state is still tracked, so the preview looks alive.
+    Ui::InjectInput(Center(go), false, false, false)
+    Ui::FrameScreen("preview")
+    Check(Ui::HotId() != 0ul, "preview mode still hit-tests")
+
+    Ui::SetPreviewMode(false)
+    Check(!Ui::IsPreviewing(), "preview mode turns off")
+    ClickInScreen("preview", Center(go))
+    Check(g_preview_clicks == 1, "the same click works once preview mode is off")
+    Check(g_preview_button_true, "Button returns true outside preview mode")
+}
+
+def private RunModalChecks() {
+    Ui::RegisterScreen("smoke_base", @@BuildBaseScreen)
+    Ui::RegisterScreen("smoke_modal", @@BuildModalScreen)
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    Ui::Frame() {
+        Ui::Screen("smoke_base")
+        Ui::Screen("smoke_modal")
+    }
+
+    let under = Ui::DebugRect("##under", "smoke_base")
+    let inside = Ui::DebugRect("##modal/##box/##inside", "smoke_modal")
+    Check(under.z > 0.0f && inside.z > 0.0f, "the two layers lay out in one frame")
+
+    // The backdrop is drawn after the base screen, so it wins the pointer where they overlap.
+    Ui::InjectInput(Center(under), true, true, false)
+    Ui::Frame() {
+        Ui::Screen("smoke_base")
+        Ui::Screen("smoke_modal")
+    }
+    Ui::InjectInput(Center(under), false, false, true)
+    Ui::Frame() {
+        Ui::Screen("smoke_base")
+        Ui::Screen("smoke_modal")
+    }
+    Check(g_base_clicks == 0, "a backdrop swallows the pointer above an earlier layer")
+
+    // Widgets declared inside the backdrop still get it.
+    Ui::InjectInput(Center(inside), true, true, false)
+    Ui::Frame() {
+        Ui::Screen("smoke_base")
+        Ui::Screen("smoke_modal")
+    }
+    Ui::InjectInput(Center(inside), false, false, true)
+    Ui::Frame() {
+        Ui::Screen("smoke_base")
+        Ui::Screen("smoke_modal")
+    }
+    Check(g_modal_clicks == 1, "widgets inside the backdrop stay clickable")
+}
+
 def private RunThemeChecks() {
     let engine_theme = Ui::Theme()
     Check(engine_theme.panel.color.w > 0.0f, "the engine theme fills panels")
@@ -262,6 +388,8 @@ def run_smoke() {
 
     RunScreenChecks()
     RunThemeChecks()
+    RunPreviewChecks()
+    RunModalChecks()
 
     if (g_failures != 0) {
         panic("ui-smoke failed: {g_failures} of {g_checks} checks")
