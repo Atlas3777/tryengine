@@ -11,6 +11,12 @@ def SetInputSource() {
     g_input = get_input_state()
 }
 
+//! True when the engine input source is attached (EngineStart). Headless scripts and tools run
+//! without it and must not dereference the state.
+def public HasInputSource() : bool {
+    return g_input != null
+}
+
 def is_down(key : Key) : bool {
     return g_input.isDown[int(key)]
 }

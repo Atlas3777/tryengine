@@ -7,6 +7,7 @@ module SceneViewPort shared
 require tryengine/Profiling
 require tryengine/AsyncTaskManager
 require tryengine/Prefab
+require tryengine/Ui
 require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
@@ -192,6 +193,12 @@ def DrawGameSceneViewPort(){
                               uv1 = float2(1.0f, 1.0f),
                               tint_col = float4(1.0f, 1.0f, 1.0f, 1.0f),
                               border_col = float4(0.0f, 0.0f, 0.0f, 0.0f)))
+
+            // The game UI is declared in GameUpdate, before this panel is laid out, so its
+            // input viewport is one frame behind — the same compromise the gizmo accepts.
+            Ui::SetInputViewport(GetItemRectMin(), scene_game_viewport_size, IsItemHovered())
+        } else {
+            Ui::SetInputViewport(float2(0.0f, 0.0f), float2(0.0f, 0.0f), false)
         }
     }
 }

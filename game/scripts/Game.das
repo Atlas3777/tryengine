@@ -15,6 +15,7 @@ require tryengine/Profiling
 require tryengine/Scene
 require tryengine/Time
 require tryengine/Types
+require trygame/GameUi
 require trygame/PhysicsDemo
 require math
 
@@ -99,9 +100,14 @@ def GameStart(){
 
 [export, profile]
 def GameUpdate() {
+    // The UI is declared every frame, before gameplay, on its own clock (tryengine/Ui owns it).
+    // Pausing the world clock below does not stop the HUD: that is what a pause menu needs.
+    GameUi::Frame()
+
     if (!g_scene_ready) {
         return
     }
+    TimeSetPaused(game_world_clock, GameUi::IsPaused())
     UpdateGameplay()
 }
 
