@@ -213,24 +213,60 @@ let private kCheckboxStyle : UiStyle = UiStyle(
     padding = float4(0.0f, 0.0f, 0.0f, 0.0f)
 )
 
+let private kDefaultTheme : UiTheme = UiTheme(
+    panel = kPanelStyle,
+    text = kLabelStyle,
+    button = kButtonStyle,
+    bar = kBarStyle,
+    slider = kSliderStyle,
+    checkbox = kCheckboxStyle
+)
+
+// The installed theme. Starts as the engine default, so a game that never calls `SetTheme`
+// still gets a usable look; `SetTheme` merges the game theme over this default.
+var private g_theme : UiTheme = kDefaultTheme
+
+//! Installs a game theme: every kind the theme sets overrides the engine default, and the kinds
+//! it leaves alone keep the engine look. Call it once from `[init]` of the module that holds the
+//! styles, not per frame.
+def public SetTheme(theme : UiTheme) {
+    var merged : UiTheme = default<UiTheme>
+    merged.panel = MergeStyle(kDefaultTheme.panel, theme.panel)
+    merged.text = MergeStyle(kDefaultTheme.text, theme.text)
+    merged.button = MergeStyle(kDefaultTheme.button, theme.button)
+    merged.bar = MergeStyle(kDefaultTheme.bar, theme.bar)
+    merged.slider = MergeStyle(kDefaultTheme.slider, theme.slider)
+    merged.checkbox = MergeStyle(kDefaultTheme.checkbox, theme.checkbox)
+    merged.image = MergeStyle(kDefaultTheme.image, theme.image)
+    g_theme = merged
+}
+
+//! The resolved theme: a copy of what widgets use right now.
+def public Theme() : UiTheme {
+    return g_theme
+}
+
 def private DefaultsFor(kind : uint) : UiStyle {
     if (kind == UIK_PANEL) {
-        return kPanelStyle
+        return g_theme.panel
     }
     if (kind == UIK_LABEL) {
-        return kLabelStyle
+        return g_theme.text
     }
     if (kind == UIK_BUTTON) {
-        return kButtonStyle
+        return g_theme.button
     }
     if (kind == UIK_BAR) {
-        return kBarStyle
+        return g_theme.bar
     }
     if (kind == UIK_SLIDER) {
-        return kSliderStyle
+        return g_theme.slider
     }
     if (kind == UIK_CHECKBOX) {
-        return kCheckboxStyle
+        return g_theme.checkbox
+    }
+    if (kind == UIK_IMAGE) {
+        return g_theme.image
     }
     return kNeutralStyle
 }
@@ -1186,6 +1222,71 @@ def get_ui_draw_cmds() : array<UiDrawCmd>? {
     return unsafe(addr(g_commands))
 }
 
+// --- screens -------------------------------------------------------------------------------
+
+// Named declarations, registered once (from `[init]`) and drawn by name. A screen is the unique
+// part of the interface; the widgets inside it are the part that repeats. Registration stores the
+// function pointer, not a closure, so nothing is captured and nothing can outlive the frame.
+var private g_screens : table<string; UiScreenBuild>
+var private g_screen_order : array<string>
+var private g_screen_reported : table<string; int>
+
+//! Registers a screen under `name`. Registering the same name again replaces the build, so a
+//! reloaded module can register its screens again without a diagnostic.
+def public RegisterScreen(name : string; build : UiScreenBuild) {
+    if (empty(name)) {
+        print("[UI] RegisterScreen with an empty name ignored\n")
+        return
+    }
+    if (build == null) {
+        print("[UI] RegisterScreen('{name}') with a null build ignored\n")
+        return
+    }
+    if (!key_exists(g_screens, name)) {
+        g_screen_order |> push(name)
+    }
+    g_screens[name] = build
+}
+
+def public HasScreen(name : string) : bool {
+    return key_exists(g_screens, name)
+}
+
+//! Screens in registration order: the editor's Screens panel lists them, drawing uses `Screen`.
+def public ScreenNames() : array<string> {
+    var names : array<string>
+    for (name in g_screen_order) {
+        names |> push(name)
+    }
+    return <- names
+}
+
+//! Draws a registered screen where the call sits. Ids are scoped by the screen name, so the same
+//! local id in two screens is two nodes, and a screen drawn inside a panel lays out inside it.
+def public Screen(name : string) {
+    if (!key_exists(g_screens, name)) {
+        if (!key_exists(g_screen_reported, name)) {
+            g_screen_reported[name] = 1
+            print("[UI] no screen '{name}' is registered\n")
+        }
+        return
+    }
+    let build = g_screens[name]
+    let saved_parent = g_parent
+    let saved_salt = g_salt
+    g_salt = MixId(saved_salt, HashString(name))
+    invoke(build)
+    g_salt = saved_salt
+    g_parent = saved_parent
+}
+
+//! One complete frame of one screen: `Begin`, the screen, `End`.
+def public FrameScreen(name : string) {
+    Begin()
+    Screen(name)
+    End()
+}
+
 // --- widgets ------------------------------------------------------------------------------
 
 def private OpenContainer(nid : uint64) : uint64 {
@@ -1368,14 +1469,22 @@ def public ClickedId() : uint64 {
 }
 
 //! Resolved rectangle of a node addressed by its declaration path, e.g. "##panel/##button".
-//! Diagnostics and tests only: ids of widgets created inside `For` include a per-item salt and
-//! cannot be addressed this way.
-def public DebugRect(path : string) : float4 {
+//! Pass `screen` for a node declared inside a registered screen: the screen name is part of the
+//! id, so the path alone does not address it. Diagnostics and tests only: ids of widgets created
+//! inside `For` include a per-item salt and cannot be addressed this way.
+def public DebugRect(path : string; screen : string = "") : float4 {
     var id = 0ul
+    var salt = 0ul
+    if (!empty(screen)) {
+        salt = MixId(0ul, HashString(screen))
+    }
     let parts <- split(path, "/")
     for (part in parts) {
         if (!empty(part)) {
-            id = MixId(id, MixId(0ul, HashString(part)))
+            id = MixId(id, MixId(salt, HashString(part)))
+            // Only the first segment sits directly under the screen salt; children are scoped by
+            // their parent node.
+            salt = 0ul
         }
     }
     if (id == 0ul || !key_exists(g_nodes, id)) {

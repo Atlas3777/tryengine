@@ -22,6 +22,10 @@ typedef public UiAction = function<() : void>
 typedef public UiActionData = function<(data : int) : void>
 //! Sound event sink. The UI never plays audio itself; it names what should play and to whom.
 typedef public UiSoundHandler = function<(path : string; node_id : uint64) : void>
+//! One screen: the unique part of the interface, built from widgets. `Ui::RegisterScreen` stores
+//! this pointer, so a screen holds no state of its own — it reads module globals and is drawn by
+//! name. `Ui::Screen` draws it inline, `Ui::FrameScreen` makes it the whole frame.
+typedef public UiScreenBuild = function<() : void>
 
 //! Mirror of tryengine::graphics::UiPass::UiDrawCmd. The pass static_asserts this layout, and
 //! glyph geometry is built in C++ from text commands, so no strings live here.
@@ -86,6 +90,21 @@ struct public UiButtonTemplate {
     text : string = ""
     size : float2 = float2(0.0f, 0.0f)
     layout : UiLayout = default<UiLayout>
+}
+
+//! Per-kind default looks: the theme. A widget merges its call-site style over the theme entry
+//! for its kind (see `MergeStyle`), so `Ui::Panel("##hud")` already has colours, padding, radius
+//! and text metrics. A game installs its theme once with `Ui::SetTheme` from `[init]`, which
+//! keeps styles in their own file instead of in the markup. Fields are partial: `SetTheme`
+//! merges the theme over the engine defaults, so a theme may override one kind and leave the rest.
+struct public UiTheme {
+    panel : UiStyle = default<UiStyle>
+    text : UiStyle = default<UiStyle>
+    button : UiStyle = default<UiStyle>
+    bar : UiStyle = default<UiStyle>
+    slider : UiStyle = default<UiStyle>
+    checkbox : UiStyle = default<UiStyle>
+    image : UiStyle = default<UiStyle>
 }
 
 // Node kinds. They drive both layout (flow vs group) and drawing in tryengine/Ui.
