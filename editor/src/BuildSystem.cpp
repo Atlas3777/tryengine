@@ -207,6 +207,11 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     }
     eastl::sort(common_shaders.begin(), common_shaders.end());
     common_shaders.erase(eastl::unique(common_shaders.begin(), common_shaders.end()), common_shaders.end());
+    // UI textures are requested by guid from the HUD and nothing else references them, so the
+    // build is told explicitly that they belong in common.
+    for (const uint64_t ui_texture : settings.ui_textures)
+        if (ui_texture != 0)
+            common_textures.push_back(ui_texture);
     eastl::sort(common_textures.begin(), common_textures.end());
     common_textures.erase(eastl::unique(common_textures.begin(), common_textures.end()), common_textures.end());
 

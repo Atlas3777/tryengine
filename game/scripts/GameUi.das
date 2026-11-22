@@ -167,7 +167,15 @@ def private HpText() : string {
 //! the top-left, the phase label to the top-right, the counter to the bottom-left.
 def private BuildHud() {
     Ui::Panel("##hud", UiTheme::kHudPanel, UiLayout(anchor = float2(0.0f, 0.0f), offset = float2(24.0f, 24.0f), spacing = 8.0f)) {
-        Ui::Label("##title", "tryengine UI", UiTheme::kTitle)
+        // A texture asset drawn directly, without a material file: the guid comes from the
+        // asset's .meta, the size from the layout.
+        Ui::Row("##brand", UiStyle(), UiLayout(spacing = 10.0f)) {
+            Ui::ImageTexture("##logo", UiTheme::kLogoGuid, float2(48.0f, 48.0f))
+            Ui::Column("##brand_text", UiStyle(), UiLayout(spacing = 2.0f)) {
+                Ui::Label("##title", "tryengine UI", UiTheme::kTitle)
+                Ui::Label("##subtitle", "hud screen", UiTheme::kMuted)
+            }
+        }
         // Composite widgets: the health meter and the volume row also appear on the pause screen.
         UiWidgets::MeterRow("##hp", "HP", g_state.hp, g_state.hp_max, UiTheme::kHpBar, HpText())
         Ui::Row("##buttons", UiStyle(), UiLayout(spacing = 8.0f)) {

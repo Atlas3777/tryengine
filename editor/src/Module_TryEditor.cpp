@@ -1,5 +1,6 @@
 #include <cstring>
 #include <daScript/daScript.h>
+#include <fstream>
 #include <imgui.h>
 #include <thread>
 
@@ -8,6 +9,8 @@
 #include "editor/BuildSystem.hpp"
 #include "editor/ScriptReload.hpp"
 #include "editor/TryEditorContext.hpp"
+#include "editor/import/FontImporter.hpp"
+#include "editor/import/TextureImporter.hpp"
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
@@ -18,6 +21,7 @@
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AssetTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
+#include "engine/resources/Json.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 // Биндинг домена дерева — ДО using namespace das (иначе коллизии имён)
@@ -58,6 +62,84 @@ uint64_t AssetExtKey(const char* name) {
     return tryeditor::ExtKey(name ? eastl::string_view(name) : eastl::string_view());
 }
 
+namespace {
+
+// Читает файл целиком; false — файла нет или он пуст. Мета-файлы маленькие, поэтому
+// обычный ifstream: это редактор, а не игровой путь чтения контента.
+bool ReadWholeFile(const eastl::string& path, eastl::vector<uint8_t>& out) {
+    std::ifstream file(path.c_str(), std::ios::binary);
+    if (!file.is_open())
+        return false;
+    file.seekg(0, std::ios::end);
+    const std::streamoff size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (size <= 0)
+        return false;
+    out.resize(static_cast<size_t>(size));
+    file.read(reinterpret_cast<char*>(out.data()), size);
+    return file.good();
+}
+
+eastl::string FormatTextureSettings(const tryeditor::TextureImportSettings& settings) {
+    return tryengine::fmt::format(
+        "settings:\n  format        : {}\n  mips          : {}\n  max size      : {}\n  filter        : {}\n"
+        "  wrap          : {}\n",
+        settings.format.c_str(), settings.generate_mips ? "on" : "off", settings.max_size, settings.filter.c_str(),
+        settings.wrap.c_str());
+}
+
+eastl::string FormatFontSettings(const tryeditor::FontBakeSettings& settings) {
+    return tryengine::fmt::format(
+        "settings:\n  em size       : {}\n  px range      : {}\n  padding       : {}\n  atlas         : {}x{}\n"
+        "  dist scale    : {}\n  onedge value  : {}\n  ranges        : {}\n",
+        settings.em_size, settings.px_range, settings.padding, settings.atlas_width, settings.atlas_height,
+        settings.pixel_dist_scale, settings.onedge_value, settings.ranges.c_str());
+}
+
+}  // namespace
+
+// Сводка настроек импорта для выбранного ассета: панель Import Settings показывает её, а
+// ниже — сырой .meta, чтобы ничего не было спрятано. nullptr — у файла нет .meta (авторитетный
+// content/data) или он не разобрался.
+char* DescribeAssetMeta(const char* asset_path, das::Context* ctx, das::LineInfoArg* at) {
+    if (asset_path == nullptr || *asset_path == '\0' || ctx == nullptr)
+        return nullptr;
+
+    eastl::string meta_path(asset_path);
+    meta_path.append(".meta");
+
+    eastl::vector<uint8_t> bytes;
+    if (!ReadWholeFile(meta_path, bytes))
+        return nullptr;
+
+    const eastl::span<const uint8_t> span(bytes.data(), bytes.size());
+    auto header = tryengine::resources::Json::DeserializePartial<tryeditor::HeaderOnly>(span);
+    if (!header.has_value())
+        return nullptr;
+
+    eastl::string text = tryengine::fmt::format("importer  : {}\nguid      : {}\nsub assets: {}\n\n",
+                                                header->header.importer_type.c_str(), header->header.guid,
+                                                header->header.sub_assets.size());
+
+    const eastl::string_view importer = header->header.importer_type;
+    if (importer == "TextureImporter") {
+        auto meta =
+            tryengine::resources::Json::DeserializePartial<tryeditor::AssetMeta<tryeditor::TextureImportSettings>>(
+                span);
+        if (meta.has_value())
+            text.append(FormatTextureSettings(meta->settings));
+    } else if (importer == "FontImporter") {
+        auto meta =
+            tryengine::resources::Json::DeserializePartial<tryeditor::AssetMeta<tryeditor::FontBakeSettings>>(span);
+        if (meta.has_value())
+            text.append(FormatFontSettings(meta->settings));
+    }
+
+    text.append("\nraw .meta:\n");
+    text.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    return ctx->allocateString(text.c_str(), text.size(), at);
+}
+
 struct SceneDTODas {
     const char* name;
     const char* path;
@@ -79,8 +161,13 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
 
     // The UI font is a runtime resource the game requests by guid; no scene mentions it, so
     // the build has to be told explicitly that it belongs in the common pak.
-    if (auto* ui = try_ctx->engine.TryGet<tryengine::graphics::UiSystem>(); ui != nullptr && ui->GetFontGuid() != 0)
-        settings.fonts.push_back(ui->GetFontGuid());
+    if (auto* ui = try_ctx->engine.TryGet<tryengine::graphics::UiSystem>(); ui != nullptr) {
+        if (ui->GetFontGuid() != 0)
+            settings.fonts.push_back(ui->GetFontGuid());
+        for (const uint64_t texture : ui->GetConfig().textures)
+            if (texture != 0)
+                settings.ui_textures.push_back(texture);
+    }
 
     auto array = *scenes_ptr;
 
@@ -407,6 +494,9 @@ public:
                                                         das::SideEffects::accessGlobal, "RebuildAssetTrees");
 
         das::addExtern<DAS_BIND_FUN(AssetExtKey)>(*this, lib, "asset_ext_key", das::SideEffects::none, "AssetExtKey");
+
+        das::addExtern<DAS_BIND_FUN(DescribeAssetMeta)>(*this, lib, "DescribeAssetMeta", das::SideEffects::accessGlobal,
+                                                        "DescribeAssetMeta");
 
         das::addExtern<DAS_BIND_FUN(CreateBuild)>(*this, lib, "CreateBuild", das::SideEffects::accessGlobal,
                                                   "CreateBuild");

@@ -70,6 +70,9 @@ struct public UiNode {
     value : float = 0.0f
     text_hash : uint64 = 0ul
     text_metric : float2 = float2(0.0f, 0.0f)
+    // Material of an image node: a texture material resolved from a guid (`ImageTexture`), or
+    // null when the image draws through the `.mat` path stored in its style.
+    material : TryMat const? = null
 }
 
 struct private PendingCall {
@@ -280,6 +283,9 @@ def private DefaultsFor(kind : uint) : UiStyle {
 
 def private ResolveStyle(kind : uint; style : UiStyle) : UiStyle {
     var resolved = MergeStyle(DefaultsFor(kind), style)
+    // An image multiplies the texture by its colour, so "unset" means white, not transparent:
+    // the generic fill below would make every untouched texture invisible.
+    if (kind == UIK_IMAGE && !IsSetColor(resolved.color)) { resolved.color = float4(1.0f, 1.0f, 1.0f, 1.0f) }
     // Fill the remaining sentinels so drawing can read plain values.
     if (!IsSetColor(resolved.color)) { resolved.color = float4(0.0f, 0.0f, 0.0f, 0.0f) }
     if (!IsSetColor(resolved.hover_color)) { resolved.hover_color = resolved.color }
@@ -1019,7 +1025,7 @@ def private EmitTextRun(rect : float4; text : string; px : float; color : float4
     g_commands |> push(cmd)
 }
 
-def private EmitTextured(rect : float4; color : float4; material : TryMat?; scissor : float4) {
+def private EmitTextured(rect : float4; color : float4; material : TryMat const?; scissor : float4) {
     if (material == null || rect.z <= 0.0f || rect.w <= 0.0f) {
         return
     }
@@ -1172,7 +1178,11 @@ def private EmitAll() {
         } elif (kind == UIK_CHECKBOX) {
             EmitCheckbox(node, style, clip)
         } elif (kind == UIK_IMAGE) {
-            EmitTextured(node.rect, float4(1.0f, 1.0f, 1.0f, 1.0f), MaterialFor(style.material), clip)
+            var material = node.material
+            if (material == null) {
+                material = MaterialFor(style.material)
+            }
+            EmitTextured(node.rect, style.color, material, clip)
         }
     }
 }
@@ -1487,6 +1497,21 @@ def public Image(id : string; path : string; size : float2; style : UiStyle = de
     var merged = style
     merged.material = path
     ApplyStyle(nid, UIK_IMAGE, merged, UiLayout(size = size))
+}
+
+//! Textured widget addressed by a texture asset guid (the number in the `.png.meta`). The
+//! material is built by UiSystem from the UI shader with this image bound where the font atlas
+//! sits, so no `.mat` file is needed; the command is dropped until the texture is loaded.
+//! `style.color` tints the image (white by default), `UiLayout` sizes it.
+def public ImageTexture(id : string; texture_guid : uint64; size : float2; style : UiStyle = default<UiStyle>) {
+    let nid = Acquire(id, UIK_IMAGE)
+    if (nid == 0ul) {
+        return
+    }
+    var node = g_nodes[nid]
+    node.material = UiTextureMaterial(texture_guid)
+    g_nodes[nid] = node
+    ApplyStyle(nid, UIK_IMAGE, style, UiLayout(size = size))
 }
 
 //! Clips everything emitted until PopClip. The scissor is intersected with the previous clip.

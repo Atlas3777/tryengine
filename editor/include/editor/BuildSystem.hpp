@@ -22,8 +22,10 @@ struct SceneDTO {
 struct BuildSettings {
     uint64_t first_scene_guid;
     // Assets that must ride in the common pak although no scene or prefab references them.
-    // Today this is the baked UI font (UiSystem config); CreateBuild fills it in.
+    // Today this is the baked UI font and the textures the HUD draws by guid (UiSystem config);
+    // CreateBuild fills both in.
     eastl::vector<uint64_t> fonts;
+    eastl::vector<uint64_t> ui_textures;
 };
 
 class BuildSystem {

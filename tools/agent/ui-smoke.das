@@ -8,7 +8,7 @@ module UiSmoke shared public
 //! parts that can be wrong without looking at pixels — id addressing, hit-testing, the
 //! press/click state machine, sound events, `var` write-back and the draw command list, plus
 //! the layers above the widgets: the screen registry, the theme, preview mode and modal
-//! backdrops.
+//! backdrops, and the image path that has no texture behind it.
 //!
 //! Run with tools/agent/ui-smoke.sh. A failure prints every failed check and panics, so the
 //! exit code is non-zero.
@@ -278,6 +278,16 @@ def private RunModalChecks() {
     Check(g_modal_clicks == 1, "widgets inside the backdrop stay clickable")
 }
 
+def private RunImageChecks() {
+    // A textured image with no texture behind it (guid 0, and no UiSystem in a headless run)
+    // must emit nothing instead of a draw command with a null material.
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    Ui::Frame() {
+        Ui::ImageTexture("##tex", 0ul, float2(32.0f, 32.0f))
+    }
+    Check(Ui::DebugCommandCount() == 0, "an image without a loaded texture emits no command")
+}
+
 def private RunThemeChecks() {
     let engine_theme = Ui::Theme()
     Check(engine_theme.panel.color.w > 0.0f, "the engine theme fills panels")
@@ -388,6 +398,7 @@ def run_smoke() {
 
     RunScreenChecks()
     RunThemeChecks()
+    RunImageChecks()
     RunPreviewChecks()
     RunModalChecks()
 

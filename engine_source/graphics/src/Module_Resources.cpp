@@ -5,6 +5,7 @@
 #include "engine/core/TryengineContext.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/graphics/UiSystem.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 using namespace tryengine::core;
@@ -27,6 +28,14 @@ tryengine::resources::ResourceManager* GetResourceManager(das::Context* ctx) {
 }
 
 }  // namespace
+
+// UI texture -> material for `Ui::ImageTexture`. The binding lives in this module because the
+// TryMat annotation is declared here, and a texture material is a resource lookup, not a UI
+// state: the UI owns the cache, the script only ever sees the material pointer.
+tryengine::graphics::Material* UiTextureMaterial(uint64_t guid) {
+    auto* ui = tryengine::graphics::UiSystem::ForScripts();
+    return ui != nullptr ? ui->TextureMaterial(guid) : nullptr;
+}
 
 void RequestLoadMesh(uint64_t guid, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
@@ -240,6 +249,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(GetMaterialSchema)>(*this, lib, "GetMaterialSchema", das::SideEffects::accessGlobal,
                                                         "GetMaterialSchema");
+
+        das::addExtern<DAS_BIND_FUN(UiTextureMaterial)>(*this, lib, "UiTextureMaterial", das::SideEffects::accessGlobal,
+                                                        "UiTextureMaterial");
 
         das::addExtern<DAS_BIND_FUN(ResolveAssetRef)>(*this, lib, "ResolveAssetRef", das::SideEffects::accessGlobal,
                                                       "ResolveAssetRef");

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <EASTL/string.h>
+#include <EASTL/unique_ptr.h>
+#include <EASTL/unordered_map.h>
 #include <EASTL/vector.h>
 #include <daScript/misc/vectypes.h>
 
@@ -17,12 +19,28 @@ class VulkanDevice;
 //! Guid of the UI font asset: the guid stored in `game/assets/fonts/<Font>.ttf.meta`. The
 //! FontImporter turns the .ttf into a `.font` artifact under this guid; put the imported
 //! number here (0 disables the game UI until a font is imported).
-inline constexpr uint64_t kDefaultUiFontGuid = 0;
+inline constexpr uint64_t kDefaultUiFontGuid = 7732110565556845333ULL;
 
-//! Game UI configuration: the font asset (its runtime id) and the material the UI draws with
-//! (an authoritative `game/data/...` path).
+//! Guid of the texture the sample HUD draws with `Ui::ImageTexture`, so a build can pack it:
+//! nothing else references a UI-only texture, and the pak keeps no path table for assets.
+//! Leave the list empty when your game has no UI textures.
+inline constexpr uint64_t kDefaultUiTextureGuid = 14429000468236573201ULL;
+
+//! UI textures by guid: what the UI draws, and what a build has to pack into the common pak.
+inline eastl::vector<uint64_t> DefaultUiTextures() {
+    eastl::vector<uint64_t> out;
+    if (kDefaultUiTextureGuid != 0)
+        out.push_back(kDefaultUiTextureGuid);
+    return out;
+}
+
+//! Game UI configuration: the font asset (its runtime id), the material the UI draws with
+//! (an authoritative `game/data/...` path) and the textures it addresses by guid.
 struct UiConfig {
     uint64_t font_guid = kDefaultUiFontGuid;
+    //! Texture assets the UI samples by guid. The editor loads them loose; a build packs them
+    //! into the common pak (see BuildSettings::ui_textures).
+    eastl::vector<uint64_t> textures = DefaultUiTextures();
     eastl::string material_path = "game/data/materials/ui.mat";
 };
 
@@ -72,6 +90,11 @@ public:
     [[nodiscard]] bool IsReady() const;
     [[nodiscard]] Material* GetMaterial() const;
     [[nodiscard]] const Font* GetFont() const;
+
+    //! Material that draws `texture_guid` through the UI shader: the same shader and pipeline as
+    //! the built-in UI material, with the image bound where the font atlas sits. Built once per
+    //! texture and rebuilt if the imported texture is replaced; null while the texture loads.
+    [[nodiscard]] Material* TextureMaterial(uint64_t texture_guid);
 
     [[nodiscard]] const UiConfig& GetConfig() const {
         return config_;
@@ -132,6 +155,22 @@ private:
     Font* font_ = nullptr;
     Material* material_ = nullptr;
     uint32_t atlas_binding_ = 0;
+
+    //! One material per UI texture. The image is bound as a raw texture, exactly like the atlas,
+    //! so no ResourceManager handle lives inside the material.
+    struct TextureMaterialEntry {
+        eastl::unique_ptr<Material> material;
+        VkImageView view = VK_NULL_HANDLE;
+        VkSampler sampler = VK_NULL_HANDLE;
+    };
+
+    eastl::unordered_map<uint64_t, TextureMaterialEntry> texture_materials_;
+    //! Textures the UI asked for; keeps RequestLoad from being issued every frame per guid.
+    eastl::unordered_map<uint64_t, uint8_t> texture_requested_;
+    //! Replaced materials whose descriptor sets may still be referenced by a recorded command
+    //! buffer. Destruction of the GPU resources is deferred to the whole UI's lifetime.
+    eastl::vector<eastl::unique_ptr<Material>> retired_texture_materials_;
+    bool texture_binding_error_logged_ = false;
 };
 
 }  // namespace tryengine::graphics

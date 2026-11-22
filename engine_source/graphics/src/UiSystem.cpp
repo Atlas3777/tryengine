@@ -130,6 +130,55 @@ void UiSystem::BindAtlas() {
     atlas_bound_ = true;
 }
 
+Material* UiSystem::TextureMaterial(uint64_t texture_guid) {
+    if (texture_guid == 0 || material_ == nullptr || !material_->shader)
+        return nullptr;
+
+    TextureSampler* texture = resource_manager_.GetPointerExplicit<TextureSampler>(texture_guid);
+    if (texture == nullptr) {
+        if (texture_requested_.find(texture_guid) == texture_requested_.end()) {
+            resource_manager_.RequestLoad<TextureSampler>(texture_guid);
+            texture_requested_[texture_guid] = 1;
+        }
+        return nullptr;
+    }
+
+    auto cached = texture_materials_.find(texture_guid);
+    if (cached != texture_materials_.end()) {
+        if (cached->second.view == texture->view)
+            return cached->second.material.get();
+
+        // The asset was re-baked while the UI was running: the cached set points at a destroyed
+        // image. Keep the old material alive (a recorded command buffer may reference its set)
+        // and build a fresh one below.
+        retired_texture_materials_.push_back(eastl::move(cached->second.material));
+        texture_materials_.erase(cached);
+    }
+
+    const auto* binding = material_->shader->reflection.FindBinding("albedo_map");
+    if (binding == nullptr) {
+        if (!texture_binding_error_logged_) {
+            texture_binding_error_logged_ = true;
+            LogError("UI material must sample images through a sampler named 'albedo_map'");
+        }
+        return nullptr;
+    }
+
+    auto created = eastl::make_unique<Material>(material_->shader);
+    created->SetDefaultTexture(device_.GetDefaultWhiteTexture().view, device_.GetDefaultWhiteTexture().sampler);
+    created->InitGpuResources(device_.GetDevice(), device_.GetPhysicalDevice());
+    created->SetRawTexture(binding->binding, texture->view, texture->sampler);
+    created->FinalizeDescriptors();
+
+    Material* raw = created.get();
+    TextureMaterialEntry entry{};
+    entry.material = eastl::move(created);
+    entry.view = texture->view;
+    entry.sampler = texture->sampler;
+    texture_materials_.emplace(texture_guid, eastl::move(entry));
+    return raw;
+}
+
 uint32_t UiSystem::InternText(const char* text) {
     const uint32_t id = static_cast<uint32_t>(frame_strings_.size());
     frame_strings_.emplace_back(text != nullptr ? text : "");
