@@ -130,6 +130,13 @@ var private g_active_id : uint64 = 0ul
 var private g_clicked_id : uint64 = 0ul
 var private g_consumed_mouse : bool = false
 
+// Preview mode: the tree still follows the pointer (hover/press animations run), but nothing
+// leaves it — no `@@` action is invoked, no sound is emitted and no `var` binder writes back.
+// The editor turns it on around the Screens preview, where the game is not running and a click
+// must not touch game state. It cannot stop a build function from writing a global, so screens
+// themselves must only read state and mutate it through actions and binders.
+var private g_preview : bool = false
+
 // Deferred side effects: callbacks and sounds run after the tree is built and drawn.
 var private g_pending : array<PendingCall>
 var private g_sounds : array<SoundEvent>
@@ -389,6 +396,17 @@ def public HotId() : uint64 {
 
 def public OnSound(handler : UiSoundHandler) {
     g_sound_handler = handler
+}
+
+//! Turns the side-effect-free preview on or off. In preview a click still presses, hovers and
+//! animates, but `Ui::Button` returns false, `Checkbox`/`Slider` leave the caller's value alone,
+//! `@@` actions are not invoked and sounds are dropped.
+def public SetPreviewMode(on : bool) {
+    g_preview = on
+}
+
+def public IsPreviewing() : bool {
+    return g_preview
 }
 
 // --- value watchers -----------------------------------------------------------------------
@@ -1175,6 +1193,12 @@ def private SweepNodes() {
 }
 
 def private DispatchPending() {
+    // Preview: the click was only for the picture. Drop the queues without invoking anything.
+    if (g_preview) {
+        g_pending.clear()
+        g_sounds.clear()
+        return
+    }
     for (call in g_pending) {
         if (call.action != null) {
             invoke(call.action)
@@ -1328,6 +1352,18 @@ def public Group(id : string; style : UiStyle = default<UiStyle>; layout : UiLay
     Container(id, UIK_GROUP, style, layout, blk)
 }
 
+//! Full-viewport layer that draws `style` and swallows the pointer: nothing declared before it
+//! can be clicked, while widgets declared inside it can. Use it for modal screens (pause, shop,
+//! dialogs) that sit on top of another screen drawn earlier in the same frame.
+def public Backdrop(id : string; style : UiStyle = default<UiStyle>; blk : block) {
+    let nid = Acquire(id, UIK_PANEL)
+    ApplyStyle(nid, UIK_PANEL, style, UiLayout(size = ViewportSize()))
+    MakeInteractive(nid)
+    let saved = OpenContainer(nid)
+    invoke(blk)
+    CloseContainer(saved)
+}
+
 //! Numeric id scope for lists: child ids stay stable per index without building strings.
 def public For(id : string; count : int; blk : block<(index : int) : void>) {
     let nid = Acquire(id, UIK_GROUP)
@@ -1385,7 +1421,7 @@ def public ButtonData(tpl : UiButtonTemplate; id : string; text : string; action
     SetText(nid, title)
     ApplyStyle(nid, UIK_BUTTON, tpl.style, tpl.layout)
     SetActionData(nid, action, data)
-    return g_clicked_id == nid
+    return !g_preview && g_clicked_id == nid
 }
 
 def private ButtonText(id : string; text : string; action : UiAction; style : UiStyle; layout : UiLayout) : bool {
@@ -1393,7 +1429,7 @@ def private ButtonText(id : string; text : string; action : UiAction; style : Ui
     SetText(nid, text)
     ApplyStyle(nid, UIK_BUTTON, style, layout)
     SetAction(nid, action)
-    return g_clicked_id == nid
+    return !g_preview && g_clicked_id == nid
 }
 
 def public ProgressBar(id : string; value : float; text : string = ""; style : UiStyle = default<UiStyle>) {
@@ -1415,7 +1451,7 @@ def public Slider(id : string; var value : float&; min_value : float; max_value 
     let span = max_value - min_value
     let rect = g_nodes[nid].rect
     var changed = false
-    if (g_active_id == nid && g_mouse_down && rect.z > 0.0f && span != 0.0f) {
+    if (!g_preview && g_active_id == nid && g_mouse_down && rect.z > 0.0f && span != 0.0f) {
         let t = clamp((g_mouse.x - rect.x) / rect.z, 0.0f, 1.0f)
         let next = min_value + t * span
         if (next != value) {
@@ -1434,7 +1470,7 @@ def public Checkbox(id : string; var value : bool&; style : UiStyle = default<Ui
     ApplyStyle(nid, UIK_CHECKBOX, style, UiLayout())
     MakeInteractive(nid)
     var changed = false
-    if (g_clicked_id == nid) {
+    if (!g_preview && g_clicked_id == nid) {
         value = !value
         changed = true
     }
@@ -1481,10 +1517,9 @@ def public DebugRect(path : string; screen : string = "") : float4 {
     let parts <- split(path, "/")
     for (part in parts) {
         if (!empty(part)) {
+            // The salt stays for every segment: a screen mixes its name in once and every node
+            // declared inside it keeps that salt, so a nested path needs it at each level.
             id = MixId(id, MixId(salt, HashString(part)))
-            // Only the first segment sits directly under the screen salt; children are scoped by
-            // their parent node.
-            salt = 0ul
         }
     }
     if (id == 0ul || !key_exists(g_nodes, id)) {
