@@ -214,7 +214,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 
     // 4. Пакуем сцены вместе с их уникальными зависимостями
     for (size_t i = 0; i < scenes.size(); ++i) {
-        auto o = co_await CreatePak(scenes[i], per_scene_shaders[i], per_scene_textures[i]);
+        auto o = co_await CreatePak(scenes[i], per_scene_shaders[i], per_scene_textures[i], {});
         if (!o.has_value())
             co_return LogAndMakeError("Create Pak Is Failed");
         // Общие ресурсы и content лежат в common; PakManager подтянет его по зависимостям.
@@ -224,7 +224,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 
     // 5. Пакуем общие ресурсы: сцены делят их между собой, а префабы могут понадобиться
     // в любой момент, поэтому common несёт все prefab/data и их зависимости.
-    auto common_result = co_await CreatePak(common_dto, common_shaders, common_textures);
+    auto common_result = co_await CreatePak(common_dto, common_shaders, common_textures, settings.fonts);
     if (!common_result.has_value())
         co_return LogAndMakeError("Create Pak Is Failed");
 
@@ -235,8 +235,8 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         common_pak.contents_data.push_back(eastl::move(file.data));
     }
 
-    LogInfo("Common pak: {} content file(s), {} meshes, {} materials", common_pak.contents.size(),
-            common_dto.meshes.size(), common_dto.mats.size());
+    LogInfo("Common pak: {} content file(s), {} meshes, {} materials, {} fonts", common_pak.contents.size(),
+            common_dto.meshes.size(), common_dto.mats.size(), common_pak.fonts.size());
     asset_paks.emplace_back(eastl::move(common_pak));
 
     LogInfo("Начали писать в папку {}", build_directory);
@@ -251,7 +251,8 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 }
 
 tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
-    const SceneDTO& scene, const eastl::vector<uint64_t>& shaders, const eastl::vector<uint64_t>& textures) const {
+    const SceneDTO& scene, const eastl::vector<uint64_t>& shaders, const eastl::vector<uint64_t>& textures,
+    const eastl::vector<uint64_t>& fonts) const {
     LogInfo("CreatePak enter, scene_name={}", scene.name);
 
     tryengine::resources::AssetPak pak;
@@ -343,6 +344,25 @@ tryengine::async::Task<tryengine::resources::AssetPak> BuildSystem::CreatePak(
 
             pak.textures_data.emplace_back(eastl::move(data_handle.TakeData()));
             pak.textures.emplace_back(tex);
+        }
+    }
+
+    // Baked fonts (.font artifacts). Requested by guid at runtime like any resource.
+    for (uint64_t font : fonts) {
+        auto o = registry.GetAssetLocation(font);
+        if (!o.has_value()) {
+            LogError("Font with guid {} not found; import the .ttf first", font);
+            continue;
+        }
+        if (const auto* loose = eastl::get_if<tryengine::resources::LooseFileLocation>(&*o)) {
+            tryengine::resources::FileHandle stat_handle = file_m_.GetStatAsync(loose->path);
+            co_await stat_handle;
+
+            auto data_handle = file_m_.ReadChunkAsync(loose->path, 0, stat_handle.GetFileSize());
+            co_await data_handle;
+
+            pak.fonts_data.emplace_back(eastl::move(data_handle.TakeData()));
+            pak.fonts.emplace_back(font);
         }
     }
 

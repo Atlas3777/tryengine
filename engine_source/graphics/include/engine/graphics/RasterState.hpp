@@ -13,6 +13,13 @@ struct RasterState {
     VkCompareOp depth_compare = VK_COMPARE_OP_LESS;
     VkColorComponentFlags color_write_mask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // Blending is off by default so opaque passes keep their current state; translucent
+    // passes (grid, gizmo, UI) enable it and set their factors explicitly.
+    bool blend_enable = false;
+    VkBlendFactor src_color = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor dst_color = VK_BLEND_FACTOR_ZERO;
+    VkBlendFactor src_alpha = VK_BLEND_FACTOR_ONE;
+    VkBlendFactor dst_alpha = VK_BLEND_FACTOR_ZERO;
 };
 
 inline void ApplyRasterState(VkCommandBuffer cmd, const RasterState& s = {}) {
@@ -38,16 +45,16 @@ inline void ApplyRasterState(VkCommandBuffer cmd, const RasterState& s = {}) {
     vkCmdSetSampleMaskEXT(cmd, samples, &sample_mask);
     vkCmdSetAlphaToCoverageEnableEXT(cmd, VK_FALSE);
 
-    constexpr VkBool32 blend_enable = VK_FALSE;
+    const VkBool32 blend_enable = s.blend_enable ? VK_TRUE : VK_FALSE;
     vkCmdSetColorBlendEnableEXT(cmd, 0, 1, &blend_enable);
     vkCmdSetColorWriteMaskEXT(cmd, 0, 1, &s.color_write_mask);
 
-    constexpr VkColorBlendEquationEXT blend_equation{
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+    const VkColorBlendEquationEXT blend_equation{
+        .srcColorBlendFactor = s.src_color,
+        .dstColorBlendFactor = s.dst_color,
         .colorBlendOp = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .srcAlphaBlendFactor = s.src_alpha,
+        .dstAlphaBlendFactor = s.dst_alpha,
         .alphaBlendOp = VK_BLEND_OP_ADD,
     };
     vkCmdSetColorBlendEquationEXT(cmd, 0, 1, &blend_equation);

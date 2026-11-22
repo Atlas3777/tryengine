@@ -21,7 +21,9 @@ struct SceneDTO {
 
 struct BuildSettings {
     uint64_t first_scene_guid;
-    // Добавим че-нить еще позже
+    // Assets that must ride in the common pak although no scene or prefab references them.
+    // Today this is the baked UI font (UiSystem config); CreateBuild fills it in.
+    eastl::vector<uint64_t> fonts;
 };
 
 class BuildSystem {
@@ -39,7 +41,8 @@ private:
     // Изменили сигнатуру: передаем зависимости явно, не раздувая SceneDTO
     tryengine::async::Task<tryengine::resources::AssetPak> CreatePak(const SceneDTO& scene,
                                                                      const eastl::vector<uint64_t>& shaders,
-                                                                     const eastl::vector<uint64_t>& textures) const;
+                                                                     const eastl::vector<uint64_t>& textures,
+                                                                     const eastl::vector<uint64_t>& fonts) const;
 
     tryengine::resources::ResourceManager& res_m_;
     tryengine::resources::AsyncFileManager& file_m_;

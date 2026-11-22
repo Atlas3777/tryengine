@@ -9,6 +9,7 @@
 #endif
 
 #include <EASTL/fixed_vector.h>
+#include <EASTL/hash_map.h>
 #include <EASTL/string_view.h>
 #include <EASTL/vector.h>
 #include <cstring>
@@ -21,6 +22,7 @@
 #include "engine/graphics/ShaderReflection.hpp"
 #include "engine/resources/ResourceHandle.hpp"
 #include "engine/resources/Vertex.hpp"
+#include "engine/resources/binary/FontBinaryLayout.hpp"
 
 namespace tryengine::graphics {
 
@@ -307,6 +309,14 @@ struct MaterialTextureBinding {
     resources::ResourceHandle<TextureSampler> texture;
 };
 
+//! A texture the material binds directly, without a ResourceManager handle: the UI font
+//! atlas is owned by UiSystem, not by the resource cache.
+struct MaterialRawTextureBinding {
+    uint32_t binding = 0;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+};
+
 struct MaterialBufferBinding {
     uint32_t binding = 0;
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -361,6 +371,7 @@ struct Material {
 
             shader = std::move(other.shader);
             textures = std::move(other.textures);
+            raw_textures = std::move(other.raw_textures);
             storage_buffers = std::move(other.storage_buffers);
             default_texture_view = other.default_texture_view;
             default_texture_sampler = other.default_texture_sampler;
@@ -385,6 +396,7 @@ struct Material {
 
     // Ограниченные векторы предотвращают аллокации в куче и фиксируют размер структуры
     eastl::fixed_vector<MaterialTextureBinding, 8, false> textures;
+    eastl::fixed_vector<MaterialRawTextureBinding, 4, false> raw_textures;
     eastl::fixed_vector<MaterialBufferBinding, 2, false> storage_buffers;
 
     // Не владеет: 1x1 белая текстура принадлежит VulkanDevice. Подставляется в каждый
@@ -563,6 +575,29 @@ struct Material {
             SetTexture(b->binding, std::move(tex));
     }
 
+    //! Binds an already-created texture (font atlas, render target) without a resource handle.
+    //! Same descriptor path as SetTexture: after FinalizeDescriptors the old set is retired,
+    //! because it may already be referenced by a recorded command buffer.
+    void SetRawTexture(uint32_t binding, VkImageView view, VkSampler sampler) {
+        for (auto& bind : raw_textures) {
+            if (bind.binding == binding) {
+                if (bind.view == view && bind.sampler == sampler)
+                    return;
+                bind.view = view;
+                bind.sampler = sampler;
+                UpdateDescriptors();
+                return;
+            }
+        }
+        raw_textures.push_back({binding, view, sampler});
+        UpdateDescriptors();
+    }
+
+    void SetRawTexture(eastl::string_view name, VkImageView view, VkSampler sampler) {
+        if (const auto* b = shader->reflection.FindBinding(name))
+            SetRawTexture(b->binding, view, sampler);
+    }
+
     void SetStorageBuffer(uint32_t binding, VkBuffer buffer, VkDeviceSize offset = 0,
                           VkDeviceSize range = VK_WHOLE_SIZE) {
         for (auto& bind : storage_buffers) {
@@ -608,9 +643,9 @@ struct Material {
     }
 
     void WriteDescriptors(VkDescriptorSet set) {
-        eastl::fixed_vector<VkWriteDescriptorSet, 16, false> writes;
+        eastl::fixed_vector<VkWriteDescriptorSet, 32, false> writes;
         eastl::fixed_vector<VkDescriptorBufferInfo, 4, false> buffer_infos;
-        eastl::fixed_vector<VkDescriptorImageInfo, 16, false> image_infos;
+        eastl::fixed_vector<VkDescriptorImageInfo, 32, false> image_infos;
 
         // 1. Uniform Buffer
         if (uniform_buffer != VK_NULL_HANDLE) {
@@ -650,6 +685,26 @@ struct Material {
             }
         }
 
+        // 2b. Raw textures: created outside ResourceManager (font atlas). The fallback below
+        // must not overwrite them.
+        for (const auto& bind : raw_textures) {
+            if (bind.view == VK_NULL_HANDLE || bind.sampler == VK_NULL_HANDLE)
+                continue;
+
+            auto& info = image_infos.push_back();
+            info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            info.imageView = bind.view;
+            info.sampler = bind.sampler;
+
+            auto& write = writes.push_back();
+            write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = set;
+            write.dstBinding = bind.binding;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &info;
+        }
+
         // 3. Сэмплеры, которые материал не привязал, получают текстуру-заглушку: шейдер
         // статически читает их, и валидация требует обновлённый дескриптор на каждый draw.
         if (default_texture_view != VK_NULL_HANDLE && default_texture_sampler != VK_NULL_HANDLE) {
@@ -659,6 +714,9 @@ struct Material {
 
                 for (const auto& bind : textures)
                     if (bind.binding == b.binding && bind.texture)
+                        return;
+                for (const auto& bind : raw_textures)
+                    if (bind.binding == b.binding)
                         return;
 
                 auto& info = image_infos.push_back();
@@ -696,6 +754,27 @@ struct Material {
 
         if (!writes.empty())
             vkUpdateDescriptorSets(device_cache, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+};
+
+//! A baked font: metrics, codepoint -> glyph index and the distance-field atlas. Produced by
+//! the editor's FontImporter, loaded by FontLoader and consumed by the UI pass (glyph quads)
+//! and the UI scripts (text measurement).
+struct Font {
+    resources::FontHeader header;
+    eastl::vector<resources::FontGlyph> glyphs;
+    eastl::hash_map<uint32_t, uint32_t> codepoint_to_glyph;
+    TextureSampler atlas;
+
+    Font() = default;
+    Font(const Font&) = delete;
+    Font& operator=(const Font&) = delete;
+    Font(Font&&) noexcept = default;
+    Font& operator=(Font&&) noexcept = default;
+
+    [[nodiscard]] const resources::FontGlyph* FindGlyph(uint32_t codepoint) const {
+        auto it = codepoint_to_glyph.find(codepoint);
+        return it != codepoint_to_glyph.end() ? &glyphs[it->second] : nullptr;
     }
 };
 

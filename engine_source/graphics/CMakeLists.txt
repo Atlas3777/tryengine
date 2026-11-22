@@ -120,5 +120,9 @@ target_compile_definitions(engine_graphics PUBLIC VK_NO_PROTOTYPES)
 # tryAsyncFile — в resources.
 tryengine_add_das_module(tryRenderer_shared tryRenderer src/Module_Renderer.cpp engine::core)
 
+# UI bindings read the font metrics and the frame string table from UiSystem, so this module
+# needs the graphics library itself (not only core like tryRenderer).
+tryengine_add_das_module(tryUi_shared tryUi src/Module_Ui.cpp engine_graphics)
+
 tryengine_add_das_module(tryResources_shared tryResources src/Module_Resources.cpp
         engine::core engine::graphics)

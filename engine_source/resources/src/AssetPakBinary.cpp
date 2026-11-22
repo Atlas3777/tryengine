@@ -115,7 +115,7 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
     // 2. Строим таблицу ResourceLayout и склеенный буфер данных.
     eastl::vector<ResourceLayout> layout;
     // Резервируем место под все типы ресурсов
-    layout.reserve(pak.meshes.size() + pak.mats.size() + pak.shaders.size() + pak.textures.size() +
+    layout.reserve(pak.meshes.size() + pak.mats.size() + pak.shaders.size() + pak.textures.size() + pak.fonts.size() +
                    pak.contents.size() + 2);
     eastl::vector<uint8_t> data_buffer;
     // Один id не может лежать в паке дважды: материал, запечённый в mats, и тот же файл
@@ -160,6 +160,11 @@ eastl::vector<uint8_t> AssetPakBinary::Pack(AssetPak& pak) {
         pak.textures.size() < pak.textures_data.size() ? pak.textures.size() : pak.textures_data.size();
     for (size_t i = 0; i < texture_count; ++i)
         append_resource(pak.textures[i], pak.textures_data[i]);
+
+    // Baked fonts (FontBinary artifacts), addressed by the asset guid like any other artifact.
+    const size_t font_count = pak.fonts.size() < pak.fonts_data.size() ? pak.fonts.size() : pak.fonts_data.size();
+    for (size_t i = 0; i < font_count; ++i)
+        append_resource(pak.fonts[i], pak.fonts_data[i]);
 
     // Content-файлы. Идентичность — PathId(путь), поэтому ни пути, ни таблицы
     // path -> id в паке нет: runtime просит файл по пути и считает тот же хеш.

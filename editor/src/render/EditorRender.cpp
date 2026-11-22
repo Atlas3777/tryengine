@@ -10,6 +10,7 @@
 #include "engine/core/Profiler.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/PresentPass.hpp"
+#include "engine/graphics/UiPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
@@ -47,6 +48,9 @@ EditorRender::EditorRender(tryengine::core::Engine& engine, tryengine::graphics:
     // зависимостям, а у обоих писателей SceneColor зависимостей нет.
     rg_.AddNode<GridPass>(kEditorScope, *grid_shader);
     rg_.AddNode<tryengine::graphics::OpaquePass>(kGameScope);
+    // The game UI composites into the game-scope scene colour: the SceneGameView image shows it,
+    // and ImGuiPass reads ForwardColor after this node. Register it right after its producer.
+    rg_.AddNode<tryengine::graphics::UiPass>(kGameScope, kGameScope);
     rg_.AddNode<DebugPass>(kEditorScope, *deb_shader);
     // The gizmo is an overlay over everything already in SceneColor: it ignores depth,
     // so it goes after the grid and debug lines and before the picking readback.

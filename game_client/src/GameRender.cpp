@@ -5,6 +5,7 @@
 #include "engine/graphics/BlitPass.hpp"
 #include "engine/graphics/OpaquePass.hpp"
 #include "engine/graphics/PresentPass.hpp"
+#include "engine/graphics/UiPass.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
 
 namespace trygame {
@@ -15,6 +16,8 @@ GameRender::GameRender(tryengine::graphics::VulkanDevice& device, tryengine::gra
                        tryengine::graphics::VulkanSwapchain& swapchain, tryengine::graphics::FrameSync& frame_sync)
     : rg_(render_graph), swapchain_(swapchain), frame_sync_(frame_sync) {
     rg_.AddNode<tryengine::graphics::OpaquePass>(kMainScope);
+    // Overlay over the scene colour; BlitPass copies the composited image to the swapchain.
+    rg_.AddNode<tryengine::graphics::UiPass>(kMainScope, kMainScope);
     rg_.AddNode<tryengine::graphics::BlitPass>(kMainScope);
     rg_.AddNode<tryengine::graphics::PresentPass>(kMainScope);
 }

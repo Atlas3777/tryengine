@@ -13,6 +13,7 @@
 #include "engine/core/ScriptBuildSystem.hpp"
 #include "engine/core/strings/Hash.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
+#include "engine/graphics/UiSystem.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AssetTypes.hpp"
@@ -75,6 +76,11 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
     LogInfo("CreateBuild CPP");
 
     tryeditor::BuildSettings settings{};
+
+    // The UI font is a runtime resource the game requests by guid; no scene mentions it, so
+    // the build has to be told explicitly that it belongs in the common pak.
+    if (auto* ui = try_ctx->engine.TryGet<tryengine::graphics::UiSystem>(); ui != nullptr && ui->GetFontGuid() != 0)
+        settings.fonts.push_back(ui->GetFontGuid());
 
     auto array = *scenes_ptr;
 

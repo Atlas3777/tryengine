@@ -18,7 +18,9 @@
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
 #include "engine/core/ScriptSystem.hpp"
+#include "engine/graphics/UiSystem.hpp"
 #include "engine/graphics/VulkanDevice.hpp"
+#include "engine/graphics/loaders/FontLoader.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderLoader.hpp"
@@ -59,6 +61,7 @@ void EditorApp::Init() {
     rm.RegisterType<Mesh>(MeshLoader(*vulkan_device_));
     rm.RegisterType<Shader>(ShaderLoader(vulkan_device_->GetDevice()));
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
+    rm.RegisterType<Font>(FontLoader(*vulkan_device_));
 
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
 
@@ -70,6 +73,10 @@ void EditorApp::Init() {
     });
 
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
+
+    // Game UI: one font asset (guid from the .ttf .meta) and the UI material. Both load in the
+    // background; UiPass draws nothing until they are ready.
+    engine_->RegisterSystem<UiSystem>(UiConfig{}, *vulkan_device_, rm);
 
     editor_ = std::make_unique<Editor>(*engine_, *vulkan_device_);
 
