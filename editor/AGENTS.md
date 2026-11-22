@@ -388,6 +388,22 @@
   должен быть единственной точкой отказа для базового переключения режимов. `ProcessHotkeys` не срабатывает, пока клавиатуру захватил ImGui-виджет
   (`IsEditorTextInputActive` из `Module_TryEditor.cpp`).
 
+## Экраны игрового UI
+
+- Панель **Screens** и Edit-превью — `editor/daslang/UiScreens.das`. Список берётся из
+  `Ui::ScreenNames()` (реестр заполняют `[init]` модулей игры, поэтому имена видны до Play),
+  выбор хранится в `preview_screen`, кадр объявляет `DrawPreviewFrame`. Вызывает его
+  `EditorUpdate` в ветке `!is_playing`; в Play редактор зовёт `GameUiFrame()` — тот же экспорт,
+  что и `game_client`, поэтому пауза в редакторе не замораживает экраны.
+- В Edit-превью экран виден в `SceneGameView`, но ввод не идёт: `DrawGameSceneViewPort`
+  передаёт в `Ui::SetInputViewport` `is_playing && IsItemHovered()`. Это осознанно: клик в game
+  view в Edit принадлежит редактору (гизмо, выделение), а превью — только смотреть.
+- Когда превью не выбрано, кадр всё равно открывается пустым (`Ui::Begin`+`Ui::End`): список
+  команд очищается только при открытии кадра, иначе на экране замерзает последний кадр из Play.
+- Строки списка — индексированные виджеты (`selectable_label(g_screen_rows[name], ...)`): один
+  call site на список, состояние на строку. Обычный вызов виджета в цикле паникует
+  (`rendered twice`).
+
 ## Шрифты игрового UI
 
 - `FontImporter` (`.ttf`) — единственный импортёр шрифтов: `FontBaker` печёт SDF-атлас

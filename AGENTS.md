@@ -201,15 +201,26 @@ daslang -dry-run \
   по префиксу типа.
 - Игровой UI: `tryengine/Ui` (`engine_source/daslang/Ui.das` + `UiTypes.das`) и нативный
   `tryUi` (`engine_source/graphics/src/Module_Ui.cpp`). Дерево retained: живёт между кадрами в
-  daslang, но объявляется каждый кадр (`Ui::Frame()` из `GameUpdate`), узлы находятся по
-  64-битному id. Layout, состояния и анимации — в скриптах; геометрию строит C++ (`UiPass`),
-  скрипт отдаёт только команды через `[export] get_ui_draw_cmds`. Звук наведения/нажатия —
-  событие (`Ui::OnSound`), не воспроизведение: аудио-подсистемы в движке нет.
+  daslang, но объявляется каждый кадр, узлы находятся по 64-битному id. Layout, состояния и
+  анимации — в скриптах; геометрию строит C++ (`UiPass`), скрипт отдаёт только команды через
+  `[export] get_ui_draw_cmds`. Звук наведения/нажатия — событие (`Ui::OnSound`), не
+  воспроизведение: аудио-подсистемы в движке нет. Полный контракт — `engine_source/daslang/UI.md`.
+- Три слоя UI: виджеты (`tryengine/Ui`, повторяются), тема (`UiTheme`, ставится один раз
+  `Ui::SetTheme` из `[init]`: по стилю на вид + именованные стили и шаблоны кнопок), экраны
+  (`Ui::RegisterScreen("hud", @@BuildHud)` из `[init]`, рисуются `Ui::Screen`/`FrameScreen`;
+  экран уникален и собран из виджетов). У одинакового локального id в двух экранах разные
+  узлы: имя экрана входит в id. В игре тема — `game/scripts/UiTheme.das`, экраны —
+  `game/scripts/GameUi.das`; новые стили и цвета добавляются в тему, а не в разметку.
+- UI не часть `GameUpdate`: `[export] GameUiFrame()` (`game/scripts/Game.das`) вызывает и
+  `game_client`, и редактор, причём редактор — и на паузе (`Pause` замораживает `game_clock` и
+  пропускает `GameUpdate`, но не экраны). UI живёт на своём клоке
+  (`game_ui_clock`/внутренний UiClock), поэтому пауза `game_world_clock` его не останавливает.
+  В Edit режиме игра не запущена: редактор рисует выбранный в панели **Screens** экран
+  (`editor/daslang/UiScreens.das`) без ввода — превью только смотреть. Точки `GameUiFrame`,
+  `Ui::Frame`, `Ui::Begin/End`, `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
   Шрифт — импортируемый ассет: `.ttf` в `game/assets/fonts`, `FontImporter` печёт SDF-атлас в
   артефакт `FontBinary`, `UiConfig.font_guid`/`kDefaultUiFontGuid` его адресует; см.
-  `game/assets/fonts/README.md`. UI живёт на своём клоке (`game_ui_clock`/внутренний UiClock),
-  поэтому пауза `game_world_clock` его не останавливает. Точки `Ui::Frame`, `Ui::Begin/End`,
-  `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
+  `game/assets/fonts/README.md`.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
