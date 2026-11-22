@@ -15,6 +15,7 @@ engine_source/async       Task<T>, ThreadPool, MainThread, pollable-хендлы
 engine_source/resources   PakManager, ResourceManager, AsyncFileManager (io_uring), артефакты
 engine_source/graphics    VulkanDevice, VulkanSwapchain, RenderGraph, проходы, загрузчики (Vulkan)
 engine_source/platform    окно SDL3, события, InputService
+engine_source/physics     PhysicsWorld на Jolt: тела, коллайдеры, контакты, debug-линии
 editor                    редактор, ImGui (Vulkan backend), импорт ассетов, пайплайн
 game_client               игровое приложение
 ```

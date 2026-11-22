@@ -1,0 +1,725 @@
+options gen2
+options relaxed_assign = false
+
+module Physics shared public
+
+//! Physics facade over the native tryPhysics module.
+//!
+//! Jolt owns the simulation in C++; this module owns only the script-side shape of the
+//! API and the bridge to the ECS heap: a body remembers the entity it belongs to, and
+//! `PhysicsSync` copies the resulting pose back into `Transform` before the world
+//! transform pass runs.
+
+require math
+require daslib/decs
+require daslib/decs_boost
+require tryengine/ConfigFormatBoost
+require tryengine/EcsMacro
+require tryengine/Profiling
+require tryengine/Serializable
+require tryengine/Time
+require tryengine/TransformSystem
+require tryengine/Types
+require tryPhysics
+
+enum PhysicsShape {
+    Box,
+    Sphere,
+    Capsule,
+    Cylinder,
+    Plane
+}
+
+enum PhysicsMotion {
+    Static,
+    Kinematic,
+    Dynamic
+}
+
+//! One collider description. The C++ default matches this one field for field; changing
+//! a field here without changing PhysicsWorld::BodyDesc only changes the script default.
+struct PhysicsBodyDesc {
+    shape : PhysicsShape = PhysicsShape.Box
+    motion : PhysicsMotion = PhysicsMotion.Dynamic
+    position : float3 = float3(0.0f, 0.0f, 0.0f)
+    rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
+    //! Half size for Box; half size of the debug grid for Plane.
+    half_extents : float3 = float3(0.5f, 0.5f, 0.5f)
+    radius : float = 0.5f
+    //! Half of the cylindrical part for Capsule; half height for Cylinder.
+    half_height : float = 0.5f
+    mass : float = 1.0f
+    friction : float = 0.5f
+    restitution : float = 0.0f
+    linear_velocity : float3 = float3(0.0f, 0.0f, 0.0f)
+    angular_velocity : float3 = float3(0.0f, 0.0f, 0.0f)
+    entity : EntityId = INVALID_ENTITY_ID
+    sensor : bool = false
+}
+
+//! Begin-contact event. `body_a` and `body_b` are stable body handles; `entity_a` and
+//! `entity_b` map them back to the ECS owners (INVALID_ENTITY_ID for a body created
+//! without an entity).
+struct PhysicsContact {
+    body_a   : uint64
+    body_b   : uint64
+    point    : float3
+    normal   : float3
+    depth    : float
+    entity_a : EntityId = INVALID_ENTITY_ID
+    entity_b : EntityId = INVALID_ENTITY_ID
+}
+
+// --- ECS components ---------------------------------------------------------------
+//
+// Colliders are one component per primitive, so the Inspector shows exactly the fields
+// that shape has. An entity with a collider but without RigidBody is a static part of
+// the level; RigidBody upgrades it to kinematic or dynamic. Physics owns one body per
+// root entity: the component sync creates it on the first Update after the components
+// appear and recreates it when an authored field changes.
+
+[DecsSerializable, EcsComponent(name = "rigidBody")]
+struct RigidBody {
+    //! PhysicsMotion as an int: 0 static, 1 kinematic, 2 dynamic.
+    @min = 0
+    @max = 2
+    @title = "Motion (0 static, 1 kinematic, 2 dynamic)"
+    motion : int = int(PhysicsMotion.Dynamic)
+    @min = 0.001
+    mass : float = 1.0f
+    @min = 0.0
+    friction : float = 0.5f
+    @min = 0.0
+    @max = 1.0
+    restitution : float = 0.0f
+    sensor : bool = false
+}
+
+[DecsSerializable, EcsComponent(name = "boxCollider")]
+struct BoxCollider {
+    //! Half size on each axis: the full box is twice this.
+    half_extents : float3 = float3(0.5f, 0.5f, 0.5f)
+}
+
+[DecsSerializable, EcsComponent(name = "sphereCollider")]
+struct SphereCollider {
+    @min = 0.001
+    radius : float = 0.5f
+}
+
+[DecsSerializable, EcsComponent(name = "capsuleCollider")]
+struct CapsuleCollider {
+    @min = 0.001
+    radius : float = 0.5f
+    //! Half of the cylindrical part, without the two caps.
+    @min = 0.001
+    half_height : float = 0.5f
+}
+
+[DecsSerializable, EcsComponent(name = "cylinderCollider")]
+struct CylinderCollider {
+    @min = 0.001
+    radius : float = 0.5f
+    @min = 0.001
+    half_height : float = 0.5f
+}
+
+[DecsSerializable, EcsComponent(name = "planeCollider")]
+struct PlaneCollider {
+    //! Half size of the debug grid; the Jolt plane itself is infinite.
+    half_extents : float3 = float3(10.0f, 10.0f, 0.0f)
+}
+
+//! Runtime bridge to a Jolt body. No [DecsSerializable] and no [EcsComponent]: it is not
+//! saved, not listed in Add Component, and never authored. `signature` is the shape and
+//! material the body was created from; a mismatch means the body is recreated.
+struct PhysicsBody {
+    handle    : uint64 = 0ul
+    signature : uint64 = 0ul
+    managed   : bool = false
+}
+
+//! Physics gets its own clock under the game clock: pausing the game freezes the
+//! simulation, and a slowed game clock slows the physics without touching the engine.
+struct PhysicsClock : ClockTag {}
+
+var private g_physics_clock = PhysicsClock()
+var private g_physics_attached : bool
+
+let private SIGNATURE_OFFSET : uint64 = 14695981039346656037ul
+let private SIGNATURE_PRIME : uint64 = 1099511628211ul
+
+//! Attaches physics to a game-owned clock. Idempotent: GameStart may run again on Play.
+def Attach(var parent : auto) {
+    if (parent.slot_ == -1) {
+        return
+    }
+    if (g_physics_clock.slot_ == -1) {
+        TimeRegister(g_physics_clock, parent)
+    }
+    g_physics_attached = g_physics_clock.slot_ != -1
+}
+
+//! Drops every body and stops stepping until Attach is called again. Bodies belong to
+//! the scene, so a new scene or a new Play session calls this before creating its own;
+//! the clock registration survives.
+def Reset() {
+    PhysicsClear()
+    query() $(eid : EntityId; physicsBody : PhysicsBody) {
+        RemovePhysicsBodyComponent(eid)
+    }
+    commit()
+    g_physics_attached = false
+}
+
+//! One engine tick: reconcile ECS components into bodies, push static and kinematic
+//! poses, advance Jolt by the game clock delta, then copy dynamic poses back into
+//! Transform. EngineUpdate calls this before UpdateWorldTransforms, so the world pass
+//! sees this frame's physics pose.
+[profile]
+def Update() {
+    if (!g_physics_attached) {
+        return
+    }
+    ReconcileComponents()
+    // Poses are pushed even while the game is paused: the Inspector can then move a static
+    // collider and the debug view follows without stepping the simulation.
+    PhysicsPushPoses()
+    if (!TimeIsAdvancing(g_physics_clock)) {
+        return
+    }
+    PhysicsStep(TimeDelta(g_physics_clock))
+    PhysicsSync()
+}
+
+def private FloatBits(value : float) : uint64 {
+    return uint64(unsafe(reinterpret<uint>(value)))
+}
+
+def private MixSignature(hash : uint64; value : uint64) : uint64 {
+    return (hash ^ value) * SIGNATURE_PRIME
+}
+
+//! EntityId as one opaque 64-bit key: the low half is the index, the high half is the
+//! generation. LLVM JIT cannot lower reinterpret<EntityId, uint64>, so both directions are
+//! numeric; the C++ side only compares keys and never decodes them.
+def private EntityRaw(eid : EntityId) : uint64 {
+    return uint64(eid.id) | (uint64(uint(eid.generation)) << 32)
+}
+
+def private EntityFromRaw(raw : uint64) : EntityId {
+    return EntityId(id = uint(raw & 0xFFFFFFFFul), generation = int(uint(raw >> 32)))
+}
+
+def private MotionFromInt(value : int) : PhysicsMotion {
+    if (value == int(PhysicsMotion.Static)) {
+        return PhysicsMotion.Static
+    }
+    if (value == int(PhysicsMotion.Kinematic)) {
+        return PhysicsMotion.Kinematic
+    }
+    return PhysicsMotion.Dynamic
+}
+
+//! Everything that forces a new Jolt body: shape, its size, motion and material. The
+//! pose is not part of it, so moving a static collider does not recreate the body.
+def private BodySignature(desc : PhysicsBodyDesc) : uint64 {
+    var hash = SIGNATURE_OFFSET
+    hash = MixSignature(hash, uint64(int(desc.shape)))
+    hash = MixSignature(hash, uint64(int(desc.motion)))
+    hash = MixSignature(hash, FloatBits(desc.half_extents.x))
+    hash = MixSignature(hash, FloatBits(desc.half_extents.y))
+    hash = MixSignature(hash, FloatBits(desc.half_extents.z))
+    hash = MixSignature(hash, FloatBits(desc.radius))
+    hash = MixSignature(hash, FloatBits(desc.half_height))
+    hash = MixSignature(hash, FloatBits(desc.mass))
+    hash = MixSignature(hash, FloatBits(desc.friction))
+    hash = MixSignature(hash, FloatBits(desc.restitution))
+    hash = MixSignature(hash, desc.sensor ? 1ul : 0ul)
+    return hash
+}
+
+def private MakeBodyDesc(transform : Transform; settings : RigidBody; shape : PhysicsShape;
+                         half_extents : float3; radius : float; half_height : float) : PhysicsBodyDesc {
+    var desc = PhysicsBodyDesc()
+    desc.shape = shape
+    desc.motion = MotionFromInt(settings.motion)
+    desc.position = transform.position
+    desc.rotation = transform.rotation
+    desc.half_extents = half_extents
+    desc.radius = radius
+    desc.half_height = half_height
+    desc.mass = settings.mass
+    desc.friction = settings.friction
+    desc.restitution = settings.restitution
+    desc.sensor = settings.sensor
+    return <- desc
+}
+
+def private SetPhysicsBodyComponent(eid : EntityId; value : PhysicsBody) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("physicsBody", value)
+    }
+}
+
+def private RemovePhysicsBodyComponent(eid : EntityId) {
+    update_entity(eid) @(eid, cmp) {
+        decs::remove(cmp, "physicsBody")
+    }
+}
+
+//! A child's local Transform is not a world pose; an orphan whose parent was deleted is a
+//! root, the same rule TransformSystem follows.
+def private HasLiveParent(relationship : Relationship) : bool {
+    return relationship.parent != INVALID_ENTITY_ID && decs::is_alive(relationship.parent)
+}
+
+//! Brings one collider entity in line with its components. Called from inside a query, so
+//! component changes are only queued; ReconcileComponents commits after all queries.
+def private EnsureBodyForCollider(eid : EntityId; desc : PhysicsBodyDesc; parented : bool) : bool {
+    let signature = BodySignature(desc)
+    let current = get_component(eid, "physicsBody", PhysicsBody())
+
+    // A child's local Transform is not a world pose, so components do not own a body there.
+    if (parented) {
+        if (current.handle != 0ul) {
+            PhysicsDestroyBody(current.handle)
+            RemovePhysicsBodyComponent(eid)
+            return true
+        }
+        return false
+    }
+
+    if (current.handle != 0ul && current.managed && current.signature == signature &&
+        PhysicsIsBodyAlive(current.handle)) {
+        return false
+    }
+
+    if (current.handle != 0ul) {
+        PhysicsDestroyBody(current.handle)
+    }
+
+    var owned = desc
+    owned.entity = eid
+    let body = CreateNativeBody(owned)
+    if (body == 0ul) {
+        if (current.handle != 0ul) {
+            RemovePhysicsBodyComponent(eid)
+            return true
+        }
+        return false
+    }
+    SetPhysicsBodyComponent(eid, PhysicsBody(handle = body, signature = signature, managed = true))
+    return true
+}
+
+//! Reconciles the ECS components into Jolt bodies. The five collider queries exclude the
+//! higher-priority colliders, so every entity is handled exactly once; no per-frame table
+//! records which entities were seen. A collider without RigidBody is static.
+[profile]
+def private ReconcileComponents() {
+    var changed = false
+
+    query() $(eid : EntityId; transform : Transform; boxCollider : BoxCollider) {
+        let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeBodyDesc(transform, settings, PhysicsShape.Box, boxCollider.half_extents, 0.0f, 0.0f)
+        if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    query() $ [REQUIRE_NOT(boxCollider)] (eid : EntityId; transform : Transform; sphereCollider : SphereCollider) {
+        let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeBodyDesc(transform, settings, PhysicsShape.Sphere, float3(0.0f, 0.0f, 0.0f),
+                                sphereCollider.radius, 0.0f)
+        if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider)] (eid : EntityId; transform : Transform; capsuleCollider : CapsuleCollider) {
+        let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeBodyDesc(transform, settings, PhysicsShape.Capsule, float3(0.0f, 0.0f, 0.0f),
+                                capsuleCollider.radius, capsuleCollider.half_height)
+        if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider)] (eid : EntityId; transform : Transform; cylinderCollider : CylinderCollider) {
+        let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeBodyDesc(transform, settings, PhysicsShape.Cylinder, float3(0.0f, 0.0f, 0.0f),
+                                cylinderCollider.radius, cylinderCollider.half_height)
+        if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider, cylinderCollider)] (eid : EntityId; transform : Transform; planeCollider : PlaneCollider) {
+        let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeBodyDesc(transform, settings, PhysicsShape.Plane, planeCollider.half_extents, 0.0f, 0.0f)
+        if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    // Managed bodies whose entity lost every collider. Manual bodies (managed = false) are
+    // left alone: they belong to the caller who created them.
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider, cylinderCollider, planeCollider)] (eid : EntityId; physicsBody : PhysicsBody) {
+        if (physicsBody.managed) {
+            PhysicsDestroyBody(physicsBody.handle)
+            RemovePhysicsBodyComponent(eid)
+            changed = true
+        }
+    }
+
+    // commit() applies every deferred DECS action, not only physics ones; avoid flushing
+    // unrelated script work on frames where no body lifecycle changed.
+    if (changed) {
+        commit()
+    }
+}
+
+def private SamePosePosition(a : float3; b : float3) : bool {
+    return abs(a.x - b.x) <= 1e-4f && abs(a.y - b.y) <= 1e-4f && abs(a.z - b.z) <= 1e-4f
+}
+
+def private SamePoseRotation(a : float4; b : float4) : bool {
+    let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+    return abs(dot) >= 1.0f - 1e-4f
+}
+
+//! Bodies follow their entity pose. Static and kinematic bodies always do: the Inspector
+//! can move a level collider and a moving platform needs its new pose before the step.
+//! A managed dynamic body is pushed only when Transform differs from the pose PhysicsSync
+//! last wrote, which is exactly the gizmo/Inspector edit case; otherwise Jolt owns it.
+//! Pushes entity poses into static and kinematic bodies, and detects a body whose owner is
+//! gone: a deleted entity has no PhysicsBody component anymore, and a removed component is
+//! the supported way to drop a body. Orphans are collected first because BodyAt is dense.
+[profile]
+def private PhysicsPushPoses() {
+    var orphans : array<uint64>
+    let count = PhysicsBodyCount()
+    for (i in range(count)) {
+        let body = PhysicsBodyAt(i)
+        if (body == 0ul) {
+            continue
+        }
+        let entity = PhysicsBodyEntity(body)
+        if (entity == 0ul) {
+            continue
+        }
+        let eid = EntityFromRaw(entity)
+        if (!decs::is_alive(eid)) {
+            orphans |> push(body)
+            continue
+        }
+        let dynamic = PhysicsBodyMotion(body) == int(PhysicsMotion.Dynamic)
+        let physicsBody = get_component(eid, "physicsBody", PhysicsBody())
+        if (physicsBody.handle != body) {
+            orphans |> push(body)
+            continue
+        }
+        let managed = physicsBody.managed
+        query(eid) $(transform : Transform) {
+            if (!dynamic) {
+                PhysicsSetBodyTransform(body, transform.position, transform.rotation)
+            } elif (managed) {
+                let body_position = PhysicsGetBodyPosition(body)
+                let body_rotation = PhysicsGetBodyRotation(body)
+                if (!SamePosePosition(transform.position, body_position) ||
+                    !SamePoseRotation(transform.rotation, body_rotation)) {
+                    PhysicsSetBodyTransform(body, transform.position, transform.rotation)
+                    PhysicsSetLinearVelocity(body, float3(0.0f, 0.0f, 0.0f))
+                    PhysicsSetAngularVelocity(body, float3(0.0f, 0.0f, 0.0f))
+                }
+            }
+        }
+    }
+    for (body in orphans) {
+        PhysicsDestroyBody(body)
+    }
+}
+
+def private PhysicsSync() {
+    let count = PhysicsBodyCount()
+    for (i in range(count)) {
+        let body = PhysicsBodyAt(i)
+        if (body == 0ul || PhysicsBodyMotion(body) == int(PhysicsMotion.Static)) {
+            continue
+        }
+        let entity = PhysicsBodyEntity(body)
+        if (entity == 0ul) {
+            continue
+        }
+        let eid = EntityFromRaw(entity)
+        if (!decs::is_alive(eid)) {
+            continue
+        }
+        let position = PhysicsGetBodyPosition(body)
+        let rotation = PhysicsGetBodyRotation(body)
+        query(eid) $(var transform : Transform) {
+            transform.position = position
+            transform.rotation = rotation
+        }
+    }
+}
+
+def private CreateNativeBody(desc : PhysicsBodyDesc) : uint64 {
+    // A computed argument must land in a local first: passing a complex expression straight
+    // to a native call makes the simulator build a bad call node (daslang 0.6.5, reproduced
+    // with tryPhysics). An unset entity is zero for C++, not the INVALID_ENTITY_ID sentinel.
+    var entity = 0ul
+    if (desc.entity != INVALID_ENTITY_ID) {
+        entity = EntityRaw(desc.entity)
+    }
+    return PhysicsCreateBody(
+        int(desc.shape),
+        int(desc.motion),
+        desc.position,
+        desc.rotation,
+        desc.half_extents,
+        desc.radius,
+        desc.half_height,
+        desc.mass,
+        desc.friction,
+        desc.restitution,
+        desc.linear_velocity,
+        desc.angular_velocity,
+        entity,
+        desc.sensor
+    )
+}
+
+//! Creates a body and returns a stable handle (0 when Jolt rejected it). With an entity it
+//! also records a manual PhysicsBody component, so FindBody and the prune pass can see it.
+//! Commits pending DECS actions: call it from gameplay, not from inside a query.
+def CreateBody(desc : PhysicsBodyDesc) : uint64 {
+    if (desc.entity != INVALID_ENTITY_ID) {
+        let existing = FindBody(desc.entity)
+        if (existing != 0ul) {
+            DestroyBody(existing)
+        }
+    }
+
+    let body = CreateNativeBody(desc)
+    if (body != 0ul && desc.entity != INVALID_ENTITY_ID && decs::is_alive(desc.entity)) {
+        SetPhysicsBodyComponent(desc.entity, PhysicsBody(handle = body, signature = 0ul, managed = false))
+        commit()
+    }
+    return body
+}
+
+//! Creates a body and remembers `eid` as its owner. Prefer collider components: a body
+//! created here is not managed by the component sync and is replaced if the entity later
+//! gets a collider component.
+def CreateBodyForEntity(desc : PhysicsBodyDesc; eid : EntityId) : uint64 {
+    var owned = desc
+    owned.entity = eid
+    return CreateBody(owned)
+}
+
+//! Destroys a body and drops the matching PhysicsBody component. Commits pending DECS
+//! actions: call it from gameplay, not from inside a query.
+def DestroyBody(body : uint64) {
+    let entity = PhysicsBodyEntity(body)
+    if (entity != 0ul) {
+        let eid = EntityFromRaw(entity)
+        if (decs::is_alive(eid)) {
+            let current = get_component(eid, "physicsBody", PhysicsBody())
+            if (current.handle == body) {
+                RemovePhysicsBodyComponent(eid)
+                commit()
+            }
+        }
+    }
+    PhysicsDestroyBody(body)
+}
+
+//! Destroys the body owned by `eid`, if any.
+def DestroyBodyForEntity(eid : EntityId) {
+    let body = FindBody(eid)
+    if (body != 0ul) {
+        DestroyBody(body)
+    }
+}
+
+// --- Component helpers ------------------------------------------------------------
+//
+// They only edit the ECS; the body appears on the next Physics::Update. A collider
+// alone is static, so the common pair is AddBoxCollider followed by AddRigidBody.
+
+def AddRigidBody(eid : EntityId; motion : PhysicsMotion = PhysicsMotion.Dynamic; mass : float = 1.0f;
+                 friction : float = 0.5f; restitution : float = 0.0f; sensor : bool = false) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("rigidBody", RigidBody(motion = int(motion), mass = mass, friction = friction,
+                                         restitution = restitution, sensor = sensor))
+    }
+    commit()
+}
+
+def AddBoxCollider(eid : EntityId; half_extents : float3) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("boxCollider", BoxCollider(half_extents = half_extents))
+    }
+    commit()
+}
+
+def AddSphereCollider(eid : EntityId; radius : float) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("sphereCollider", SphereCollider(radius = radius))
+    }
+    commit()
+}
+
+def AddCapsuleCollider(eid : EntityId; radius : float; half_height : float) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("capsuleCollider", CapsuleCollider(radius = radius, half_height = half_height))
+    }
+    commit()
+}
+
+def AddCylinderCollider(eid : EntityId; radius : float; half_height : float) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("cylinderCollider", CylinderCollider(radius = radius, half_height = half_height))
+    }
+    commit()
+}
+
+def AddPlaneCollider(eid : EntityId; half_extents : float3 = float3(10.0f, 10.0f, 0.0f)) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("planeCollider", PlaneCollider(half_extents = half_extents))
+    }
+    commit()
+}
+
+def IsBodyAlive(body : uint64) : bool {
+    return PhysicsIsBodyAlive(body)
+}
+
+def FindBody(eid : EntityId) : uint64 {
+    return get_component(eid, "physicsBody", PhysicsBody()).handle
+}
+
+def private EntityFromBody(body : uint64) : EntityId {
+    if (body == 0ul) {
+        return INVALID_ENTITY_ID
+    }
+    let entity = PhysicsBodyEntity(body)
+    if (entity == 0ul) {
+        return INVALID_ENTITY_ID
+    }
+    return EntityFromRaw(entity)
+}
+
+def BodyEntity(body : uint64) : EntityId {
+    return EntityFromRaw(PhysicsBodyEntity(body))
+}
+
+def GetBodyPosition(body : uint64) : float3 {
+    return PhysicsGetBodyPosition(body)
+}
+
+def GetBodyRotation(body : uint64) : float4 {
+    return PhysicsGetBodyRotation(body)
+}
+
+def SetBodyPosition(body : uint64; position : float3) {
+    PhysicsSetBodyPosition(body, position)
+}
+
+def SetBodyRotation(body : uint64; rotation : float4) {
+    PhysicsSetBodyRotation(body, rotation)
+}
+
+def SetBodyTransform(body : uint64; position : float3; rotation : float4) {
+    PhysicsSetBodyTransform(body, position, rotation)
+}
+
+def GetLinearVelocity(body : uint64) : float3 {
+    return PhysicsGetLinearVelocity(body)
+}
+
+def SetLinearVelocity(body : uint64; velocity : float3) {
+    PhysicsSetLinearVelocity(body, velocity)
+}
+
+def GetAngularVelocity(body : uint64) : float3 {
+    return PhysicsGetAngularVelocity(body)
+}
+
+def SetAngularVelocity(body : uint64; velocity : float3) {
+    PhysicsSetAngularVelocity(body, velocity)
+}
+
+def ApplyImpulse(body : uint64; impulse : float3) {
+    PhysicsApplyImpulse(body, impulse)
+}
+
+def ApplyImpulseAt(body : uint64; impulse : float3; point : float3) {
+    PhysicsApplyImpulseAt(body, impulse, point)
+}
+
+def SetMotionType(body : uint64; motion : PhysicsMotion) {
+    PhysicsSetMotionType(body, int(motion))
+}
+
+def GetBodyMotion(body : uint64) : PhysicsMotion {
+    let motion = PhysicsBodyMotion(body)
+    if (motion == int(PhysicsMotion.Kinematic)) {
+        return PhysicsMotion.Kinematic
+    }
+    if (motion == int(PhysicsMotion.Dynamic)) {
+        return PhysicsMotion.Dynamic
+    }
+    return PhysicsMotion.Static
+}
+
+def SetGravity(gravity : float3) {
+    PhysicsSetGravity(gravity)
+}
+
+def GetGravity() : float3 {
+    return PhysicsGetGravity()
+}
+
+def SetFixedStep(step : float) {
+    PhysicsSetFixedStep(step)
+}
+
+def SetMaxSubsteps(steps : int) {
+    PhysicsSetMaxSubsteps(steps)
+}
+
+def SetDebugDraw(enabled : bool) {
+    PhysicsSetDebugDraw(enabled)
+}
+
+def IsDebugDraw() : bool {
+    return PhysicsDebugDraw()
+}
+
+//! Begin-contact events of the last step, deduplicated by body pair. The entity fields
+//! let gameplay react without keeping a body-handle table of its own.
+def Contacts() : array<PhysicsContact> {
+    var contacts : array<PhysicsContact>
+    for (i in range(PhysicsContactCount())) {
+        let body_a = PhysicsContactBodyA(i)
+        let body_b = PhysicsContactBodyB(i)
+        contacts |> push(PhysicsContact(
+            body_a = body_a,
+            body_b = body_b,
+            point = PhysicsContactPoint(i),
+            normal = PhysicsContactNormal(i),
+            depth = PhysicsContactDepth(i),
+            entity_a = EntityFromBody(body_a),
+            entity_b = EntityFromBody(body_b)
+        ))
+    }
+    return <- contacts
+}

@@ -85,7 +85,7 @@ cmake --build build-release --target das_modules -j "$(nproc)"
 
 Те же команды через обёртку: `tools/agent/build.sh editor`, `tools/agent/build.sh modules`.
 Биндинги собираются только в Release: каждый C++-модуль (`tryRenderer`, `tryResources`,
-`tryInput`, `tryAsyncFile`, `tryeditor`) — это отдельная библиотека
+`tryInput`, `tryAsyncFile`, `tryeditor`, `tryPhysics`) — это отдельная библиотека
 `modules/<имя>/<имя>.shared_module`, и обе конфигурации пишут её в один и тот же файл,
 поэтому Debug-сборка затирает Release-модуль. Цель `das_modules` собирает их все.
 
@@ -93,6 +93,24 @@ cmake --build build-release --target das_modules -j "$(nproc)"
 `Z`) и кладётся в корень выбранной папки билда — рядом с `content/`, а не в корень
 репозитория. Тест-компиляция — `Test Compile Scripts` или `X`. `game_client` читает
 готовый пак и `.das` не компилирует.
+
+### Физика
+
+Физика — это Jolt Physics 5.7, закреплённый через CPM и собранный в отдельном слое
+`engine_source/physics`. C++ владеет миром (`PhysicsWorld`), а в daslang уходит узкое API
+модуля `tryPhysics`. На стороне ECS физика — это компоненты `tryengine/Physics.das`:
+`RigidBody` (motion, масса, трение, упругость, sensor) и по одному компоненту на
+примитив — `BoxCollider`, `SphereCollider`, `CapsuleCollider`, `CylinderCollider`,
+`PlaneCollider`. Размеры коллайдеров и параметры тела правятся в инспекторе и
+сохраняются в сцену/префаб. Коллайдер без `RigidBody` — статичная часть уровня;
+`Physics::Update` сам создаёт, пересоздаёт и удаляет тела по компонентам, поэтому
+отдельный код регистрации не нужен. Связь сущности с телом Jolt — runtime-компонент
+`PhysicsBody` (`handle`, `signature`, `managed`): он не сериализуется и не показывается
+в инспекторе, а `FindBody`, prune и удаление сущности работают через него; скрытых
+таблиц и C++-map для этого нет. Шаг симуляции вызывается из `EngineUpdate` через
+игровые часы: пауза и замедление игры останавливают физику вместе с геймплеем.
+Отладочные каркасы коллайдеров рисует `DebugPass` редактора; в game client отдельного
+debug-прохода пока нет.
 
 ## Для агентов
 

@@ -5,12 +5,17 @@
 #include "engine/graphics/RasterState.hpp"
 #include "engine/graphics/RenderCommon.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
+#include "engine/physics/PhysicsWorld.hpp"
 
 namespace tryeditor {
 
 using namespace tryengine::graphics;
 
 namespace {
+
+static_assert(sizeof(tryengine::physics::PhysicsDebugLine) == sizeof(DebugLine),
+              "PhysicsDebugLine and DebugLine must share the 32-byte layout");
+static_assert(alignof(tryengine::physics::PhysicsDebugLine) == alignof(DebugLine));
 
 struct DebugPushConstants {
     VkDeviceAddress lines;   // 8 байт
@@ -30,7 +35,24 @@ void DebugPass::Collect(CollectContext& ctx) {
     const auto array = *debug_res;
     DebugLine* points = reinterpret_cast<DebugLine*>(array->data);
     lines_ = eastl::vector<DebugLine>(points, points + array->size);
-    //     // LogInfo("CollectDebug size = {}", array->size);
+
+    // Физика владеет своими коллайдерами и отдаёт готовые линии: DebugPass только
+    // перекладывает их в тот же буфер, что и отладочные линии скрипта.
+    if (auto* physics = ctx.engine.TryGet<tryengine::physics::PhysicsWorld>()) {
+        eastl::vector<tryengine::physics::PhysicsDebugLine> physics_lines;
+        physics->AppendDebugLines(physics_lines);
+        for (const auto& source : physics_lines) {
+            DebugLine line;
+            line.start = source.start;
+            line.r = source.color[0];
+            line.g = source.color[1];
+            line.b = source.color[2];
+            line.a = source.color[3];
+            line.end = source.end;
+            line._pad = 0;
+            lines_.push_back(line);
+        }
+    }
 }
 
 void DebugPass::Setup(RenderGraphBuilder& builder) {

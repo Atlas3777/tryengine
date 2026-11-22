@@ -16,4 +16,5 @@ target_link_libraries(game_client PRIVATE
         engine::resources
         engine::async
         engine::graphics
+        engine::physics
 )

@@ -10,6 +10,7 @@ require tryengine/AsyncTaskManager
 require tryengine/Input
 require tryengine/Profiling
 require daslib/just_in_time
+require tryengine/Physics
 require tryengine/Time
 require tryengine/TransformSystem
 // A zone around the tick: tick_async_tasks finishes hot-reload work for scripts, and one
@@ -21,6 +22,7 @@ def EngineUpdate() {
     // systems see the same frame and no caller passes dt around.
     TimeTick()
     tick_async_tasks()
+    Physics::Update()
     UpdateWorldTransforms()
 }
 

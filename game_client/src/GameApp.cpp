@@ -13,6 +13,7 @@
 #include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderLoader.hpp"
 #include "engine/graphics/loaders/TextureLoader.hpp"
+#include "engine/physics/PhysicsWorld.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/PendingLoadQueue.hpp"
@@ -45,6 +46,7 @@ void GameApp::Init() {
     swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/false);
 
     engine_ = std::make_unique<Engine>();
+    engine_->RegisterSystem<tryengine::physics::PhysicsWorld>();
     engine_->RegisterSystem<RenderGraph>(*vulkan_device_);
     engine_->RegisterSystem<GameRender>(*vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_, *frame_sync_);
     engine_->RegisterSystem<InputService>();

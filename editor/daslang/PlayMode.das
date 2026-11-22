@@ -13,10 +13,12 @@ module PlayMode shared public
 require daslib/archive
 require daslib/decs
 require tryengine/Loader
+require tryengine/Physics
 require tryengine/Scene
 require tryengine/Time
 require tryengine/TransformSystem
 require trygame/Game
+require trygame/PhysicsDemo
 require tryeditor/Editor
 require tryeditor/Hierarchy
 
@@ -72,6 +74,8 @@ def public EndPlay() {
     // The game may be stopped while `Loader::Load` is still running. Abort releases its
     // references; the task carries its own generation and exits on the next frame.
     Loader::Abort()
+    Physics::Reset()
+    PhysicsDemo::Reset()
 
     // Release the play scene's references, install the editor scene again, and then
     // restore the heap. The resource cache keeps the meshes/materials: only the

@@ -129,6 +129,7 @@ target_link_libraries(editor_core PUBLIC
         engine::graphics
         engine::async
         engine::platform
+        engine::physics
         imgui_lib
         tinygltf
         stb_image

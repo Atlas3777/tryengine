@@ -23,6 +23,7 @@
 #include "engine/graphics/loaders/MeshLoader.hpp"
 #include "engine/graphics/loaders/ShaderLoader.hpp"
 #include "engine/graphics/loaders/TextureLoader.hpp"
+#include "engine/physics/PhysicsWorld.hpp"
 #include "engine/platform/InputService.hpp"
 #include "engine/resources/PakManager.hpp"
 #include "engine/resources/PendingLoadQueue.hpp"
@@ -46,6 +47,7 @@ void EditorApp::Init() {
     swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/false);
 
     engine_ = std::make_unique<Engine>();
+    engine_->RegisterSystem<tryengine::physics::PhysicsWorld>();
 
     auto& registry = engine_->RegisterSystem<AssetRegistry>();
     engine_->RegisterSystem<PendingLoadQueue>(registry);

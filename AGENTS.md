@@ -24,6 +24,7 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | `engine_source/platform` | окно SDL3, события, `InputService`, SDL-фильтры; биндинг `tryInput` (`src/Module_Input.cpp`) |
 | `engine_source/resources` | загрузка pak/артефактов, `ResourceManager`, `AsyncFileManager` (io_uring), загрузчики; биндинг `tryAsyncFile` (`src/Module_AsyncFileManager.cpp`) |
 | `engine_source/async` | корутины `Task<T>`, пул потоков и главный исполнитель, pollable-хендлы |
+| `engine_source/physics` | `PhysicsWorld` на Jolt Physics: тела, примитивные коллайдеры, контакты, debug-линии; биндинг `tryPhysics` (`src/Module_Physics.cpp`); ECS-компоненты `RigidBody`/`*Collider`, runtime-компонент `PhysicsBody` и синхронизация с ними — `engine_source/daslang/Physics.das` |
 | `engine_source/daslang` | исходники API движка для `.das` (`require tryengine/...`) |
 | `editor/src`, `editor/include` | приложение редактора, панели ImGui, импортеры (glTF, Slang, текстуры), asset pipeline, `Module_TryEditor` |
 | `editor/daslang` | редакторские скрипты (`require tryeditor/...`), точка входа `EntryPoint.das` |
@@ -78,12 +79,13 @@ cmake --build build-debug --target editor -j "$(nproc)"
   отдаёт в скрипт: `engine_source/platform/src/Module_Input.cpp`,
   `engine_source/resources/src/Module_AsyncFileManager.cpp`,
   `engine_source/graphics/src/Module_Renderer.cpp` и `Module_Resources.cpp`,
-  `editor/src/Module_TryEditor.cpp`.
+  `engine_source/physics/src/Module_Physics.cpp`, `editor/src/Module_TryEditor.cpp`.
 - Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
-  `tryeditor_shared`; агрегат для всех — `das_modules` (`tools/agent/build.sh modules`).
+  `tryeditor_shared`, `tryPhysics_shared`; агрегат для всех — `das_modules`
+  (`tools/agent/build.sh modules`).
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
@@ -120,6 +122,7 @@ daslang -dry-run \
   -load_module "$PWD/modules/tryInput" \
   -load_module "$PWD/modules/tryAsyncFile" \
   -load_module "$PWD/modules/tryeditor" \
+  -load_module "$PWD/modules/tryPhysics" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
 ```

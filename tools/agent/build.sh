@@ -18,9 +18,9 @@ usage: build.sh <target> [--release|--debug]
        build.sh all [--release]
 
 targets: editor, game_client, engine_core, engine_graphics, engine_platform,
-         engine_resources, engine_async, editor_core, das_modules,
+         engine_resources, engine_async, engine_physics, editor_core, das_modules,
          tryRenderer_shared, tryResources_shared, tryInput_shared,
-         tryAsyncFile_shared, tryeditor_shared
+         tryAsyncFile_shared, tryeditor_shared, tryPhysics_shared
 EOF
 }
 

@@ -47,6 +47,7 @@ tools/agent/build.sh all                     # editor + game_client
 | `engine_source/platform/src/Module_Input.cpp` | `tryInput` | `tryInput_shared` | `modules/tryInput/` |
 | `engine_source/resources/src/Module_AsyncFileManager.cpp` | `tryAsyncFile` | `tryAsyncFile_shared` | `modules/tryAsyncFile/` |
 | `editor/src/Module_TryEditor.cpp` | `TryEditor` | `tryeditor_shared` | `modules/tryeditor/` |
+| `engine_source/physics/src/Module_Physics.cpp` | `tryPhysics` | `tryPhysics_shared` | `modules/tryPhysics/` |
 
 Файл модуля лежит в том слое, чьи типы он отдаёт в скрипт. Библиотеки нужны внешнему
 `daslang` (CLI-гейт, подсветка кастомных типов); в самих приложениях те же `.cpp` линкуются
@@ -85,6 +86,7 @@ daslang -dry-run -no-lint \
   -load_module "$PWD/modules/tryInput" \
   -load_module "$PWD/modules/tryAsyncFile" \
   -load_module "$PWD/modules/tryeditor" \
+  -load_module "$PWD/modules/tryPhysics" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
 ```

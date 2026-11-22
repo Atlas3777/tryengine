@@ -9,11 +9,13 @@ require daslib/decs_boost
 require tryengine/AsyncTaskManager
 require tryengine/Input
 require tryengine/Loader
+require tryengine/Physics
 require tryengine/Prefab
 require tryengine/Profiling
 require tryengine/Scene
 require tryengine/Time
 require tryengine/Types
+require trygame/PhysicsDemo
 require math
 
 // === engine convention ===
@@ -84,6 +86,9 @@ def public ApplyReloadState(var state : GameReloadState) {
 def GameStart(){
     print("Game Start\n")
     RegisterGameTime()
+    Physics::Reset()
+    Physics::Attach(game_world_clock)
+    PhysicsDemo::Reset()
     g_scene_ready = false
 
     var request <- LoaderRequest()
@@ -108,6 +113,7 @@ def private OnLoaded() {
         return
     }
     g_scene_ready = true
+    PhysicsDemo::Start()
 
     let spawned = Prefab::Spawn(GAMEPLAY_PREFAB, float3(10.0f, 0.0f, 0.0f))
     if (spawned == INVALID_ENTITY_ID) {
