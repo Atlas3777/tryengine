@@ -122,7 +122,14 @@ let public kPausePanel : UiStyle = UiStyle(
     radius = 16.0f,
     padding = float4(24.0f, 20.0f, 24.0f, 20.0f)
 )
-let public kPauseCurtain : UiStyle = UiStyle(color = float4(0.0f, 0.0f, 0.0f, 0.55f), radius = 0.0f)
+// The modal backdrop covers the viewport: no radius, no border and no padding, so the centred
+// panel inside it is centred on screen and not inside an inset box.
+let public kPauseCurtain : UiStyle = UiStyle(
+    color = float4(0.0f, 0.0f, 0.0f, 0.55f),
+    radius = 0.0f,
+    border_width = 0.0f,
+    padding = float4(0.0f, 0.0f, 0.0f, 0.0f)
+)
 
 // --- button templates ---------------------------------------------------------------------
 //
