@@ -97,11 +97,14 @@ def EditorUpdate(){
     // DrawSceneViewPort, so the next frame draws the handle the user is already dragging.
     UpdateGizmoDrawState()
 
-    // The UI is declared every frame on its own clock, outside the pause gate: the editor pauses
-    // gameplay, not the screens, so a pause menu stays alive over a frozen world. In Edit mode
-    // gameplay does not run at all, so the Screens panel previews a registered screen instead.
+    // Play: the UI is a peer of gameplay, not a part of it, but the editor pause freezes the
+    // whole game. With no frame declared the pass re-draws the last command list, so the screens
+    // stay on screen frozen and the pointer reaches nothing. Edit mode has no gameplay at all:
+    // the Screens panel previews a registered screen instead, in side-effect-free preview mode.
     if (is_playing) {
-        GameUiFrame()
+        if (TimeIsAdvancing(game_clock)) {
+            GameUiFrame()
+        }
     } else {
         UiScreens::DrawPreviewFrame()
     }

@@ -35,13 +35,18 @@ def public ClearScreenFrame() {
     Ui::End()
 }
 
-//! The Edit-mode frame: the previewed screen, or nothing when no screen is selected.
+//! The Edit-mode frame: the previewed screen, or nothing when no screen is selected. It runs in
+//! `Ui::SetPreviewMode`, so the screen reacts to the pointer (hover, press, animations) while
+//! `@@` actions, sound events and `var` write-backs are suppressed — the game is not running, and
+//! a click in the preview must not touch game state.
 def public DrawPreviewFrame() {
+    Ui::SetPreviewMode(true)
     if (empty(preview_screen) || !Ui::HasScreen(preview_screen)) {
         ClearScreenFrame()
-        return
+    } else {
+        Ui::FrameScreen(preview_screen)
     }
-    Ui::FrameScreen(preview_screen)
+    Ui::SetPreviewMode(false)
 }
 
 [profile]

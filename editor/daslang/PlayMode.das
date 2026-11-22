@@ -99,8 +99,10 @@ def public ResumePlay() {
 }
 
 // One synthetic frame at a fixed step: the step ignores the pause flag, and GameUpdate
-// runs here because EditorUpdate already skipped its own call for this frame.
+// runs here because EditorUpdate already skipped its own call for this frame. The UI is
+// declared here too: while paused it only advances when the user steps a frame.
 def public StepPlay() {
     TimeStepOnce(1.0f / 60.0f)
+    GameUiFrame()
     GameUpdate()
 }
