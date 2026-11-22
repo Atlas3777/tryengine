@@ -147,6 +147,7 @@ private:
     bool font_failed_logged_ = false;
     bool material_failed_logged_ = false;
     bool atlas_bound_ = false;
+    bool textures_requested_ = false;
 
     static UiSystem* instance_;
     uint32_t atlas_version_ = 0;

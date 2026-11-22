@@ -4,6 +4,12 @@
 // rectangle. Positions are render-target pixels with the origin at the top-left, so the
 // projection is the same one ImGui's Vulkan backend uses.
 //
+// The vertex index must be the absolute one: the pass draws each batch with
+// vkCmdDraw(count, 1, first_vertex, 0) into one shared vertex array. HLSL-style SV_VertexID
+// is zero-based per draw (Slang emits gl_VertexIndex - gl_BaseVertex for it), so the batch
+// offset would silently be dropped and every batch would read vertices 0..count-1.
+// SV_VulkanVertexID maps to the raw gl_VertexIndex and matches the draw's offset.
+//
 // The fragment shader has four modes (UiVertex.params.x), picked by the UI pass when it
 // expands high-level draw commands into vertices:
 //   0 - filled rounded rectangle, uv = local pixel coordinates inside the rect
@@ -54,7 +60,7 @@ struct VSOutput
 };
 
 [shader("vertex")]
-VSOutput vsMain(uint vertexID : SV_VertexID)
+VSOutput vsMain(uint vertexID : SV_VulkanVertexID)
 {
     UiVertex vertex = pc.vertices[vertexID];
 

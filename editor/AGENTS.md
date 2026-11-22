@@ -391,7 +391,9 @@
 ## Экраны игрового UI
 
 - Панель **Screens** и Edit-превью — `editor/daslang/UiScreens.das`. Список берётся из
-  `Ui::ScreenNames()` (реестр заполняют `[init]` модулей игры, поэтому имена видны до Play),
+  `Ui::ScreenNames()` (реестр заполняют `[init]` модулей игры — по файлу на экран
+  `game/scripts/Screen*.das` — поэтому имена видны до Play; в Play стартовый экран —
+  `main_menu`, его ставит `GameFlow::Start`),
   выбор хранится в `preview_screen`, кадр объявляет `DrawPreviewFrame`. Вызывает его
   `EditorUpdate` в ветке `!is_playing`; в Play редактор зовёт `GameUiFrame()` — тот же экспорт,
   что и `game_client`. `Pause` замораживает всю игру, UI включённо: при неидущем `game_clock`

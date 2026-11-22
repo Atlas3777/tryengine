@@ -22,7 +22,7 @@ require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 
-var public preview_screen : string = ""
+var public preview_screen : string = "hud"
 
 // One row per screen: the widget state is indexed by the screen name, so adding a screen at run
 // time does not need a new call site.

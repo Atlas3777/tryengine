@@ -151,6 +151,11 @@ def TimeSetPaused(var tag : auto; paused : bool) {
     clocks[tag.slot_].is_paused_ = paused
 }
 
+def TimeTogglePaused(var tag : auto) : void {
+    assert(tag.slot_ != k_no_slot, "time: clock is not registered")
+    clocks[tag.slot_].is_paused_ = !clocks[tag.slot_].is_paused_
+}
+
 //! True when this clock moved this frame. Gate a system that integrates time with this
 //! instead of letting it do the work on a zero delta.
 def TimeIsAdvancing(var tag : auto) : bool => TimeDelta(tag) > 0.0f

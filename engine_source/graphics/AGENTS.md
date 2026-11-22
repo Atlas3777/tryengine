@@ -404,6 +404,16 @@
   `1` SDF-текст, `2` текстурированный квад, `3` рамка. У фигур `shape.xy` — radius/border,
   `shape.zw` — половина размера, `uv` — локальные пиксели; у текста `params.y` — px на em.
   `albedo_map` (set 1) — атлас шрифта; кастомный UI-материал обязан сохранить этот binding.
+- Вершинный шейдер UI обязан брать **абсолютный** индекс вершины. `SV_VertexID` в Slang — это
+  HLSL-семантика с нумерацией от начала draw: бэкенд SPIR-V вычитает `gl_BaseVertex`, а для
+  неиндексированного `vkCmdDraw(count, 1, firstVertex, 0)` `gl_BaseVertex == firstVertex`.
+  Проход рисует все серии из одного массива вершин и передаёт смещение серии именно в
+  `firstVertex`, поэтому с `SV_VertexID` смещение молча терялось: каждая серия читала
+  `pc.vertices[0..count-1]` (картинка рисовалась базовым материалом в серии текста, т.е.
+  выглядела как атлас шрифта). Используй `SV_VulkanVertexID` — он отображается в
+  `gl_VertexIndex` как есть. То же правило для любого шейдера, который индексирует
+  BDA-массив по `firstVertex`; для `vkCmdDrawIndexed(..., firstIndex, ...)` с ramp-индексом
+  обе семантики совпадают.
 - Шрифт — обычный ассет: `.ttf` в `game/assets`, `FontImporter` (editor) печёт
   `FontBinary` (metrics + вложенный `TextureBinary` с R8 SDF-атласом), `FontLoader`
   поднимает атлас через `TextureLoader::Parse`. Атлас привязывается к материалу через

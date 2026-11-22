@@ -6,17 +6,14 @@ module Game shared public
 
 require daslib/decs
 require daslib/decs_boost
-require tryengine/AsyncTaskManager
 require tryengine/Input
-require tryengine/Loader
-require tryengine/Physics
-require tryengine/Prefab
 require tryengine/Profiling
-require tryengine/Scene
 require tryengine/Time
 require tryengine/Types
+require trygame/GameFlow
+require trygame/GameScreens
+require trygame/GameTime public
 require trygame/GameUi
-require trygame/PhysicsDemo
 require math
 
 // === engine convention ===
@@ -24,41 +21,12 @@ let front_raw = float3(0.0f, 1.0f, 0.0f)   // local Y (forward)
 let up_raw    = float3(0.0f, 0.0f, 1.0f)   // local Z (up)
 let world_up  = float3(0.0f, 0.0f, 1.0f)
 
-// === content loaded at startup ===
-// The request is the whole startup policy: everything listed here is read and compiled
-// before `OnLoaded` runs. `OnLoaded` then applies the scene and spawns gameplay from the
-// cache; neither `Scene::Load` nor `Prefab::Spawn` touches the disk.
-let STARTUP_SCENE = "content/test.scene"
-let STARTUP_BUNDLE = "data/bundles/startup.bundle"
-let GAMEPLAY_PREFAB = "prefabl.prefab"
-
 // === orbit parameters ===
 var  orbit_angle  = 0.0f
 let  orbit_center = float3(0.0f, 7.5f, 0.0f)   // mesh group center in the XY plane
 let  orbit_radius = 20.0f
 let  orbit_height = 10.0f
 let  orbit_speed  = 0.48f                      // radians per second
-
-// === game time ===
-// The game owns its subtree and attaches it to the engine root; the editor does the same
-// with its own clock. Nothing is registered for us, and GameStart may run again on Play.
-struct GameClock : ClockTag {}
-struct GameWorldClock : ClockTag {}
-struct GameUIClock : ClockTag {}
-
-var game_clock       = GameClock()
-var game_world_clock = GameWorldClock()
-var game_ui_clock    = GameUIClock()
-
-// Gameplay runs only after `OnLoaded` applied the startup scene. This is game state,
-// not loader state: the loader task owns the request and disappears when it is done.
-var private g_scene_ready = false
-
-def RegisterGameTime() {
-    TimeAttach(game_clock)
-    TimeRegister(game_world_clock, game_clock)
-    TimeRegister(game_ui_clock, game_clock)
-}
 
 //! Game state that must survive an editor hot reload. The editor saves it through
 //! Editor HotReload; the standalone game never calls these.
@@ -68,34 +36,27 @@ struct public GameReloadState {
 }
 
 def public CaptureReloadState() : GameReloadState {
-    return GameReloadState(scene_ready = g_scene_ready, orbit_angle = orbit_angle)
+    return GameReloadState(scene_ready = GameFlow::IsReady(), orbit_angle = orbit_angle)
 }
 
 def public ApplyReloadState(var state : GameReloadState) {
-    g_scene_ready = state.scene_ready
     orbit_angle = state.orbit_angle
-    // A resumed Play needs its clocks back: the new context starts with an empty time tree.
-    if (g_scene_ready) {
+    GameFlow::SetReady(state.scene_ready)
+    // The script context is new after a reload: the screen stack is empty and the clocks are
+    // gone. Restore both from the scene flag.
+    GameScreens::Show(state.scene_ready ? "hud" : "main_menu")
+    if (state.scene_ready) {
         RegisterGameTime()
     }
 }
 
-// Explicit entry point, shared by the standalone game and editor Play. The request says
-// what this game needs at startup; the loader task reads and compiles it, then calls
-// `OnLoaded` synchronously in the cache.
+// Explicit entry point, shared by the standalone game and editor Play. The scene is loaded
+// from the main menu (`GameFlow::LoadScene`), not here: a new session starts at the menu.
 [export]
 def GameStart(){
     print("Game Start\n")
     RegisterGameTime()
-    Physics::Reset()
-    Physics::Attach(game_world_clock)
-    PhysicsDemo::Reset()
-    g_scene_ready = false
-
-    var request <- LoaderRequest()
-    request.AddBundle(STARTUP_BUNDLE)
-    request.AddScene(STARTUP_SCENE)
-    StartTask(Loader::Load(request, @@OnLoaded))
+    GameFlow::Start()
 }
 
 //! The UI is declared every frame on its own clock, separately from gameplay. The editor calls
@@ -108,26 +69,11 @@ def GameUiFrame(){
 
 [export, profile]
 def GameUpdate() {
-    if (!g_scene_ready) {
+    if (!GameFlow::IsReady()) {
         return
     }
-    TimeSetPaused(game_world_clock, GameUi::IsPaused())
-    UpdateGameplay()
-}
-
-// The loader callback: everything in the request is in `Content`/`Prefab` caches.
-// Applying the scene is a separate synchronous step, exactly like spawning a prefab.
-def private OnLoaded() {
-    if (!Scene::Load(STARTUP_SCENE)) {
-        print("[GAME ERROR] startup scene '{STARTUP_SCENE}' was not preloaded\n")
-        return
-    }
-    g_scene_ready = true
-    PhysicsDemo::Start()
-
-    let spawned = Prefab::Spawn(GAMEPLAY_PREFAB, float3(10.0f, 0.0f, 0.0f))
-    if (spawned == INVALID_ENTITY_ID) {
-        print("[GAME ERROR] failed to spawn prefab '{GAMEPLAY_PREFAB}'\n")
+    if (!GameTime::IsGamePaused()) {
+        UpdateGameplay()
     }
 }
 

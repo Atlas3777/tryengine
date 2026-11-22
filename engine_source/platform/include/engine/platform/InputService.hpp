@@ -103,6 +103,12 @@ public:
         return quit_requested_;
     }
 
+    //! Просит цикл приложения завершиться — то же, что закрытие окна. Кнопка выхода в
+    //! игровом меню; оба цикла (EditorApp и GameApp) проверяют IsQuitRequested().
+    void RequestQuit() noexcept {
+        quit_requested_ = true;
+    }
+
     [[nodiscard]] InputState& GetState() noexcept {
         return input_state_;
     }

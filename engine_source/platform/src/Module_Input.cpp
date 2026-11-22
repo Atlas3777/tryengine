@@ -37,6 +37,12 @@ struct InputStateAnnotation : ManagedStructureAnnotation<InputState, false /*can
     }
 };
 
+void request_quit(das::Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    if (auto* input = try_ctx->engine.TryGet<InputService>())
+        input->RequestQuit();
+}
+
 InputState* get_input_state(das::Context* ctx) {
     auto* try_ctx = static_cast<TryengineContext*>(ctx);
     auto* input = try_ctx->engine.TryGet<InputService>();
@@ -60,6 +66,8 @@ public:
 
         addExtern<DAS_BIND_FUN(get_input_state)>(*this, lib, "get_input_state", SideEffects::accessGlobal,
                                                  "get_input_state");
+
+        addExtern<DAS_BIND_FUN(request_quit)>(*this, lib, "RequestQuit", SideEffects::accessGlobal, "request_quit");
 
         verifyAotReady();
     }

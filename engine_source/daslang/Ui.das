@@ -1322,6 +1322,81 @@ def public FrameScreen(name : string) {
     End()
 }
 
+// --- screen stack --------------------------------------------------------------------------
+
+//! A stack of screen names drawn bottom first: `layers[0]` is the bottom layer, the last one is
+//! the top and receives the pointer where layers overlap. The stack is plain state: the engine
+//! has no "current screen" policy, the caller decides what to show and when.
+struct public ScreenStack {
+    layers : array<string>
+}
+
+def public IsEmpty(self : ScreenStack) : bool {
+    return length(self.layers) == 0
+}
+
+def public Has(self : ScreenStack; name : string) : bool {
+    for (layer in self.layers) {
+        if (layer == name) {
+            return true
+        }
+    }
+    return false
+}
+
+def public Top(self : ScreenStack) : string {
+    if (length(self.layers) == 0) {
+        return ""
+    }
+    return self.layers[length(self.layers) - 1]
+}
+
+//! Replaces the whole stack with one screen.
+def public Show(var self : ScreenStack; name : string) {
+    if (!HasScreen(name)) {
+        print("[UI] screen '{name}' is not registered\n")
+        return
+    }
+    self.layers.clear()
+    self.layers |> push(name)
+}
+
+//! Draws a screen on top of the current one. A layer that is already open is not pushed twice:
+//! two copies in one frame would declare the same ids.
+def public Push(var self : ScreenStack; name : string) {
+    if (!HasScreen(name)) {
+        print("[UI] screen '{name}' is not registered\n")
+        return
+    }
+    if (Has(self, name)) {
+        return
+    }
+    self.layers |> push(name)
+}
+
+def public Pop(var self : ScreenStack) {
+    if (length(self.layers) > 0) {
+        self.layers.resize(length(self.layers) - 1)
+    }
+}
+
+def public Remove(var self : ScreenStack; name : string) {
+    var kept : array<string>
+    for (layer in self.layers) {
+        if (layer != name) {
+            kept |> push(layer)
+        }
+    }
+    self.layers <- kept
+}
+
+//! Draws every layer in order, bottom first. Call inside `Ui::Frame`.
+def public Draw(self : ScreenStack) {
+    for (name in self.layers) {
+        Screen(name)
+    }
+}
+
 // --- widgets ------------------------------------------------------------------------------
 
 def private OpenContainer(nid : uint64) : uint64 {

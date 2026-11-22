@@ -40,6 +40,18 @@ void UiSystem::Tick() {
     PollFont();
     PollMaterial();
 
+    // UI textures are known from the config: request them up front instead of waiting for the
+    // first draw command that names one, so the first frame that draws an image already has it.
+    if (!textures_requested_) {
+        textures_requested_ = true;
+        for (uint64_t texture_guid : config_.textures) {
+            if (texture_guid == 0)
+                continue;
+            resource_manager_.RequestLoad<TextureSampler>(texture_guid);
+            texture_requested_[texture_guid] = 1;
+        }
+    }
+
     // Re-import or material live-reload replaces the stored resource; the pointers we hold are
     // only valid while the cache keeps the same object, so re-read them and rebind the atlas.
     if (font_ != nullptr) {
