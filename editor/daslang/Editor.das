@@ -20,6 +20,7 @@ require tryengine/Types
 require tryengine/Input
 require tryengine/AsyncTaskManager
 require tryeditor/QuadTreeDebugWindow
+require tryeditor/UiScreens
 
 require tryResources
 
@@ -95,6 +96,15 @@ def EditorUpdate(){
     // The gizmo state is built before the frame is rendered; interaction happens later in
     // DrawSceneViewPort, so the next frame draws the handle the user is already dragging.
     UpdateGizmoDrawState()
+
+    // The UI is declared every frame on its own clock, outside the pause gate: the editor pauses
+    // gameplay, not the screens, so a pause menu stays alive over a frozen world. In Edit mode
+    // gameplay does not run at all, so the Screens panel previews a registered screen instead.
+    if (is_playing) {
+        GameUiFrame()
+    } else {
+        UiScreens::DrawPreviewFrame()
+    }
 
     // A paused game clock is a zero delta, and a system that integrates time has no
     // business running on a zero delta at all.

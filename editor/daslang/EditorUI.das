@@ -18,6 +18,7 @@ require tryeditor/Hierarchy
 require tryeditor/Inspector
 require tryeditor/AssetBrowser
 require tryeditor/SceneViewPort
+require tryeditor/UiScreens
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
@@ -215,6 +216,7 @@ def DrawEditor() {
     DrawAssetBrowser()
     DrawSceneViewPort()
     DrawGameSceneViewPort()
+    DrawUiScreens(is_playing)
     DrawBuildManager()
     DrawMaterialEditor()
     DrawProfilerWindow()

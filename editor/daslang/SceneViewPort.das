@@ -18,6 +18,7 @@ require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 
 require TryEditor
+require tryeditor/Editor
 require tryeditor/EditorInput
 require tryeditor/FileSystemUtils
 require tryeditor/Hierarchy
@@ -194,9 +195,11 @@ def DrawGameSceneViewPort(){
                               tint_col = float4(1.0f, 1.0f, 1.0f, 1.0f),
                               border_col = float4(0.0f, 0.0f, 0.0f, 0.0f)))
 
-            // The game UI is declared in GameUpdate, before this panel is laid out, so its
+            // The game UI is declared in GameUiFrame, before this panel is laid out, so its
             // input viewport is one frame behind — the same compromise the gizmo accepts.
-            Ui::SetInputViewport(GetItemRectMin(), scene_game_viewport_size, IsItemHovered())
+            // Edit mode draws the Screens preview but takes no pointer input: gameplay is not
+            // running, so a click in the game view belongs to the editor.
+            Ui::SetInputViewport(GetItemRectMin(), scene_game_viewport_size, is_playing && IsItemHovered())
         } else {
             Ui::SetInputViewport(float2(0.0f, 0.0f), float2(0.0f, 0.0f), false)
         }
