@@ -213,15 +213,22 @@ daslang -dry-run \
   экран уникален и собран из виджетов). У одинакового локального id в двух экранах разные
   узлы: имя экрана входит в id. Новые стили и цвета добавляются в тему, а не в разметку.
 - UI не часть `GameUpdate`: `[export] GameUiFrame()` (`game/scripts/Game.das`) вызывает и
-  `game_client`, и редактор, причём редактор — и на паузе (`Pause` замораживает `game_clock` и
-  пропускает `GameUpdate`, но не экраны). UI живёт на своём клоке
-  (`game_ui_clock`/внутренний UiClock), поэтому пауза `game_world_clock` его не останавливает.
+  `game_client`, и редактор. UI живёт на своём клоке (`game_ui_clock`/внутренний UiClock),
+  поэтому пауза `game_world_clock` его не останавливает — это нужно меню паузы игры.
+  Пауза **редактора** (`Pause`) замораживает всю игру, UI включённо: редактор не объявляет
+  UI-кадр, проход перерисовывает последний список команд, и указатель ничего не задевает.
   В Edit режиме игра не запущена: редактор рисует выбранный в панели **Screens** экран
-  (`editor/daslang/UiScreens.das`) без ввода — превью только смотреть. Точки `GameUiFrame`,
-  `Ui::Frame`, `Ui::Begin/End`, `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
-  Шрифт — импортируемый ассет: `.ttf` в `game/assets/fonts`, `FontImporter` печёт SDF-атлас в
-  артефакт `FontBinary`, `UiConfig.font_guid`/`kDefaultUiFontGuid` его адресует; см.
-  `game/assets/fonts/README.md`.
+  (`editor/daslang/UiScreens.das`) внутри `Ui::SetPreviewMode(true)` — hover/press работают, но
+  действия, звуки и записи в `var` подавлены. Точки `GameUiFrame`, `Ui::Frame`,
+  `Ui::Begin/End`, `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
+- Активный экран и стек — состояние игры, не движка: в `game/scripts/GameUi.das` лежит
+  `g_layers : array<string>` с `Show`/`Push`/`Pop`/`Close`, а `Frame` рисует слои в порядке
+  массива. Порядок = порядок отрисовки, поэтому второй экран ложится поверх HUD. Модальные
+  окна рисуются через `Ui::Backdrop` — полноэкранный слой, который забирает указатель, иначе
+  нижний слой кликается сквозь окно.
+- Шрифт игрового UI — импортируемый ассет: `.ttf` в `game/assets/fonts`, `FontImporter` печёт
+  SDF-атлас в артефакт `FontBinary`, `UiConfig.font_guid`/`kDefaultUiFontGuid` его адресует;
+  см. `game/assets/fonts/README.md`.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
   движок превращает его в `PathId(путь)` и берёт loose-файл (редактор) или чанк пака
