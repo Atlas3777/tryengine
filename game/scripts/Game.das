@@ -98,12 +98,16 @@ def GameStart(){
     StartTask(Loader::Load(request, @@OnLoaded))
 }
 
+//! The UI is declared every frame on its own clock, separately from gameplay. The editor calls
+//! this even while the game clock is paused, so a pause menu stays alive over a frozen world;
+//! the game client calls it every frame too. Gameplay never calls it.
+[export]
+def GameUiFrame(){
+    GameUi::Frame()
+}
+
 [export, profile]
 def GameUpdate() {
-    // The UI is declared every frame, before gameplay, on its own clock (tryengine/Ui owns it).
-    // Pausing the world clock below does not stop the HUD: that is what a pause menu needs.
-    GameUi::Frame()
-
     if (!g_scene_ready) {
         return
     }

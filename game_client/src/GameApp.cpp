@@ -131,6 +131,10 @@ void GameApp::Run() {
         }
 
         script_system.InvokeFunctionSafe("EngineUpdate");
+        // UI объявляется каждый кадр на своём клоке и не зависит от gameplay: пауза игрового
+        // мира не должна замораживать экраны. Поэтому это отдельная точка входа, а не часть
+        // GameUpdate.
+        script_system.InvokeFunctionSafe("GameUiFrame");
         script_system.InvokeFunctionSafe("GameUpdate");
 
         {

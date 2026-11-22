@@ -4,21 +4,25 @@ options no_unused_block_arguments = false
 
 module GameUi shared public
 
-//! The game's HUD: a small retained UI declared every frame from GameUpdate.
+//! The game's screens.
 //!
-//! It demonstrates the two directions of the binding: game state is read in the declaration
-//! (hp, counters), and UI edits are written back through `@@` actions and `var` binders
-//! (the pause checkbox, the volume slider). Sounds are named in the style and forwarded to
-//! `Ui::OnSound` — the engine has no audio subsystem yet, so the default sink logs once.
+//! Three layers, three files:
+//! - widgets — `tryengine/Ui` (`Panel`, `Label`, `Button`, ...; they repeat everywhere);
+//! - look — `trygame/UiTheme` (per-kind theme, named styles, button templates, sound names);
+//! - screens — this file. Each screen is a build function registered by name with
+//!   `Ui::RegisterScreen`, and `Frame` decides which one is live this frame.
 //!
-//! Run on the UI clock (tryengine/Ui owns it), so pausing `game_world_clock` leaves the HUD
-//! alive: that is what a pause menu needs.
+//! A screen is drawn by name, so the editor can draw any registered screen without Play and
+//! without knowing the game's logic. The functions below read game state in the declaration and
+//! write it back through `@@` actions and `var` binders; they never touch colours — those come
+//! from the theme.
+//!
+//! Everything runs on the UI clock (`tryengine/Ui` owns it), so gameplay pausing does not freeze
+//! the screens.
 
 require math
-require strings
 require tryengine/Ui
-require tryengine/Time
-require tryengine/Input
+require trygame/UiTheme
 
 struct private GameUiState {
     hp : float = 100.0f
@@ -31,70 +35,9 @@ struct private GameUiState {
 
 var private g_state = GameUiState()
 
-let private kHudStyle = UiStyle(
-    color = float4(0.08f, 0.09f, 0.12f, 0.86f),
-    border_color = float4(0.24f, 0.26f, 0.32f, 1.0f),
-    border_width = 1.0f,
-    radius = 12.0f,
-    padding = float4(16.0f, 14.0f, 16.0f, 14.0f)
-)
-
-let private kTitleStyle = UiStyle(
-    text_size = 20.0f,
-    text_color = float4(0.95f, 0.96f, 0.99f, 1.0f)
-)
-
-let private kHpTextStyle = UiStyle(
-    text_size = 16.0f,
-    text_color = float4(0.86f, 0.88f, 0.93f, 1.0f)
-)
-
-let private kHpBarStyle = UiStyle(
-    color = float4(0.10f, 0.11f, 0.15f, 1.0f),
-    hover_color = float4(0.88f, 0.30f, 0.32f, 1.0f),
-    border_color = float4(0.30f, 0.32f, 0.40f, 1.0f),
-    border_width = 1.0f,
-    radius = 6.0f,
-    text_size = 14.0f,
-    text_color = float4(1.0f, 1.0f, 1.0f, 1.0f),
-    text_align = 1,
-    padding = float4(6.0f, 2.0f, 6.0f, 2.0f)
-)
-
-//! A template is a value: the danger button inherits the fire button's layout, padding, label
-//! style and sounds, and overrides only the colours and the default text.
-let private kFireTemplate = UiButtonTemplate(
-    style = UiStyle(
-        color = float4(0.18f, 0.36f, 0.60f, 1.0f),
-        hover_color = float4(0.24f, 0.46f, 0.74f, 1.0f),
-        press_color = float4(0.13f, 0.28f, 0.48f, 1.0f),
-        border_color = float4(0.32f, 0.52f, 0.80f, 1.0f),
-        border_width = 1.0f,
-        radius = 8.0f,
-        text_size = 18.0f,
-        text_color = float4(1.0f, 1.0f, 1.0f, 1.0f),
-        text_align = 1,
-        anim_time = 0.10f,
-        padding = float4(18.0f, 8.0f, 18.0f, 8.0f),
-        sound_hover = "ui/hover",
-        sound_click = "ui/click",
-        sound_press = "ui/press"
-    ),
-    text = "Fire"
-)
-
-let private kDangerTemplate = ButtonTemplate(
-    kFireTemplate,
-    UiButtonTemplate(
-        style = UiStyle(
-            color = float4(0.48f, 0.14f, 0.16f, 1.0f),
-            hover_color = float4(0.62f, 0.20f, 0.22f, 1.0f),
-            press_color = float4(0.36f, 0.10f, 0.12f, 1.0f),
-            border_color = float4(0.72f, 0.26f, 0.28f, 1.0f)
-        ),
-        text = "Take damage"
-    )
-)
+// A pulse has to be requested while the node is declared: click callbacks run after the tree is
+// built, and their id scope is already gone. The button sets the flag, the HUD consumes it.
+var private g_pulse : bool = false
 
 def private OnFire() {
     g_state.clicks++
@@ -104,46 +47,78 @@ def private OnFire() {
 def private OnDamage() {
     g_state.damage_taken++
     g_state.hp = max(0.0f, g_state.hp - 20.0f)
-    // One-shot highlight: the bar flashes instead of just snapping down.
-    Pulse("##hud")
+    g_pulse = true
 }
 
-def private StateLabel(paused : bool) : string {
+def private OnResume() {
+    g_state.paused = false
+}
+
+def private PauseLabel(paused : bool) : string {
     if (paused) {
         return "Paused"
     }
     return "Running"
 }
 
-//! Declares one UI frame. Harmless when the font/material are not ready yet: the UI still
-//! builds its tree and the render pass draws nothing until the assets arrive.
-def public Frame() {
-    Ui::Frame() {
-        Ui::Panel("##hud", kHudStyle, UiLayout(offset = float2(24.0f, 24.0f), spacing = 8.0f)) {
-            Ui::Label("##title", "tryengine UI", kTitleStyle)
-            Ui::Label("##hp", "HP {int(g_state.hp)} / {int(g_state.hp_max)}", kHpTextStyle)
-            Ui::ProgressBar("##hpbar", g_state.hp / g_state.hp_max, "", kHpBarStyle)
-            Ui::Row("##buttons", UiStyle(), UiLayout(spacing = 8.0f)) {
-                Ui::Button(kFireTemplate, "##fire", @@OnFire)
-                Ui::Button(kDangerTemplate, "##damage", @@OnDamage)
-            }
-            Ui::Row("##settings", UiStyle(), UiLayout(spacing = 8.0f)) {
-                Ui::Checkbox("##paused", g_state.paused)
-                Ui::Label("##paused_label", StateLabel(g_state.paused), kHpTextStyle)
-            }
-            Ui::Label("##volume_label", "Volume {int(g_state.volume * 100.0f)}%", kHpTextStyle)
-            Ui::Slider("##volume", g_state.volume, 0.0f, 1.0f)
-            if (g_state.paused) {
-                Ui::Label("##paused_note", "Gameplay is paused, the HUD keeps running.", kHpTextStyle)
-            }
+//! HUD screen: the in-game overlay. Pausing switches to the `pause` screen.
+def private BuildHud() {
+    Ui::Panel("##hud", UiTheme::kHudPanel, UiLayout(offset = float2(24.0f, 24.0f), spacing = 8.0f)) {
+        Ui::Label("##title", "tryengine UI", UiTheme::kTitle)
+        Ui::Label("##hp", "HP {int(g_state.hp)} / {int(g_state.hp_max)}", UiTheme::kMuted)
+        Ui::ProgressBar("##hpbar", g_state.hp / g_state.hp_max, "", UiTheme::kHpBar)
+        Ui::Row("##buttons", UiStyle(), UiLayout(spacing = 8.0f)) {
+            Ui::Button(UiTheme::kPrimaryButton, "##fire", @@OnFire)
+            Ui::Button(UiTheme::kDangerButton, "##damage", @@OnDamage)
         }
+        Ui::Row("##settings", UiStyle(), UiLayout(spacing = 8.0f)) {
+            Ui::Checkbox("##paused", g_state.paused)
+            Ui::Label("##paused_label", PauseLabel(g_state.paused), UiTheme::kMuted)
+        }
+        Ui::Label("##volume_label", "Volume {int(g_state.volume * 100.0f)}%", UiTheme::kMuted)
+        Ui::Slider("##volume", g_state.volume, 0.0f, 1.0f)
+    }
+    Ui::Label("##counter", "Fire {g_state.clicks} | Damage {g_state.damage_taken}", UiTheme::kMuted,
+              UiLayout(anchor = float2(0.0f, 1.0f), offset = float2(24.0f, -40.0f)))
 
-        Ui::Label("##counter", "Fire {g_state.clicks} | Damage {g_state.damage_taken}",
-                  kHpTextStyle, UiLayout(anchor = float2(0.0f, 1.0f), offset = float2(24.0f, -40.0f)))
+    if (g_pulse) {
+        g_pulse = false
+        Ui::Pulse("##hud")
     }
 }
 
-//! Game-side state the HUD renders; the game may also own it and pass values into a `Label`.
+//! Pause screen: a curtain over the frozen scene, its own widgets and its own ids. It shares the
+//! theme (and the volume slider's variable) with the HUD, nothing else.
+def private BuildPause() {
+    Ui::Group("##pause", UiTheme::kPauseCurtain, UiLayout(size = Ui::ViewportSize())) {
+        Ui::Panel("##menu", UiTheme::kPausePanel, UiLayout(anchor = float2(0.5f, 0.5f), spacing = 12.0f)) {
+            Ui::Label("##title", "Paused", UiTheme::kTitle)
+            Ui::Label("##hp", "HP {int(g_state.hp)} / {int(g_state.hp_max)}", UiTheme::kMuted)
+            Ui::Label("##volume_label", "Volume {int(g_state.volume * 100.0f)}%", UiTheme::kMuted)
+            Ui::Slider("##volume", g_state.volume, 0.0f, 1.0f)
+            Ui::Button(UiTheme::kPrimaryButton, "##resume", "Resume", @@OnResume)
+        }
+    }
+}
+
+// The registry lives in the script context, so it is filled when the module initializes — the
+// editor's Screens panel can list the screens before Play has ever started.
+[init]
+def private RegisterScreens() {
+    Ui::RegisterScreen("hud", @@BuildHud)
+    Ui::RegisterScreen("pause", @@BuildPause)
+}
+
+//! Declares the live screen for this frame. Which screen is live is game state, one line here.
+def public Frame() {
+    if (g_state.paused) {
+        Ui::FrameScreen("pause")
+    } else {
+        Ui::FrameScreen("hud")
+    }
+}
+
+//! Game-side state the screens render; the game may also own it and pass values into a `Label`.
 def public Hp() : float {
     return g_state.hp
 }
