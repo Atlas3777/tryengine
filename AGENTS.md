@@ -205,12 +205,13 @@ daslang -dry-run \
   анимации — в скриптах; геометрию строит C++ (`UiPass`), скрипт отдаёт только команды через
   `[export] get_ui_draw_cmds`. Звук наведения/нажатия — событие (`Ui::OnSound`), не
   воспроизведение: аудио-подсистемы в движке нет. Полный контракт — `engine_source/daslang/UI.md`.
-- Три слоя UI: виджеты (`tryengine/Ui`, повторяются), тема (`UiTheme`, ставится один раз
-  `Ui::SetTheme` из `[init]`: по стилю на вид + именованные стили и шаблоны кнопок), экраны
-  (`Ui::RegisterScreen("hud", @@BuildHud)` из `[init]`, рисуются `Ui::Screen`/`FrameScreen`;
+- Слои UI: виджеты-примитивы (`tryengine/Ui`, повторяются), составные виджеты игры
+  (`game/scripts/UiWidgets.das`: функция с id-параметром, без своего состояния и цветов),
+  тема (`game/scripts/UiTheme.das`, ставится один раз `Ui::SetTheme` из `[init]`: по стилю на
+  вид + именованные стили и шаблоны кнопок) и экраны (`game/scripts/GameUi.das`,
+  `Ui::RegisterScreen("hud", @@BuildHud)` из `[init]`, рисуются `Ui::Screen`/`FrameScreen`;
   экран уникален и собран из виджетов). У одинакового локального id в двух экранах разные
-  узлы: имя экрана входит в id. В игре тема — `game/scripts/UiTheme.das`, экраны —
-  `game/scripts/GameUi.das`; новые стили и цвета добавляются в тему, а не в разметку.
+  узлы: имя экрана входит в id. Новые стили и цвета добавляются в тему, а не в разметку.
 - UI не часть `GameUpdate`: `[export] GameUiFrame()` (`game/scripts/Game.das`) вызывает и
   `game_client`, и редактор, причём редактор — и на паузе (`Pause` замораживает `game_clock` и
   пропускает `GameUpdate`, но не экраны). UI живёт на своём клоке

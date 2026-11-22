@@ -13,6 +13,7 @@ Retained UI на daslang: узлы (виджеты) живут между кад
 | Виджеты | `engine_source/daslang/Ui.das` | `Panel`, `Label`, `Button`, `Slider`, ...; id, layout, hit-test, состояния, команды |
 | Типы | `engine_source/daslang/UiTypes.das` | `UiStyle`, `UiLayout`, `UiTheme`, `UiButtonTemplate`, `UiDrawCmd`, easing и цвета |
 | Тема игры | `game/scripts/UiTheme.das` | цвета, размеры, шаблоны кнопок, имена звуков — «как выглядит» |
+| Составные виджеты игры | `game/scripts/UiWidgets.das` | повторяющиеся пары/группы виджетов: `StatRow`, `MeterRow` |
 | Экраны игры | `game/scripts/GameUi.das` | «что и где стоит, что читает и что пишет» — по функции на экран |
 | Биндинги | `engine_source/graphics/src/Module_Ui.cpp` | измерение текста, размер окна, таблица строк кадра |
 | Проход | `engine_source/graphics/src/UiPass.cpp` | вершины, батчи, scissor, блендинг, SDF-текст |
@@ -148,6 +149,15 @@ let public kDangerButton = ButtonTemplate(
 Вызовы: `Ui::Button("##id", @@Action)`, `Ui::Button("##id", "Label", @@Action)`,
 `Ui::Button(tpl, "##id", @@Action)`, `Ui::Button(tpl, "##id", "Label", @@Action)`,
 `Ui::ButtonData(tpl, "##id", "Label", @@ActionData, data)`.
+
+## Свои виджеты
+
+Виджет-композиция — обычная функция над примитивами `tryengine/Ui`. Три правила держат её
+переиспользуемой: id приходит параметром, и локальные id детей живут под ним (две копии под
+разными родителями не конфликтуют); своего состояния нет — значения приходят аргументами,
+изменения уходят через `@@`/`var`; своих цветов нет — только стили темы. Пример —
+`game/scripts/UiWidgets.das`: HUD и экран паузы собираются из одних `StatRow`/`MeterRow`, но
+это разные экраны.
 
 ## Экраны
 
