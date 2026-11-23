@@ -18,6 +18,7 @@ require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
 require tryengine/FileReader
+require tryengine/Model
 require tryengine/Serializable
 require tryengine/TransformSystem
 require tryengine/Types
@@ -260,16 +261,35 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
         await_next_frame()
     }
 
-    let document = CachedDocument(resolved)
+    await(ApplyLoadedAsync(resolved, CachedDocument(resolved), on_loaded))
+}
+
+// Reading the text is the only asynchronous part of the editor path; resources are awaited
+// next, so `ApplyDocument` can hand every entity its pointers in the same apply. Keeping the
+// awaits at the top level of the body is what the coroutine transform requires.
+[async]
+def private ApplyLoadedAsync(resolved : string; document : Content::Document?; on_loaded : SceneCallback) : void {
+    var deps_meshes : array<uint64>
+    var deps_materials : array<uint64>
+    if (document != null) {
+        for (mesh in document.deps.meshes) {
+            deps_meshes |> push(mesh)
+        }
+        for (material in document.deps.materials) {
+            deps_materials |> push(material)
+        }
+    }
+
+    let resources_ready : bool <- await(Model::AwaitDeps(deps_meshes, deps_materials))
     if (document == null) {
         print("[SCENE ERROR] Scene '{resolved}' is not available or not a valid scene document.\n")
+    } elif (!resources_ready) {
+        print("[SCENE ERROR] Scene '{resolved}': meshes or materials failed to load.\n")
+    } elif (!ApplyDocument(document)) {
+        print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
     } else {
-        if (!ApplyDocument(document)) {
-            print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
-        } else {
-            NotifySceneLoaded(scene_context.scene_name, resolved, false)
-            invoke(on_loaded)
-        }
+        NotifySceneLoaded(scene_context.scene_name, resolved, false)
+        invoke(on_loaded)
     }
 }
 
@@ -316,6 +336,44 @@ def private ApplyDocument(document : Content::Document?) : bool {
 
     assume entities_arr = entities_cf.value as _array
 
+    // Appearance is resolved before the world is touched: the frame loop never loads, so a
+    // model that is not resident is a load error, not a pop-in. The scene takes its own
+    // references below, which is what keeps the resources alive after the loader lets go.
+    var ref_meshes : array<uint64>
+    var ref_materials : array<uint64>
+    resize(ref_meshes, length(entities_arr))
+    resize(ref_materials, length(entities_arr))
+    for (ent_idx in range(length(entities_arr))) {
+        ref_meshes[ent_idx] = 0ul
+        ref_materials[ent_idx] = 0ul
+
+        let ent_cf = entities_arr[ent_idx]
+        if (ent_cf == null || !(ent_cf.value is _object)) {
+            continue
+        }
+        assume ent_obj = ent_cf.value as _object
+        let model_cf = ent_obj?["model"] ?? null
+        if (model_cf == null || !(model_cf.value is _object)) {
+            continue
+        }
+        assume model_obj = model_cf.value as _object
+
+        let mesh_id = from_CF(model_obj?["mesh"] ?? null, type<uint64>)
+        let material_path = from_CF(model_obj?["material"] ?? null, type<string>)
+
+        let refs = Model::Resolve(mesh_id, material_path)
+        if (!refs.ok) {
+            print("[SCENE ERROR] Element #{ent_idx}: material '{material_path}' is not an existing authored .mat path; a derived material is reached through the mesh default.\n")
+            return false
+        }
+        if (mesh_id != 0ul && !Model::IsReady(refs)) {
+            print("[SCENE ERROR] Element #{ent_idx}: model is not loaded (mesh {mesh_id:d}, material {refs.material:d}); preload the scene first.\n")
+            return false
+        }
+        ref_meshes[ent_idx] = mesh_id
+        ref_materials[ent_idx] = refs.material
+    }
+
     // A root stores no `parentLocalId`; spelling the root parent id out is an error, not a
     // second way to say the same thing. Validate before the world is cleared, so a bad
     // document leaves the current scene alone.
@@ -340,6 +398,15 @@ def private ApplyDocument(document : Content::Document?) : bool {
     // entity components together), so the active scene releases exactly what it requested.
     clone(active_scene.requireMeshs, document.deps.meshes)
     clone(active_scene.requireMaterials, document.deps.materials)
+
+    // The document lists the explicit overrides; a model without one uses the mesh artifact
+    // default, so the scene takes its own reference on that material as well and releases it
+    // on unload together with everything else.
+    for (mat_id in ref_materials) {
+        if (mat_id != 0ul && !active_scene.requireMaterials.contains(mat_id)) {
+            active_scene.requireMaterials |> push(mat_id)
+        }
+    }
 
     for (mesh_id in active_scene.requireMeshs) {
         RequestLoadMesh(mesh_id)
@@ -387,6 +454,8 @@ def private ApplyDocument(document : Content::Document?) : bool {
         }
 
         local_of[ent_idx] = total_loaded
+        let entity_mesh = ref_meshes[ent_idx]
+        let entity_material = ref_materials[ent_idx]
         var new_eid : EntityId
         unsafe {
             new_eid = create_entity() @(eid : EntityId; var cmp : ComponentMap) {
@@ -404,6 +473,20 @@ def private ApplyDocument(document : Content::Document?) : bool {
                     }
                     let type_name = cf != null ? cf.typeName : ""
                     parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, type_name)
+                }
+                // The draw pointers are part of the entity from birth: adding them later
+                // would move the entity to another archetype and copy its whole row.
+                if (entity_mesh != 0ul) {
+                    var mesh_ptr := GetMeshPointer(entity_mesh)
+                    if (mesh_ptr != null) {
+                        cmp |> set(Model::MESH_POINTER_FIELD, mesh_ptr)
+                    }
+                }
+                if (entity_material != 0ul) {
+                    var material_ptr := GetMaterialPointer(entity_material)
+                    if (material_ptr != null) {
+                        cmp |> set(Model::MATERIAL_POINTER_FIELD, material_ptr)
+                    }
                 }
                 cmp |> set(RELATIONSHIP_FIELD, Relationship())
                 ApplyWorldTransform(cmp)
@@ -589,7 +672,7 @@ def private save_scene_to_config() : string {
         var entity_obj : table<string; StructField?>
         for (comp in decsState.allArchetypes[arch_idx].components) {
             // `eid` is structural; pointers are runtime references. The type decides the
-            // rest: a plain struct (WorldTransform, Relationship, LoadMarker) has no writer.
+            // rest: a plain struct (WorldTransform, Relationship) has no writer.
             if (comp.name == "eid" || comp.info.basicType == Type.tPointer) {
                 continue
             }
@@ -637,22 +720,20 @@ def private save_scene_to_config() : string {
     active_scene.requireMeshs |> clear()
     active_scene.requireMaterials |> clear()
 
-    query() $(meshGuid : uint64) {
-        if (!active_scene.requireMeshs.contains(meshGuid)) {
-            active_scene.requireMeshs |> push(meshGuid)
-        }
-    }
-
-    // The scene stores authored references, not ids: a project path for an authoritative
-    // material, a guid for an imported one. `active_scene` keeps resolved ids for release.
+    // The scene stores authored references, not ids: a mesh guide and an optional path to an
+    // authoritative `.mat`. The effective material (an override, or the mesh artifact
+    // default) is what the runtime releases, so the header carries the resolved id.
     var material_refs : array<string>
-    query() $(materialRef : MaterialRef) {
-        if (!empty(materialRef.path) && !material_refs.contains(materialRef.path)) {
-            material_refs |> push(materialRef.path)
+    query() $(model : ModelRender) {
+        if (model.mesh != 0ul && !active_scene.requireMeshs.contains(model.mesh)) {
+            active_scene.requireMeshs |> push(model.mesh)
         }
-        let material_id = ResolveAssetRef(materialRef.path)
-        if (material_id != 0ul && !active_scene.requireMaterials.contains(material_id)) {
-            active_scene.requireMaterials |> push(material_id)
+        if (!empty(model.material) && !material_refs.contains(model.material)) {
+            material_refs |> push(model.material)
+        }
+        let refs = Model::Resolve(model.mesh, model.material)
+        if (refs.material != 0ul && !active_scene.requireMaterials.contains(refs.material)) {
+            active_scene.requireMaterials |> push(refs.material)
         }
     }
 

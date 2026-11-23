@@ -1,101 +1,61 @@
 requireMeshs: u64[] = [
-	865305938932217682
-	15225032641802345646
-	5645386376281625173
-	14022145420905586130
-	9939011442206921372
-	3974438684548453052
-	8805375554757408310
-	1383099830046049005
-	17163688725366189899
-	12317566882587334480
-	16999883059519201023
-	6015981666543904051
-	12943321870661767894
-	12902887294098105753
-	14280026797114272922
-	3264295888716604816
+	726077074807720883
 	8990122205378089754
+	2574393259714014009
+	3264295888716604816
 	2663657617652471615
-	2494466235217284208
 	13451670437182869878
+	6031293327909370997
+	3974438684548453052
+	17929452535425380331
+	14022145420905586130
+	8888616393358494202
+	17143569731499808147
+	2494466235217284208
+	12902887294098105753
+	12943321870661767894
+	2423253071036424607
+	9939011442206921372
+	5645386376281625173
+	12277960924680109874
+	17159622881926059723
 	4772613053452011883
+	865305938932217682
+	12510219204091759889
+	13647479687799065192
+	9556154804787291447
+	15225032641802345646
+	1383099830046049005
 	12518670683282547220
+	6015981666543904051
+	14280026797114272922
 	13801240444677860220
+	8003310385447707957
+	8805375554757408310
+	16999883059519201023
+	12317566882587334480
 	4063772571789600505
 	12244621816552913114
 	2559054660261195379
 	10338540868120797012
 	11519894942357681709
+	14158238941320212813
+	735118097648291828
+	14843693320662042519
 	3424245366053686542
 	17575794542809730289
-	9556154804787291447
-	8888616393358494202
-	735118097648291828
-	17929452535425380331
-	12277960924680109874
-	17159622881926059723
-	2423253071036424607
-	2574393259714014009
-	12510219204091759889
-	6031293327909370997
 	1741344749783042632
-	14158238941320212813
-	13647479687799065192
-	726077074807720883
-	8003310385447707957
-	17143569731499808147
-	14843693320662042519
+	17163688725366189899
+	3081795527557720915
 ]
 requireMaterials: string[] = [
-	"guid:367640369586889046"
-	"guid:15403340543223465734"
-	"guid:364837714447146882"
-	"guid:8073860456126187167"
-	"guid:366664003261226903"
-	"guid:362855294981860899"
-	"guid:365801986144898704"
-	"guid:369628286610316084"
-	"guid:369631585145200717"
-	"guid:366656306679829426"
-	"guid:367645867145030101"
-	"guid:366650809121688371"
-	"guid:362864091074886587"
-	"guid:362866290098143009"
-	"guid:364842112493659726"
-	"guid:365805284679783337"
-	"guid:367639270075260835"
-	"guid:364838813958775093"
-	"guid:366649709610060160"
-	"guid:369624988075431451"
-	"guid:369626087587059662"
-	"guid:6101573881672223231"
-	"guid:363852552028459051"
-	"guid:363859149098228317"
-	"guid:362867389609771220"
-	"guid:362869588633027642"
-	"guid:362870688144655853"
-	"guid:365810782237924392"
-	"guid:363855850563343684"
-	"guid:365808583214667970"
-	"guid:367643668121773679"
-	"guid:367642568610145468"
-	"guid:363844855447061574"
-	"guid:367654663238055789"
-	"guid:365807483703039759"
-	"guid:365806384191411548"
-	"guid:363858049586600106"
-	"guid:366655207168201215"
-	"guid:366653008144944793"
-	"guid:364847610051800781"
-	"guid:362862991563258376"
 ]
 entities: Entity[] = [
 	{
 		tag: string = "Sketchfab_model"
 		transform: Transform = {
-			position: f32x3 = [0.5101775 14.819666 0.07787725]
-			rotation: f32x4 = [-2.9802326e-08 0 0 1]
+			position: f32x3 = [3.908124 15.89816 0]
+			rotation: f32x4 = [5.9604645e-08 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
 	}
@@ -541,513 +501,36 @@ entities: Entity[] = [
 		parentLocalId: u32 = 48
 	}
 	{
-		PointLight_color: f32x3 = [1 1 1]
-		PointLight_intensity: f32 = 1
-		PointLight_radius: f32 = 47.8
-		tag: string = "Light"
-		transform: Transform = {
-			position: f32x3 = [-3.075986 11.930556 4.9699326]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
+		model: ModelRender = {
+			mesh: u64 = 726077074807720883
+			material: string = ""
 		}
-	}
-	{
-		Camera_far_plane: f32 = 1000
-		Camera_fov: f32 = 70
-		Camera_near_plane: f32 = 0.1
-		tag: string = "GameCamera"
-		transform: Transform = {
-			position: f32x3 = [-3.3448794 6.4470253 2.5705445]
-			rotation: f32x4 = [-0.14970732 0 0 0.9887304]
-			scale: f32x3 = [1 1 1]
-		}
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367640369586889046"
-		}
-		meshGuid: u64 = 865305938932217682
-		tag: string = "Object_46"
+		tag: string = "Object_4"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 24
+		parentLocalId: u32 = 3
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:15403340543223465734"
+		model: ModelRender = {
+			mesh: u64 = 8990122205378089754
+			material: string = ""
 		}
-		meshGuid: u64 = 15225032641802345646
-		tag: string = "Object_54"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 28
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:364837714447146882"
-		}
-		meshGuid: u64 = 5645386376281625173
-		tag: string = "Object_38"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 20
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:8073860456126187167"
-		}
-		meshGuid: u64 = 14022145420905586130
-		tag: string = "Object_22"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 12
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:364837714447146882"
-		}
-		meshGuid: u64 = 9939011442206921372
-		tag: string = "Object_36"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 19
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:8073860456126187167"
-		}
-		meshGuid: u64 = 3974438684548453052
-		tag: string = "Object_18"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 10
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366664003261226903"
-		}
-		meshGuid: u64 = 8805375554757408310
-		tag: string = "Object_68"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 35
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362855294981860899"
-		}
-		meshGuid: u64 = 1383099830046049005
-		tag: string = "Object_56"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 29
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365801986144898704"
-		}
-		meshGuid: u64 = 17163688725366189899
-		tag: string = "Object_96"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 49
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:369628286610316084"
-		}
-		meshGuid: u64 = 12317566882587334480
-		tag: string = "Object_72"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 37
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:369631585145200717"
-		}
-		meshGuid: u64 = 16999883059519201023
-		tag: string = "Object_70"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 36
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366656306679829426"
-		}
-		meshGuid: u64 = 6015981666543904051
-		tag: string = "Object_60"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 31
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367645867145030101"
-		}
-		meshGuid: u64 = 12943321870661767894
-		tag: string = "Object_32"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 17
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367645867145030101"
-		}
-		meshGuid: u64 = 12902887294098105753
-		tag: string = "Object_30"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 16
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366650809121688371"
-		}
-		meshGuid: u64 = 14280026797114272922
-		tag: string = "Object_62"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 32
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362864091074886587"
-		}
-		meshGuid: u64 = 3264295888716604816
-		tag: string = "Object_10"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 6
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362866290098143009"
-		}
-		meshGuid: u64 = 8990122205378089754
 		tag: string = "Object_6"
 		transform: Transform = {
-			position: f32x3 = [-2.0722365 2.753369 -2.3841858e-07]
-			rotation: f32x4 = [0.006264299 0 0 0.99998045]
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
 		parentLocalId: u32 = 4
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362864091074886587"
+		model: ModelRender = {
+			mesh: u64 = 2574393259714014009
+			material: string = ""
 		}
-		meshGuid: u64 = 2663657617652471615
-		tag: string = "Object_12"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 7
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:364842112493659726"
-		}
-		meshGuid: u64 = 2494466235217284208
-		tag: string = "Object_28"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1.5757873 1 1.5188575]
-		}
-		parentLocalId: u32 = 15
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365805284679783337"
-		}
-		meshGuid: u64 = 13451670437182869878
-		tag: string = "Object_14"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 8
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367639270075260835"
-		}
-		meshGuid: u64 = 4772613053452011883
-		tag: string = "Object_44"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 23
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:364838813958775093"
-		}
-		meshGuid: u64 = 12518670683282547220
-		tag: string = "Object_58"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 30
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366649709610060160"
-		}
-		meshGuid: u64 = 13801240444677860220
-		tag: string = "Object_64"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 33
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:369624988075431451"
-		}
-		meshGuid: u64 = 4063772571789600505
-		tag: string = "Object_74"
-		transform: Transform = {
-			position: f32x3 = [-0.071293 1.1920929e-07 0.76485837]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 38
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:369626087587059662"
-		}
-		meshGuid: u64 = 12244621816552913114
-		tag: string = "Object_76"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 39
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:6101573881672223231"
-		}
-		meshGuid: u64 = 2559054660261195379
-		tag: string = "Object_78"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 40
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:363852552028459051"
-		}
-		meshGuid: u64 = 10338540868120797012
-		tag: string = "Object_80"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 41
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:363859149098228317"
-		}
-		meshGuid: u64 = 11519894942357681709
-		tag: string = "Object_82"
-		transform: Transform = {
-			position: f32x3 = [-0.8152776 -0.13858604 -1.3935959]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [12.846458 12.846458 12.846458]
-		}
-		parentLocalId: u32 = 42
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362867389609771220"
-		}
-		meshGuid: u64 = 3424245366053686542
-		tag: string = "Object_90"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 46
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362869588633027642"
-		}
-		meshGuid: u64 = 17575794542809730289
-		tag: string = "Object_92"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 47
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362870688144655853"
-		}
-		meshGuid: u64 = 9556154804787291447
-		tag: string = "Object_52"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 27
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365810782237924392"
-		}
-		meshGuid: u64 = 8888616393358494202
-		tag: string = "Object_24"
-		transform: Transform = {
-			position: f32x3 = [0 0.34460816 -5.9604645e-08]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 13
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:363855850563343684"
-		}
-		meshGuid: u64 = 735118097648291828
-		tag: string = "Object_86"
-		transform: Transform = {
-			position: f32x3 = [0 0.18559684 -1.4901161e-08]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 44
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365808583214667970"
-		}
-		meshGuid: u64 = 17929452535425380331
-		tag: string = "Object_20"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 11
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367643668121773679"
-		}
-		meshGuid: u64 = 12277960924680109874
-		tag: string = "Object_40"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 21
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367642568610145468"
-		}
-		meshGuid: u64 = 17159622881926059723
-		tag: string = "Object_42"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 22
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367645867145030101"
-		}
-		meshGuid: u64 = 2423253071036424607
-		tag: string = "Object_34"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 0 1]
-			scale: f32x3 = [1 1 1]
-		}
-		parentLocalId: u32 = 18
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:363844855447061574"
-		}
-		meshGuid: u64 = 2574393259714014009
 		tag: string = "Object_8"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -1057,23 +540,49 @@ entities: Entity[] = [
 		parentLocalId: u32 = 5
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:367654663238055789"
+		model: ModelRender = {
+			mesh: u64 = 3264295888716604816
+			material: string = ""
 		}
-		meshGuid: u64 = 12510219204091759889
-		tag: string = "Object_48"
+		tag: string = "Object_10"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 25
+		parentLocalId: u32 = 6
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365807483703039759"
+		model: ModelRender = {
+			mesh: u64 = 2663657617652471615
+			material: string = ""
 		}
-		meshGuid: u64 = 6031293327909370997
+		tag: string = "Object_12"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 7
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 13451670437182869878
+			material: string = ""
+		}
+		tag: string = "Object_14"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 8
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 6031293327909370997
+			material: string = ""
+		}
 		tag: string = "Object_16"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -1083,75 +592,62 @@ entities: Entity[] = [
 		parentLocalId: u32 = 9
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:365806384191411548"
+		model: ModelRender = {
+			mesh: u64 = 3974438684548453052
+			material: string = ""
 		}
-		meshGuid: u64 = 1741344749783042632
-		tag: string = "Object_94"
+		tag: string = "Object_18"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 48
+		parentLocalId: u32 = 10
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:363858049586600106"
+		model: ModelRender = {
+			mesh: u64 = 17929452535425380331
+			material: string = ""
 		}
-		meshGuid: u64 = 14158238941320212813
-		tag: string = "Object_84"
+		tag: string = "Object_20"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 43
+		parentLocalId: u32 = 11
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366655207168201215"
+		model: ModelRender = {
+			mesh: u64 = 14022145420905586130
+			material: string = ""
 		}
-		meshGuid: u64 = 13647479687799065192
-		tag: string = "Object_50"
+		tag: string = "Object_22"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 26
+		parentLocalId: u32 = 12
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362864091074886587"
+		model: ModelRender = {
+			mesh: u64 = 8888616393358494202
+			material: string = ""
 		}
-		meshGuid: u64 = 726077074807720883
-		tag: string = "Object_4"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0 0 -0.0065143323 0.9999788]
-			scale: f32x3 = [1 1.5488213 1]
-		}
-		parentLocalId: u32 = 3
-	}
-	{
-		materialRef: MaterialRef = {
-			path: string = "guid:366653008144944793"
-		}
-		meshGuid: u64 = 8003310385447707957
-		tag: string = "Object_66"
+		tag: string = "Object_24"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 34
+		parentLocalId: u32 = 13
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:364847610051800781"
+		model: ModelRender = {
+			mesh: u64 = 17143569731499808147
+			material: string = ""
 		}
-		meshGuid: u64 = 17143569731499808147
 		tag: string = "Object_26"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -1161,10 +657,400 @@ entities: Entity[] = [
 		parentLocalId: u32 = 14
 	}
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:362862991563258376"
+		model: ModelRender = {
+			mesh: u64 = 2494466235217284208
+			material: string = ""
 		}
-		meshGuid: u64 = 14843693320662042519
+		tag: string = "Object_28"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 15
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12902887294098105753
+			material: string = ""
+		}
+		tag: string = "Object_30"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 16
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12943321870661767894
+			material: string = ""
+		}
+		tag: string = "Object_32"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 17
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 2423253071036424607
+			material: string = ""
+		}
+		tag: string = "Object_34"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 18
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 9939011442206921372
+			material: string = ""
+		}
+		tag: string = "Object_36"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 19
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 5645386376281625173
+			material: string = ""
+		}
+		tag: string = "Object_38"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 20
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12277960924680109874
+			material: string = ""
+		}
+		tag: string = "Object_40"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 21
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 17159622881926059723
+			material: string = ""
+		}
+		tag: string = "Object_42"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 22
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 4772613053452011883
+			material: string = ""
+		}
+		tag: string = "Object_44"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 23
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 865305938932217682
+			material: string = ""
+		}
+		tag: string = "Object_46"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 24
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12510219204091759889
+			material: string = ""
+		}
+		tag: string = "Object_48"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 25
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 13647479687799065192
+			material: string = ""
+		}
+		tag: string = "Object_50"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 26
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 9556154804787291447
+			material: string = ""
+		}
+		tag: string = "Object_52"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 27
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 15225032641802345646
+			material: string = ""
+		}
+		tag: string = "Object_54"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 28
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 1383099830046049005
+			material: string = ""
+		}
+		tag: string = "Object_56"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 29
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12518670683282547220
+			material: string = ""
+		}
+		tag: string = "Object_58"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 30
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 6015981666543904051
+			material: string = ""
+		}
+		tag: string = "Object_60"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 31
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 14280026797114272922
+			material: string = ""
+		}
+		tag: string = "Object_62"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 32
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 13801240444677860220
+			material: string = ""
+		}
+		tag: string = "Object_64"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 33
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 8003310385447707957
+			material: string = ""
+		}
+		tag: string = "Object_66"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 34
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 8805375554757408310
+			material: string = ""
+		}
+		tag: string = "Object_68"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 35
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 16999883059519201023
+			material: string = ""
+		}
+		tag: string = "Object_70"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 36
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12317566882587334480
+			material: string = ""
+		}
+		tag: string = "Object_72"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 37
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 4063772571789600505
+			material: string = ""
+		}
+		tag: string = "Object_74"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 38
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 12244621816552913114
+			material: string = ""
+		}
+		tag: string = "Object_76"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 39
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 2559054660261195379
+			material: string = ""
+		}
+		tag: string = "Object_78"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 40
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 10338540868120797012
+			material: string = ""
+		}
+		tag: string = "Object_80"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 41
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 11519894942357681709
+			material: string = ""
+		}
+		tag: string = "Object_82"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [11 11 11]
+		}
+		parentLocalId: u32 = 42
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 14158238941320212813
+			material: string = ""
+		}
+		tag: string = "Object_84"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 43
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 735118097648291828
+			material: string = ""
+		}
+		tag: string = "Object_86"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 44
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 14843693320662042519
+			material: string = ""
+		}
 		tag: string = "Object_88"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]
@@ -1172,5 +1058,116 @@ entities: Entity[] = [
 			scale: f32x3 = [1 1 1]
 		}
 		parentLocalId: u32 = 45
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 3424245366053686542
+			material: string = ""
+		}
+		tag: string = "Object_90"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 46
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 17575794542809730289
+			material: string = ""
+		}
+		tag: string = "Object_92"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 47
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 1741344749783042632
+			material: string = ""
+		}
+		tag: string = "Object_94"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 48
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 17163688725366189899
+			material: string = ""
+		}
+		tag: string = "Object_96"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 49
+	}
+	{
+		model: ModelRender = {
+			mesh: u64 = 3081795527557720915
+			material: string = ""
+		}
+		tag: string = "Vulcan_Scarlet_Lance_Material_Vulcan_0"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 102
+	}
+	{
+		PointLight_color: f32x3 = [1 1 1]
+		PointLight_intensity: f32 = 2
+		PointLight_radius: f32 = 111
+		tag: string = "Light"
+		transform: Transform = {
+			position: f32x3 = [-1.0172576 8.776163 4.50139]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		tag: string = "Sketchfab_model"
+		transform: Transform = {
+			position: f32x3 = [2.0523033 11.138992 2.3841858e-07]
+			rotation: f32x4 = [-1.6653345e-16 0 1 -1.3591729e-16]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		tag: string = "c431403aacdb4cbca394bbd8f5b0198d.fbx"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0.7071068 0 0 0.7071068]
+			scale: f32x3 = [0.01 0.01 0.01]
+		}
+		parentLocalId: u32 = 99
+	}
+	{
+		tag: string = "RootNode"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 100
+	}
+	{
+		tag: string = "Vulcan_Scarlet_Lance"
+		transform: Transform = {
+			position: f32x3 = [1.1601142e-05 177.45967 3.553183e-08]
+			rotation: f32x4 = [-0.7071068 0 0 0.7071067]
+			scale: f32x3 = [100 100 100]
+		}
+		parentLocalId: u32 = 101
 	}
 ]

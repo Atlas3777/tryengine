@@ -5,12 +5,12 @@ module AssetPicker shared public
 
 // Универсальный выбор ассета для полей инспектора и других редакторских панелей.
 //
-// Тип ассета задаёт сам тип значения: поле — это структура-обёртка с аннотацией
-//   [asset(kind = "data", title = "Material", ext = ".mat")]
-//   struct MaterialRef { path : string }
-// kind — домен хранения, ext фильтрует всё дерево домена (не подпапку).
-// Инспектор находит такую обёртку по имени типа поля, поэтому отдельный реестр видов
-// и привязка "имя компонента -> kind" больше не нужны.
+// Вид ассета задаёт аннотация самого поля:
+//   @asset = "data:mat"
+//   material : string
+// kind — домен хранения, ext фильтрует всё дерево домена (не подпапку). Инспектор
+// разбирает аннотацию из apply-схемы (`AssetFieldInfo`), поэтому отдельный реестр видов
+// и привязка "имя компонента -> kind" не нужны.
 //
 // Список строится через FileSystemUtils.ForEachFile, то есть по кешу ревизии дерева;
 // сам picker не хранит ни список файлов, ни версию дерева.
@@ -41,18 +41,18 @@ var private g_filter : TextFilterState
 var private g_popup : PopupState
 var private g_state : AssetPickerState
 
-// type_name — имя структуры-обёртки, а не зарегистрированный строковый kind.
+// info — разобранная аннотация поля (@asset = "kind:ext").
+// display_name — подпись поля, она же заголовок popup'а.
 // owner_key — идентификатор поля, открывшего picker: popup рисуется только под ним,
 // поэтому один и тот же state не конфликтует между полями.
-def public OpenAssetPicker(type_name : string; current_ref : string; owner_key : string) {
-    var info : AssetTypeInfo
-    if (!GetAssetTypeInfo(type_name, info)) {
+def public OpenAssetPicker(info : AssetFieldInfo; display_name : string; current_ref : string; owner_key : string) {
+    if (!info.has || !empty(info.error)) {
         return
     }
 
     g_state.active = true
     g_state.owner_key = owner_key
-    g_state.title = AssetTitleOf(info)
+    g_state.title = display_name
     g_state.domain = AssetDomainOfKind(info.kind)
     g_state.ext_key = asset_ext_key(info.ext)
     g_state.current_ref = current_ref

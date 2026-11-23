@@ -71,11 +71,18 @@ inline void CollectPrefabDependencies(eastl::string_view text, const AssetRegist
         if (!node)
             continue;
 
-        const uint64_t mesh = ConfigUInt64(FindField(*node, "meshGuid"));
+        // `model` = ModelRender: гид меша плюс необязательный оверрайд материала путём.
+        // Материал по умолчанию приходит из артефакта меша и собирается в BuildSystem.
+        const ConfigField* model_field = FindField(*node, "model");
+        const ConfigObject* model = model_field ? GetObject(model_field->value) : nullptr;
+        if (!model)
+            continue;
+
+        const uint64_t mesh = ConfigUInt64(FindField(*model, "mesh"));
         if (mesh != 0)
             out.meshes.push_back(mesh);
 
-        if (const ConfigField* ref_field = FindField(*node, "materialRef")) {
+        if (const ConfigField* ref_field = FindField(*model, "material")) {
             const ConfigObject* ref_obj = GetObject(ref_field->value);
             if (!ref_obj)
                 continue;
@@ -83,7 +90,7 @@ inline void CollectPrefabDependencies(eastl::string_view text, const AssetRegist
             if (!path_field)
                 continue;
             const auto* ref = eastl::get_if<eastl::string>(&path_field->value);
-            if (!ref)
+            if (!ref || ref->empty())
                 continue;
             const auto id = registry.ResolveRef(*ref);
             if (id.has_value() && *id != 0)

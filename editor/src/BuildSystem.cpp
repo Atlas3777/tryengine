@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include "../../engine_source/resources/include/engine/resources/binary/AssetPakBinary.hpp"
+#include "../../engine_source/resources/include/engine/resources/binary/MeshBinary.hpp"
 #include "engine/graphics/MaterialConfig.hpp"
 #include "engine/resources/AssetBytes.hpp"
 #include "engine/resources/AssetPak.hpp"
@@ -36,6 +37,24 @@ struct ContentFile {
     uint64_t id = 0;
     eastl::vector<uint8_t> data;
 };
+
+// Материал по умолчанию из артефакта меша (0, если его нет или артефакт не читается).
+// Гид меша адресует только геометрию, поэтому пак обязан положить этот материал и его
+// шейдер/текстуры: иначе рантайм получит меш, которому нечем рисоваться.
+tryengine::async::Task<uint64_t> ReadMeshDefaultMaterial(tryengine::resources::AsyncFileManager& file_manager,
+                                                         tryengine::resources::AssetRegistry& registry,
+                                                         uint64_t mesh_id) {
+    auto bytes = co_await tryengine::resources::ReadAssetBytes(file_manager, registry, mesh_id);
+    if (!bytes.has_value())
+        co_return 0;
+
+    auto header =
+        tryengine::resources::MeshBinary::UnpackHeader(eastl::span<const uint8_t>(bytes->data(), bytes->size()));
+    if (!header.has_value())
+        co_return 0;
+
+    co_return header->default_material;
+}
 
 }  // namespace
 
@@ -92,6 +111,16 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     // Внутренние списки зависимостей для каждой сцены (не лезем в SceneDTO)
     eastl::vector<eastl::vector<uint64_t>> per_scene_shaders(scenes.size());
     eastl::vector<eastl::vector<uint64_t>> per_scene_textures(scenes.size());
+
+    // 0. Материалы по умолчанию приходят из артефактов мешей. Это делается до разрешения
+    // материалов, чтобы шейдеры и текстуры дефолтов попали в тот же пак, что и меш.
+    for (size_t i = 0; i < scenes.size(); ++i) {
+        for (const uint64_t mesh : scenes[i].meshes) {
+            auto material = co_await ReadMeshDefaultMaterial(file_m_, res_m_.GetAssetRegistry(), mesh);
+            if (material.has_value() && *material != 0)
+                scenes[i].mats.push_back(*material);
+        }
+    }
 
     // 1. Резолвим зависимости материалов через ResourceManager
     LogInfo("Resolving material dependencies...");
@@ -189,6 +218,13 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
         }
 
         content_files.push_back(eastl::move(file));
+    }
+
+    // Меши префабов тоже несут свой дефолтный материал: он уезжает в common вместе с ними.
+    for (const uint64_t mesh : common_dto.meshes) {
+        auto material = co_await ReadMeshDefaultMaterial(file_m_, res_m_.GetAssetRegistry(), mesh);
+        if (material.has_value() && *material != 0)
+            common_dto.mats.push_back(*material);
     }
 
     // Материалы (общие и из префабов) тянут за собой шейдеры и текстуры.

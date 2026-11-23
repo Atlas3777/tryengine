@@ -56,13 +56,13 @@
   функция отдаёт `null`.
 - Панель — `editor/daslang/Material.das`. При старте сама загружает
   `game/data/materials/standard.mat`, дальше следует за выделением (галка Follow
-  selection): компонент `materialRef` — обёртка `MaterialRef(path)` (`"путь"` или
-  `"guid:<id>"`) -> `ResolveAssetRef` -> путь из `AssetRegistry` (`GetAssetFilePath`) ->
-  файл. Follow selection реагирует не только на смену `selected_eid`, но и на изменение
-  `materialRef.path` у той же сущности: иначе после выбора материала через инспектор
-  панель продолжала показывать и править прошлый материал. `IsImportedAsset(id)`
-  отличает артефакт импортёра от авторитетного файла: импортированный показывается
-  read-only и не пишется.
+  selection): материал сущности — это оверрайд `model.material`, а если он пуст —
+  дефолт из артефакта меша (`MeshDefaultMaterial`), дальше -> путь из `AssetRegistry`
+  (`GetAssetFilePath`) -> файл. Follow selection реагирует не только на смену
+  `selected_eid`, но и на смену эффективного материала у той же сущности.
+  `IsImportedAsset(id)` отличает артефакт импортёра от авторитетного файла:
+  импортированный показывается read-only, не пишется и не назначается другой сущности
+  (для переиспользования его сохраняют копией в `data/`).
 - Правка применяется сразу в живой `Material`: `ApplyMaterialConfigText` парсит тот же
   ConfigFormat, который записал бы Save, и пишет значения через `SetParamRaw` в замапленный
   UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). UBO и текстуры не пересоздаются,
@@ -70,8 +70,9 @@
   остаётся в `retired_descriptor_sets` материала), иначе обновление набора, который уже
   используется записанным command buffer, даёт
   `VUID-vkUpdateDescriptorSets-None-03047`. После Save перезагружать материал нельзя:
-  указатель в компоненте сущности станет висячим. Apply пишет в `materialRef.path`, а не
-  id: путь для `.mat`, `guid:<id>` для импортированного материала.
+  указатель в компоненте сущности станет висячим. Apply пишет путь в `model.material`
+  (не id) и сразу просит `Model::ApplyToEntity` поставить указатели; в кадре загрузки нет,
+  поэтому материал должен быть готов на момент Apply.
 - `CF(table)` забирает таблицу по move (`_object <- v`). В `WriteMaterial` поэтому
   `params` и `textures` сначала копируются в промежуточную таблицу (`copy := m.params`),
   и только она уходит в `CF`. Без копии `LiveApply`/`Save` опустошали глобальный
@@ -85,26 +86,25 @@
 ## Инспектор: аннотации, asset picker, удаление компонентов
 
 - Схема полей `[DecsSerializable]`-структур приходит из `apply` (`tryengine/Serializable`),
-  вместе с аннотациями. Инспектор понимает `@hide`, `@title`, `@min`, `@max`, `@speed`,
-  `@readonly`. Asset picker задаётся не аннотацией поля, а типом значения.
-- Обёртка ассета — структура с полем `path` и аннотацией
-  `[asset(kind = "data", title = "Material", ext = ".mat")]` (`tryengine/AssetKind`).
-  `kind` — это домен хранения (`engine`/`game`/`content`/`data`), а не подпапка:
-  `ext` фильтрует всё дерево домена, поэтому сцены и префабы ищутся по всему `content`.
-  `title` — только подпись popup'а, можно не указывать (тогда берётся расширение).
-  Инспектор находит обёртку по имени типа поля/компонента и рисует слева от input кнопку
-  `...`, которая открывает `tryeditor/AssetPicker`. Отдельного реестра видов и привязки
-  «имя компонента -> kind» больше нет; `AssetPicker` берёт домен и расширение из
-  аннотации типа. `MaterialRef` лежит в `tryengine/Types` (его читает `Render.das`),
-  `SceneRef`/`PrefabRef` — в `editor/daslang/FileSystemUtils.das`.
-- Типизированный обход дерева — `FileSystemUtils.ForEachAsset<T>`: `static_let` внутри
-  generic-функции держит кеш и ревизию по одному на тип, поэтому вызывающий код не хранит
-  ни список файлов, ни версию дерева. Пример — `BuildManager.DrawBuildManager`.
-  Для произвольного домена без типа остаётся `ForEachFile(domain, ext_key)`.
-- `materialRef` теперь структура `MaterialRef(path)`, поэтому picker работает и для
-  динамического компонента без отдельной регистрации. Для ручной проверки есть компонент
-  `PickerDemo` (`editor/daslang/PickerTest.das`): `Add component` -> `PickerDemo`, поле
-  `material` имеет тип `MaterialRef`.
+  вместе с аннотациями. Инспектор понимает `@hide`, `@min`, `@max`, `@speed`, `@readonly`
+  и `@asset = "kind:ext"`.
+- Asset picker задаётся аннотацией самого поля, а не типом значения:
+  `@asset = "data:mat"` над обычным `string`. `kind` — домен хранения
+  (`engine`/`game`/`content`/`data`), а не подпапка; `ext` фильтрует всё дерево домена,
+  поэтому сцены и префабы ищутся по всему `content`. Точка в `ext` необязательна:
+  `data:mat` и `data:.mat` — одно и то же. Разбор аннотации — `tryengine/AssetKind`
+  (`ParseAssetField` -> `AssetFieldInfo`), сам список — `tryeditor/AssetPicker`, который
+  рисует input с кнопкой `...`. Отдельного реестра видов и привязки «имя компонента ->
+  kind» нет; malformed-аннотация выводится текстом вместо виджета.
+- Обёрток-структур (`MaterialRef`, `SceneRef`, `PrefabRef`) больше нет: ссылка на ассет —
+  это строка. `model.material` (`tryengine/Types`) — путь к авторитетному `.mat`,
+  пустая строка означает материал по умолчанию из артефакта меша.
+- Обход дерева — `FileSystemUtils.ForEachFile(domain, ext_key)`, ключ расширения даёт
+  `asset_ext_key(".scene")`; списком — `FindFiles`. Пример — `BuildManager`.
+- Указатели модели ставит редактор, а не проход кадра: после отрисовки компонентов
+  `Inspector` зовёт `Model::ApplyToEntity(selected_eid, false)`, поэтому пикер материала
+  применяется сразу. `ApplyToEntity` помнит последнюю пару (eid, mesh, material) и на
+  неизменной модели не пишет и не повторяет `RequestLoad*`.
 - Удаление рисуется кнопкой в теле каждого компонента. Для зарегистрированных компонентов
   и шаблонов вызывается `EcsCompName.cmp_remover`; для динамических имён — прямой
   `decs::remove`. Удаление откладывается до конца обхода архетипа: `commit()` меняет
@@ -122,10 +122,8 @@
   Расширение строкой не хранится: поиск "все `.mat` в `data`" — одно сравнение `uint64` на
   файл. Ключ считает `ExtKey`, он же отдаётся скрипту как `asset_ext_key`.
 - `UiTree::Version()` — ревизия дерева, растёт на любом изменении. Скрипты кешируют обход
-  по ней: `FileSystemUtils.das` (`ForEachFile`/`ForEachAsset` -> `AssetFileRef`) помнит
-  ревизию запроса и в кеше держит только индексы узлов, поэтому кеш не может пережить свои
-  строки. `ForEachAsset<T>` дополнительно сверяет эпоху `RefreshAssetTrees`, потому что
-  его `static_let`-кеш живёт по одному на тип и снаружи не очищается.
+  по ней: `FileSystemUtils.das` (`ForEachFile` -> `AssetFileRef`) помнит ревизию запроса и
+  в кеше держит только индексы узлов, поэтому кеш не может пережить свои строки.
 - Файлового вотчера ещё нет (`FileWatcher` — заглушка): новые файлы появляются в деревьях
   только после `rebuild_asset_trees()` (кнопка Refresh в Asset Browser, обёртка
   `RefreshAssetTrees()`), которая заново сканирует все четыре корня.
@@ -205,8 +203,9 @@
   создании), а `relationship` собирается при загрузке. Сохранение определяется типом:
   компонент пишется, если у его типа есть writer — встроенный скаляр или
   `[DecsSerializable]`-структура. Обычная структура (`WorldTransform`, `Relationship`,
-  `LoadMarker`, `EditorCameraTag`) writer'а не имеет, поэтому scene save, prefab compile/save
-  и Inspector её пропускают. `eid` — единственное структурное исключение.
+  `EditorCameraTag`) writer'а не имеет, поэтому scene save, prefab compile/save
+  и Inspector её пропускают; указатели `mesh`/`material` — это компоненты-указатели,
+  их отсекает `Type.tPointer`. `eid` — единственное структурное исключение.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
@@ -246,7 +245,7 @@
   `Prefab::Spawn` как cache-hit.
 - `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
   выделенную ветку в pre-order и выкидывает `eid` и всё, у чего нет writer'а
-  (`relationship`, `_world`, `meshLoad`/`materialLoad`, `editorCameraTag`); позиция корня
+  (`relationship`, `_world`, указатели `mesh`/`material`, `editorCameraTag`); позиция корня
   обнуляется (rotation/scale сохраняются), дерево ассетов обновляется.
 - Билд кладёт **все** `.prefab` из `game/content` и все файлы `game/data` в
   `common_dto.pak`, вместе с мешами и материалами, которые эти префабы упоминают
@@ -305,10 +304,12 @@
   после спавна, без прохода. Сцена после `commit()` зовёт `UpdateWorldTransforms()` сама:
   редактор грузит сцену уже после `EngineUpdate`, иначе дети один кадр показывались бы в
   локальных позах.
-- Формат префаба — `version: u32 = 5`, трансформ узла пишется как `transform: Transform = {
-  position: ..., rotation: ..., scale: ... }`. Импортёр glTF (`GetVersion() == 9`) пишет тот
-  же формат, поэтому старые артефакты переимпортируются. `Prefab::BuildPrefabTextFromEntity`
-  обнуляет `transform.position` корня, rotation/scale сохраняет.
+- Формат префаба — `version: u32 = 7`, трансформ узла пишется как `transform: Transform = {
+  position: ..., rotation: ..., scale: ... }`, внешность — `model: ModelRender = { mesh: ...,
+  material: "" }`. Импортёр glTF (`GetVersion() == 12`) пишет тот же формат и
+  печёт материал по умолчанию в шапку меш-артефакта, поэтому старые артефакты
+  переимпортируются. `Prefab::BuildPrefabTextFromEntity` обнуляет `transform.position`
+  корня, rotation/scale сохраняет.
 - Профиль прохода на 10 000 сущностях (JIT): скан двумя `query` ~0.08 µs/сущность, обход с
   композицией и сравнением ~0.27. Прямой обход `decsState.allArchetypes[...]` пробовали — на
   скане он *медленнее* (0.21 µs/сущность: ручной `memcpy` и поэлементные копии дороже

@@ -530,6 +530,14 @@ def private Advance() {
                 }
                 if (ResourceIsReadyMesh(id)) {
                     g_resource_jobs[index].done = true
+                    // Материал по умолчанию лежит в артефакте меша, поэтому он известен
+                    // только теперь: очередь ресурсов пополняется по ходу проверки, и
+                    // загрузка не считается законченной, пока он не готов.
+                    let default_material = MeshDefaultMaterial(id)
+                    if (default_material != 0ul) {
+                        AddResourceJob(ResourceJobKind.Material, default_material)
+                        complete = false
+                    }
                 } else {
                     complete = false
                 }

@@ -40,6 +40,7 @@ public:
         mesh.attribute_stride = header.attribute_stride;
         mesh.index_type = IndexFormat(header.index_format);
         mesh.num_indices = header.index_count;
+        mesh.default_material = header.default_material;
 
         co_await async::ExecutorSwitch{async::MainThread()};
 

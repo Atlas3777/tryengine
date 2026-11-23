@@ -17,8 +17,8 @@ module Prefab shared public
 //!  * a parent exists and is stored before its child (pre-order);
 //!  * `eid`, `relationship` and every other runtime-only component are forbidden.
 //!
-//! Node fields are plain ConfigFormat component names (`tag`, `meshGuid`, `transform`,
-//! `materialRef`, ...). Transforms are local to the parent. The compiled template also
+//! Node fields are plain ConfigFormat component names (`tag`, `model`, `transform`, ...).
+//! Transforms are local to the parent. The compiled template also
 //! carries the derived `_world` component, composed once at compile time, so spawn never
 //! runs the transform pass: it only shifts every node by the spawn origin, which is exactly
 //! how the root moves to the spawn point.
@@ -43,12 +43,14 @@ require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
 require tryengine/FileReader
+require tryengine/Model
 require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/TransformSystem
 require tryengine/Types
+require tryResources
 
-let public PREFAB_VERSION : uint = 5u
+let public PREFAB_VERSION : uint = 7u
 let public PREFAB_ROOT_PARENT : uint = 4294967295u
 
 // One node of a compiled prefab. `values` is the component map already resolved from
@@ -65,6 +67,9 @@ struct public PrefabNode {
     local       : Transform = Transform()
     world       : WorldTransform = WorldTransform()
     values      : decs::ComponentMap
+    // The authored appearance, repeated here because spawn may not query the const
+    // `values`: `mesh` is the guide, `material` the optional override.
+    model       : ModelRender = ModelRender()
 }
 
 //! Nodes that share one component set. DECS creates a whole archetype row at once, so a
@@ -243,6 +248,8 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             }
         }
 
+        node.model = decs::get(node.values, Model::MODEL_FIELD, ModelRender())
+
         nodes |> emplace(node)
 
         local_ids[local_id] = node_index
@@ -395,6 +402,8 @@ def public InvalidatePrefab(name_or_path : string) {
 var private g_spawn_ids : array<EntityId>
 var private g_spawn_component_indices : array<int>
 var private g_spawn_world_index : int
+var private g_spawn_mesh_index : int
+var private g_spawn_material_index : int
 
 [profile]
 def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : EntityId {
@@ -412,6 +421,25 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
         return INVALID_ENTITY_ID
     }
 
+    // Appearance is resolved and reserved before anything is created: the frame loop never
+    // loads, so a model that is not resident is a spawn error. The reservation is the
+    // entity's own reference, which outlives the loader's.
+    var model_refs : array<Model::ModelRefs>
+    resize(model_refs, entity_count)
+    for (node_index in range(entity_count)) {
+        let model = data.nodes[node_index].model
+        let refs = Model::Resolve(model.mesh, model.material)
+        if (!refs.ok) {
+            print("[PREFAB ERROR] prefab '{data.path}' node {node_index}: material '{model.material}' is not an existing authored .mat path; a derived material is reached through the mesh default\n")
+            return INVALID_ENTITY_ID
+        }
+        if (model.mesh != 0ul && !Model::Reserve(refs)) {
+            print("[PREFAB ERROR] prefab '{data.path}': mesh {model.mesh:d} / material {refs.material:d} is not loaded; add the prefab to the LoaderRequest first\n")
+            return INVALID_ENTITY_ID
+        }
+        model_refs[node_index] = refs
+    }
+
     resize(g_spawn_ids, entity_count)
 
     // One archetype row per group: DECS resolves the archetype and grows the component arrays
@@ -423,6 +451,12 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
         for (cv in data.nodes[first_node].values) {
             prototype |> push(cv)
         }
+        // The draw pointers are part of every spawned entity from birth: they are written
+        // below with `set_direct_at`, so no entity changes archetype after creation.
+        var no_mesh : TryMesh? = null
+        var no_material : TryMat? = null
+        prototype |> set(Model::MESH_POINTER_FIELD, no_mesh)
+        prototype |> set(Model::MATERIAL_POINTER_FIELD, no_material)
         g_spawn_component_indices |> clear()
 
         let group_size = length(data.groups[group_index].nodes)
@@ -434,6 +468,8 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
                     g_spawn_component_indices |> push(decs::find_component_index(arch, cv.name))
                 }
                 g_spawn_world_index = decs::find_component_index(arch, WORLD_FIELD)
+                g_spawn_mesh_index = decs::find_component_index(arch, Model::MESH_POINTER_FIELD)
+                g_spawn_material_index = decs::find_component_index(arch, Model::MATERIAL_POINTER_FIELD)
             }
 
             decs::set_direct_at(arch, g_spawn_component_indices[0], idx, eid)
@@ -449,6 +485,20 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
                         addr(cv.data),
                         arch.components[component_index].stride
                     )
+                }
+            }
+
+            let refs = model_refs[node_index]
+            if (refs.mesh != 0ul) {
+                var mesh_ptr := Model::MeshPointer(refs)
+                if (mesh_ptr != null) {
+                    decs::set_direct_at(arch, g_spawn_mesh_index, idx, mesh_ptr)
+                }
+            }
+            if (refs.material != 0ul) {
+                var material_ptr := Model::MaterialPointer(refs)
+                if (material_ptr != null) {
+                    decs::set_direct_at(arch, g_spawn_material_index, idx, material_ptr)
                 }
             }
 
@@ -565,6 +615,25 @@ def public LoadPrefabFile(path : string) : bool {
 def public SpawnPrefab(path : string; origin : float3) : EntityId {
     let loaded : bool <- await(LoadPrefabFile(path))
     if (!loaded) {
+        yield INVALID_ENTITY_ID
+    }
+
+    // Drop-in spawn has no Loader behind it, so it waits for the resources itself; the sync
+    // `Spawn` above requires them to be resident already.
+    let canonical = Content::ResolvePath(DocumentKind.Prefab, path)
+    var deps <- AssetCache::Dependencies(canonical)
+    var meshes : array<uint64>
+    var materials : array<uint64>
+    for (mesh in deps.meshes) {
+        meshes |> push(mesh)
+    }
+    for (material in deps.materials) {
+        materials |> push(material)
+    }
+
+    let resources_ready : bool <- await(Model::AwaitDeps(meshes, materials))
+    if (!resources_ready) {
+        print("[PREFAB ERROR] '{canonical}': meshes or materials failed to load\n")
         yield INVALID_ENTITY_ID
     }
 

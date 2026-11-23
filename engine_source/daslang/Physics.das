@@ -83,7 +83,6 @@ struct RigidBody {
     //! PhysicsMotion as an int: 0 static, 1 kinematic, 2 dynamic.
     @min = 0
     @max = 2
-    @title = "Motion (0 static, 1 kinematic, 2 dynamic)"
     motion : int = int(PhysicsMotion.Dynamic)
     @min = 0.001
     mass : float = 1.0f

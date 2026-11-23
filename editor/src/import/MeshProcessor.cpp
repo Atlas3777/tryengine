@@ -277,6 +277,7 @@ tryengine::Result<eastl::vector<uint8_t>> MeshProcessor::ProcessPrimitive(const 
     header.attribute_flags = static_cast<MeshAttributeFlags>(attr_flags);
     header.index_format = target_index_format;
     header.radius = radius;
+    header.default_material = settings.default_material;
     if (settings.generate_aabb) {
         std::memcpy(header.bbox_min, min_bounds, sizeof(min_bounds));
         std::memcpy(header.bbox_max, max_bounds, sizeof(max_bounds));

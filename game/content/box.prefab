@@ -1,11 +1,11 @@
-version: u32 = 5
-name: string = "cube"
+version: u32 = 7
+name: string = "box"
 nodes: PrefabNode[] = [
 	{
-		materialRef: MaterialRef = {
-			path: string = "guid:369624988075431451"
+		model: ModelRender = {
+			mesh: u64 = 4063772571789600505
+			material: string = ""
 		}
-		meshGuid: u64 = 4063772571789600505
 		tag: string = "Object_74"
 		transform: Transform = {
 			position: f32x3 = [0 0 0]

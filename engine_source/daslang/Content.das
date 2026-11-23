@@ -26,7 +26,6 @@ require daslib/strings_boost
 require tryengine/Assets
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
-require tryengine/Types
 require tryResources
 
 enum public DocumentKind {
@@ -150,16 +149,21 @@ def private ParseAssetRefArray(cf : StructField?) : array<uint64> {
     return <- res
 }
 
-// Dependencies live on the item's components. `materialRef` is the only material form.
+// Dependencies live on the item's components. `model` is the only appearance form: a mesh
+// guide plus an optional authored `.mat` override. The mesh default material is added by the
+// loader once the mesh artifact is loaded, so it is not collected here.
 def private CollectObjectDependencies(var deps : Dependencies; obj : table<string; StructField?> const) {
-    AddMeshDependency(deps, from_CF(obj?["meshGuid"] ?? null, type<uint64>))
+    let model_cf = obj?["model"] ?? null
+    if (model_cf == null || !(model_cf.value is _object)) {
+        return
+    }
+    assume model_obj = model_cf.value as _object
 
-    let material_cf = obj?["materialRef"] ?? null
-    if (material_cf != null && material_cf.value is _object) {
-        let material = from_CF(material_cf, type<MaterialRef>)
-        if (!empty(material.path)) {
-            AddMaterialDependency(deps, ResolveAssetRef(material.path))
-        }
+    AddMeshDependency(deps, from_CF(model_obj?["mesh"] ?? null, type<uint64>))
+
+    let material_path = from_CF(model_obj?["material"] ?? null, type<string>)
+    if (!empty(material_path)) {
+        AddMaterialDependency(deps, ResolveAssetRef(material_path))
     }
 }
 

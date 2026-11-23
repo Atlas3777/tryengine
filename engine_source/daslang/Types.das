@@ -7,11 +7,18 @@ require daslib/decs_boost
 require tryengine/EcsMacro
 require tryengine/ConfigFormatBoost
 require tryengine/Serializable
-require tryengine/AssetKind
 
-[asset(kind = "data", title = "Material", ext = ".mat"), DecsSerializable]
-struct MaterialRef {
-    path : string
+// Authored appearance of one entity, one component. `mesh` is the imported mesh guide per
+// primitive; `material` is an optional override to an authoritative `.mat` — a derived
+// (imported) material is reached through its mesh artifact default, never addressed from
+// authored content. An empty path means "the material the mesh artifact carries by default".
+// The pair of pointers a draw call needs lives in the runtime-only `mesh`/`material`
+// components, resolved once at entity creation — the frame loop never loads anything.
+[EcsComponent(name = "model"), DecsSerializable]
+struct ModelRender {
+    mesh     : uint64 = 0ul
+    @asset = "data:mat"
+    material : string
 }
 
 %ecs~("HP", type<uint>) %%

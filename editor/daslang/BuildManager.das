@@ -172,7 +172,7 @@ def DrawBuildManager(){
         }
 
         var scene_row = 0
-        ForEachAsset(type<SceneRef>) $(r) {
+        ForEachFile(StorageDomain.Content, asset_ext_key(".scene")) $(r) {
             let scene <- TreeFile(StorageDomain.Content, r)
             checkbox(CHECKBOX_STATE[scene_row], (text = "{scene.name}"))
             scene_row++
@@ -183,7 +183,7 @@ def DrawBuildManager(){
 
             let str = build_string()$(var writer){
                 var preview_row = 0
-                ForEachAsset(type<SceneRef>) $(r) {
+                ForEachFile(StorageDomain.Content, asset_ext_key(".scene")) $(r) {
                     let scene <- TreeFile(StorageDomain.Content, r)
                     if (CHECKBOX_STATE[preview_row].value){
                         writer.write(scene.name)

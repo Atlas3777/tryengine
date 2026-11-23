@@ -66,7 +66,7 @@ inline uint32_t CalculateTotalVertexStride(MeshAttributeFlags flags) {
 }
 
 constexpr uint32_t MeshMagic = 0x4853454D;  // 'M','E','S','H'
-constexpr uint32_t MeshVersion = 3;         // убрал позицию
+constexpr uint32_t MeshVersion = 4;         // добавлен default_material
 
 struct MeshHeader {
     uint32_t magic = MeshMagic;
@@ -82,9 +82,16 @@ struct MeshHeader {
     float bbox_min[3]{0.0f, 0.0f, 0.0f};
     float bbox_max[3]{0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
+
+    // Материал по умолчанию: id материала, с которым примитив пришёл из источника.
+    // Гид меша адресует только геометрию; это данные артефакта, а не идентичность, поэтому
+    // переимпорт источника обновляет таблицу, а авторский оверрайд (`ModelRender.material`)
+    // живёт отдельно и адресуется путём. 0 — материала нет.
+    uint32_t padding2 = 0;  // явное выравнивание до 8 байт
+    uint64_t default_material = 0;
 };
 
-static_assert(sizeof(MeshHeader) == 52, "MeshHeader must be 52 bytes");
+static_assert(sizeof(MeshHeader) == 64, "MeshHeader must be 64 bytes");
 
 struct UnpackedMeshView {
     MeshHeader header;
@@ -98,6 +105,9 @@ public:
     static eastl::vector<uint8_t> Pack(const MeshHeader& header, eastl::span<const uint8_t> position_bytes,
                                        eastl::span<const uint8_t> attribute_bytes,
                                        eastl::span<const uint8_t> index_bytes);
+
+    //! Только шапка: сборщику пака нужен `default_material` меша, а не его вершины.
+    static Result<MeshHeader> UnpackHeader(eastl::span<const uint8_t> raw_bytes);
 
     static Result<UnpackedMeshView> Unpack(eastl::span<const uint8_t> raw_bytes);
 };

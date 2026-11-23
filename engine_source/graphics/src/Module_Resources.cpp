@@ -72,6 +72,13 @@ tryengine::graphics::Mesh* GetMeshPointer(uint64_t guid, das::Context* ctx) {
     return res_manager ? res_manager->GetPointerExplicit<tryengine::graphics::Mesh>(guid) : nullptr;
 }
 
+// Материал по умолчанию из артефакта меша: 0, пока меш не загружен или у примитива нет
+// материала. Гид меша адресует только геометрию, дефолт — данные артефакта.
+uint64_t MeshDefaultMaterial(uint64_t guid, das::Context* ctx) {
+    auto* mesh = GetMeshPointer(guid, ctx);
+    return mesh != nullptr ? mesh->default_material : 0;
+}
+
 tryengine::graphics::Material* GetMaterialPointer(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->GetPointerExplicit<tryengine::graphics::Material>(guid) : nullptr;
@@ -244,6 +251,8 @@ public:
         das::addExtern<DAS_BIND_FUN(GetMeshPointer)>(*this, lib, "GetMeshPointer", das::SideEffects::accessGlobal,
                                                      "GetMeshPointer");
 
+        das::addExtern<DAS_BIND_FUN(MeshDefaultMaterial)>(*this, lib, "MeshDefaultMaterial",
+                                                          das::SideEffects::accessGlobal, "MeshDefaultMaterial");
         das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(*this, lib, "GetMaterialPointer",
                                                          das::SideEffects::accessGlobal, "GetMaterialPointer");
 

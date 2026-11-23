@@ -13,15 +13,6 @@ require daslib/math_boost
 
 require math
 
-// Per-entity load bookkeeping. `LoadMarker` is a plain struct without [DecsSerializable],
-// so the component has no writer: scene/prefab save skip it and the Inspector hides it.
-struct LoadMarker {
-    guid : uint64 = 0ul
-}
-
-let public MESH_LOAD_FIELD : string = "meshLoad"
-let public MATERIAL_LOAD_FIELD : string = "materialLoad"
-
 struct PointLightGPU {
     position_radius : float4
     color_intensity : float4
@@ -55,11 +46,13 @@ var dcs : array<DrawCall>
 
 [export]
 def get_render_obj() : array<DrawCall>? {
-    start_load()
     dcs.clear()
 
-    query() <| $(eid : EntityId, _world : WorldTransform, mesh : TryMesh?, material : TryMat?) {
-        // Пока новый материал грузится, указателя может не быть — не отдаём полупустой draw call.
+    // Only ready pointers are drawn; loading is not this pass's job. `Model` writes the pair
+    // when the entity is created, so a draw call here is never half-resolved. The authored
+    // `model` component is required as well: it is what makes the entity an appearance, so
+    // dropping it stops the draw even if the runtime pointers are still around.
+    query() <| $(eid : EntityId, _world : WorldTransform, model : ModelRender, mesh : TryMesh?, material : TryMat?) {
         if (mesh == null || material == null) {
             return
         }
@@ -129,119 +122,4 @@ def GetGameCamera(viewport_size : float2) : CameraC? {
     }
 
     return unsafe(addr(game_cameraC))
-}
-
-
-def start_load(){
-    // Загрузка меша и материала разведена: материал не ждёт готовности меша.
-    // meshLoad/materialLoad — runtime-only: LoadMarker не имеет writer'а, поэтому
-    // сцена/префаб их не сохраняют, а инспектор не рисует. Они хранят guid, для
-    // которого загрузка уже запрошена, чтобы не дёргать RequestLoad каждый кадр.
-    query() $(eid : EntityId, let meshGuid : uint64) {
-        let guid = meshGuid
-        var has_mesh = false
-        query(eid) $(let mesh : TryMesh?) {
-            has_mesh = mesh != null
-        }
-        var load_guid = 0ul
-        var has_load = false
-        query(eid) $(let meshLoad : LoadMarker) {
-            load_guid = meshLoad.guid
-            has_load = true
-        }
-
-        if (guid == 0ul) {
-            if (has_mesh || has_load) {
-                update_entity(eid) @(eid, cmp) {
-                    decs::remove(cmp, "mesh")
-                    decs::remove(cmp, MESH_LOAD_FIELD)
-                }
-            }
-            return
-        }
-
-        if (has_mesh && has_load && load_guid == guid) {
-            return
-        }
-
-        // A pointer is only ever set together with its marker. A pointer without one is
-        // stale, so it is dropped instead of trusted.
-        let changed = has_mesh && (!has_load || load_guid != guid)
-        let requested = has_load && load_guid == guid
-        let ready = ResourceIsReadyMesh(guid)
-        var mesh_ptr : TryMesh? = null
-        if (ready) {
-            mesh_ptr = GetMeshPointer(guid)
-        }
-        update_entity(eid) @(eid, cmp) {
-            if (changed) {
-                decs::remove(cmp, "mesh")
-            }
-            cmp |> set(MESH_LOAD_FIELD, LoadMarker(guid = guid))
-            if (ready) {
-                cmp |> set("mesh", mesh_ptr)
-            }
-        }
-        if (!ready && !requested) {
-            RequestLoadMesh(guid)
-        }
-    }
-
-    query() $(eid : EntityId, let materialRef : MaterialRef) {
-        let material_guid = ResolveAssetRef(materialRef.path)
-        var has_material = false
-        query(eid) $(let material : TryMat?) {
-            has_material = material != null
-        }
-        var load_guid = 0ul
-        var has_load = false
-        query(eid) $(let materialLoad : LoadMarker) {
-            load_guid = materialLoad.guid
-            has_load = true
-        }
-
-        if (material_guid == 0ul) {
-            // Пустая ссылка — материал снят. Непустая, но не резолвится (реестр ещё
-            // сканируется или в поле вписан неизвестный путь): оставляем прошлый
-            // материал и повторяем на следующем кадре, иначе объект навсегда исчезнет.
-            if (length(materialRef.path) == 0) {
-                if (has_material || has_load) {
-                    update_entity(eid) @(eid, cmp) {
-                        decs::remove(cmp, "material")
-                        decs::remove(cmp, MATERIAL_LOAD_FIELD)
-                    }
-                }
-            }
-            return
-        }
-
-        if (has_material && has_load && load_guid == material_guid) {
-            return
-        }
-
-        // A pointer without a marker is stale by definition. When materialRef changes, the
-        // old pointer is dropped right away so the frame does not draw the previous material;
-        // the new one is installed once ResourceIsReadyMaterial returns true.
-        let changed = has_material && (!has_load || load_guid != material_guid)
-        let requested = has_load && load_guid == material_guid
-        let ready = ResourceIsReadyMaterial(material_guid)
-        var mat_ptr : TryMat? = null
-        if (ready) {
-            mat_ptr = GetMaterialPointer(material_guid)
-        }
-        update_entity(eid) @(eid, cmp) {
-            if (changed) {
-                decs::remove(cmp, "material")
-            }
-            cmp |> set(MATERIAL_LOAD_FIELD, LoadMarker(guid = material_guid))
-            if (ready) {
-                cmp |> set("material", mat_ptr)
-            }
-        }
-        if (!ready && !requested) {
-            RequestLoadMaterial(material_guid)
-        }
-    }
-
-    commit()
 }

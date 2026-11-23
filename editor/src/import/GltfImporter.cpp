@@ -245,7 +245,8 @@ void ProcessTextures(ImportResult& result, const tg3_model* m, uint64_t main_uui
 }
 
 eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const tg3_model* m, uint64_t main_uuid,
-                                                     ModelAssetMap& asset_map) {
+                                                     ModelAssetMap& asset_map,
+                                                     const eastl::vector<uint64_t>& material_guids) {
     eastl::vector<eastl::vector<uint64_t>> mesh_primitive_guids(m->meshes_count);
 
     for (uint32_t i = 0; i < m->meshes_count; ++i) {
@@ -305,6 +306,9 @@ eastl::vector<eastl::vector<uint64_t>> ProcessMeshes(ImportResult& result, const
             // --- Запекание меша ---
             MeshProcessSettings process_settings;
             process_settings.auto_select_format = true;
+            // Материал по умолчанию — данные артефакта: гид меша адресует только геометрию.
+            if (prim.material >= 0 && prim.material < static_cast<int32_t>(material_guids.size()))
+                process_settings.default_material = material_guids[prim.material];
 
             auto process_result = MeshProcessor::ProcessPrimitive(raw_input, process_settings);
             if (!process_result.has_value()) {
@@ -449,7 +453,8 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
 
 constexpr uint32_t kPrefabRootParent = 0xFFFFFFFFu;
 // Должно совпадать с `PREFAB_VERSION` в `engine_source/daslang/Prefab.das`.
-constexpr uint32_t kPrefabVersion = 5u;
+// В 6 узлы несут `model` (гид меша плюс оверрайд материала) вместо `meshGuid`/`materialRef`.
+constexpr uint32_t kPrefabVersion = 7u;
 
 struct PrefabFlatNode {
     uint32_t local_id = 0;
@@ -566,13 +571,11 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
         tryengine::Transform local_transform;
         eastl::string tag;
         uint64_t mesh_id = 0;
-        uint64_t material_id = 0;
         if (node.node_index >= 0) {
             const ModelNodeData& source = map.nodes[static_cast<size_t>(node.node_index)];
             tag = source.name.empty() ? tryengine::fmt::format("Node_{}", node.node_index) : source.name;
             local_transform = source.local_transform;
             mesh_id = source.mesh_id;
-            material_id = source.material_id;
         } else {
             tag = stem_string;
         }
@@ -594,15 +597,15 @@ eastl::string BuildPrefabText(const ModelAssetMap& map, eastl::string_view asset
         node_obj.fields.push_back(MakePrefabField(
             "transform", "Transform", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(transform)))));
 
+        // `ModelRender`: гид меша и пустой оверрайд. Материал по умолчанию приходит из
+        // артефакта меша, поэтому префаб не несёт производных данных. `material` —
+        // авторитетный путь строкой; `@asset = "data:mat"` рисует для него picker.
         if (mesh_id != 0) {
-            node_obj.fields.push_back(MakePrefabField("meshGuid", "u64", ConfigValue(mesh_id)));
-            if (material_id != 0) {
-                ConfigObject material;
-                material.fields.push_back(MakeStringField("path", tryengine::fmt::format("guid:{}", material_id)));
-                node_obj.fields.push_back(
-                    MakePrefabField("materialRef", "MaterialRef",
-                                    ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(material)))));
-            }
+            ConfigObject model;
+            model.fields.push_back(MakePrefabField("mesh", "u64", ConfigValue(mesh_id)));
+            model.fields.push_back(MakeStringField("material", ""));
+            node_obj.fields.push_back(MakePrefabField(
+                "model", "ModelRender", ConfigValue(eastl::make_unique<ConfigObject>(eastl::move(model)))));
         }
 
         nodes.elements.push_back(
@@ -661,7 +664,8 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     eastl::vector<uint64_t> material_guids = ProcessMaterials(result, m, meta.header.guid, asset_map);
     ProcessTextures(result, m, meta.header.guid, asset_map);
-    eastl::vector<eastl::vector<uint64_t>> mesh_primitive_guids = ProcessMeshes(result, m, meta.header.guid, asset_map);
+    eastl::vector<eastl::vector<uint64_t>> mesh_primitive_guids =
+        ProcessMeshes(result, m, meta.header.guid, asset_map, material_guids);
     ProcessNodes(m, asset_map, mesh_primitive_guids, material_guids);
 
     ProducedArtifact map_artifact;

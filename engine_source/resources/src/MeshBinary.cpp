@@ -37,18 +37,29 @@ eastl::vector<uint8_t> MeshBinary::Pack(const MeshHeader& header, eastl::span<co
     return buffer;
 }
 
-Result<UnpackedMeshView> MeshBinary::Unpack(eastl::span<const uint8_t> raw_bytes) {
+Result<MeshHeader> MeshBinary::UnpackHeader(eastl::span<const uint8_t> raw_bytes) {
     if (raw_bytes.size() < sizeof(MeshHeader))
         return LogAndMakeError("MeshBinary: Buffer too small for header");
 
-    UnpackedMeshView view{};
-    std::memcpy(&view.header, raw_bytes.data(), sizeof(MeshHeader));
+    MeshHeader header{};
+    std::memcpy(&header, raw_bytes.data(), sizeof(MeshHeader));
 
-    if (view.header.magic != MeshMagic)
+    if (header.magic != MeshMagic)
         return LogAndMakeError("MeshBinary: Invalid magic bytes");
 
-    if (view.header.version != MeshVersion)
-        return LogAndMakeError("MeshBinary: Unsupported version {}", view.header.version);
+    if (header.version != MeshVersion)
+        return LogAndMakeError("MeshBinary: Unsupported version {}", header.version);
+
+    return header;
+}
+
+Result<UnpackedMeshView> MeshBinary::Unpack(eastl::span<const uint8_t> raw_bytes) {
+    auto header_res = UnpackHeader(raw_bytes);
+    if (!header_res.has_value())
+        return LogAndMakeError("{}", header_res.error().Message());
+
+    UnpackedMeshView view{};
+    view.header = *header_res;
 
     const size_t pos_bytes = view.header.vertex_count * (sizeof(float) * 3);
     const size_t attr_bytes = view.header.vertex_count * view.header.attribute_stride;

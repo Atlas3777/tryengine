@@ -41,6 +41,9 @@ struct MeshProcessSettings {
     bool generate_radius = true;
     bool generate_flat_normals_if_missing = true;
     bool auto_select_format = true;  // Если true, выбирает подходящий формат на основе атрибутов
+    // Материал источника, с которым примитив пришёл. Печётся в шапку артефакта: мешей
+    // адресует только геометрию, а дефолт материала — данные артефакта.
+    uint64_t default_material = 0;
 };
 
 class MeshProcessor {

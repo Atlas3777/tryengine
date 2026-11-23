@@ -16,7 +16,10 @@ public:
 
     // Поднимай при изменении того, что попадает в артефакты: все модели переимпортируются.
     [[nodiscard]] uint32_t GetVersion() const override {
-        return 9;
+        // 10: материал меша печётся в шапку артефакта, префаб-артефакт пишет `model`.
+        // 11: версия самого префаб-артефакта поднята до 6 (в 10 она осталась 5).
+        // 12: `model.material` — строка, а не обёртка `MaterialRef`; версия префаба 7.
+        return 12;
     }
 
     [[nodiscard]] tryengine::async::Task<ImportResult> Import(ImportContext ctx) const override;

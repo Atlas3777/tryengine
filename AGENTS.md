@@ -254,7 +254,7 @@ daslang -dry-run \
   дописывается. Прямой `daslib/fio`/`FileReader` в игровой логике запрещён.
 - Общий слой документов: `tryengine/Content.das`. Здесь живут путь по виду документа
   (`DocumentKind.Scene/Prefab/Bundle`), stem, `Find` через `Assets::Exists`, разбор
-  ConfigFormat и общий сбор `meshGuid`/`materialRef` в `Dependencies`. `Content` документы
+  ConfigFormat и общий сбор `model` в `Dependencies`. `Content` документы
   не кеширует: готовые значения живут в `tryengine/AssetCache.das`.
 - `tryengine/AssetCache.das` — один кеш на все виды ассетов: общая ledger-таблица
   (`state`, `deps`, запрос текста) плюс типизированная `table<string; T?>` в модуле вида.

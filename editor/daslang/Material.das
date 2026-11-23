@@ -12,6 +12,7 @@ module Material shared public
 
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
+require tryengine/Model
 require tryengine/Types
 require tryengine/Profiling
 require tryengine/EcsMacro
@@ -502,20 +503,31 @@ def private LoadMaterial() {
     LoadMaterialAt(asset_ref, RegisterMaterialFile(asset_ref), asset_ref)
 }
 
-// materialRef выделенной сущности. Нужен, чтобы панель замечала не только смену
-// выделения, но и выбор материала через инспектор.
+// Авторская ссылка, которой сущность реально рисуется: оверрайд из `model.material`, а если
+// он пуст — материал по умолчанию из артефакта меша. Импортированный материал отдаётся как
+// `guid:<id>`: его можно смотреть и править живьём, но не назначать другой сущности.
+// Панель замечает не только смену выделения, но и выбор материала через инспектор.
 def private SelectedMaterialRef() : string {
     if (!is_alive(selected_eid)) {
         return ""
     }
     var asset_ref = ""
-    query(selected_eid) $(let materialRef : MaterialRef) {
-        asset_ref = materialRef.path
+    query(selected_eid) $(let model : ModelRender) {
+        asset_ref = model.material
+        if (empty(asset_ref) && model.mesh != 0ul) {
+            let default_material = MeshDefaultMaterial(model.mesh)
+            if (default_material != 0ul) {
+                let canonical = AssetRefOf(default_material)
+                if (!empty(canonical)) {
+                    asset_ref = canonical
+                }
+            }
+        }
     }
     return asset_ref
 }
 
-// Материал выбранной сущности: компонент materialRef -> id и путь из реестра -> файл.
+// Материал выбранной сущности: `model` -> id (оверрайд или дефолт меша) -> путь из реестра -> файл.
 // false — путь ещё не известен (реестр ассетов заполняется асинхронно на старте),
 // панель повторит попытку на следующем кадре.
 def private SyncFromSelected() : bool {
@@ -523,13 +535,8 @@ def private SyncFromSelected() : bool {
         return true
     }
 
-    var asset_ref = ""
-    var has_material = false
-    query(selected_eid) $(let materialRef : MaterialRef) {
-        asset_ref = materialRef.path
-        has_material = true
-    }
-    if (!has_material || empty(asset_ref)) {
+    let asset_ref = SelectedMaterialRef()
+    if (empty(asset_ref)) {
         status = "entity [{selected_eid.id:d}] has no material"
         return true
     }
@@ -637,21 +644,26 @@ def private ApplyMaterial() {
         return
     }
 
-    // Указатель на материал мог остаться от прежнего материала: сбрасываем его, чтобы
-    // Render.start_load подставил материал по новому guid.
-    var has_pointer = false
-    query(selected_eid) $(let material : TryMat?) {
-        has_pointer = true
+    if (material_readonly) {
+        // Производный материал не адресуется из юзерспейса: он приходит через дефолт меша,
+        // а чтобы переиспользовать его на другой модели, материал сохраняют в data/.
+        status = "read-only: an imported material is reached through the mesh default; save it under data/ to override"
+        return
     }
 
     update_entity(selected_eid) @(eid, cmp) {
-        cmp |> set("materialRef", MaterialRef(path = material_ref))
-        if (has_pointer) {
-            decs::remove(cmp, "material")
-        }
+        var model = decs::get(cmp, Model::MODEL_FIELD, ModelRender())
+        model.material = material_ref
+        cmp |> set(Model::MODEL_FIELD, model)
     }
     commit()
-    status = "applied to entity [{selected_eid.id:d}], ref {material_ref}"
+
+    // Указатели ставит резолвер модели: ленивой загрузки в кадре больше нет.
+    if (Model::ApplyToEntity(selected_eid)) {
+        status = "applied to entity [{selected_eid.id:d}], ref {material_ref}"
+    } else {
+        status = "applied to entity [{selected_eid.id:d}], but the material is not loaded yet"
+    }
 }
 
 // ---------------------------------------------------------------------------

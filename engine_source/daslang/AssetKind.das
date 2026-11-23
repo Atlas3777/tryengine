@@ -3,127 +3,74 @@ options relaxed_assign = false
 
 module AssetKind shared public
 
-// Asset kind is declared on the wrapper type, not in a global registry:
+// Asset reference is declared on the field, not on a wrapper type:
 //
-//   [asset(kind = "data", title = "Material", ext = ".mat")]
-//   struct MaterialRef {
-//       path : string
+//   [EcsComponent(name = "model"), DecsSerializable]
+//   struct ModelRender {
+//       mesh     : uint64 = 0ul
+//       @asset = "data:mat"
+//       material : string
 //   }
 //
-// `kind` is the storage domain (engine/game/content/data) — not a subfolder. `ext` filters
-// the whole domain tree, so scene/prefab pickers see every `.scene`/`.prefab` anywhere
-// under content. `title` is only the popup caption; it is optional and defaults to the
-// extension. The annotation is engine-side and inert: it only stores metadata in a table
-// so the editor can resolve a wrapper by its type name. No editor types are required here.
+// The value is `kind:ext`. `kind` is the storage domain (engine/game/content/data), not a
+// subfolder. `ext` filters the whole domain tree, so scene/prefab pickers see every
+// `.scene`/`.prefab` anywhere under content. The leading dot is optional: `data:mat` and
+// `data:.mat` mean the same. The annotation is inert metadata: the editor reads it from the
+// [DecsSerializable] field schema and draws the picker for a plain string field. No editor
+// types are required here.
 
-require daslib/ast
-require daslib/ast_boost
-require daslib/templates_boost
 require daslib/rtti
 require strings
-require daslib/strings_boost
 
-struct AssetTypeInfo {
+//! Parsed `@asset` annotation of one field. `has` is false when the field is not an asset
+//! reference; a non-empty `error` means the annotation is present but malformed.
+struct AssetFieldInfo {
     has   : bool
     kind  : string
-    title : string
     ext   : string
+    error : string
 }
 
-var public g_asset_type_infos : table<string; AssetTypeInfo>
-
-// The same short-name normalization as tryengine/Serializable: type names arrive either
-// from a field schema or from DECS, and both may carry the module qualifier.
-def public NormalizeAssetTypeName(name : string) : string {
-    let idx = last_index_of(name, "::")
-    return idx >= 0 ? slice(name, idx + 2, length(name)) : name
+def public IsAssetKind(kind : string) : bool {
+    return kind == "engine" || kind == "game" || kind == "content" || kind == "data"
 }
 
-def public GetAssetTypeInfo(type_name : string; var out : AssetTypeInfo) : bool {
-    let key = NormalizeAssetTypeName(type_name)
-    if (!key_exists(g_asset_type_infos, key)) {
-        return false
-    }
-    out = g_asset_type_infos[key]
-    return true
-}
-
-// Compile-time view of the same annotation, used by the type-parameterized query cache.
-def public AssetInfoOf(t : type<auto(TT)>) : AssetTypeInfo {
-    var info : AssetTypeInfo
-    static_if (typeinfo struct_safe_has_annotation < asset > (type<TT>)) {
+//! Finds and validates the `@asset` annotation in an apply-collected annotation list.
+def public ParseAssetField(annotations : array<tuple<name : string; data : RttiValue>>) : AssetFieldInfo {
+    var info : AssetFieldInfo
+    for (ann in annotations) {
+        if (ann.name != "asset") {
+            continue
+        }
         info.has = true
-        static_if (typeinfo struct_safe_has_annotation_argument < asset; kind > (type<TT>)) {
-            info.kind = typeinfo struct_get_annotation_argument<asset; kind>(type<TT>)
+        if (!(ann.data is tString)) {
+            info.error = "@asset must be a \"kind:ext\" string"
+            return info
         }
-        static_if (typeinfo struct_safe_has_annotation_argument < asset; title > (type<TT>)) {
-            info.title = typeinfo struct_get_annotation_argument<asset; title>(type<TT>)
+
+        let spec = ann.data as tString
+        let sep = find(spec, ":")
+        if (sep <= 0) {
+            info.error = "@asset must be \"kind:ext\", e.g. \"data:mat\""
+            return info
         }
-        static_if (typeinfo struct_safe_has_annotation_argument < asset; ext > (type<TT>)) {
-            info.ext = typeinfo struct_get_annotation_argument<asset; ext>(type<TT>)
+
+        info.kind = slice(spec, 0, sep)
+        var ext = slice(spec, sep + 1, length(spec))
+        if (empty(ext)) {
+            info.error = "@asset must be \"kind:ext\", e.g. \"data:mat\""
+            return info
         }
+        if (!starts_with(ext, ".")) {
+            ext = "." + ext
+        }
+        info.ext = ext
+
+        if (!IsAssetKind(info.kind)) {
+            info.error = "@asset kind must be engine, game, content or data"
+            return info
+        }
+        return info
     }
     return info
-}
-
-[structure_macro(name="asset")]
-class AssetAnnotation : AstStructureAnnotation {
-    def override apply(var st : StructurePtr; var group : ModuleGroup;
-                       var args : AnnotationArgumentList; var errors : das_string) : bool {
-        let type_name = st.name.string()
-        let kind_arg = args |> find_arg("kind")
-        let ext_arg = args |> find_arg("ext")
-        let title_arg = args |> find_arg("title")
-
-        if (!(kind_arg is tString)) {
-            errors := "asset: kind must be a string"
-            return false
-        }
-        if (!(ext_arg is tString)) {
-            errors := "asset: ext must be a string"
-            return false
-        }
-        if (!(title_arg is tString) && !(title_arg is nothing)) {
-            errors := "asset: title must be a string"
-            return false
-        }
-
-        let kind = kind_arg as tString
-        let ext = ext_arg as tString
-        let title = title_arg is tString ? (title_arg as tString) : ""
-        if (kind != "engine" && kind != "game" && kind != "content" && kind != "data") {
-            errors := "asset: kind must be a storage domain: engine, game, content or data"
-            return false
-        }
-        if (empty(ext) || !starts_with(ext, ".")) {
-            errors := "asset: ext must start with '.', e.g. \".mat\""
-            return false
-        }
-
-        // The inspector addresses the value through a field named `path`; keep every
-        // wrapper the same shape so draw_asset_ref does not need a per-kind layout.
-        var field_count = 0
-        var has_path = false
-        for (fld in st.fields) {
-            field_count++
-            if (fld.name == "path") {
-                has_path = true
-            }
-        }
-        if (field_count != 1 || !has_path) {
-            errors := "asset: wrapper must have exactly one field named 'path'"
-            return false
-        }
-
-        let fn_init_name = "register_asset_{type_name}"
-        var fnInit <- qmacro_function(fn_init_name) $() {
-            g_asset_type_infos[$v(type_name)] = AssetTypeInfo(has = true, kind = $v(kind), title = $v(title), ext = $v(ext))
-        }
-        fnInit.flags.init = true
-        if (!(compiling_module() |> add_function(fnInit))) {
-            errors := "asset: failed to add {fn_init_name}"
-            return false
-        }
-        return true
-    }
 }

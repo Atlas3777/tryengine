@@ -103,7 +103,7 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
   `[EcsComponent(name = "имя")]`; `%ecs~` остаётся для встроенных типов.
 - Что сохраняется в сцену/префаб, решает тип: компонент пишется, если у его типа есть
   writer — встроенный скаляр или `[DecsSerializable]`-структура. Обычная структура
-  (`WorldTransform`, `Relationship`, `LoadMarker`, `EditorCameraTag`) writer'а не имеет,
+  (`WorldTransform`, `Relationship`, `EditorCameraTag`) writer'а не имеет,
   поэтому scene save, prefab compile/save и Inspector её пропускают. `eid` — единственное
   структурное исключение.
 
