@@ -496,9 +496,20 @@ def private SelectedTarget(var target : GizmoTarget&) : bool {
         return false
     }
     var found = false
+    var editable_scale = float3(1.0f, 1.0f, 1.0f)
     query(selected_eid) $(let transform : Transform; let _world : WorldTransform) {
-        target = GizmoTarget(position = _world.position, rotation = _world.rotation, scale = transform.scale)
+        editable_scale = transform.scale
+        target = GizmoTarget(position = _world.position, rotation = _world.rotation, scale = editable_scale)
         found = true
+    }
+    if (found) {
+        // An authored mesh scale is the object's size; the scale handles edit it instead of
+        // Transform.scale, so a placed box is resized without turning its size into a
+        // transform scale. Entities without meshScale keep the old behaviour.
+        query(selected_eid) $(meshScale : MeshScale) {
+            editable_scale = meshScale.scale
+        }
+        target.scale = editable_scale
     }
     return found
 }
@@ -759,6 +770,11 @@ def private ApplyDeltaToSelection(delta : GizmoDelta) {
     var parent_transform = WorldTransform()
     let has_parent = ParentWorld(selected_eid, parent_transform)
 
+    var has_mesh_scale = false
+    query(selected_eid) $(meshScale : MeshScale) {
+        has_mesh_scale = true
+    }
+
     let start = g_drag.target
     if (g_drag.mode == GizmoMode.Translate) {
         let world_position = start.position + delta.translation
@@ -776,7 +792,21 @@ def private ApplyDeltaToSelection(delta : GizmoDelta) {
             local.rotation = world_rotation
         }
     } else {
-        local.scale = ClampScale(start.scale * delta.scale)
+        if (!has_mesh_scale) {
+            local.scale = ClampScale(start.scale * delta.scale)
+        }
+    }
+
+    if (g_drag.mode == GizmoMode.Scale && has_mesh_scale) {
+        // `GizmoDelta.scale` is the total multiplier from the drag start, and
+        // `start.scale` is the meshScale captured by SelectedTarget, so this cannot
+        // accumulate. Transform stays the object pose.
+        let authored = ClampScale(start.scale * delta.scale)
+        update_entity(selected_eid) @(eid, cmp) {
+            cmp |> set("meshScale", MeshScale(scale = authored))
+        }
+        commit()
+        return
     }
 
     update_entity(selected_eid) @(eid, cmp) {

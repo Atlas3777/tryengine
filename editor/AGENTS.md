@@ -379,6 +379,13 @@
   иначе клик по стрелке выделял бы меш за ней. `RefreshWorldSubtree` из
   `TransformSystem.das` сразу пересчитывает `_world` изменённой ветки — ждать
   `UpdateWorldTransforms` нельзя, объект отрисовался бы на кадр позже ручки.
+- Scale-ручки редактируют `meshScale`, если он есть у выбранной сущности (коробки
+  ProBuilder), иначе `Transform.scale`. `SelectedTarget` подставляет `meshScale.scale` в
+  `GizmoTarget.scale`, поэтому `GizmoDelta.scale` — множитель от размера коробки, а
+  `ApplyDeltaToSelection` пишет новый `meshScale` и не трогает transform; `_world` при этом
+  не меняется, `RefreshWorldSubtree` не нужен. Коллайдер подтягивает `SyncBoxColliders` в
+  том же кадре после вьюпорта. Масштабировать именно transform у такой сущности можно
+  только через Инспектор.
 - Драг устроен как «полный дельта от старта», а не шаг за шагом: `GizmoTarget` хранит
   стартовые world position/rotation и локальный scale, `GizmoDelta` отдаёт world-смещение,
   world-поворот и множитель локального scale. Это же API рассчитано на будущий редактор
@@ -457,15 +464,16 @@
   (MeshBinary v4, 24 вершины, 36 индексов, позиции в `[-0.5, 0.5]`) масштабируется
   компонентом `meshScale : MeshScale` (`scale : float3` в `Types.das`). `Render.das` умножает
   его на `_world.scale` при сборке матрицы отрисовки, поэтому `Transform` остаётся позой
-  объекта: гизмо Scale меняет `transform.scale`, а авторский размер — `meshScale`.
+  объекта: Scale-ручки гизмо меняют `meshScale`, а `transform.scale` — только Инспектор.
   `Render.das` делает это двумя `query` (`meshScale` / `REQUIRE_NOT(meshScale)`), а не
   `get_component` на каждую сущность кадра: обычный путь остаётся одним сканом.
 - Размер в `meshScale` — метры, потому что меш unit-куба; `boxCollider.half_extents` —
   `abs(meshScale.scale * transform.scale) / 2`. `SyncBoxColliders` обновляет коллайдер и для
   новых коробок, и для старых без `meshScale` (у них размер был в `Transform.scale`). Маркер —
   тег `PB Box`, он сохраняется в сцене; переименовали тег — синхронизация выключена.
-  Размер выбранной коробки правится в самой панели (`Selected box size`) и в Инспекторе
-  (`meshScale.scale`).
+  Размер выбранной коробки правится в самой панели (`Selected box size`), в Инспекторе
+  (`meshScale.scale`) и Scale-ручками гизмо (см. Transform gizmo); позиция и поворот — обычные
+  Translate/Rotate. Коллайдер и отрисовка обновляются сразу.
 - Место и поверхность — CPU-рейкаст в `ProBuilder.das` по локальному AABB каждого меша:
   `Mesh::bbox_min/bbox_max` заполняет `MeshLoader` из `MeshHeader`, в скрипт их отдают
   `GetMeshBoundsMin/Max` (`Module_Resources.cpp`). Луч переводится в локальное пространство
@@ -490,8 +498,12 @@
 - Материал — `game/data/materials/grid.mat`, шейдер — `engine_content/assets/shaders/
   GridMaterial.slang` (обязательный `.meta` с guid; шейдер импортируется на старте редактора).
   Сетка рисуется в объектном пространстве с линиями на границах коробки: 1 м — одна клетка
-  при любом размере. Параметры `albedo_color`, `line_color`, `cell_size`, `line_width`
-  редактируются панелью Material.
+  при любом размере. Плоскость грани выбирается по **локальной** нормали (`localNormal` из
+  вершинного шейдера): по мировой нормали повёрнутая стена теряла одну ось сетки (были только
+  вертикальные полосы). Граница грани рисуется отдельной линией, поэтому даже стена высотой
+  1 м имеет видимые верхнюю/нижнюю линии, хотя промежуточной горизонтальной клетки у неё нет.
+  Параметры `albedo_color`, `line_color`, `cell_size`, `line_width` редактируются панелью
+  Material.
 - Меш лежит в `data`, а не в `assets`: это авторитетный файл без импортёра, id —
   `PathId("game/data/meshes/unit_box.mesh")`. Пересоздать его —
   `python3 tools/agent/make-unit-box.py`; файл коммитится, потому что авторитетный домен не

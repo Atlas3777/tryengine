@@ -92,6 +92,7 @@ struct GridVSOutput
     float3 localPosition : TEXCOORD0;
     float3 worldPosition : TEXCOORD1;
     float3 objectScale   : TEXCOORD2;
+    float3 localNormal   : TEXCOORD3;
     float3 normal        : NORMAL;
     float4 position      : SV_Position;
 };
@@ -120,22 +121,30 @@ GridVSOutput mainVS(uint vertexID : SV_VertexID, uint drawID : SV_DrawIndex)
         uint dwordOffset = getAttributeDwordOffset(object->geometry.attribute_flags, ATTR_BIT_NORMAL);
         localNormal = unpackSnorm4x8(object->geometry.attributes[baseDwordOffset + dwordOffset]).xyz;
     }
+    // The face plane must be chosen from the OBJECT-space normal: the grid coordinates are
+    // object-space * scale. A world-space choice breaks as soon as a box is rotated (a wall
+    // normal along world X would project onto local Y/Z and lose one grid direction).
+    output.localNormal = normalize(localNormal);
     output.normal = normalize(mul(localNormal, (float3x3)object->normalMatrix));
 
     output.position = mul(mul(world, pc.fragment->camera->view), pc.fragment->camera->proj);
     return output;
 }
 
+// Metres of world space covered by one pixel on each of the two grid axes.
+float2 GridFootprint(float2 coord)
+{
+    return float2(abs(ddx(coord.x)) + abs(ddy(coord.x)), abs(ddx(coord.y)) + abs(ddy(coord.y)));
+}
+
 // Distance in metres from a coordinate to the nearest grid line, antialiased by the pixel
 // footprint. `line_width` is the half-width the material asks for; the derivative floor
 // keeps the line at least one pixel wide when the face is far away.
-float GridLine(float2 coord, float cell, float halfWidth)
+float GridLine(float2 coord, float cell, float halfWidth, float2 footprint)
 {
     float2 cellCoord = coord / cell;
     float2 toLine = (0.5 - abs(frac(cellCoord) - 0.5)) * cell;
 
-    float2 footprint = float2(abs(ddx(coord.x)) + abs(ddy(coord.x)),
-                              abs(ddx(coord.y)) + abs(ddy(coord.y)));
     float aa = max(max(footprint.x, footprint.y), halfWidth);
     return 1.0 - saturate(min(toLine.x, toLine.y) / max(aa, 1e-5));
 }
@@ -144,10 +153,10 @@ float GridLine(float2 coord, float cell, float halfWidth)
 float4 fsMain(GridVSOutput input) : SV_Target
 {
     float3 normal = normalize(input.normal);
-    float3 axis = abs(normal);
+    float3 axis = abs(normalize(input.localNormal));
     float3 scale = input.objectScale;
 
-    // Pick the face plane from the dominant local normal. The tangent coordinates are the
+    // Pick the face plane from the dominant LOCAL normal. The tangent coordinates are the
     // object-space axes of that plane in metres, shifted so 0 sits on the box border: a box
     // scaled to 1 m therefore shows its edge lines, a 3 m box shows three cells across.
     float2 coord;
@@ -170,7 +179,17 @@ float4 fsMain(GridVSOutput input) : SV_Target
     coord += faceScale * 0.5;
 
     float cell = max(cell_size, 0.0001);
-    float line = GridLine(coord, cell, max(line_width, 0.001) * 0.5);
+    float2 footprint = GridFootprint(coord);
+    float halfWidth = max(line_width, 0.001) * 0.5;
+    float line = GridLine(coord, cell, halfWidth, footprint);
+
+    // The face border is a grid line too. Without it a one-metre-high wall has no interior
+    // horizontal cell and reads as if the grid only ran one way; the inset border makes the
+    // top and bottom of every face visible at any size.
+    float2 toBorder = min(coord, faceScale - coord);
+    float borderAa = max(max(footprint.x, footprint.y), halfWidth);
+    float border = 1.0 - saturate(min(toBorder.x, toBorder.y) / max(borderAa, 1e-5));
+    line = max(line, border * 0.8);
 
     float3 albedo = lerp(albedo_color.rgb, line_color.rgb, line);
 
