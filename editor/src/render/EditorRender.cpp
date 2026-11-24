@@ -115,7 +115,7 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
     ImportSwapchain(image_index);
 
     auto& script = engine.Get<tryengine::core::ScriptSystem>();
-    auto size_res = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
+    auto size_res = script.SimpleReturnUnsafe<"GetEditorViewportSize", das::float2>();
     VkExtent2D scene_viewport{1, 1};
     if (size_res.has_value())
         scene_viewport = {std::max(1u, (uint32_t) size_res->x), std::max(1u, (uint32_t) size_res->y)};
@@ -125,7 +125,7 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
         last_viewport_size_ = scene_viewport;
     }
 
-    auto size_game_res = script.SimpleReturnUnsafe<das::float2>("GetGameViewportSize");
+    auto size_game_res = script.SimpleReturnUnsafe<"GetGameViewportSize", das::float2>();
     VkExtent2D scene_game_viewport{1, 1};
     if (size_game_res.has_value())
         scene_game_viewport = {std::max(1u, (uint32_t) size_game_res->x), std::max(1u, (uint32_t) size_game_res->y)};
@@ -136,15 +136,15 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
         last_game_viewport_size_ = scene_game_viewport;
     }
 
-    auto editor_camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>(
-        "GetEditorCamera", size_res.value_or(das::float2(1, 1)));
+    auto editor_camera_res = script.SimpleReturnUnsafe<"GetEditorCamera", tryengine::graphics::CameraData*>(
+        size_res.value_or(das::float2(1, 1)));
     tryengine::graphics::CameraData cam_data =
         editor_camera_res.has_value() ? *(*editor_camera_res) : tryengine::graphics::CameraData{};
 
     // LogInfo("x = {}, y = {}, z = {}",cam_data.position.x, cam_data.position.y, cam_data.position.z);
 
-    auto game_camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>(
-        "GetGameCamera", size_game_res.value_or(das::float2(1, 1)));
+    auto game_camera_res = script.SimpleReturnUnsafe<"GetGameCamera", tryengine::graphics::CameraData*>(
+        size_game_res.value_or(das::float2(1, 1)));
     tryengine::graphics::CameraData game_cam_data =
         editor_camera_res.has_value() ? *(*game_camera_res) : tryengine::graphics::CameraData{};
 

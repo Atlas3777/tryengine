@@ -93,11 +93,11 @@ void GameApp::Init() {
 
     engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult())));
     engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EngineStart">();
 
     // Прогрева контента здесь нет: GameStart запускает задачу Loader::Load, а она
     // читает тексты и запрашивает меши/материалы; GameUpdate не знает про загрузку.
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("GameStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast<"GameStart">();
 
     // У игры нет ImGui: смотреть на её кадры можно только по файлам в logs/. Каптион пишет
     // компактный поток кадров и строку статуса раз в секунду прямо из кадра, так что
@@ -130,12 +130,12 @@ void GameApp::Run() {
             MainThread().Pull();
         }
 
-        script_system.InvokeFunctionSafe("EngineUpdate");
+        script_system.InvokeFunctionSafe<"EngineUpdate">();
         // UI объявляется каждый кадр на своём клоке и не зависит от gameplay: пауза игрового
         // мира не должна замораживать экраны. Поэтому это отдельная точка входа, а не часть
         // GameUpdate.
-        script_system.InvokeFunctionSafe("GameUiFrame");
-        script_system.InvokeFunctionSafe("GameUpdate");
+        script_system.InvokeFunctionSafe<"GameUiFrame">();
+        script_system.InvokeFunctionSafe<"GameUpdate">();
 
         {
             TRY_PROFILE_SCOPE("Async.Submit");

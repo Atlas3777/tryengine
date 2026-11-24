@@ -133,7 +133,7 @@ void ImGuiPass::Collect(tryengine::graphics::CollectContext& ctx) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    ctx.engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe("DrawEditor");
+    ctx.engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe<"DrawEditor">();
 
     ImGui::Render();
 }

@@ -56,7 +56,7 @@ struct PushConstants {
 eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine) {
     eastl::vector<MeshDrawCall> draw_calls;
 
-    auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("get_render_obj");
+    auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_render_obj", das::Array*>();
     if (!result.has_value()) {
         LogError(result.error().Message());
         return draw_calls;

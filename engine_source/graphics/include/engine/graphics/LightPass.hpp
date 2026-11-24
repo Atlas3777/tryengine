@@ -20,7 +20,7 @@ struct LightPass {
 };
 
 inline eastl::vector<PointLightGPU> CollectLight(core::Engine& engine) {
-    auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("get_lights");
+    auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_lights", das::Array*>();
 
     if (!result.has_value())
         LogError(result.error().Message());

@@ -20,7 +20,6 @@ require tryengine/Scene
 require TryEditor
 require tryeditor/EditorActions
 require tryeditor/FileSystemUtils
-require tryeditor/HotReload
 require tryengine/Profiling
 require tryengine/FileReader
 
@@ -164,11 +163,6 @@ def DrawBuildManager(){
         if (button(TEST_SCRIPTS, (text = "Test Compile Scripts"))) { TestScripts() }
         if (!build_status.empty()) {
             text("{build_status}");
-        }
-
-        let reload_status = ScriptReloadStatus()
-        if (!reload_status.empty()) {
-            text("Hot reload: {reload_status}")
         }
 
         var scene_row = 0

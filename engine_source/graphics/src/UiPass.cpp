@@ -73,7 +73,7 @@ void UiPass::Collect(CollectContext& ctx) {
     viewport_ = *extent;
     frame_data_ = ui->FrameData(das::float2(static_cast<float>(viewport_.width), static_cast<float>(viewport_.height)));
 
-    auto result = ctx.engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("get_ui_draw_cmds");
+    auto result = ctx.engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_ui_draw_cmds", das::Array*>();
     if (!result.has_value() || *result == nullptr || (*result)->size == 0) {
         if (!warned_missing_export_) {
             warned_missing_export_ = true;

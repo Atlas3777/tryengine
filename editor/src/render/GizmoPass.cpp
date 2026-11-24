@@ -487,7 +487,7 @@ struct GizmoPushConstants {
 
 void GizmoPass::Collect(CollectContext& ctx) {
     auto state =
-        ctx.engine.Get<tryengine::core::ScriptSystem>().SimpleReturnUnsafe<GizmoDrawState*>("GetGizmoDrawState");
+        ctx.engine.Get<tryengine::core::ScriptSystem>().SimpleReturnUnsafe<"GetGizmoDrawState", GizmoDrawState*>();
     if (!state.has_value() || *state == nullptr) {
         state_.visible = 0;
         return;

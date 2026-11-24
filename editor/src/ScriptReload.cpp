@@ -13,20 +13,18 @@ void ScriptReload::ReinitializeContext(tryengine::core::ScriptSystem& system) {
     // Новый контекст получает тот же старт, что и первый: корневой клок и InputSource из
     // EngineStart, подписки и editor-камеру из EditorStart. [after_reload] выполняется
     // уже после этого и возвращает мир.
-    system.InvokeFunctionFast("EngineStart");
-    system.InvokeFunctionFast("EditorStart");
+    system.InvokeFunctionFast<"EngineStart">();
+    system.InvokeFunctionFast<"EditorStart">();
 }
 
 void ScriptReload::OnReloadFinished(bool success, eastl::string_view error) {
-    if (!success) {
-        status_ = "Script reload failed:\n";
-    } else if (!error.empty()) {
-        status_ = "Scripts reloaded with hook errors:\n";
-    } else {
-        status_ = "Scripts reloaded";
-        return;
-    }
-    status_.append(error.data(), error.size());
+    // Полный текст ошибки уже в логе; статус короткий и предназначен для скриптов.
+    if (!success)
+        status_ = "reload failed (see log)";
+    else if (!error.empty())
+        status_ = "reloaded with hook errors (see log)";
+    else
+        status_ = "reloaded";
 }
 
 void ScriptReload::RequestReload() {

@@ -3,7 +3,21 @@
 #include <cstring>
 #include <daScript/ast/dyn_modules.h>
 
+#include "engine/core/Profiler.hpp"
+
 namespace tryengine::core {
+
+namespace {
+
+//! Уникальный номер поколения контекста. Template-кеш поиска функции сравнивает его с
+//! номером, при котором нашёл SimFunction*, поэтому номер не должен повторяться и между
+//! экземплярами ScriptSystem в одном процессе.
+uint64_t NextScriptRevision() {
+    static uint64_t next = 0;
+    return ++next;
+}
+
+}  // namespace
 
 ScriptSystem::ScriptSystem(ScriptSystemConfig config) : config_(eastl::move(config)) {
     TRY_ASSERT(config_.create_context, "Фабрика контекста должна быть задана!");
@@ -44,16 +58,50 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
     CompiledScript result;
     result.module_group = std::make_unique<das::ModuleGroup>();
 
+    // FileAccess кеширует текст прочитанных файлов, поэтому повторная компиляция через тот
+    // же экземпляр взяла бы прошлую версию скриптов. Первую компиляцию обслуживает источник
+    // из конструктора, на перезагрузке нужен свежий. Старый живёт, пока жив его Program.
+    if (das_ctx_) {
+        file_access_ = config_.create_file_access();
+        TRY_ASSERT(file_access_, "FileAccess не создан (битый пак?)");
+    }
+
     if (config_.prepare_file_access)
         config_.prepare_file_access(*file_access_);
 
     const das::string script_path(path.data(), path.size());
-    auto program = das::compileDaScript(script_path, file_access_, tout, *result.module_group, config_.policies);
 
-    if (!program)
+    // Перезагрузка собирает модули проекта заново: без ignore_shared_modules
+    // compileDaScript переиспользует promoted-модули прошлой сборки, и правка не видна.
+    // AST-кеш отдаёт неизменённые модули без повторного парсинга.
+    das::CodeOfPolicies policies = config_.policies;
+    if (reload_extension_) {
+        result.module_cache = std::make_unique<das::ModuleFileCache>();
+        const das::string cache_path =
+            das::ModuleFileCache::defaultPath(script_path, "tryengine-editor", "project.das_project");
+        result.module_cache->install(cache_path, cache_path, true);
+        policies.module_cache = result.module_cache->requested;
+        policies.ignore_shared_modules = true;
+    }
+
+    auto finish_module_cache = [&result]() {
+        if (result.module_cache)
+            result.module_cache->finish();
+    };
+
+    das::ProgramPtr program;
+    {
+        TRY_PROFILE_SCOPE("Script.Compile");
+        program = das::compileDaScript(script_path, file_access_, tout, *result.module_group, policies);
+    }
+
+    if (!program) {
+        finish_module_cache();
         return LogAndMakeError("Ошибка компиляции скрипта (program == nullptr): {}", path.data());
+    }
 
     if (program->failed()) {
+        finish_module_cache();
         eastl::string error_text;
         for (const auto& error : program->errors) {
             const auto report = das::reportError(error.at, error.what, error.extra, error.fixme, error.cerr);
@@ -67,13 +115,25 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
         return Error(ErrorCode::Unknown, eastl::move(error_text));
     }
 
+    // Поздние require (llvm_macro из just_in_time) идут уже на симуляции и требуют
+    // shared-модуль; на время разбора мы его намеренно игнорировали.
+    program->policies.ignore_shared_modules = false;
+
+    // Кеш закрывается до симуляции: он описывает фазу разбора. Модули, которые симуляция
+    // дочитывает через require_module_now, живут в promoted-списке и переживают перезагрузку.
+    finish_module_cache();
+
     auto* new_ctx = config_.create_context(program->getContextStackSize());
     if (!new_ctx)
         return LogAndMakeError("Фабрика контекста вернула nullptr: {}", path.data());
 
-    if (!program->simulate(*new_ctx, tout)) {
-        delete new_ctx;
-        return LogAndMakeError("Ошибка симуляции контекста! {}", tout.c_str());
+    {
+        TRY_PROFILE_SCOPE("Script.Simulate");
+        if (!program->simulate(*new_ctx, tout)) {
+            delete new_ctx;
+            finish_module_cache();
+            return LogAndMakeError("Ошибка симуляции контекста! {}", tout.c_str());
+        }
     }
 
     result.program = eastl::move(program);
@@ -121,11 +181,15 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
         return std::unexpected(std::move(compiled.error()));
 
     // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
+    // Кеш объявлен первым: он переживает контекст, программу и группу модулей.
+    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
     std::unique_ptr<das::Context> old_context(das_ctx_);
     das::ProgramPtr old_program = eastl::move(program_);
     std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
 
     das_ctx_ = compiled->context.release();
+    revision_ = NextScriptRevision();
+    module_cache_ = eastl::move(compiled->module_cache);
     program_ = eastl::move(compiled->program);
     module_group_ = eastl::move(compiled->module_group);
     main_script_path_.assign(path.data(), path.size());
@@ -133,6 +197,7 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
     old_context.reset();
     old_program = nullptr;
     old_group.reset();
+    old_cache.reset();
 
     LogInfo(LogCategory::Script, "Скрипт {} успешно скомпилирован", path.data());
     return {};
@@ -146,6 +211,14 @@ Result<void> ScriptSystem::ReloadMainScript() {
     if (!das_ctx_)
         return LogAndMakeError("Нет активного контекста скриптов");
 
+    // Снимок состояния делает старый контекст, пока он ещё цел. Хуки идут до компиляции,
+    // чтобы ошибка разбора нового поколения не мешала сохранению состояния.
+    eastl::string hook_errors;
+    {
+        TRY_PROFILE_SCOPE("Script.Reload.BeforeHooks");
+        InvokeReloadHooks(das_ctx_, "__before_reload_", hook_errors);
+    }
+
     // Пока новый скрипт компилируется и симулируется, старый продолжает работать:
     // ошибка компиляции не должна ронять редактор.
     auto compiled = CompileMainScript(main_script_path_);
@@ -154,29 +227,38 @@ Result<void> ScriptSystem::ReloadMainScript() {
         return std::unexpected(std::move(compiled.error()));
     }
 
-    // Снимок состояния делает старый контекст, пока он ещё цел.
-    eastl::string hook_errors;
-    InvokeReloadHooks(das_ctx_, "__before_reload_", hook_errors);
-
+    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
     std::unique_ptr<das::Context> old_context(das_ctx_);
     das::ProgramPtr old_program = eastl::move(program_);
     std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
 
     das_ctx_ = compiled->context.release();
+    // Новая ревизия до ReinitializeContext: точки входа хоста уже обязаны искать функции
+    // в новом контексте, а не брать кеш прошлого поколения.
+    revision_ = NextScriptRevision();
+    module_cache_ = eastl::move(compiled->module_cache);
     program_ = eastl::move(compiled->program);
     module_group_ = eastl::move(compiled->module_group);
 
     // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
     // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
-    reload_extension_->ReinitializeContext(*this);
+    {
+        TRY_PROFILE_SCOPE("Script.Reload.Reinit");
+        reload_extension_->ReinitializeContext(*this);
+    }
     das_ctx_->restart();
 
-    InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
+    {
+        TRY_PROFILE_SCOPE("Script.Reload.AfterHooks");
+        InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
+    }
 
-    // Старое поколение уходит последним: его контекст ссылается на программу и модули.
+    // Старое поколение уходит последним: его контекст ссылается на программу и модули,
+    // а AST-кеш — на FileInfo, которые эти модули ещё читают.
     old_context.reset();
     old_program = nullptr;
     old_group.reset();
+    old_cache.reset();
 
     reload_extension_->OnReloadFinished(true, hook_errors);
     if (hook_errors.empty())

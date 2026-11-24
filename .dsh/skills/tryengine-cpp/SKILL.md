@@ -113,7 +113,7 @@ MySystem* maybe = engine.TryGet<MySystem>();
 
 - Имена `[export]`-функций (`EngineStart`, `GameStart`, `EngineUpdate`, `GameUpdate`,
   `EditorStart`, `EditorUpdate`) — публичный API для C++; переименование ломает вызовы
-  `InvokeFunctionFast/Safe`.
+  `InvokeFunctionFast<"Name">()/InvokeFunctionSafe<"Name">()`.
 - `DECLARE_MODULE`/`PULL_MODULE` и функции регистрации — только в глобальном namespace.
 - Меняешь биндинги — пересобери модули в Release (`tools/agent/build.sh modules`).
 

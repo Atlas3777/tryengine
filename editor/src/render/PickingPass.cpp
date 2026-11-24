@@ -79,7 +79,7 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
         if (picked_entity_id != 0) {
             LogInfo("Выбран объект с Entity ID: {}", picked_entity_id);
             auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
-            script.InvokeFunctionFast("SetSelectedEntity", picked_entity_id);
+            script.InvokeFunctionFast<"SetSelectedEntity">(picked_entity_id);
         }
     }
 
@@ -91,15 +91,15 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
 
     // A gizmo handle owns the click that started its drag: clicking an arrow must not also
     // select whatever opaque mesh happens to be behind the gizmo.
-    auto gizmo_drag = script.SimpleReturnUnsafe<bool>("IsGizmoDragging");
+    auto gizmo_drag = script.SimpleReturnUnsafe<"IsGizmoDragging", bool>();
     if (gizmo_drag.has_value() && *gizmo_drag)
         return;
 
-    auto size = script.SimpleReturnUnsafe<das::float2>("GetEditorViewportSize");
+    auto size = script.SimpleReturnUnsafe<"GetEditorViewportSize", das::float2>();
     if (!size.has_value())
         return;
 
-    auto mouse = script.SimpleReturnUnsafe<Mouse*>("GetEditorSceneViewportMouse", *size);
+    auto mouse = script.SimpleReturnUnsafe<"GetEditorSceneViewportMouse", Mouse*>(*size);
     if (!mouse.has_value())
         return;
 

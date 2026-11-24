@@ -46,7 +46,10 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 - Игра грузит `./game/scripts/Game.das` **из `script_pak`**, а не с диска.
 - C++ вызывает функции по имени: `EngineStart`, `GameStart`, `EngineUpdate`, `GameUpdate`
   (игра), `EditorStart`, `EditorUpdate` (редактор) — через
-  `ScriptSystem::InvokeFunctionFast` / `InvokeFunctionSafe`.
+  `ScriptSystem::InvokeFunctionFast<"Name">()` / `InvokeFunctionSafe<"Name">()`.
+- `ReloadMainScript` собирает поколение в новой `ModuleGroup` с AST-кешем и свежим
+  `FileAccess`; `ignore_shared_modules` включается на разборе и снимается перед
+  `simulate`, иначе поздний `llvm_macro` не находит shared-модуль.
 - Экспортируй через `[export] def Name()`. Переименование `[export]`-функции ломает C++
   молча — это публичный контракт.
 

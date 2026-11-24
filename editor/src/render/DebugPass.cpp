@@ -29,7 +29,7 @@ struct DebugPushConstants {
 }  // namespace
 
 void DebugPass::Collect(CollectContext& ctx) {
-    auto debug_res = ctx.engine.Get<tryengine::core::ScriptSystem>().SimpleReturnUnsafe<das::Array*>("GetDebugLines");
+    auto debug_res = ctx.engine.Get<tryengine::core::ScriptSystem>().SimpleReturnUnsafe<"GetDebugLines", das::Array*>();
     if (!debug_res.has_value())
         LogError(LogCategory::Script, "Error on invoke script");
     const auto array = *debug_res;

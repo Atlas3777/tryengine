@@ -206,8 +206,12 @@ transform pass, префабы, сцены, undo). Гейт компиляции
 - Резолвинг модулей — `project.das_project` → `module_get`: `tryengine/...` указывает на
   `engine_source/daslang`, `tryeditor/...` — на `editor/daslang`, `trygame/...` — на
   `game/scripts`, плюс `imgui/`, `llvm/`, `daslib/`, `live/`. `DAS_PAK_ROOT` абсолютный.
-- Точки входа — `[export] def Name()`; C++ вызывает их по имени через
-  `ScriptSystem::InvokeFunctionFast/Safe`, поэтому переименование молча ломает C++ сторону.
+- Точки входа — `[export] def Name()`; C++ вызывает их через
+  `ScriptSystem::InvokeFunctionFast<"Name">()`/`InvokeFunctionSafe<"Name">()`, поэтому
+  переименование молча ломает C++ сторону. Имя — template-параметр, поиск функции в
+  таблице кешируется до смены поколения контекста.
+- Горячая перезагрузка компилирует новое поколение в отдельной `ModuleGroup` со свежим
+  `FileAccess` и AST-кешем: иначе daScript переиспользует старые модули и правка не видна.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.

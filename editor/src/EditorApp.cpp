@@ -106,8 +106,8 @@ void EditorApp::Init() {
     engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,
                                           *frame_sync_);
 
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("EngineStart");
-    engine_->Get<ScriptSystem>().InvokeFunctionFast("EditorStart");
+    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EngineStart">();
+    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EditorStart">();
 
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
@@ -143,8 +143,8 @@ void EditorApp::Run() const {
             MainThread().Pull();
         }
 
-        script_system.InvokeFunctionFast("EngineUpdate");
-        script_system.InvokeFunctionFast("EditorUpdate");
+        script_system.InvokeFunctionFast<"EngineUpdate">();
+        script_system.InvokeFunctionFast<"EditorUpdate">();
 
         // Перезагрузка запрашивается из UI/хоткея во время EditorUpdate; подменять контекст
         // можно только когда в нём не выполняется ни одна функция скрипта, то есть здесь.
@@ -159,7 +159,7 @@ void EditorApp::Run() const {
         // перед сборкой нужны gc_dummy-корни: их ставят/снимают скриптовые хуки.
         {
             TRY_PROFILE_SCOPE("Script.GC");
-            script_system.InvokeFunctionFast("EngineCollectGarbage");
+            script_system.InvokeFunctionFast<"EngineCollectGarbage">();
         }
 
         {

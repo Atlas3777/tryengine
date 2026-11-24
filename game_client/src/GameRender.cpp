@@ -70,8 +70,8 @@ void GameRender::Render(tryengine::core::Engine& engine, tryengine::graphics::Vu
         last_viewport_size_ = game_viewport;
     }
 
-    auto camera_res = script.SimpleReturnUnsafe<tryengine::graphics::CameraData*>(
-        "GetGameCamera", das::float2(game_viewport.width, game_viewport.height));
+    auto camera_res = script.SimpleReturnUnsafe<"GetGameCamera", tryengine::graphics::CameraData*>(
+        das::float2(game_viewport.width, game_viewport.height));
     tryengine::graphics::CameraData cam_data =
         camera_res.has_value() ? *(*camera_res) : tryengine::graphics::CameraData{};
 
