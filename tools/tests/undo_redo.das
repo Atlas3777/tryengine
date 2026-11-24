@@ -1,13 +1,13 @@
 options gen2
 options relaxed_assign = false
 
-//! Probe for tryeditor/UndoRedo: runs the history against a DECS world, without the editor.
+//! tryeditor/UndoRedo against a DECS world, without the editor.
 //!
-//! The probe has entities but no models, so no resource is touched and the CLI can run it
-//! (`tools/agent/undo-probe.sh`). What it covers is what a GUI cannot check cheaply: the
-//! component snapshot round trip, add/remove component undo, deleting a subtree and getting
-//! it back under the same parent and sibling slot with a *new* entity id, an older history
-//! entry still reaching the re-spawned entity, copy/paste, and gesture coalescing.
+//! The test has entities but no models, so no resource is touched. What it covers is what a
+//! GUI cannot check cheaply: the component snapshot round trip, add/remove component undo,
+//! deleting a subtree and getting it back under the same parent and sibling slot with a *new*
+//! entity id, an older history entry still reaching the re-spawned entity, copy/paste, and
+//! gesture coalescing.
 //!
 //! A module [init] may run before the ones of `Types` and `Serializable`, so the probe
 //! declares the components and the writer it uses itself. The names and types match the real

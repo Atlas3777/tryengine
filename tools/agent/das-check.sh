@@ -57,6 +57,12 @@ for f in "${files[@]}"; do
 
     out="$TMP_DIR/das-check-$(printf '%s' "$f" | tr '/' '_').log"
     start=$SECONDS
+    # A negative test of the suite declares that it must not compile; the suite runner
+    # asserts that, the compile gate must not turn it into a failure.
+    if grep -qE '^//! *expect: *compile-error' "$abs"; then
+        printf '  %sSKIP%s %-50s negative compile test\n' "$C_YELLOW" "$C_RESET" "$f"
+        continue
+    fi
     if timeout "$DAS_TIMEOUT" "$DASLANG" -dry-run "${DAS_GATE[@]}" "$abs" >"$out" 2>&1 \
         && ! grep -qE 'error\[|panic\(|Simulation failed' "$out"; then
         printf '  %sOK%s   %-50s %ss\n' "$C_GREEN" "$C_RESET" "$f" "$((SECONDS - start))"

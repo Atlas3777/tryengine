@@ -146,7 +146,18 @@ if (( ${#das[@]} > 0 )); then
     fi
 fi
 
-# --- 5. builds ----------------------------------------------------------------------------
+# --- 5. daslang behaviour suite -----------------------------------------------------------
+# Every test is a standalone program; the suite isolates the global state (DECS, Time,
+# AssetCache) that makes in-process tests order-dependent. It needs the native binding
+# modules built, like the daslang gate above.
+if "$AGENT_DIR/test.sh"; then
+    record "tests" OK
+else
+    record "tests" FAIL
+    overall=1
+fi
+
+# --- 6. builds ----------------------------------------------------------------------------
 if (( fast )); then
     log "==> builds skipped (--fast)"
 else
