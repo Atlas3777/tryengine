@@ -47,8 +47,10 @@ requireMeshs: u64[] = [
 	1741344749783042632
 	17163688725366189899
 	3081795527557720915
+	18103440006364373279
 ]
 requireMaterials: string[] = [
+	"game/data/materials/grid.mat"
 ]
 entities: Entity[] = [
 	{
@@ -499,6 +501,41 @@ entities: Entity[] = [
 			scale: f32x3 = [1 1 1]
 		}
 		parentLocalId: u32 = 48
+	}
+	{
+		tag: string = "Sketchfab_model"
+		transform: Transform = {
+			position: f32x3 = [2.0523033 11.138992 2.3841858e-07]
+			rotation: f32x4 = [-1.6653345e-16 0 1 -1.3591729e-16]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		tag: string = "c431403aacdb4cbca394bbd8f5b0198d.fbx"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0.7071068 0 0 0.7071068]
+			scale: f32x3 = [0.01 0.01 0.01]
+		}
+		parentLocalId: u32 = 50
+	}
+	{
+		tag: string = "RootNode"
+		transform: Transform = {
+			position: f32x3 = [0 0 0]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+		parentLocalId: u32 = 51
+	}
+	{
+		tag: string = "Vulcan_Scarlet_Lance"
+		transform: Transform = {
+			position: f32x3 = [1.1601142e-05 177.45967 3.553183e-08]
+			rotation: f32x4 = [-0.7071068 0 0 0.7071067]
+			scale: f32x3 = [100 100 100]
+		}
+		parentLocalId: u32 = 52
 	}
 	{
 		model: ModelRender = {
@@ -1122,7 +1159,7 @@ entities: Entity[] = [
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 102
+		parentLocalId: u32 = 53
 	}
 	{
 		PointLight_color: f32x3 = [1 1 1]
@@ -1136,38 +1173,125 @@ entities: Entity[] = [
 		}
 	}
 	{
-		tag: string = "Sketchfab_model"
-		transform: Transform = {
-			position: f32x3 = [2.0523033 11.138992 2.3841858e-07]
-			rotation: f32x4 = [-1.6653345e-16 0 1 -1.3591729e-16]
-			scale: f32x3 = [1 1 1]
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [3.5 2.5 0.10581123]
 		}
-	}
-	{
-		tag: string = "c431403aacdb4cbca394bbd8f5b0198d.fbx"
-		transform: Transform = {
-			position: f32x3 = [0 0 0]
-			rotation: f32x4 = [0.7071068 0 0 0.7071068]
-			scale: f32x3 = [0.01 0.01 0.01]
+		meshScale: MeshScale = {
+			scale: f32x3 = [7 5 0.21162246]
 		}
-		parentLocalId: u32 = 99
-	}
-	{
-		tag: string = "RootNode"
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		tag: string = "PB Box"
 		transform: Transform = {
-			position: f32x3 = [0 0 0]
+			position: f32x3 = [8.611532 -4.504031 0]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
-		parentLocalId: u32 = 100
 	}
 	{
-		tag: string = "Vulcan_Scarlet_Lance"
-		transform: Transform = {
-			position: f32x3 = [1.1601142e-05 177.45967 3.553183e-08]
-			rotation: f32x4 = [-0.7071068 0 0 0.7071067]
-			scale: f32x3 = [100 100 100]
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [3.5 1 0.09056004]
 		}
-		parentLocalId: u32 = 101
+		meshScale: MeshScale = {
+			scale: f32x3 = [7 2 0.18112008]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [8.600284 -2.140434 1.0741837]
+			rotation: f32x4 = [0.7071068 0 0 0.70710677]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [1.5 1 0.5]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [3 2 1]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [1.5 -6 0.5]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [13 8.5 0.07765202]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [26 17 0.15530404]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [11 -17.5 -0.012596309]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [0.5 0.5 0.5]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [1 1 1]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		rigidBody: RigidBody = {
+			motion: i32 = 2
+			mass: f32 = 1
+			friction: f32 = 0.5
+			restitution: f32 = 0
+			sensor: bool = false
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [7.731696 -2.2435977 3.796424]
+			rotation: f32x4 = [0.5 -0.5 -0.50000006 0.49999997]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [15.5 8.5 0.5]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [31 17 1]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		rigidBody: RigidBody = {
+			motion: i32 = 2
+			mass: f32 = 10000
+			friction: f32 = 0.5
+			restitution: f32 = 0
+			sensor: bool = false
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [6.891577 -19.43055 9.425299]
+			rotation: f32x4 = [-0.83684963 0 0 0.5474328]
+			scale: f32x3 = [1 1 1]
+		}
 	}
 ]

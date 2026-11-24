@@ -1,0 +1,42 @@
+================ SHADER REFLECTION DUMP ================
+
+========================================================
+  VERTEX SHADER BINDINGS
+========================================================
+  <No resources bound for this stage>
+
+========================================================
+  FRAGMENT SHADER BINDINGS
+========================================================
+Resource: "MaterialUBO" (Hash: 0x220A6028)
+  - Scope: Material (Set 1) | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Size: 48 bytes
+  - Members:
+      * "albedo_color" | Offset: 0 | Size: 16 | Type: Vec4
+      * "line_color" | Offset: 16 | Size: 16 | Type: Vec4
+      * "cell_size" | Offset: 32 | Size: 4 | Type: Float
+      * "line_width" | Offset: 36 | Size: 4 | Type: Float
+      * "_padding" | Offset: 40 | Size: 8 | Type: Vec2
+--------------------------------------------------------
+
+========================================================
+  FULL PROGRAM COMBINED BINDINGS
+========================================================
+Resource: "pc" (Hash: 0x4E4E5564)
+  - Scope: Pass (Set 0) | Kind: UniformBuffer
+  - Set: 0, Binding: 0, Size: 16 bytes
+  - Members:
+      * "objects" | Offset: 0 | Size: 8 | Type: Float
+      * "fragment" | Offset: 8 | Size: 8 | Type: Float
+--------------------------------------------------------
+Resource: "MaterialUBO" (Hash: 0x220A6028)
+  - Scope: Material (Set 1) | Kind: UniformBuffer
+  - Set: 1, Binding: 0, Size: 48 bytes
+  - Members:
+      * "albedo_color" | Offset: 0 | Size: 16 | Type: Vec4
+      * "line_color" | Offset: 16 | Size: 16 | Type: Vec4
+      * "cell_size" | Offset: 32 | Size: 4 | Type: Float
+      * "line_width" | Offset: 36 | Size: 4 | Type: Float
+      * "_padding" | Offset: 40 | Size: 8 | Type: Vec2
+--------------------------------------------------------
+

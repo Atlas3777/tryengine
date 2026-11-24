@@ -118,9 +118,12 @@
   `EngineCollectGarbage` (`engine_source/daslang/Engine.das`). Он сам ставит
   `gc_dummy`-корни (`MarkGcRoots`), вызывает `heap_collect_if_needed` и снимает корни
   через `decs::after_gc`. Строки и массивы компонентов лежат в сырой памяти архетипов,
-  и без этих корней GC их не видит. `MarkGcRoots` **пропускает компоненты-указатели**
-  (`mesh`/`material`): они адресуют C++-ресурсы, и общий walker ушёл бы в чужую память
-  (SIGSEGV в `BaseGcDataWalker::walk_struct`); строк в них нет.
+  и без этих корней GC их не видит. `MarkGcRoots` берёт **только те компоненты, которые
+  реально владеют das-памятью**: `string`/`array`/`table`/`tuple`/`variant`/`lambda` и
+  структуры с `firstGcField < count` (например, `ModelRender` с полем `material`).
+  POD-компоненты (`Transform`, `PhysicsBody`, коллайдеры) и указатели
+  (`mesh`/`material`) не rooting'ятся: первым это не нужно, вторые адресуют C++-ресурсы,
+  и общий walker ушёл бы в чужую память (SIGSEGV в `BaseGcDataWalker::walk_struct`).
   `EngineCollectGarbage` помечен `[no_jit]`: LLVM JIT не пропускает функцию, достижимую
   из `heap_collect`, если в ней есть `Archetype&`.
 - Локальный `var arr : array<T>` или `table` сам себя **не освобождает**: в коде, который

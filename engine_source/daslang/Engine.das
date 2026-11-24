@@ -37,14 +37,32 @@ def EngineUpdate() {
 //! Call this from the frame loop between script calls, never from inside a query. A host
 //! without a collectable heap (the game client) must not call it.
 //!
-//! Pointer components (`mesh`/`material`) are deliberately not rooted: they address C++
-//! resources, and the generic struct walker would follow them into C++ memory. They hold no
-//! das-managed strings, so skipping them loses nothing and keeps the collector safe.
+//! Only components that actually own das-managed values need a root: strings, arrays,
+//! tables and structs with a GC field. Rooting a POD component (Transform, PhysicsBody,
+//! colliders) is pointless and the generic walker is not safe for every such layout;
+//! pointer components (`mesh`/`material`) address C++ resources and must stay unrooted.
+def private NeedsGcRoot(comp : Component) : bool {
+    let bt = comp.info.basicType
+    if (bt == Type.tString || bt == Type.tArray || bt == Type.tTable ||
+        bt == Type.tTuple || bt == Type.tVariant || bt == Type.tLambda) {
+        return true
+    }
+    if (bt != Type.tStructure) {
+        return false
+    }
+    let ti = invoke(comp.info.mkTypeInfo)
+    if (ti == null || ti.firstType == null || ti.firstType.structType == null) {
+        return false
+    }
+    let st = ti.firstType.structType
+    return st.firstGcField < st.count
+}
+
 def private MarkGcRoots() {
     for (arch in decsState.allArchetypes) {
         if (arch.size > 0_l) {
             for (comp in arch.components) {
-                if (comp.info.gc == null || comp.info.basicType == Type.tPointer) {
+                if (comp.info.gc == null || !NeedsGcRoot(comp)) {
                     continue
                 }
                 comp.gc_dummy <- invoke(comp.info.gc, comp.data)
