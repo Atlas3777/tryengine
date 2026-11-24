@@ -6,9 +6,9 @@ module TransformSystem shared public
 //! Keeps the derived world transform in sync with the authored local hierarchy.
 //!
 //! `Transform` is one authored component (`transform`): the Inspector edits it and scene save
-//! writes it. The derived world transform is `WorldTransform` in the component `_world`: a plain
-//! struct without [DecsSerializable], so it has no writer and never reaches a scene or prefab.
-//! `Render.das` reads it.
+//! writes it. The derived world transform is `WorldTransform` in the component `_world`, a
+//! declared component with `transient = true, hidden = true`: it never reaches a scene or prefab
+//! and the Inspector does not draw it. `Render.das` reads it.
 //!
 //! `_world` is created together with `transform` and is never added here: adding a component
 //! moves the entity to another archetype and copies its whole row, which used to cost more
@@ -24,6 +24,7 @@ module TransformSystem shared public
 require math
 require daslib/decs
 require daslib/decs_boost
+require tryengine/EcsMacro
 require tryengine/Profiling
 require tryengine/Types
 
@@ -107,6 +108,9 @@ def public ResetWorldTransformCaches() {
     clear(g_world_ok)
     clear(g_world_generation)
     clear(g_world_index)
+    // DECS just dropped its heap, so it also dropped the declared component types and the
+    // archetype validation cursor: put both back before the next entity is created.
+    EcsApplyRegistry()
 }
 
 def private WriteWorld(eid : EntityId; world : WorldTransform) {

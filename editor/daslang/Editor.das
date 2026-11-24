@@ -12,6 +12,7 @@ require tryeditor/Gizmo
 require trygame/Game
 
 require math
+require tryengine/EcsMacro
 require tryengine/Scene
 require tryengine/Profiling
 require tryengine/Time
@@ -31,11 +32,13 @@ require daslib/decs_boost
 var is_playing : bool = false
 var is_paused  : bool = false
 
-// Editor state. A plain struct has no writer, so the marker never reaches a scene or a
-// prefab and the Inspector does not draw it.
+// Editor state. Declared below as a component, but transient and hidden: it never reaches a
+// scene or a prefab and the Inspector does not draw it.
 struct private EditorCameraTag {
     enabled : bool = true
 }
+
+%ecs~("editorCameraTag", type<EditorCameraTag>, hidden = true, transient = true) %%
 
 // The editor owns its clock and hangs it off the engine root: editor tools (camera, gizmos)
 // keep running while the game is paused, and play mode never slows them down.

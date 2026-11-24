@@ -47,6 +47,7 @@ require tryengine/Model
 require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/TransformSystem
+require tryengine/EcsMacro
 require tryengine/Types
 require tryResources
 
@@ -237,9 +238,10 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             }
 
             let cf = node_obj?[field_name] ?? null
-            // A plain runtime struct has no writer; it is not authored data.
-            if (cf != null && cf.value is _object && !HasComponentWriter(cf.typeName)) {
-                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is runtime-only and forbidden in a prefab\n")
+            // Only components declared `save = true` may appear in a prefab; a runtime
+            // component in the document is an authoring mistake, not a value to drop.
+            if (!EcsShouldSave(field_name)) {
+                print("[PREFAB ERROR] node #{node_index}: field '{field_name}' is not a saved component and is forbidden in a prefab\n")
                 return null
             }
             if (!ApplyDecsConfigField(node.values, field_name, cf, cf != null ? cf.typeName : "")) {
@@ -732,13 +734,13 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
             if (comp.name == "eid" || comp.info.basicType == Type.tPointer) {
                 continue
             }
-            if (!HasComponentWriter(comp.info.fullName)) {
+            if (!EcsShouldSave(comp.name)) {
                 continue
             }
 
             var cf_val = DecsComponentToCF(comp, rec_index)
             if (cf_val == null) {
-                print("[PREFAB WARNING] component '{comp.name}' is not serializable; skipped\n")
+                print("[PREFAB WARNING] component '{comp.name}' is declared save = true but has no writer; skipped\n")
                 skipped_components++
                 continue
             }

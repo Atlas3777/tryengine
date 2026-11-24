@@ -145,23 +145,14 @@ def private split_component_name(name : string; var out_prefix : string&; var ou
     return false
 }
 
-// The Inspector draws authored components: a component whose type has a writer, or a
-// runtime component with a custom draw (the relationship graph). `eid` is structural and
-// is never shown; a plain runtime struct (WorldTransform, EditorCameraTag) has
-// no writer and no override, so it stays hidden.
+// The Inspector draws exactly the components declared not `hidden` with %ecs; `eid` is
+// structural and is never shown. A custom draw (`g_overrides`) only changes how an already
+// shown component is drawn, never whether it is shown.
 def private IsComponentVisible(comp : Component) : bool {
     if (comp.name == "eid") {
         return false
     }
-    if (HasComponentWriter(comp.info.fullName)) {
-        return true
-    }
-    var prefix = ""
-    var field = ""
-    if (split_component_name(comp.name, prefix, field)) {
-        return key_exists(g_overrides, prefix)
-    }
-    return key_exists(g_overrides, comp.name)
+    return EcsShouldShow(comp.name)
 }
 
 [profile]
@@ -272,13 +263,13 @@ def DrawInspector() {
 }
 
 // ---------------------------------------------------------------------
-// Удаление компонента. Для зарегистрированных шаблонов/компонентов используем
-// сгенерированный cmp_remover; для динамических компонентов без регистрации
-// (tag, custom dynamic components, ...) удаляем по имени напрямую.
+// Удаление компонента. Для объявленных компонентов и групп шаблонов используем
+// сгенерированный remover; компонент без объявления (динамический, добавленный
+// вручную) удаляем по имени напрямую.
 // ---------------------------------------------------------------------
 def private RemoveInspectorComponent(target_eid : EntityId; arch_idx : int; name : string; group : bool) {
-    if (key_exists(ecs_component_table, name)) {
-        ecs_component_table[name].cmp_remover(target_eid)
+    if (key_exists(g_ecs_removers, name)) {
+        g_ecs_removers[name] |> invoke(target_eid)
         return
     }
 
@@ -332,13 +323,16 @@ def private AddComponent(target_eid : EntityId) {
         child(ADD_CMP_LIST, (text = "child", size = float2(250f, 300f),
          child_flags = ImGuiChildFlags.AutoResizeY, window_flags = ImGuiWindowFlags.None)) {
             var shown = 0
-            for (name, n in keys(ecs_component_table), values(ecs_component_table)) {
+            for (name, n in keys(g_ecs_components), values(g_ecs_components)) {
+                if (!n.addable || n.hidden) {
+                    continue
+                }
                 if (!passes_filter(W_ADD_CMP_FILTER, name)) {
                     continue
                 }
                 shown++
-                if (selectable(g_add_cmp_rows[name], (text = "{name} : {n.cmp_type}"))) {
-                    n.cmp_creator(target_eid)
+                if (selectable(g_add_cmp_rows[name], (text = "{name} : {n.type_name}"))) {
+                    g_ecs_creators[name] |> invoke(target_eid)
                     ADD_CMP_POPUP.pending_close = true
                 }
             }
@@ -741,7 +735,7 @@ def private draw_struct_fields(ptr : void?; type_name : string; id_prefix : stri
 
     var fields : array<InspectField>
     if (!DecsInspectFields(type_name, fields)) {
-        text("{type_name}: no inspector schema, mark the struct [DecsSerializable]")
+        text("{type_name}: no inspector schema; declare the component with %ecs and without hidden = true")
         return
     }
 

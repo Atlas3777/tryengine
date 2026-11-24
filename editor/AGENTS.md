@@ -85,9 +85,10 @@
 
 ## Инспектор: аннотации, asset picker, удаление компонентов
 
-- Схема полей `[DecsSerializable]`-структур приходит из `apply` (`tryengine/Serializable`),
-  вместе с аннотациями. Инспектор понимает `@hide`, `@min`, `@max`, `@speed`, `@readonly`
-  и `@asset = "kind:ext"`.
+- Схема полей структуры приходит из `apply` (`CollectInspectFields` из
+  `tryengine/Serializable`); её регистрирует `%ecs` (`tryengine/EcsMacro`) для каждого
+  не-hidden структурного компонента, вместе с аннотациями полей. Инспектор понимает
+  `@hide`, `@min`, `@max`, `@speed`, `@readonly` и `@asset = "kind:ext"`.
 - Asset picker задаётся аннотацией самого поля, а не типом значения:
   `@asset = "data:mat"` над обычным `string`. `kind` — домен хранения
   (`engine`/`game`/`content`/`data`), а не подпапка; `ext` фильтрует всё дерево домена,
@@ -200,12 +201,13 @@
 - Формат сцены хранит только авторские компоненты и `parentLocalId` — индекс сущности в
   массиве `entities`, как в префабе; корневая сущность поля не пишет, и его отсутствие
   означает корень. `eid` не пишется (DECS всё равно выдаёт новый при
-  создании), а `relationship` собирается при загрузке. Сохранение определяется типом:
-  компонент пишется, если у его типа есть writer — встроенный скаляр или
-  `[DecsSerializable]`-структура. Обычная структура (`WorldTransform`, `Relationship`,
-  `EditorCameraTag`) writer'а не имеет, поэтому scene save, prefab compile/save
-  и Inspector её пропускают; указатели `mesh`/`material` — это компоненты-указатели,
-  их отсекает `Type.tPointer`. `eid` — единственное структурное исключение.
+  создании), а `relationship` собирается при загрузке. Сохранение определяется
+  объявлением компонента, а не наличием writer'а у типа: scene save, prefab compile/save и
+  загрузка спрашивают `EcsShouldSave(имя)`, то есть `%ecs(..., transient = false)`.
+  `_world`, `Relationship`, `EditorCameraTag` объявлены `transient = true`, поэтому в файл
+  не попадают; указатели `mesh`/`material` — компоненты-указатели, их отсекает
+  `Type.tPointer`. `eid` — единственное структурное исключение. Видимость в Inspector —
+  второй флаг `hidden` (`EcsShouldShow`); «Add component» — `!hidden` + `addable`.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
   `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
@@ -269,14 +271,16 @@
 - `Transform` — один компонент `transform`: обычная структура `position/rotation/scale`
   с identity-дефолтами. Его правит Inspector и сохраняет сцена; `default<Transform>`
   больше не даёт нулевой scale. `_world` — производный компонент **другого типа**
-  `WorldTransform` (та же тройка TRS, но без `[DecsSerializable]`):
+  `WorldTransform`, объявленный явно как `%ecs~("_world", type<WorldTransform>,
+  hidden = true, transient = true) %%`:
   `tryengine/TransformSystem` разворачивает Relationship-иерархию каждый кадр, его читает
-  `Render.das`. Writer'а у `WorldTransform` нет, поэтому `_world` не сохраняется и не
-  виден в Inspector.
+  `Render.das`. Поэтому `_world` не сохраняется и не виден в Inspector, но остаётся
+  зарегистрированным типом, который проверяет валидация архетипов.
 - **Имя аргумента в `query` — это имя компонента** (для не-шаблонных компонентов). Поэтому
   `query() $(transform : Transform)` видит `transform`, а `$(t : Transform)` — компонент `t`
   и молча не находит ни одной сущности. Для шаблонов (`camera : Camera`) имя не важно: они
-  разворачиваются по префиксу. Опечатка не диагностируется — проверяй имена.
+  разворачиваются по префиксу. Опечатка в имени запроса не диагностируется: валидация
+  проверяет архетипы (создание компонента), а не текст `query`, — проверяй имена.
 - `UpdateWorldTransforms` вызывает `EngineUpdate` (то есть `engine_source/daslang/Engine.das`)
   до того, как кадр дойдёт до `EditorUpdate`/`GameUpdate` и `Render`; это единственное место,
   где считается иерархия. Меняешь сцену из скрипта — правь `transform`, не `_world`.

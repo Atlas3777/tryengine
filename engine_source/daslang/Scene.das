@@ -17,6 +17,7 @@ require tryengine/AssetCache
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
+require tryengine/EcsMacro
 require tryengine/FileReader
 require tryengine/Model
 require tryengine/Serializable
@@ -467,8 +468,11 @@ def private ApplyDocument(document : Content::Document?) : bool {
                         continue
                     }
                     let cf = cur_ent_obj?[field_name] ?? null
-                    // A plain runtime struct has no writer; it is not authored data.
-                    if (cf != null && cf.value is _object && !HasComponentWriter(cf.typeName)) {
+                    // Only components declared `save = true` are authored data. A runtime
+                    // component in a hand-edited scene is dropped like an unknown field.
+                    if (!EcsShouldSave(field_name)) {
+                        print("[SCENE WARNING] Entity '{entity_tag}': field '{field_name}' is not a saved component. Skipped.\n")
+                        warnings_count++
                         continue
                     }
                     let type_name = cf != null ? cf.typeName : ""
@@ -671,18 +675,18 @@ def private save_scene_to_config() : string {
 
         var entity_obj : table<string; StructField?>
         for (comp in decsState.allArchetypes[arch_idx].components) {
-            // `eid` is structural; pointers are runtime references. The type decides the
-            // rest: a plain struct (WorldTransform, Relationship) has no writer.
+            // `eid` is structural; pointers are runtime references. The declaration decides
+            // the rest: only a component with `save = true` reaches the file.
             if (comp.name == "eid" || comp.info.basicType == Type.tPointer) {
                 continue
             }
-            if (!HasComponentWriter(comp.info.fullName)) {
+            if (!EcsShouldSave(comp.name)) {
                 continue
             }
 
             var cf_val = DecsComponentToCF(comp, row)
             if (cf_val == null) {
-                print("[SCENE WARNING] Component '{comp.name}' of type '{comp.info.fullName}' is not registered for saving; skipped. Mark the struct [DecsSerializable].\n")
+                print("[SCENE WARNING] Component '{comp.name}' of type '{comp.info.fullName}' is declared save = true but has no writer; skipped.\n")
                 continue
             }
             cf_val.name = comp.name

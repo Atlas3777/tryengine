@@ -7,6 +7,7 @@ options intern_strings
 module Engine shared public
 
 require tryengine/AsyncTaskManager
+require tryengine/EcsMacro
 require tryengine/Input
 require tryengine/Profiling
 require daslib/just_in_time
@@ -18,6 +19,9 @@ require tryengine/TransformSystem
 // the frame root and reads as "no idea where it went".
 [export, profile]
 def EngineUpdate() {
+    // Archetypes created since the last frame (scene load, prefab spawn, editor edit) are
+    // checked against the component declarations before any system reads them.
+    EcsValidateArchetypes()
     // The frame's dt is read here and nowhere else; every clock derives from it, so all
     // systems see the same frame and no caller passes dt around.
     TimeTick()
@@ -30,4 +34,9 @@ def EngineUpdate() {
 def EngineStart() {
     TimeInit()
     SetInputSource()
+    // Every module's [init] has run by now, so the component registrations are complete.
+    // A declaration that asks for save/show must have the machinery it implies; report it
+    // at start, not on the first save or the first Inspector frame.
+    EcsApplyRegistry()
+    EcsValidateRegistry()
 }

@@ -83,29 +83,44 @@ DECS (`daslib/decs`) — **единственная ECS проекта**. EnTT �
 не нужно: все сущности, компоненты и запросы живут в daslang.
 
 `engine_source/daslang/EcsMacro.das` даёт макросы `create_entity`, `update_entity`,
-`apply_decs_template`, `EcsRegister`, аннотации `[EcsComponent(name = "...")]` (одиночная
-структура-компонент) и `[EcsTemplate]` (шаблон из `[decs_template]`), а также reader-макрос
-`%ecs~("Имя", type<T>)%%` — он нужен только для встроенных типов (`uint`, `int?`), которые
-аннотировать нельзя. Типы компонентов приходят из `tryengine/Types`:
+`apply_decs_template`, `EcsRegister` и **единственный** способ объявить компонент —
+reader-макрос `%ecs`. Возможность *типа* быть записанным — отдельная аннотация
+`[DecsSerializable]` на структуре одного значения (`tryengine/Serializable`): она
+регистрирует ConfigFormat adder и writer. Типы компонентов приходят из `tryengine/Types`:
 
-- `Types.das` — одиночные компоненты-структуры `Transform` и `Relationship` (объявлены
-  через `[EcsComponent]`), `[decs_template, EcsTemplate]`-структуры `Camera`/`PointLight` и
-  объявления `HP`/`Mana`;
+- `Types.das` — структуры `Transform`, `WorldTransform`, `Relationship`,
+  `[decs_template]`-структуры `Camera`/`PointLight` и один список `%ecs` в конце файла;
 - `game/scripts/Game.das` — живой пример `create_entity`, `query`, `commit`.
+
+Синтаксис:
+
+```das
+%ecs~("transform", type<Transform>) %%                 // одно значение, имя явное
+%ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
+%ecs_template~(type<PointLight>) %%                    // [decs_template], имя = тип
+%ecs~("tag", type<string>) %%
+```
 
 Правила:
 
 - Создание/изменение — внутри `create_entity`/`update_entity` с последующим `commit()`.
 - Чтение — через `query()$(...)`; не тащи C++-реестр сущностей, его нет.
-- Новая структура-компонент — с `[decs_template, EcsTemplate]`, чтобы регистрация и
-  удаление сгенерировались автоматически. Если значение должно лежать одним компонентом
-  (как `Transform`/`Relationship`), это обычная структура с
-  `[EcsComponent(name = "имя")]`; `%ecs~` остаётся для встроенных типов.
-- Что сохраняется в сцену/префаб, решает тип: компонент пишется, если у его типа есть
-  writer — встроенный скаляр или `[DecsSerializable]`-структура. Обычная структура
-  (`WorldTransform`, `Relationship`, `EditorCameraTag`) writer'а не имеет,
-  поэтому scene save, prefab compile/save и Inspector её пропускают. `eid` — единственное
-  структурное исключение.
+- Компонент объявляется только `%ecs`. `hidden = true` — Inspector не рисует и «Add
+  component» не предлагает; `transient = true` — сцена/префаб не пишут и не читают. По
+  умолчанию и то и другое false.
+- `[decs_template]`-компонент: `%ecs_template~(type<Camera>) %%`; имени нет, потому что
+  префикс полей (`Camera_fov`) — это тип. Поля регистрируются и проверяются поштучно.
+  Флаги (`hidden`, `transient`) пишутся после типа и действуют на все поля.
+- Одиночной структуре, которая не `transient`, нужен `[DecsSerializable]` — иначе
+  `EcsValidateRegistry` в `EngineStart` напечатает `[ECS ERROR]` про отсутствующий writer.
+  Модулю с такой структурой нужны свои `require tryengine/Serializable` и
+  `require tryengine/ConfigFormatBoost`; объявляющему компонент — `require
+  tryengine/EcsMacro` (require не транзитивен).
+- Тип из объявления попадает в `decsState.componentTypeCheck`, поэтому компонент с тем же
+  именем, но другим типом паникует при создании сущности. Новые архетипы раз в кадр
+  проверяет `EcsValidateArchetypes` (из начала `EngineUpdate`): необъявленное имя печатает
+  `[ECS ERROR]`. Имена в `query` при этом не проверяются — опечатка по-прежнему молча
+  находит ноль сущностей.
 
 ## Стиль `.das`
 

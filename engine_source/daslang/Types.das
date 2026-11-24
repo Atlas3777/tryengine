@@ -14,17 +14,17 @@ require tryengine/Serializable
 // authored content. An empty path means "the material the mesh artifact carries by default".
 // The pair of pointers a draw call needs lives in the runtime-only `mesh`/`material`
 // components, resolved once at entity creation — the frame loop never loads anything.
-[EcsComponent(name = "model"), DecsSerializable]
+[DecsSerializable]
 struct ModelRender {
     mesh     : uint64 = 0ul
     @asset = "data:mat"
     material : string
 }
 
-%ecs~("HP", type<uint>) %%
-%ecs~("Mana", type<int?>) %%
-
-[decs_template, EcsTemplate, DecsSerializable]
+// A [decs_template] component: one group in the Inspector, one component per field
+// (`PointLight_color`, ...). Fields are saved by their own types, so the struct needs no
+// [DecsSerializable]; the group is declared with %ecs at the bottom of this file.
+[decs_template]
 struct PointLight {
     color     : float3
     @min = 0.0
@@ -33,29 +33,28 @@ struct PointLight {
     radius    : float
 }
 
-// Authored local transform. The type is [DecsSerializable], so a component of this type is
-// written to scenes and prefabs; [EcsComponent] registers it in the Inspector's component
-// list under "transform".
-[DecsSerializable, EcsComponent(name = "transform")]
+// Authored local transform, one component named "transform". [DecsSerializable] is the
+// physical ability to write the value; %ecs below makes it a component and leaves both flags
+// at their defaults, so it is saved and shown.
+[DecsSerializable]
 struct Transform {
     position : float3 = float3(0.0f, 0.0f, 0.0f)
     rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
     scale    : float3 = float3(1.0f, 1.0f, 1.0f)
 }
 
-// Derived world transform. Same TRS shape as Transform, but a distinct type without
-// [DecsSerializable]: a component of this type has no writer, so scene/prefab save and
-// prefab authoring skip it by type. TransformSystem writes `_world`, Render reads it.
+// Derived world transform, one component named "_world". It is transient and hidden:
+// TransformSystem writes it, Render reads it, and it never reaches a scene, a prefab or the
+// Inspector. No [DecsSerializable] either: there is nothing to write.
 struct WorldTransform {
     position : float3 = float3(0.0f, 0.0f, 0.0f)
     rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
     scale    : float3 = float3(1.0f, 1.0f, 1.0f)
 }
 
-// Relationship, one component named "relationship". A plain struct has no writer, so the
-// links are runtime-only by type; the Inspector still shows them through a custom draw.
-// The links are derived from the authored hierarchy (`parentLocalId` in scenes and prefabs).
-[EcsComponent(name = "relationship")]
+// Relationship, one component named "relationship". Derived from the authored hierarchy
+// (`parentLocalId` in scenes and prefabs), so it is transient; the Inspector still shows it
+// through a custom draw.
 struct Relationship {
     parent      : EntityId = INVALID_ENTITY_ID
     first_child : EntityId = INVALID_ENTITY_ID
@@ -65,7 +64,7 @@ struct Relationship {
 
 let public RELATIONSHIP_FIELD : string = "relationship"
 
-[decs_template, EcsTemplate, DecsSerializable]
+[decs_template]
 struct Camera {
     @min = 1.0
     @max = 179.0
@@ -75,3 +74,15 @@ struct Camera {
     near_plane  : float = 0.1f
     far_plane   : float = 1000.0f
 }
+
+// The engine component set. %ecs declares one named value; %ecs_template declares a
+// [decs_template] component, whose type is also its name. Everything is saved and shown
+// unless it says otherwise.
+%ecs~("model", type<ModelRender>) %%
+%ecs~("transform", type<Transform>) %%
+%ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
+%ecs~("relationship", type<Relationship>, transient = true) %%
+%ecs_template~(type<Camera>) %%
+%ecs_template~(type<PointLight>) %%
+%ecs~("HP", type<uint>) %%
+%ecs~("tag", type<string>) %%

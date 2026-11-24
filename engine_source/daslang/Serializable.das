@@ -49,16 +49,17 @@ def public NormalizeTypeName(name : string) : string {
     return idx >= 0 ? slice(name, idx + 2, length(name)) : name
 }
 
-//! True when scenes and prefabs can store a component of this type. Built-in scalars and
-//! [DecsSerializable] structs register a writer; a plain struct does not, which is how
-//! runtime and derived components stay out of authored files.
+//! True when a writer is registered for this type. This answers "how to write", not
+//! "should it be written": scenes and prefabs ask `EcsShouldSave(component_name)`.
+//! The writers are registered by `[DecsSerializable]` and by the builtin table below; a
+//! struct without the annotation has none.
 def public HasComponentWriter(type_name : string) : bool {
     return key_exists(g_decs_writers, NormalizeTypeName(type_name))
 }
 
-//! Собирает описания полей структуры TT. Вызывается из сгенерированных функций.
-//! apply разворачивает обход полей на этапе компиляции, поэтому имена, типы,
-//! смещения и аннотации полей известны без runtime reflection.
+//! Собирает описания полей структуры TT. Вызывается из схемы, которую регистрирует
+//! `%ecs` (tryengine/EcsMacro): apply разворачивает обход полей на этапе компиляции,
+//! поэтому имена, типы, смещения и аннотации полей известны без runtime reflection.
 def public CollectInspectFields(t : type<auto(TT)>; var out : array<InspectField>) {
     var value := default<TT>
     unsafe {
@@ -92,7 +93,7 @@ def public WriteValue(t : type<auto(TT)>; ptr : void?) : StructField? {
 }
 
 //! Универсальная точка входа при загрузке сцены.
-//! Возвращает false, если тип не зарегистрирован (не помечен DecsSerializable).
+//! Возвращает false, если для типа не зарегистрирован adder.
 def public DecsAddComponent(var cmp : decs::ComponentMap;
                             type_name : string;
                             component_name : string;
@@ -106,7 +107,7 @@ def public DecsAddComponent(var cmp : decs::ComponentMap;
 }
 
 //! Универсальная точка входа при сохранении сцены.
-//! Возвращает null, если тип не зарегистрирован (не помечен DecsSerializable).
+//! Возвращает null, если для типа не зарегистрирован writer.
 def public DecsWriteComponent(ptr : void?; type_name : string; component_name : string) : StructField? {
     let key = NormalizeTypeName(type_name)
     if (!key_exists(g_decs_writers, key)) {
@@ -261,6 +262,40 @@ def private WriteEntityId(ptr : void?) : StructField? => WriteValue(type<EntityI
 
 def private InspectEntityId(var out : array<InspectField>) => CollectInspectFields(type<EntityId>, out)
 
+//! Помечает структуру как значение, которое можно писать и читать ConfigFormat.
+//!
+//! Это физическая возможность типа, а не компонент: генерируются adder
+//! (`from_CF` + `decs::set`, загрузка сцены/префаба) и writer (`CF` по значению,
+//! сохранение). Компонентом тип делает `%ecs` (tryengine/EcsMacro), и он же решает,
+//! сохраняется компонент (`transient`) и показывается (`hidden`).
+//!
+//! `[decs_template]`-структуру помечать не нужно и нельзя: она хранится не одним
+//! значением, а префиксными полями, и каждое поле пишется по типу своего поля.
+[structure_macro(name="DecsSerializable")]
+class DecsSerializableMacro : AstStructureAnnotation {
+    def override apply(var st : StructurePtr; var group : ModuleGroup;
+                       var args : AnnotationArgumentList; var errors : das_string) : bool {
+        let type_name = st.name.string()
+        var fn_init <- qmacro_function("register_decs_value_{type_name}") $() {
+            g_decs_adders[$v(type_name)] = @@(var cmp : decs::ComponentMap;
+                                              component_name : string;
+                                              cf : StructField? const) : void {
+                var value <- from_CF(cf, default<$t(st)>)
+                decs::set(cmp, component_name, value)
+            }
+            g_decs_writers[$v(type_name)] = @@(ptr : void?) : StructField? {
+                return <- WriteValue(type<$t(st)>, ptr)
+            }
+        }
+        fn_init.flags.init = true
+        if (!(compiling_module() |> add_function(fn_init))) {
+            errors := "DecsSerializable: can't add registration for {type_name}"
+            return false
+        }
+        return true
+    }
+}
+
 [init]
 def RegisterBuiltinWriters() {
     RegisterScalarWriter("float", type<float>)
@@ -289,84 +324,6 @@ def RegisterBuiltinWriters() {
     RegisterScalarWriter("float4x4", type<float4x4>)
     g_decs_writers["EntityId"] = @@WriteEntityId
     g_decs_inspect_fields["EntityId"] = @@InspectEntityId
-}
-
-//! Помечает структуру компонента как сериализуемую через ConfigFormat.
-//!
-//! Генерирует три вещи, все — на этапе компиляции:
-//!  * adder  — ``from_CF`` + ``decs::set`` (загрузка сцены);
-//!  * writer — ``CF`` по указателю на значение (сохранение сцены);
-//!  * схему инспектора (имена, типы, смещения и аннотации полей через ``apply``).
-//!
-//! Для ``decs_template``-структур adder раскладывает поля на префиксные компоненты
-//! через ``apply_decs_template``; writer не нужен — такие поля сохраняются поштучно.
-//!
-//! Модуль структуры должен видеть ``ConfigFormatBoost`` (``from_CF``/``CF``) — так же,
-//! как этого требует загрузка сцены.
-[structure_macro(name="DecsSerializable")]
-class DecsSerializableMacro : AstStructureAnnotation {
-    def override apply(var st : StructurePtr; var group : ModuleGroup;
-                       var args : AnnotationArgumentList; var errors : das_string) : bool {
-        let type_name = st.name.string()
-        let fn_init_name = "register_decs_adder_{type_name}"
-
-        // Проверяем, помечена ли структура как decs_template
-        var is_template = false
-        for (ann in st.annotations) {
-            if (ann.annotation.name == "decs_template") {
-                is_template = true
-                break
-            }
-        }
-
-        if (is_template) {
-            // Для шаблона: CF -> struct -> apply_decs_template (раскладывает на префиксные компоненты)
-            var fnInit <- qmacro_function(fn_init_name) $() {
-                g_decs_adders[$v(type_name)] = @@(var cmp : decs::ComponentMap;
-                                                  component_name : string;
-                                                  cf : StructField? const) : void {
-                    var value <- from_CF(cf, default<$t(st)>)
-                    apply_decs_template(cmp, value)
-                }
-            }
-            fnInit.flags |= FunctionFlags.init
-            if (!(compiling_module() |> add_function(fnInit))) {
-                panic("decs_serializable: failed to add {fn_init_name}")
-                return false
-            }
-        } else {
-            // Обычная ветка: загрузка в компонент с тем же именем, запись — через CF.
-            var fnInit <- qmacro_function(fn_init_name) $() {
-                g_decs_adders[$v(type_name)] = @@(var cmp : decs::ComponentMap;
-                                                  component_name : string;
-                                                  cf : StructField? const) : void {
-                    var value <- from_CF(cf, default<$t(st)>)
-                    decs::set(cmp, component_name, value)
-                }
-                g_decs_writers[$v(type_name)] = @@(ptr : void?) : StructField? {
-                    return <- WriteValue(type<$t(st)>, ptr)
-                }
-            }
-            fnInit.flags |= FunctionFlags.init
-            if (!(compiling_module() |> add_function(fnInit))) {
-                panic("decs_serializable: failed to add {fn_init_name}")
-                return false
-            }
-        }
-
-        let fn_inspect_name = "register_decs_inspect_{type_name}"
-        var fnInspect <- qmacro_function(fn_inspect_name) $() {
-            g_decs_inspect_fields[$v(type_name)] = @@(var out : array<InspectField>) : void {
-                CollectInspectFields(type<$t(st)>, out)
-            }
-        }
-        fnInspect.flags |= FunctionFlags.init
-        if (!(compiling_module() |> add_function(fnInspect))) {
-            errors := "decs_serializable: failed to add {fn_inspect_name}"
-            return false
-        }
-        return true
-    }
 }
 
 def RegisterEntityIdImpl(var cmp : decs::ComponentMap; component_name : string; cf : StructField? const) {

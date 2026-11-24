@@ -5,7 +5,7 @@ module AssetKind shared public
 
 // Asset reference is declared on the field, not on a wrapper type:
 //
-//   [EcsComponent(name = "model"), DecsSerializable]
+//   [DecsSerializable]
 //   struct ModelRender {
 //       mesh     : uint64 = 0ul
 //       @asset = "data:mat"
@@ -16,7 +16,7 @@ module AssetKind shared public
 // subfolder. `ext` filters the whole domain tree, so scene/prefab pickers see every
 // `.scene`/`.prefab` anywhere under content. The leading dot is optional: `data:mat` and
 // `data:.mat` mean the same. The annotation is inert metadata: the editor reads it from the
-// [DecsSerializable] field schema and draws the picker for a plain string field. No editor
+// %ecs-generated field schema and draws the picker for a plain string field. No editor
 // types are required here.
 
 require daslib/rtti

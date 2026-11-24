@@ -190,15 +190,29 @@ daslang -dry-run \
 - Точки входа — `[export] def Name()`; C++ вызывает их по имени через
   `ScriptSystem::InvokeFunctionFast/Safe`, поэтому переименование молча ломает C++ сторону.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
-  `apply_decs_template`, `EcsRegister`, `[EcsComponent]`, `[EcsTemplate]`), см.
-  `engine_source/daslang/EcsMacro.das`, компоненты в `engine_source/daslang/Types.das`,
-  живой пример — `game/scripts/Game.das`. Одиночная структура-компонент объявляется
-  `[EcsComponent(name = "...")]` на самой структуре; `%ecs~` — только для встроенных
-  типов, которые нельзя аннотировать.
+  `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
+  компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
+  Компонент объявляется **только** reader-макросами, у них две формы:
+  `%ecs~("transform", type<Transform>) %%` — одно значение с явным именем;
+  `%ecs_template~(type<Camera>) %%` — `[decs_template]`-компонент, у которого имя и есть
+  тип (поля уже называются `Camera_fov`). Флаги общие: `hidden = true` (Inspector не
+  рисует и «Add component» не предлагает), `transient = true` (сцена/префаб не пишут и не
+  читают). По умолчанию компонент сохраняется и показывается.
+  Возможность *типа* быть записанным — отдельная аннотация `[DecsSerializable]` на
+  структуре одного значения: она регистрирует ConfigFormat adder и writer. Без неё
+  компонент можно объявить только `transient = true`; `EcsValidateRegistry` в
+  `EngineStart` печатает `[ECS ERROR]`, если нет writer'а. Модулю, который помечает
+  структуру, нужны свои `require tryengine/Serializable` и
+  `require tryengine/ConfigFormatBoost` (require не транзитивен), а объявляющему
+  компонент — `require tryengine/EcsMacro`.
+  Объявленный тип попадает в `decsState.componentTypeCheck` при регистрации: компонент с
+  тем же именем, но другим типом паникует при создании сущности. Первый обновлённый
+  архетип проверяется `EcsValidateArchetypes` в начале `EngineUpdate` и печатает
+  `[ECS ERROR]`, если имя не объявлено; указатели `mesh`/`material` — исключение.
   У не-шаблонного компонента имя аргумента `query` и есть имя компонента:
   `query() $(transform : Transform)` читает `transform`, а `$(t : Transform)` ищет `t` и
-  молча не находит ничего. У `decs_template` имя аргумента ничего не значит — поля берутся
-  по префиксу типа.
+  молча не находит ничего (проверяются архетипы, не запросы). У `decs_template` имя
+  аргумента ничего не значит — поля берутся по префиксу типа.
 - Игровой UI: `tryengine/Ui` (`engine_source/daslang/Ui.das` + `UiTypes.das`) и нативный
   `tryUi` (`engine_source/graphics/src/Module_Ui.cpp`). Дерево retained: живёт между кадрами в
   daslang, но объявляется каждый кадр, узлы находятся по 64-битному id. Layout, состояния и

@@ -78,7 +78,7 @@ struct PhysicsContact {
 // root entity: the component sync creates it on the first Update after the components
 // appear and recreates it when an authored field changes.
 
-[DecsSerializable, EcsComponent(name = "rigidBody")]
+[DecsSerializable]
 struct RigidBody {
     //! PhysicsMotion as an int: 0 static, 1 kinematic, 2 dynamic.
     @min = 0
@@ -94,19 +94,19 @@ struct RigidBody {
     sensor : bool = false
 }
 
-[DecsSerializable, EcsComponent(name = "boxCollider")]
+[DecsSerializable]
 struct BoxCollider {
     //! Half size on each axis: the full box is twice this.
     half_extents : float3 = float3(0.5f, 0.5f, 0.5f)
 }
 
-[DecsSerializable, EcsComponent(name = "sphereCollider")]
+[DecsSerializable]
 struct SphereCollider {
     @min = 0.001
     radius : float = 0.5f
 }
 
-[DecsSerializable, EcsComponent(name = "capsuleCollider")]
+[DecsSerializable]
 struct CapsuleCollider {
     @min = 0.001
     radius : float = 0.5f
@@ -115,7 +115,7 @@ struct CapsuleCollider {
     half_height : float = 0.5f
 }
 
-[DecsSerializable, EcsComponent(name = "cylinderCollider")]
+[DecsSerializable]
 struct CylinderCollider {
     @min = 0.001
     radius : float = 0.5f
@@ -123,20 +123,31 @@ struct CylinderCollider {
     half_height : float = 0.5f
 }
 
-[DecsSerializable, EcsComponent(name = "planeCollider")]
+[DecsSerializable]
 struct PlaneCollider {
     //! Half size of the debug grid; the Jolt plane itself is infinite.
     half_extents : float3 = float3(10.0f, 10.0f, 0.0f)
 }
 
-//! Runtime bridge to a Jolt body. No [DecsSerializable] and no [EcsComponent]: it is not
-//! saved, not listed in Add Component, and never authored. `signature` is the shape and
+//! Runtime bridge to a Jolt body. Declared `transient = true, hidden = true` below: it is
+//! not saved, not listed in Add Component, and never authored. `signature` is the shape and
 //! material the body was created from; a mismatch means the body is recreated.
 struct PhysicsBody {
     handle    : uint64 = 0ul
     signature : uint64 = 0ul
     managed   : bool = false
 }
+
+//! The physics component set. Colliders and RigidBody are one-value structs, so they are
+//! [DecsSerializable] and written as one ConfigFormat object; PhysicsBody is a runtime
+//! bridge and is transient.
+%ecs~("rigidBody", type<RigidBody>) %%
+%ecs~("boxCollider", type<BoxCollider>) %%
+%ecs~("sphereCollider", type<SphereCollider>) %%
+%ecs~("capsuleCollider", type<CapsuleCollider>) %%
+%ecs~("cylinderCollider", type<CylinderCollider>) %%
+%ecs~("planeCollider", type<PlaneCollider>) %%
+%ecs~("physicsBody", type<PhysicsBody>, hidden = true, transient = true) %%
 
 //! Physics gets its own clock under the game clock: pausing the game freezes the
 //! simulation, and a slowed game clock slows the physics without touching the engine.
