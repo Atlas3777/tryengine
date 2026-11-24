@@ -188,7 +188,7 @@ def DrawInspector() {
 
         separator()
 
-        var processed_groups : table<string; bool>
+        var inscope processed_groups : table<string; bool>
 
         for (comp in decsState.allArchetypes[arch_idx].components) {
             if (!IsComponentVisible(comp) || !passes_filter(W_FILTER, comp.name)) {
@@ -733,7 +733,7 @@ def private draw_struct_fields(ptr : void?; type_name : string; id_prefix : stri
         return
     }
 
-    var fields : array<InspectField>
+    var inscope fields : array<InspectField>
     if (!DecsInspectFields(type_name, fields)) {
         text("{type_name}: no inspector schema; declare the component with %ecs and without hidden = true")
         return
@@ -773,7 +773,7 @@ def private draw_schema_field(ptr : void?; field : InspectField; ui : FieldUi; i
 // компонента "<префикс>_<поле>". false — схемы нет (рисуем старый фолбэк).
 // ---------------------------------------------------------------------
 def private draw_template_group(arch_idx : int; rec_index : int64; prefix : string; id_key : string) : bool {
-    var fields : array<InspectField>
+    var inscope fields : array<InspectField>
     if (!DecsInspectFields(prefix, fields)) {
         return false
     }
