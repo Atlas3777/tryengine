@@ -23,6 +23,7 @@ require tryeditor/Hierarchy
 require tryeditor/PlayMode
 require trygame/Game
 require tryengine/Input
+require tryengine/Model
 require tryengine/Scene
 require tryengine/Time
 require tryengine/TransformSystem
@@ -95,6 +96,9 @@ def RestoreHotReloadState() {
         return
     }
     ResetWorldTransformCaches()
+    // Same reason as PlayMode::EndPlay: the archive does not carry the mesh/material raw
+    // pointers, so they are resolved again from the authored `model`.
+    Model::ReapplyPointers()
 
     selected_eid = state.selected_eid
     PlayMode::ApplyReloadState(state.play)

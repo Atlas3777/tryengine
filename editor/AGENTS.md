@@ -265,6 +265,13 @@
   же API. `PlayMode.BeginPlay` до `GameStart` снимает снимок (DECS-heap, `SceneState`,
   выделение), а `EndPlay` делает `Loader::Abort` и возвращает снимок, включая
   несохранённые правки.
+- `mem_archive_save/load` (Play/Stop и hot reload) восстанавливает строки компонентов, но
+  **обнуляет сырые указатели**: `mesh`/`material` остаются в архетипе со значением null.
+  Поэтому после `mem_archive_load` и `ResetWorldTransformCaches` и `EndPlay`, и
+  `HotReload::RestoreHotReloadState` зовут `Model::ReapplyPointers()`: он заново
+  резолвит авторский `model` каждой сущности в указатели (ресурсы к этому моменту
+  резидентны) и сбрасывает кеш `ApplyToEntity`. Без этого все модели после Stop невидимы,
+  пока их не выберешь в Инспекторе — тот же `ApplyToEntity` починит только выбранную.
 
 ## Transform и editor camera
 

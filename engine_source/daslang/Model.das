@@ -171,6 +171,36 @@ var private g_last_model_eid : uint = 0u
 var private g_last_model_mesh : uint64 = 0ul
 var private g_last_model_material : uint64 = 0ul
 
+//! Re-resolves the authored `model` of every entity into the runtime pointer components.
+//!
+//! The DECS heap archive used by Play/Stop and hot reload restores component rows but does
+//! not preserve raw pointers: the `mesh`/`material` values come back null while the
+//! components themselves stay in the archetype. Resources are resident at that point (the
+//! scene and ProBuilder hold references), so this is one registry lookup per entity. The
+//! `ApplyToEntity` cache is dropped too, otherwise selecting an entity whose pair was
+//! already applied would skip the write and leave it invisible.
+def public ReapplyPointers() {
+    query() $(eid : EntityId; model : ModelRender) {
+        let refs = Resolve(model.mesh, model.material)
+        if (!refs.ok || refs.mesh == 0ul) {
+            return
+        }
+        var mesh_ptr = MeshPointer(refs)
+        if (mesh_ptr == null) {
+            return
+        }
+        var material_ptr = MaterialPointer(refs)
+        update_entity(eid) @(eid, cmp) {
+            cmp |> set(MESH_POINTER_FIELD, mesh_ptr)
+            if (material_ptr != null) {
+                cmp |> set(MATERIAL_POINTER_FIELD, material_ptr)
+            }
+        }
+    }
+    commit()
+    g_last_model_eid = 0u
+}
+
 //! Writes the resolved pointers into an existing entity. Used by the editor after the model
 //! component changed; `Spawn` and `Scene::Load` write them while the entity is created, so
 //! they do not move the entity between archetypes afterwards.

@@ -13,6 +13,7 @@ module PlayMode shared public
 require daslib/archive
 require daslib/decs
 require tryengine/Loader
+require tryengine/Model
 require tryengine/Physics
 require tryengine/Scene
 require tryengine/Time
@@ -84,6 +85,9 @@ def public EndPlay() {
     decs::restart()
     mem_archive_load(g_saved_decs, decsState)
     ResetWorldTransformCaches()
+    // The heap archive zeroes raw pointers; without this every scene model is invisible
+    // until its Inspector call re-applies the pair.
+    Model::ReapplyPointers()
 
     selected_eid = g_saved_selected_eid
 }
