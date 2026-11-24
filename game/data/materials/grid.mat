@@ -1,0 +1,8 @@
+name: string = "Grid"
+shader: u64 = 10640927509727119749
+params: Params = {
+	albedo_color: f32x4 = [0.62 0.64 0.68 1]
+	line_color: f32x4 = [0.20 0.23 0.27 1]
+	cell_size: f32 = 1
+	line_width: f32 = 0.02
+}
