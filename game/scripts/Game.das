@@ -4,43 +4,24 @@ options rtti = true
 
 module Game shared public
 
-require daslib/decs
-require daslib/decs_boost
-require tryengine/Input
 require tryengine/Profiling
-require tryengine/Time
-require tryengine/Types
 require trygame/GameFlow
 require trygame/GameScreens
 require trygame/GameTime public
 require trygame/GameUi
-require math
-
-// === engine convention ===
-let front_raw = float3(0.0f, 1.0f, 0.0f)   // local Y (forward)
-let up_raw    = float3(0.0f, 0.0f, 1.0f)   // local Z (up)
-let world_up  = float3(0.0f, 0.0f, 1.0f)
-
-// === orbit parameters ===
-var  orbit_angle  = 0.0f
-let  orbit_center = float3(0.0f, 7.5f, 0.0f)   // mesh group center in the XY plane
-let  orbit_radius = 20.0f
-let  orbit_height = 10.0f
-let  orbit_speed  = 0.48f                      // radians per second
+require trygame/Player
 
 //! Game state that must survive an editor hot reload. The editor saves it through
 //! Editor HotReload; the standalone game never calls these.
 struct public GameReloadState {
     scene_ready : bool
-    orbit_angle : float
 }
 
 def public CaptureReloadState() : GameReloadState {
-    return GameReloadState(scene_ready = GameFlow::IsReady(), orbit_angle = orbit_angle)
+    return GameReloadState(scene_ready = GameFlow::IsReady())
 }
 
 def public ApplyReloadState(var state : GameReloadState) {
-    orbit_angle = state.orbit_angle
     GameFlow::SetReady(state.scene_ready)
     // The script context is new after a reload: the screen stack is empty and the clocks are
     // gone. Restore both from the scene flag.
@@ -77,55 +58,9 @@ def GameUpdate() {
     }
 }
 
+//! Gameplay runs on the world clock, so a paused game freezes the player. The player system is
+//! component-driven: it drives the entity that has PlayerInput + CharacterController and the
+//! game camera, and does nothing when the scene has no player.
 def private UpdateGameplay() {
-    // Everything below integrates time, so it runs on the world clock: a paused game
-    // freezes it, a slowdown scales it, and the caller never passes dt in.
-    let dt = TimeDelta(game_world_clock)
-
-    // ================== CAMERA ORBIT ==================
-    orbit_angle += orbit_speed * dt
-
-    // camera position: orbit in the XY plane, lift along Z
-    let eye = float3(
-        orbit_center.x + orbit_radius * cos(orbit_angle),
-        orbit_center.y + orbit_radius * sin(orbit_angle),
-        orbit_center.z + orbit_height
-    )
-
-    // target camera basis
-    let f = normalize(orbit_center - eye)
-    let r = normalize(cross(f, world_up))   // horizontal right
-    let u = cross(r, f)                     // corrected up
-
-    // quaternion: align forward first, then roll around f
-    // to line up up
-    let q1 = quat_from_unit_arc(front_raw, f)
-    let up_after = quat_mul_vec(q1, up_raw)
-
-    let cos_roll = dot(up_after, u)
-    let sin_roll = dot(cross(up_after, u), f)
-    let roll = atan2(sin_roll, cos_roll)
-
-    let q2 = quat_from_unit_vec_ang(f, roll)
-    let q  = quat_mul(q2, q1)
-
-    // The editor camera is editor state: in Play it sits next to the game camera and
-    // must not be moved by gameplay.
-    query() $[REQUIRE_NOT(editorCameraTag)] (var transform : Transform, let camera : Camera) {
-        transform.position = eye
-        transform.rotation = q
-    }
-
-    // ================== player input ==================
-    query()$(var transform : Transform, var inputState : float3){
-        inputState = float3(0, 0, 0)
-        if (is_down(Key.I)) { inputState.y =  1.0f }
-        if (is_down(Key.K)) { inputState.y = -1.0f }
-        if (is_down(Key.J)) { inputState.x = -1.0f }
-        if (is_down(Key.L)) { inputState.x =  1.0f }
-    }
-
-    query()$(var transform : Transform, inputState : float3, speed : float){
-        transform.position += inputState * 4.8f * speed * dt;
-    }
+    Player::Update()
 }

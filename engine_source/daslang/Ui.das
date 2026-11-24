@@ -389,6 +389,13 @@ def public ViewportSize() : float2 {
     return current
 }
 
+//! True while the pointer is inside the viewport the UI was last set up for: the whole window in
+//! the standalone game, the SceneGameView panel in the editor. Gameplay reads it to leave mouse
+//! look alone when the user is working with editor panels.
+def public ViewportHovered() : bool {
+    return g_viewport_hovered
+}
+
 def public IsReady() : bool {
     return UiIsReady()
 }

@@ -32,6 +32,7 @@
 
 #include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Profiler.hpp"
 #include "engine/core/SlotMap.hpp"
 
 namespace tryengine::physics {
@@ -484,6 +485,8 @@ void PhysicsWorld::Impl::OnContactAdded(const JPH::Body& body1, const JPH::Body&
 void PhysicsWorld::Impl::UpdateCharacters(float dt) {
     if (!system || characters.empty())
         return;
+
+    TRY_PROFILE_SCOPE("Physics.Characters");
 
     // Персонаж — кинематический объект: он не входит в симуляцию, поэтому его фильтры
     // задаются слоем kMoving, который по нашим правилам сталкивается со всеми.
@@ -1054,6 +1057,11 @@ bool PhysicsWorld::SetCharacterPosition(uint64_t handle, const das::float3& posi
     if (!record || record->character == nullptr)
         return false;
     record->character->SetPosition(ToRVec3(position));
+    // A teleport is not a movement: without this the inspector edit would keep the old
+    // velocity and the character would keep sliding away from the new pose.
+    record->character->SetLinearVelocity(JPH::Vec3::sZero());
+    record->input_velocity = das::float3(0.0f, 0.0f, 0.0f);
+    record->jump_requested = false;
     return true;
 }
 

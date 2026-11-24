@@ -9,7 +9,8 @@ module Physics shared public
 //! API and the bridge to the ECS heap: a body remembers the entity it belongs to, and
 //! `PhysicsSync` copies the resulting pose back into `Transform` before the world
 //! transform pass runs. A virtual character follows the same bridge through
-//! `CharacterSync`, but it is not a component: gameplay creates it and keeps its handle.
+//! `CharacterSync`: a CapsuleCollider + CharacterController pair makes one, and the runtime
+//! CharacterBody component carries its handle.
 
 require math
 require daslib/decs
@@ -168,9 +169,50 @@ struct PhysicsBody {
     managed   : bool = false
 }
 
-//! The physics component set. Colliders and RigidBody are one-value structs, so they are
-//! [DecsSerializable] and written as one ConfigFormat object; PhysicsBody is a runtime
-//! bridge and is transient.
+//! Turns a CapsuleCollider into a virtual Jolt character instead of a rigid body. The capsule
+//! supplies the shape and size, this component the controller behavior: gravity, jumping,
+//! steps, slopes and pushing dynamic bodies. A RigidBody on the same entity is ignored while
+//! CharacterController is present; a character is not a body and does not collide with other
+//! characters.
+[DecsSerializable]
+struct CharacterController {
+    @min = 0.0
+    mass : float = 70.0f
+    //! Maximum force (N) with which the character pushes dynamic bodies while walking.
+    @min = 0.0
+    max_strength : float = 100.0f
+    //! Steepest slope the character still walks on, in degrees.
+    @min = 0.0
+    @max = 89.0
+    max_slope_angle : float = 45.0f
+    //! Jump speed along Z, m/s.
+    @min = 0.0
+    jump_speed : float = 5.0f
+}
+
+//! Runtime bridge to a virtual character. Hidden and transient like PhysicsBody: the component
+//! sync creates it from CharacterController + CapsuleCollider. A signature mismatch means the
+//! character is recreated.
+struct CharacterBody {
+    handle    : uint64 = 0ul
+    signature : uint64 = 0ul
+}
+
+//! Applies a continuous force and torque to the dynamic body of the entity every frame.
+//! Meaningful only with a collider and a dynamic RigidBody: a static or kinematic body ignores
+//! it, and a character entity has no body to push. The force is frame-rate independent, so
+//! leaving the component on accelerates the body until it is removed or set to zero.
+[DecsSerializable]
+struct ConstantForce {
+    //! Newtons.
+    force : float3 = float3(0.0f, 0.0f, 0.0f)
+    //! Newton-metres.
+    torque : float3 = float3(0.0f, 0.0f, 0.0f)
+}
+
+//! The physics component set. Colliders, RigidBody, CharacterController and ConstantForce are
+//! one-value structs, so they are [DecsSerializable] and written as one ConfigFormat object;
+//! PhysicsBody and CharacterBody are runtime bridges and are transient.
 %ecs~("rigidBody", type<RigidBody>) %%
 %ecs~("boxCollider", type<BoxCollider>) %%
 %ecs~("sphereCollider", type<SphereCollider>) %%
@@ -178,6 +220,9 @@ struct PhysicsBody {
 %ecs~("cylinderCollider", type<CylinderCollider>) %%
 %ecs~("planeCollider", type<PlaneCollider>) %%
 %ecs~("physicsBody", type<PhysicsBody>, hidden = true, transient = true) %%
+%ecs~("characterController", type<CharacterController>) %%
+%ecs~("characterBody", type<CharacterBody>, hidden = true, transient = true) %%
+%ecs~("constantForce", type<ConstantForce>) %%
 
 //! Physics gets its own clock under the game clock: pausing the game freezes the
 //! simulation, and a slowed game clock slows the physics without touching the engine.
@@ -200,34 +245,41 @@ def Attach(var parent : auto) {
     g_physics_attached = g_physics_clock.slot_ != -1
 }
 
-//! Drops every body and stops stepping until Attach is called again. Bodies belong to
-//! the scene, so a new scene or a new Play session calls this before creating its own;
-//! the clock registration survives.
+//! Drops every body and character and stops stepping until Attach is called again. Physics
+//! belongs to the scene, so a new scene or a new Play session calls this before creating its
+//! own; the clock registration survives. The runtime components are dropped too, so the next
+//! Update rebuilds both from the authored components.
 def Reset() {
     PhysicsClear()
     query() $(eid : EntityId; physicsBody : PhysicsBody) {
         RemovePhysicsBodyComponent(eid)
     }
+    query() $(eid : EntityId; characterBody : CharacterBody) {
+        RemoveCharacterBodyComponent(eid)
+    }
     commit()
     g_physics_attached = false
 }
 
-//! One engine tick: reconcile ECS components into bodies, push static and kinematic
-//! poses, advance Jolt by the game clock delta, then copy dynamic poses back into
-//! Transform. EngineUpdate calls this before UpdateWorldTransforms, so the world pass
-//! sees this frame's physics pose.
+//! One engine tick: reconcile ECS components into bodies and characters, push entity poses
+//! into static/kinematic bodies and characters, advance Jolt by the game clock delta, then
+//! copy the resulting poses back into Transform. EngineUpdate calls this before
+//! UpdateWorldTransforms, so the world pass sees this frame's physics pose.
 [profile]
 def Update() {
     if (!g_physics_attached) {
         return
     }
     ReconcileComponents()
+    ReconcileCharacters()
     // Poses are pushed even while the game is paused: the Inspector can then move a static
-    // collider and the debug view follows without stepping the simulation.
+    // collider or a character and the debug view follows without stepping the simulation.
     PhysicsPushPoses()
+    CharacterPushPoses()
     if (!TimeIsAdvancing(g_physics_clock)) {
         return
     }
+    ApplyConstantForces()
     PhysicsStep(TimeDelta(g_physics_clock))
     PhysicsSync()
     CharacterSync()
@@ -280,6 +332,19 @@ def private BodySignature(desc : PhysicsBodyDesc) : uint64 {
     return hash
 }
 
+//! Everything that forces a new character: the capsule size and the controller settings. The
+//! pose is not part of it, so moving a character entity does not recreate the character.
+def private CharacterSignature(desc : CharacterDesc) : uint64 {
+    var hash = SIGNATURE_OFFSET
+    hash = MixSignature(hash, FloatBits(desc.radius))
+    hash = MixSignature(hash, FloatBits(desc.half_height))
+    hash = MixSignature(hash, FloatBits(desc.mass))
+    hash = MixSignature(hash, FloatBits(desc.max_strength))
+    hash = MixSignature(hash, FloatBits(desc.max_slope_angle))
+    hash = MixSignature(hash, FloatBits(desc.jump_speed))
+    return hash
+}
+
 def private MakeBodyDesc(transform : Transform; settings : RigidBody; shape : PhysicsShape;
                          half_extents : float3; radius : float; half_height : float) : PhysicsBodyDesc {
     var desc = PhysicsBodyDesc()
@@ -307,6 +372,72 @@ def private RemovePhysicsBodyComponent(eid : EntityId) {
     update_entity(eid) @(eid, cmp) {
         decs::remove(cmp, "physicsBody")
     }
+}
+
+def private SetCharacterBodyComponent(eid : EntityId; value : CharacterBody) {
+    update_entity(eid) @(eid, cmp) {
+        cmp |> set("characterBody", value)
+    }
+}
+
+def private RemoveCharacterBodyComponent(eid : EntityId) {
+    update_entity(eid) @(eid, cmp) {
+        decs::remove(cmp, "characterBody")
+    }
+}
+
+//! Builds the character description from the authored components. The entity Transform is the
+//! capsule center, like a body's; CharacterDesc::position is the feet.
+def private MakeCharacterDesc(transform : Transform; settings : CharacterController;
+                              capsule : CapsuleCollider) : CharacterDesc {
+    var desc = CharacterDesc()
+    desc.position = transform.position - float3(0.0f, 0.0f, capsule.radius + capsule.half_height)
+    desc.rotation = transform.rotation
+    desc.radius = capsule.radius
+    desc.half_height = capsule.half_height
+    desc.mass = settings.mass
+    desc.max_strength = settings.max_strength
+    desc.max_slope_angle = settings.max_slope_angle
+    desc.jump_speed = settings.jump_speed
+    return <- desc
+}
+
+//! Brings one character entity in line with its components. Called from inside a query, so
+//! component changes are only queued; ReconcileCharacters commits after all queries.
+def private EnsureCharacterForCollider(eid : EntityId; desc : CharacterDesc; parented : bool) : bool {
+    let signature = CharacterSignature(desc)
+    let current = get_component(eid, "characterBody", CharacterBody())
+
+    // A child's local Transform is not a world pose, so components do not own a character there.
+    if (parented) {
+        if (current.handle != 0ul) {
+            PhysicsDestroyCharacter(current.handle)
+            RemoveCharacterBodyComponent(eid)
+            return true
+        }
+        return false
+    }
+
+    if (current.handle != 0ul && current.signature == signature && PhysicsIsCharacterAlive(current.handle)) {
+        return false
+    }
+
+    if (current.handle != 0ul) {
+        PhysicsDestroyCharacter(current.handle)
+    }
+
+    var owned = desc
+    owned.entity = eid
+    let handle = CreateCharacter(owned)
+    if (handle == 0ul) {
+        if (current.handle != 0ul) {
+            RemoveCharacterBodyComponent(eid)
+            return true
+        }
+        return false
+    }
+    SetCharacterBodyComponent(eid, CharacterBody(handle = handle, signature = signature))
+    return true
 }
 
 //! A child's local Transform is not a world pose; an orphan whose parent was deleted is a
@@ -361,7 +492,7 @@ def private EnsureBodyForCollider(eid : EntityId; desc : PhysicsBodyDesc; parent
 def private ReconcileComponents() {
     var changed = false
 
-    query() $(eid : EntityId; transform : Transform; boxCollider : BoxCollider) {
+    query() $ [REQUIRE_NOT(characterController)] (eid : EntityId; transform : Transform; boxCollider : BoxCollider) {
         let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
         let relationship = get_component(eid, "relationship", Relationship())
         let desc = MakeBodyDesc(transform, settings, PhysicsShape.Box, boxCollider.half_extents, 0.0f, 0.0f)
@@ -370,7 +501,7 @@ def private ReconcileComponents() {
         }
     }
 
-    query() $ [REQUIRE_NOT(boxCollider)] (eid : EntityId; transform : Transform; sphereCollider : SphereCollider) {
+    query() $ [REQUIRE_NOT(boxCollider, characterController)] (eid : EntityId; transform : Transform; sphereCollider : SphereCollider) {
         let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
         let relationship = get_component(eid, "relationship", Relationship())
         let desc = MakeBodyDesc(transform, settings, PhysicsShape.Sphere, float3(0.0f, 0.0f, 0.0f),
@@ -380,7 +511,7 @@ def private ReconcileComponents() {
         }
     }
 
-    query() $ [REQUIRE_NOT(boxCollider, sphereCollider)] (eid : EntityId; transform : Transform; capsuleCollider : CapsuleCollider) {
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, characterController)] (eid : EntityId; transform : Transform; capsuleCollider : CapsuleCollider) {
         let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
         let relationship = get_component(eid, "relationship", Relationship())
         let desc = MakeBodyDesc(transform, settings, PhysicsShape.Capsule, float3(0.0f, 0.0f, 0.0f),
@@ -390,7 +521,7 @@ def private ReconcileComponents() {
         }
     }
 
-    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider)] (eid : EntityId; transform : Transform; cylinderCollider : CylinderCollider) {
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider, characterController)] (eid : EntityId; transform : Transform; cylinderCollider : CylinderCollider) {
         let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
         let relationship = get_component(eid, "relationship", Relationship())
         let desc = MakeBodyDesc(transform, settings, PhysicsShape.Cylinder, float3(0.0f, 0.0f, 0.0f),
@@ -400,13 +531,23 @@ def private ReconcileComponents() {
         }
     }
 
-    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider, cylinderCollider)] (eid : EntityId; transform : Transform; planeCollider : PlaneCollider) {
+    query() $ [REQUIRE_NOT(boxCollider, sphereCollider, capsuleCollider, cylinderCollider, characterController)] (eid : EntityId; transform : Transform; planeCollider : PlaneCollider) {
         let settings = get_component(eid, "rigidBody", RigidBody(motion = int(PhysicsMotion.Static)))
         let relationship = get_component(eid, "relationship", Relationship())
         let desc = MakeBodyDesc(transform, settings, PhysicsShape.Plane, planeCollider.half_extents, 0.0f, 0.0f)
         if (EnsureBodyForCollider(eid, desc, HasLiveParent(relationship))) {
             changed = true
         }
+    }
+
+    // An entity that became a character drops the body it had before. The collider queries
+    // skip character entities, so this is the only place that removes such a body.
+    query() $(eid : EntityId; physicsBody : PhysicsBody; characterController : CharacterController) {
+        if (physicsBody.handle != 0ul) {
+            PhysicsDestroyBody(physicsBody.handle)
+        }
+        RemovePhysicsBodyComponent(eid)
+        changed = true
     }
 
     // Managed bodies whose entity lost every collider. Manual bodies (managed = false) are
@@ -421,6 +562,42 @@ def private ReconcileComponents() {
 
     // commit() applies every deferred DECS action, not only physics ones; avoid flushing
     // unrelated script work on frames where no body lifecycle changed.
+    if (changed) {
+        commit()
+    }
+}
+
+//! Reconciles CapsuleCollider + CharacterController into Jolt characters. A capsule without
+//! the controller stays a rigid body (or a static collider); the controller without a capsule
+//! does nothing. The body queries skip character entities, so an entity is one or the other.
+[profile]
+def private ReconcileCharacters() {
+    var changed = false
+
+    query() $(eid : EntityId; transform : Transform; capsuleCollider : CapsuleCollider;
+              characterController : CharacterController) {
+        let relationship = get_component(eid, "relationship", Relationship())
+        let desc = MakeCharacterDesc(transform, characterController, capsuleCollider)
+        if (EnsureCharacterForCollider(eid, desc, HasLiveParent(relationship))) {
+            changed = true
+        }
+    }
+
+    // A character whose capsule is gone. An entity missing only the controller is covered by
+    // the second query; the two do not overlap because one requires the capsule and the other
+    // requires its absence.
+    query() $ [REQUIRE_NOT(capsuleCollider)] (eid : EntityId; characterBody : CharacterBody) {
+        PhysicsDestroyCharacter(characterBody.handle)
+        RemoveCharacterBodyComponent(eid)
+        changed = true
+    }
+
+    query() $ [REQUIRE(capsuleCollider), REQUIRE_NOT(characterController)] (eid : EntityId; characterBody : CharacterBody) {
+        PhysicsDestroyCharacter(characterBody.handle)
+        RemoveCharacterBodyComponent(eid)
+        changed = true
+    }
+
     if (changed) {
         commit()
     }
@@ -484,6 +661,43 @@ def private PhysicsPushPoses() {
     }
     for (body in orphans) {
         PhysicsDestroyBody(body)
+    }
+}
+
+//! Character entities follow their Transform the same way dynamic bodies do: a difference
+//! between the entity pose and the character pose is an Inspector/gizmo edit, so the character
+//! is teleported there. The entity Transform is the capsule center; the character API takes the
+//! feet. An untouched character has equal poses, because CharacterSync wrote the Transform.
+[profile]
+def private CharacterPushPoses() {
+    query() $(var transform : Transform; characterController : CharacterController;
+              capsuleCollider : CapsuleCollider; characterBody : CharacterBody) {
+        let handle = characterBody.handle
+        if (handle != 0ul && PhysicsIsCharacterAlive(handle)) {
+            let center = PhysicsGetCharacterCenter(handle)
+            let rotation = PhysicsGetCharacterRotation(handle)
+            if (!SamePosePosition(transform.position, center) || !SamePoseRotation(transform.rotation, rotation)) {
+                let feet = transform.position - float3(0.0f, 0.0f, capsuleCollider.radius + capsuleCollider.half_height)
+                PhysicsSetCharacterPosition(handle, feet)
+                PhysicsSetCharacterRotation(handle, transform.rotation)
+            }
+        }
+    }
+}
+
+//! ConstantForce is applied on every physics tick, just before the step that consumes it.
+//! A static or kinematic body ignores the force; a character has no body component to match.
+[profile]
+def private ApplyConstantForces() {
+    query() $(constantForce : ConstantForce; physicsBody : PhysicsBody) {
+        if (physicsBody.handle != 0ul) {
+            if (length(constantForce.force) > 0.0f) {
+                PhysicsApplyForce(physicsBody.handle, constantForce.force)
+            }
+            if (length(constantForce.torque) > 0.0f) {
+                PhysicsApplyTorque(physicsBody.handle, constantForce.torque)
+            }
+        }
     }
 }
 
@@ -685,8 +899,8 @@ def IsCharacterGrounded(character : uint64) : bool {
     return PhysicsIsCharacterGrounded(character)
 }
 
-//! Teleports the character. Velocity is kept: zero the input if it must not continue from
-//! the old point.
+//! Teleports the character and drops its accumulated velocity, so it does not continue moving
+//! from the old point.
 def SetCharacterPosition(character : uint64; position : float3) {
     PhysicsSetCharacterPosition(character, position)
 }

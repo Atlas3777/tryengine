@@ -20,6 +20,7 @@ require tryengine/Time
 require trygame/GameScreens
 require trygame/GameTime
 require trygame/PhysicsDemo
+require trygame/Player
 
 //! One entry of the main menu: what to load and what to spawn after it.
 struct public SceneEntry {
@@ -46,6 +47,7 @@ def public Start() {
     Physics::Reset()
     Physics::Attach(game_world_clock)
     PhysicsDemo::Reset()
+    Player::Reset()
     g_ready = false
     GameScreens::Show("main_menu")
 }
@@ -81,6 +83,9 @@ def private OnSceneLoaded() {
         return
     }
     Physics::Reset()
+    // Reset detaches the simulation; a loaded scene starts with a live world again.
+    Physics::Attach(game_world_clock)
+    Player::Reset()
     if (g_pending.physics_demo) {
         PhysicsDemo::Start()
     }

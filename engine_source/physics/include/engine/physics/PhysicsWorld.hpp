@@ -192,8 +192,8 @@ public:
     bool GetCharacterRotation(uint64_t handle, das::float4& out) const;
     bool GetCharacterVelocity(uint64_t handle, das::float3& out) const;
     bool IsCharacterGrounded(uint64_t handle) const;
-    //! Телепорт: поза меняется, скорость сохраняется. Обнови её SetCharacterInput,
-    //! если персонаж не должен продолжать движение из старой точки.
+    //! Телепорт: поза меняется, скорость и накопленный ввод сбрасываются, чтобы персонаж
+    //! не продолжал движение из старой точки.
     bool SetCharacterPosition(uint64_t handle, const das::float3& position);
     bool SetCharacterRotation(uint64_t handle, const das::float4& rotation);
 
