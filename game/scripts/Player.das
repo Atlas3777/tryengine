@@ -50,13 +50,23 @@ let private MAX_PITCH = radians(89.0f)
 var private g_look_handle : uint64 = 0ul
 var private g_yaw : float
 var private g_pitch : float
+var private g_mouse_captured : bool
 
-//! Drops the accumulated look angles. Call it when a fresh scene or Play session starts; the
-//! next Update takes the yaw from the player entity's rotation again.
+//! Releases the mouse. Menus, pause and Play stop call it; the game decides the policy, the
+//! platform only hides the cursor. Unconditional: it also repairs a state left over from a
+//! script hot reload, where the globals are new but the window is still captured.
+def public ReleaseMouse() {
+    g_mouse_captured = false
+    SetMouseCaptured(false)
+}
+
+//! Drops the accumulated look angles and releases the mouse. Call it when a fresh scene or Play
+//! session starts; the next Update takes the yaw from the player entity's rotation again.
 def public Reset() {
     g_look_handle = 0ul
     g_yaw = 0.0f
     g_pitch = 0.0f
+    ReleaseMouse()
 }
 
 //! Yaw of a Z-up quaternion, ignoring any pitch and roll.
@@ -88,16 +98,21 @@ def public Update() {
         return
     }
 
+    // Gameplay owns the mouse: the cursor is hidden and look deltas keep coming from relative
+    // motion. GameUpdate releases it on pause and on any screen above the HUD. SDL ignores a
+    // request for the mode the window is already in, so calling it every frame is cheap.
+    g_mouse_captured = SetMouseCaptured(true)
+
     if (handle != g_look_handle) {
         g_look_handle = handle
         g_yaw = YawFromRotation(player_rotation)
         g_pitch = 0.0f
     }
 
-    // Mouse look only while the game view owns the pointer: the editor panels and the game UI
-    // must not spin the camera. In the editor the viewport flag is one frame behind, the same
-    // compromise the UI input already makes.
-    if (Ui::ViewportHovered() && !Ui::ConsumesMouse()) {
+    // Captured gameplay owns the pointer. Without capture (editor focus is elsewhere, or the
+    // window has no keyboard focus) fall back to the viewport/UI gating: the editor panels and
+    // the game UI must not spin the camera.
+    if (g_mouse_captured || (Ui::ViewportHovered() && !Ui::ConsumesMouse())) {
         let md = mouse_delta()
         g_yaw -= radians(md.x * input.look_sensitivity)
         g_pitch = clamp(g_pitch - radians(md.y * input.look_sensitivity), -MAX_PITCH, MAX_PITCH)
@@ -132,9 +147,11 @@ def public Update() {
     let feet = Physics::GetCharacterPosition(handle)
     let eye = feet + float3(0.0f, 0.0f, input.eye_height)
 
-    query() $[REQUIRE_NOT(editorCameraTag)] (var cameraTransform : Transform; camera : Camera) {
-        cameraTransform.position = eye
-        cameraTransform.rotation = view
+    // The argument name is the component name: `transform`, not a local alias. `camera` keeps
+    // the query on entities that actually have a Camera template.
+    query() $[REQUIRE_NOT(editorCameraTag)] (var transform : Transform; camera : Camera) {
+        transform.position = eye
+        transform.rotation = view
     }
 }
 

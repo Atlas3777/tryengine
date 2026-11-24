@@ -48,3 +48,11 @@ def mouse_pos() : float2 {
 def mouse_delta() : float2 {
     return float2(g_input.mouseDeltaX, g_input.mouseDeltaY)
 }
+
+//! Captures or releases the mouse: a captured mouse hides the cursor and keeps mouse_delta
+//! coming from relative motion, so look controls never stop at a window edge. The game decides
+//! when to call it (gameplay captures, menus and pause release). Returns false when the window
+//! does not have keyboard focus, in which case the mode did not change.
+def public SetMouseCaptured(captured : bool) : bool {
+    return set_relative_mouse_mode(captured)
+}

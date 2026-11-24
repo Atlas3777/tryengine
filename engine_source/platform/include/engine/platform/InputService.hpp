@@ -109,6 +109,16 @@ public:
         quit_requested_ = true;
     }
 
+    //! Относительный режим мыши: курсор скрыт, движение приходит только в mouse_delta.
+    //! Включает/выключает сама игра; окно берётся по фокусу клавиатуры. Возвращает false,
+    //! если окна в фокусе нет (тогда режим не изменился).
+    bool SetRelativeMouseMode(bool enabled) const {
+        SDL_Window* window = SDL_GetKeyboardFocus();
+        if (window == nullptr)
+            return false;
+        return SDL_SetWindowRelativeMouseMode(window, enabled);
+    }
+
     [[nodiscard]] InputState& GetState() noexcept {
         return input_state_;
     }

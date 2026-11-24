@@ -1174,10 +1174,10 @@ entities: Entity[] = [
 	}
 	{
 		boxCollider: BoxCollider = {
-			half_extents: f32x3 = [3.5 2.5 0.10581123]
+			half_extents: f32x3 = [10.954266 2.5 0.10581123]
 		}
 		meshScale: MeshScale = {
-			scale: f32x3 = [7 5 0.21162246]
+			scale: f32x3 = [21.908531 5 0.21162246]
 		}
 		model: ModelRender = {
 			mesh: u64 = 18103440006364373279
@@ -1185,7 +1185,7 @@ entities: Entity[] = [
 		}
 		tag: string = "PB Box"
 		transform: Transform = {
-			position: f32x3 = [8.611532 -4.504031 0]
+			position: f32x3 = [8.946841 -1.5043845 -0.14562578]
 			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
@@ -1271,8 +1271,92 @@ entities: Entity[] = [
 		}
 		tag: string = "PB Box"
 		transform: Transform = {
-			position: f32x3 = [7.731696 -2.2435977 3.796424]
+			position: f32x3 = [3.3395634 -0.5329273 3.796424]
 			rotation: f32x4 = [0.5 -0.5 -0.50000006 0.49999997]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [0.5 0.5 0.5]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [1 1 1]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		rigidBody: RigidBody = {
+			motion: i32 = 2
+			mass: f32 = 1
+			friction: f32 = 0.5
+			restitution: f32 = 0
+			sensor: bool = false
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [1.204746 -0.04025024 2.1752386]
+			rotation: f32x4 = [0.5 -0.5 -0.50000006 0.49999997]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		boxCollider: BoxCollider = {
+			half_extents: f32x3 = [0.5 0.5 0.5]
+		}
+		meshScale: MeshScale = {
+			scale: f32x3 = [1 1 1]
+		}
+		model: ModelRender = {
+			mesh: u64 = 18103440006364373279
+			material: string = "game/data/materials/grid.mat"
+		}
+		rigidBody: RigidBody = {
+			motion: i32 = 2
+			mass: f32 = 1
+			friction: f32 = 0.5
+			restitution: f32 = 0
+			sensor: bool = false
+		}
+		tag: string = "PB Box"
+		transform: Transform = {
+			position: f32x3 = [0.33237302 -1.4600213 1.6988604]
+			rotation: f32x4 = [0.5 -0.5 -0.50000006 0.49999997]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		capsuleCollider: CapsuleCollider = {
+			radius: f32 = 0.5
+			half_height: f32 = 0.5
+		}
+		characterController: CharacterController = {
+			mass: f32 = 70
+			max_strength: f32 = 100
+			max_slope_angle: f32 = 45
+			jump_speed: f32 = 5
+		}
+		playerInput: PlayerInput = {
+			move_speed: f32 = 6
+			look_sensitivity: f32 = 0.15
+			eye_height: f32 = 1.6
+		}
+		tag: string = "Player"
+		transform: Transform = {
+			position: f32x3 = [5.31353 -0.38473848 2.63057]
+			rotation: f32x4 = [0 0 0 1]
+			scale: f32x3 = [1 1 1]
+		}
+	}
+	{
+		Camera_far_plane: f32 = 1000
+		Camera_fov: f32 = 70
+		Camera_near_plane: f32 = 0.1
+		tag: string = "GameCamera"
+		transform: Transform = {
+			position: f32x3 = [0 0 1.8796881]
+			rotation: f32x4 = [0 0 0 1]
 			scale: f32x3 = [1 1 1]
 		}
 	}

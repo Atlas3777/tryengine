@@ -4,11 +4,13 @@ options rtti = true
 
 module Game shared public
 
+require tryengine/Input
 require tryengine/Profiling
 require trygame/GameFlow
 require trygame/GameScreens
 require trygame/GameTime public
 require trygame/GameUi
+require trygame/GameState
 require trygame/Player
 
 //! Game state that must survive an editor hot reload. The editor saves it through
@@ -53,14 +55,22 @@ def GameUpdate() {
     if (!GameFlow::IsReady()) {
         return
     }
-    if (!GameTime::IsGamePaused()) {
-        UpdateGameplay()
+    // Escape is the game's pause key: the pause screen is drawn by GameUiFrame, and pausing
+    // releases the mouse so the menu can be clicked.
+    if (pressed(Key.Escape)) {
+        GameState::TogglePause()
     }
+    if (GameTime::IsGamePaused() || GameScreens::Top() != "hud") {
+        Player::ReleaseMouse()
+        return
+    }
+    UpdateGameplay()
 }
 
 //! Gameplay runs on the world clock, so a paused game freezes the player. The player system is
 //! component-driven: it drives the entity that has PlayerInput + CharacterController and the
-//! game camera, and does nothing when the scene has no player.
+//! game camera, and does nothing when the scene has no player. It also captures the mouse; any
+//! screen above the HUD (pause, shop) releases it.
 def private UpdateGameplay() {
     Player::Update()
 }

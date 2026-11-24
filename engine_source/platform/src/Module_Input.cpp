@@ -43,6 +43,12 @@ void request_quit(das::Context* ctx) {
         input->RequestQuit();
 }
 
+bool set_relative_mouse_mode(bool enabled, das::Context* ctx) {
+    auto* try_ctx = static_cast<TryengineContext*>(ctx);
+    auto* input = try_ctx->engine.TryGet<InputService>();
+    return input != nullptr ? input->SetRelativeMouseMode(enabled) : false;
+}
+
 InputState* get_input_state(das::Context* ctx) {
     auto* try_ctx = static_cast<TryengineContext*>(ctx);
     auto* input = try_ctx->engine.TryGet<InputService>();
@@ -68,6 +74,8 @@ public:
                                                  "get_input_state");
 
         addExtern<DAS_BIND_FUN(request_quit)>(*this, lib, "RequestQuit", SideEffects::accessGlobal, "request_quit");
+        addExtern<DAS_BIND_FUN(set_relative_mouse_mode)>(*this, lib, "set_relative_mouse_mode",
+                                                         SideEffects::accessGlobal, "set_relative_mouse_mode");
 
         verifyAotReady();
     }

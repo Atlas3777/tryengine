@@ -20,6 +20,7 @@ require tryengine/Scene
 require tryengine/Time
 require trygame/Game
 require trygame/PhysicsDemo
+require trygame/Player
 require tryeditor/Editor
 require tryeditor/Hierarchy
 require tryeditor/UndoRedo
@@ -81,6 +82,7 @@ def public EndPlay() {
     Loader::Abort()
     Physics::Reset()
     PhysicsDemo::Reset()
+    Player::Reset()
 
     // Release the play scene's references, install the editor scene again, and then
     // restore the heap. The resource cache keeps the meshes/materials: only the
