@@ -714,6 +714,13 @@ def public GizmoEndDrag() {
     g_drag.handle = -1
 }
 
+//! Drops the drag and the hover highlight. A placement tool calls it every frame it owns the
+//! viewport, so an armed tool never leaves a grabbed handle behind.
+def public CancelGizmoInteraction() {
+    GizmoEndDrag()
+    g_hover = -1
+}
+
 // ---------------------------------------------------------------------------
 // Applying a delta to the selected entity.
 // ---------------------------------------------------------------------------

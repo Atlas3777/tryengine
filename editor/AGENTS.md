@@ -448,3 +448,34 @@
   Без этого шрифт в игре не найдётся, хотя в редакторе всё работает (loose-артефакт).
 - Инструкция для человека — `game/assets/fonts/README.md`; проверка —
   `tools/agent/font-probe.sh game/assets/fonts/<Font>.ttf`.
+
+## ProBuilder: расстановка примитивов
+
+- Панель — `editor/daslang/ProBuilder.das`. Инструмент — режим вьюпорта: `B` включает/выключает,
+  `Esc` снимает; в Play он принудительно выключается из `EditorUpdate`. Клик ставит коробку
+  размера `Default size` от угла клетки, драг — footprint по клеткам сетки, высота — Z из
+  `Default size`. Земля — плоскость `Z=0`, луч камеры строится тем же `GizmoRayFromViewport`,
+  что и у гизмо; шаг — `Grid step`, включённый `Snap to grid`.
+- Пока инструмент armed, `SceneViewPort` не зовёт `UpdateGizmoInteraction` (вместо этого
+  `CancelGizmoInteraction`), а `UpdateProBuilderPlacement` вызывает
+  `ConsumeSceneViewportClick` — он гасит `scene_viewport_mouse.pressed` до `PickingPass`, иначе
+  один клик и ставил бы коробку, и выбирал/тянул объект за ней. Порядок в `DrawEditor` важен:
+  `DrawProBuilder` → `DrawSceneViewPort` → `UpdateProBuilderPlacement`; `DrawEditor` идёт из
+  `ImGuiPass::Collect`, а `PickingPass` собирается позже.
+- Коробка — обычная сущность с unit-кубом `game/data/meshes/unit_box.mesh` (MeshBinary v4,
+  24 вершины, 36 индексов, позиции в `[-0.5, 0.5]`), поэтому `Transform.scale` — это размер в
+  метрах, а `boxCollider.half_extents` — `scale / 2`. Меш лежит в `data`, а не в `assets`:
+  это авторитетный файл без импортёра, id — `PathId("game/data/meshes/unit_box.mesh")`.
+  Пересоздать его — `python3 tools/agent/make-unit-box.py`; файл коммитится, потому что
+  авторитетный домен не импортируется. Меняешь `MeshVersion` — обнови и скрипт.
+- Материал — `game/data/materials/grid.mat`, шейдер — `engine_content/assets/shaders/
+  GridMaterial.slang` (обязательный `.meta` с guid; шейдер импортируется на старте редактора).
+  Сетка рисуется в объектном пространстве, умноженном на масштаб, с линиями на границах
+  коробки: 1 м — одна клетка при любом размере. Параметры `albedo_color`, `line_color`,
+  `cell_size`, `line_width` редактируются панелью Material.
+- Коллайдер ставится в той же `create_entity`, что и `model` (флаг `Add box collider`), а
+  дальше `SyncBoxColliders` переписывает `half_extents` из `Transform.scale / 2` — тег
+  `PB Box` и есть маркер ProBuilder-коробки и сохраняется в сцене. Переименовали тег —
+  синхронизация для этой сущности выключена.
+- Прогрев ассетов — `ProBuilderStart()` из `EditorStart`, не `[init]`: module init выполняется
+  и под CLI-гейтом, где нативные биндинги `tryResources` не имеют `TryengineContext`.

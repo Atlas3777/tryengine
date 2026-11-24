@@ -26,6 +26,7 @@ require tryeditor/Material
 require tryeditor/PrefabAuthoring
 require tryeditor/ProfilerWindow
 require tryeditor/Gizmo
+require tryeditor/ProBuilder
 require tryeditor/EditorActions
 
 require imgui
@@ -126,6 +127,7 @@ def DrawMainMenu() {
             menu_label(WIN_BUILD_MGR, (text = "Build Manager", selected = true))
             menu_label(WIN_MATERIAL, (text = "Material", selected = true))
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
+            menu_label(WIN_PROBUILDER, (text = "ProBuilder", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
         }
 
@@ -215,7 +217,9 @@ def DrawEditor() {
     DrawHierarchy()
     DrawInspector()
     DrawAssetBrowser()
+    DrawProBuilder()
     DrawSceneViewPort()
+    UpdateProBuilderPlacement()
     DrawGameSceneViewPort()
     DrawUiScreens(is_playing)
     DrawAssetSettings()

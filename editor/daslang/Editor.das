@@ -8,6 +8,7 @@ require tryeditor/DebugRender
 require tryeditor/EditorHotkeys
 require tryeditor/Hierarchy
 require tryeditor/Gizmo
+require tryeditor/ProBuilder
 
 require trygame/Game
 
@@ -89,12 +90,17 @@ def EditorStart(){
     RegisterSceneLoadedListener(@@OnSceneLoaded)
     RegisterSceneUnloadedListener(@@OnSceneUnloaded)
     LoadEmptyScene()
+    ProBuilderStart()
 }
 
 [export, profile]
 def EditorUpdate(){
     ProcessHotkeys()
     ProcessGizmoHotkeys()
+    ProcessProBuilderHotkeys()
+    if (is_playing) {
+        StopProBuilder()
+    }
     Move(TimeDelta(editor_clock))
     // The gizmo state is built before the frame is rendered; interaction happens later in
     // DrawSceneViewPort, so the next frame draws the handle the user is already dragging.

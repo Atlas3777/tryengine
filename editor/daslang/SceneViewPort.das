@@ -41,6 +41,19 @@ def GetEditorSceneViewportMouse : Mouse ? {
     return unsafe(addr(scene_viewport_mouse))
 }
 
+//! This frame's viewport mouse as a value. Tools that run after the panel (`ProBuilder`)
+//! read it without touching the pointer C++ reads for picking.
+def GetSceneViewportMouseState() : Mouse {
+    return scene_viewport_mouse
+}
+
+//! Marks this frame's click as handled by a viewport tool. `PickingPass` reads the same
+//! struct later in the frame, so clearing `pressed` is what keeps placement and selection
+//! from both firing on one click.
+def ConsumeSceneViewportClick() {
+    scene_viewport_mouse.pressed = false
+}
+
 def ResetMouse(){
     scene_viewport_mouse.is_down = false
     scene_viewport_mouse.pressed = false
@@ -159,8 +172,14 @@ def DrawSceneViewPort(){
             // drag is active. `down` is not tied to hover so a drag keeps running when the
             // cursor leaves the viewport.
             SetGizmoViewport(scene_viewport_size)
-            UpdateGizmoInteraction(scene_viewport_mouse.pos, scene_viewport_size, is_hovered,
-                                   IsMouseClicked(ImGuiMouseButton.Left), IsMouseDown(ImGuiMouseButton.Left))
+            // A placement tool owns the viewport click: no handle hover and no drag starts
+            // while it is armed, so clicking to place never grabs an object behind it.
+            if (IsPlacementActive()) {
+                CancelGizmoInteraction()
+            } else {
+                UpdateGizmoInteraction(scene_viewport_mouse.pos, scene_viewport_size, is_hovered,
+                                       IsMouseClicked(ImGuiMouseButton.Left), IsMouseDown(ImGuiMouseButton.Left))
+            }
 
             drag_drop_target(TARGET_DD) {
                 let payload = AcceptDragDropPayload("Asset", ImGuiDragDropFlags.None)
