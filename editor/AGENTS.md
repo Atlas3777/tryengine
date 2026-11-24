@@ -452,30 +452,52 @@
 ## ProBuilder: расстановка примитивов
 
 - Панель — `editor/daslang/ProBuilder.das`. Инструмент — режим вьюпорта: `B` включает/выключает,
-  `Esc` снимает; в Play он принудительно выключается из `EditorUpdate`. Клик ставит коробку
-  размера `Default size` от угла клетки, драг — footprint по клеткам сетки, высота — Z из
-  `Default size`. Земля — плоскость `Z=0`, луч камеры строится тем же `GizmoRayFromViewport`,
-  что и у гизмо; шаг — `Grid step`, включённый `Snap to grid`.
+  `Esc` снимает; в Play он принудительно выключается из `EditorUpdate`.
+- **Размер коробки не в `Transform.scale`.** Unit-куб `game/data/meshes/unit_box.mesh`
+  (MeshBinary v4, 24 вершины, 36 индексов, позиции в `[-0.5, 0.5]`) масштабируется
+  компонентом `meshScale : MeshScale` (`scale : float3` в `Types.das`). `Render.das` умножает
+  его на `_world.scale` при сборке матрицы отрисовки, поэтому `Transform` остаётся позой
+  объекта: гизмо Scale меняет `transform.scale`, а авторский размер — `meshScale`.
+  `Render.das` делает это двумя `query` (`meshScale` / `REQUIRE_NOT(meshScale)`), а не
+  `get_component` на каждую сущность кадра: обычный путь остаётся одним сканом.
+- Размер в `meshScale` — метры, потому что меш unit-куба; `boxCollider.half_extents` —
+  `abs(meshScale.scale * transform.scale) / 2`. `SyncBoxColliders` обновляет коллайдер и для
+  новых коробок, и для старых без `meshScale` (у них размер был в `Transform.scale`). Маркер —
+  тег `PB Box`, он сохраняется в сцене; переименовали тег — синхронизация выключена.
+  Размер выбранной коробки правится в самой панели (`Selected box size`) и в Инспекторе
+  (`meshScale.scale`).
+- Место и поверхность — CPU-рейкаст в `ProBuilder.das` по локальному AABB каждого меша:
+  `Mesh::bbox_min/bbox_max` заполняет `MeshLoader` из `MeshHeader`, в скрипт их отдают
+  `GetMeshBoundsMin/Max` (`Module_Resources.cpp`). Луч переводится в локальное пространство
+  сущности аналитически, поэтому `t` — общий мировой параметр для всех кандидатов; ближайший
+  меш даёт точку контакта и нормаль. Для unit-куба это точно, для сложного импортированного
+  меша — приближение по AABB (CPU-треугольников у меша нет). Плоскость `Z=0` — фолбэк, если
+  мешей под лучом нет.
+- Кадр расстановки строится в момент клика: локальный Z — нормаль поверхности, X/Y — оси в
+  плоскости. На полу X/Y — мировые X/Y, на стене Y — проекция мировой Z, X — горизонталь.
+  Галочка `Vertical walls` на горизонтальной поверхности подменяет нормаль на ближайшую
+  горизонтальную ось к направлению на камеру: стена встаёт в точке контакта и смотрит на
+  пользователя. Клик ставит `Default size` в клетку под точкой контакта, драг — прямоугольник
+  по клеткам; X/Y задают размеры вдоль поверхности, Z — высоту на полу или толщину стены.
+  `Snap to grid`/`Grid step` управляют сеткой; с выключенным снапом коробка начинается точно
+  в точке контакта. Превью рисуется повёрнутым по кадру.
 - Пока инструмент armed, `SceneViewPort` не зовёт `UpdateGizmoInteraction` (вместо этого
   `CancelGizmoInteraction`), а `UpdateProBuilderPlacement` вызывает
   `ConsumeSceneViewportClick` — он гасит `scene_viewport_mouse.pressed` до `PickingPass`, иначе
   один клик и ставил бы коробку, и выбирал/тянул объект за ней. Порядок в `DrawEditor` важен:
   `DrawProBuilder` → `DrawSceneViewPort` → `UpdateProBuilderPlacement`; `DrawEditor` идёт из
   `ImGuiPass::Collect`, а `PickingPass` собирается позже.
-- Коробка — обычная сущность с unit-кубом `game/data/meshes/unit_box.mesh` (MeshBinary v4,
-  24 вершины, 36 индексов, позиции в `[-0.5, 0.5]`), поэтому `Transform.scale` — это размер в
-  метрах, а `boxCollider.half_extents` — `scale / 2`. Меш лежит в `data`, а не в `assets`:
-  это авторитетный файл без импортёра, id — `PathId("game/data/meshes/unit_box.mesh")`.
-  Пересоздать его — `python3 tools/agent/make-unit-box.py`; файл коммитится, потому что
-  авторитетный домен не импортируется. Меняешь `MeshVersion` — обнови и скрипт.
 - Материал — `game/data/materials/grid.mat`, шейдер — `engine_content/assets/shaders/
   GridMaterial.slang` (обязательный `.meta` с guid; шейдер импортируется на старте редактора).
-  Сетка рисуется в объектном пространстве, умноженном на масштаб, с линиями на границах
-  коробки: 1 м — одна клетка при любом размере. Параметры `albedo_color`, `line_color`,
-  `cell_size`, `line_width` редактируются панелью Material.
-- Коллайдер ставится в той же `create_entity`, что и `model` (флаг `Add box collider`), а
-  дальше `SyncBoxColliders` переписывает `half_extents` из `Transform.scale / 2` — тег
-  `PB Box` и есть маркер ProBuilder-коробки и сохраняется в сцене. Переименовали тег —
-  синхронизация для этой сущности выключена.
+  Сетка рисуется в объектном пространстве с линиями на границах коробки: 1 м — одна клетка
+  при любом размере. Параметры `albedo_color`, `line_color`, `cell_size`, `line_width`
+  редактируются панелью Material.
+- Меш лежит в `data`, а не в `assets`: это авторитетный файл без импортёра, id —
+  `PathId("game/data/meshes/unit_box.mesh")`. Пересоздать его —
+  `python3 tools/agent/make-unit-box.py`; файл коммитится, потому что авторитетный домен не
+  импортируется. Меняешь `MeshVersion` — обнови и скрипт.
 - Прогрев ассетов — `ProBuilderStart()` из `EditorStart`, не `[init]`: module init выполняется
   и под CLI-гейтом, где нативные биндинги `tryResources` не имеют `TryengineContext`.
+- `MeshScale` — сохраняемый компонент, поэтому старые сцены без него читаются (коробки с
+  `Transform.scale` продолжают работать), а новые сцены требуют пересборки `script_pak` для
+  `game_client`: редактор грузит `Render.das` из исходников, игра — из пака.

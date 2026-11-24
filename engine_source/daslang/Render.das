@@ -44,6 +44,25 @@ struct DrawCall{
 
 var dcs : array<DrawCall>
 
+// LLVM JIT cannot lower reinterpret<EntityId, uint64>; pack the fields numerically, the same
+// way Physics.das does. EntityId is { id : uint, generation : int } and the little-endian
+// reinterpret it replaces puts id in the low half and generation in the high half.
+def private EntityRaw(eid : EntityId) : uint64 {
+    return uint64(eid.id) | (uint64(uint(eid.generation)) << 32)
+}
+
+def private PushDraw(eid : EntityId; _world : WorldTransform; mesh : TryMesh?; material : TryMat?; mesh_scale : float3) {
+    if (mesh == null || material == null) {
+        return
+    }
+    dcs.push(DrawCall(
+        mesh_id = mesh,
+        material_id = material,
+        matrix = compose(_world.position, _world.rotation, _world.scale * mesh_scale),
+        entity_id = EntityRaw(eid)
+    ))
+}
+
 [export]
 def get_render_obj() : array<DrawCall>? {
     dcs.clear()
@@ -52,17 +71,17 @@ def get_render_obj() : array<DrawCall>? {
     // when the entity is created, so a draw call here is never half-resolved. The authored
     // `model` component is required as well: it is what makes the entity an appearance, so
     // dropping it stops the draw even if the runtime pointers are still around.
-    query() <| $(eid : EntityId, _world : WorldTransform, model : ModelRender, mesh : TryMesh?, material : TryMat?) {
-        if (mesh == null || material == null) {
-            return
-        }
-        let id = unsafe(reinterpret<uint64>(eid))
-        dcs.push(DrawCall(
-            mesh_id = mesh,
-            material_id = material,
-            matrix = compose(_world.position, _world.rotation, _world.scale),
-            entity_id = id
-        ))
+    //
+    // `meshScale` is split into its own query instead of a per-entity component lookup: the
+    // common path (no component) must stay one stride scan, and the second query excludes
+    // the scaled entities by name, so nothing is drawn twice.
+    query() $(eid : EntityId; _world : WorldTransform; model : ModelRender; mesh : TryMesh?; material : TryMat?;
+              meshScale : MeshScale) {
+        PushDraw(eid, _world, mesh, material, meshScale.scale)
+    }
+    query() $ [REQUIRE_NOT(meshScale)] (eid : EntityId; _world : WorldTransform; model : ModelRender;
+                                        mesh : TryMesh?; material : TryMat?) {
+        PushDraw(eid, _world, mesh, material, float3(1.0f, 1.0f, 1.0f))
     }
 
     return unsafe(addr(dcs))

@@ -79,6 +79,20 @@ uint64_t MeshDefaultMaterial(uint64_t guid, das::Context* ctx) {
     return mesh != nullptr ? mesh->default_material : 0;
 }
 
+// Локальный AABB геометрии для CPU-рейкаста в редакторе. Пустой AABB (нули) —
+// меш ещё не загружен; вызывающая сторона такой меш пропускает.
+das::float3 GetMeshBoundsMin(uint64_t guid, das::Context* ctx) {
+    auto* mesh = GetMeshPointer(guid, ctx);
+    return mesh != nullptr ? das::float3(mesh->bbox_min[0], mesh->bbox_min[1], mesh->bbox_min[2])
+                           : das::float3(0.0f, 0.0f, 0.0f);
+}
+
+das::float3 GetMeshBoundsMax(uint64_t guid, das::Context* ctx) {
+    auto* mesh = GetMeshPointer(guid, ctx);
+    return mesh != nullptr ? das::float3(mesh->bbox_max[0], mesh->bbox_max[1], mesh->bbox_max[2])
+                           : das::float3(0.0f, 0.0f, 0.0f);
+}
+
 tryengine::graphics::Material* GetMaterialPointer(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->GetPointerExplicit<tryengine::graphics::Material>(guid) : nullptr;
@@ -253,6 +267,11 @@ public:
 
         das::addExtern<DAS_BIND_FUN(MeshDefaultMaterial)>(*this, lib, "MeshDefaultMaterial",
                                                           das::SideEffects::accessGlobal, "MeshDefaultMaterial");
+        das::addExtern<DAS_BIND_FUN(GetMeshBoundsMin)>(*this, lib, "GetMeshBoundsMin", das::SideEffects::accessGlobal,
+                                                       "GetMeshBoundsMin");
+        das::addExtern<DAS_BIND_FUN(GetMeshBoundsMax)>(*this, lib, "GetMeshBoundsMax", das::SideEffects::accessGlobal,
+                                                       "GetMeshBoundsMax");
+
         das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(*this, lib, "GetMaterialPointer",
                                                          das::SideEffects::accessGlobal, "GetMaterialPointer");
 

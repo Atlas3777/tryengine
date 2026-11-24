@@ -73,6 +73,16 @@
   — ошибка спавна/загрузки, а не pop-in.
 - `get_render_obj` требует компонент `model` и пропускает сущности с null
   `mesh`/`material`: снятый `model` прекращает рисование даже при старых указателях.
+- `meshScale` (`MeshScale` в `tryengine/Types`) — авторский масштаб меша поверх
+  `Transform.scale`. Матрица draw call'а = `_world` TRS, умноженный на `meshScale.scale`;
+  `meshScale` виден и редактируется в Инспекторе и сохраняется в сцене. `get_render_obj`
+  разложен на два `query`: с компонентом (`meshScale`) и `REQUIRE_NOT(meshScale)` для
+  обычного пути, чтобы не делать `get_component` на каждую сущность кадра. Проходы
+  picking'а и отрисовки читают один и тот же `DrawCall`, поэтому масштаб совпадает.
+- `Mesh::bbox_min/bbox_max` — локальный AABB из шапки меш-артефакта (заполняет
+  `MeshLoader`). Он нужен редактору для CPU-рейкаста при расстановке примитивов; в скрипт
+  отдаётся `GetMeshBoundsMin/Max` из `Module_Resources.cpp`, для отрисовки не используется.
+  Для сложного меша это AABB, а не точная поверхность.
 
 ## Материалы
 

@@ -157,6 +157,11 @@ struct Mesh {
     uint16_t attribute_stride = 0;
     VkIndexType index_type = VK_INDEX_TYPE_NONE_KHR;
 
+    // Локальный AABB геометрии из артефакта. Нужен редактору для CPU-рейкаста при
+    // расстановке примитивов; для отрисовки не используется.
+    float bbox_min[3] = {0.0f, 0.0f, 0.0f};
+    float bbox_max[3] = {0.0f, 0.0f, 0.0f};
+
     // Материал по умолчанию из артефакта: с ним примитив пришёл из источника. Не часть
     // идентичности меша — авторский оверрайд живёт в `ModelRender.material` путём.
     uint64_t default_material = 0;
@@ -194,6 +199,10 @@ struct Mesh {
             attribute_flags = other.attribute_flags;
             attribute_stride = other.attribute_stride;
             index_type = other.index_type;
+            for (int axis = 0; axis < 3; ++axis) {
+                bbox_min[axis] = other.bbox_min[axis];
+                bbox_max[axis] = other.bbox_max[axis];
+            }
             default_material = std::exchange(other.default_material, 0);
         }
         return *this;

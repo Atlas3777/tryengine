@@ -21,6 +21,15 @@ struct ModelRender {
     material : string
 }
 
+// Authored mesh scale, applied by the renderer on top of Transform.scale. The mesh keeps its
+// authored geometry and the transform keeps the object pose, so a tool can size a primitive
+// without turning the authoring size into a transform scale. 1,1,1 is the mesh as imported.
+// ProBuilder stores box dimensions here (its mesh is a unit cube, so the scale is metres).
+[DecsSerializable]
+struct MeshScale {
+    scale : float3 = float3(1.0f, 1.0f, 1.0f)
+}
+
 // A [decs_template] component: one group in the Inspector, one component per field
 // (`PointLight_color`, ...). Fields are saved by their own types, so the struct needs no
 // [DecsSerializable]; the group is declared with %ecs at the bottom of this file.
@@ -79,6 +88,7 @@ struct Camera {
 // [decs_template] component, whose type is also its name. Everything is saved and shown
 // unless it says otherwise.
 %ecs~("model", type<ModelRender>) %%
+%ecs~("meshScale", type<MeshScale>) %%
 %ecs~("transform", type<Transform>) %%
 %ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
 %ecs~("relationship", type<Relationship>, transient = true) %%

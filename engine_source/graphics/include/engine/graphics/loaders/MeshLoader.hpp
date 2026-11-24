@@ -40,6 +40,10 @@ public:
         mesh.attribute_stride = header.attribute_stride;
         mesh.index_type = IndexFormat(header.index_format);
         mesh.num_indices = header.index_count;
+        for (int axis = 0; axis < 3; ++axis) {
+            mesh.bbox_min[axis] = header.bbox_min[axis];
+            mesh.bbox_max[axis] = header.bbox_max[axis];
+        }
         mesh.default_material = header.default_material;
 
         co_await async::ExecutorSwitch{async::MainThread()};
