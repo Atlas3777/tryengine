@@ -24,7 +24,7 @@ var lights : array<PointLightGPU>
 def get_lights() : array<PointLightGPU>? {
     lights.clear()
 
-    query() <| $(var _world : WorldTransform; var light : PointLight) {
+    query() <| $(var _world : Transform; var light : PointLight) {
         lights |> push(PointLightGPU(
             position_radius = float4(_world.position.x, _world.position.y, _world.position.z, light.radius),
             color_intensity = float4(light.color.x, light.color.y, light.color.z, light.intensity)
@@ -51,7 +51,7 @@ def private EntityRaw(eid : EntityId) : uint64 {
     return uint64(eid.id) | (uint64(uint(eid.generation)) << 32)
 }
 
-def private PushDraw(eid : EntityId; _world : WorldTransform; mesh : TryMesh?; material : TryMat?; mesh_scale : float3) {
+def private PushDraw(eid : EntityId; _world : Transform; mesh : TryMesh?; material : TryMat?; mesh_scale : float3) {
     if (mesh == null || material == null) {
         return
     }
@@ -75,11 +75,11 @@ def get_render_obj() : array<DrawCall>? {
     // `meshScale` is split into its own query instead of a per-entity component lookup: the
     // common path (no component) must stay one stride scan, and the second query excludes
     // the scaled entities by name, so nothing is drawn twice.
-    query() $(eid : EntityId; _world : WorldTransform; model : ModelRender; mesh : TryMesh?; material : TryMat?;
+    query() $(eid : EntityId; _world : Transform; model : ModelRender; mesh : TryMesh?; material : TryMat?;
               meshScale : MeshScale) {
         PushDraw(eid, _world, mesh, material, meshScale.scale)
     }
-    query() $ [REQUIRE_NOT(meshScale)] (eid : EntityId; _world : WorldTransform; model : ModelRender;
+    query() $ [REQUIRE_NOT(meshScale)] (eid : EntityId; _world : Transform; model : ModelRender;
                                         mesh : TryMesh?; material : TryMat?) {
         PushDraw(eid, _world, mesh, material, float3(1.0f, 1.0f, 1.0f))
     }
@@ -98,7 +98,7 @@ var editor_cameraC : CameraC
 
 [export]
 def GetEditorCamera(viewport_size : float2) : CameraC? {
-    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera : Camera) {
+    query() $[REQUIRE(editorCameraTag)] (let _world : Transform, let camera : Camera) {
         editor_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z
@@ -123,7 +123,7 @@ var game_cameraC : CameraC
 
 [export]
 def GetGameCamera(viewport_size : float2) : CameraC? {
-    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let _world : WorldTransform, let camera : Camera){
+    query() $[REQUIRE_NOT(editorCameraTag)] (eid : EntityId, let _world : Transform, let camera : Camera){
         game_cameraC.position = _world.position
 
         // Вектор взгляда берем по +Y, вектор верха — по +Z

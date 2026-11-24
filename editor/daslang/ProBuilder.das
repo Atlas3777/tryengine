@@ -45,6 +45,7 @@ require tryeditor/EditorInput
 require tryeditor/Gizmo
 require tryeditor/Hierarchy
 require tryeditor/SceneViewPort
+require tryeditor/UndoRedo
 require TryEditor
 require imgui
 require imgui/imgui_widgets_builtin
@@ -208,7 +209,7 @@ def private RaycastScene(ray : GizmoRay; var hit : SurfaceHit&) {
     var found = SurfaceHit()
     var best_t = 1.0e30f
 
-    query() $(eid : EntityId; _world : WorldTransform; model : ModelRender; mesh : TryMesh?;
+    query() $(eid : EntityId; _world : Transform; model : ModelRender; mesh : TryMesh?;
               material : TryMat?) {
         // Match the renderer's visibility rule: only entities with both runtime pointers are
         // drawn, so an entity with an unresolved material must not catch the placement ray.
@@ -458,6 +459,7 @@ def private CreateBox(spec : BoxSpec) : bool {
     commit()
 
     selected_eid = new_eid
+    UndoRedo::RecordCreated(new_eid, "Place box")
     pb_status = "placed {size.x:0.2f} x {size.y:0.2f} x {size.z:0.2f} m box"
     return true
 }
@@ -485,7 +487,6 @@ def private SyncCollider(eid : EntityId; transform : Transform; boxCollider : Bo
 [profile]
 def private SyncBoxColliders() {
     var changed = false
-    var migrated : array<EntityId>
 
     query() $(eid : EntityId; transform : Transform; boxCollider : BoxCollider; meshScale : MeshScale; tag : string) {
         if (tag != BOX_TAG) {
@@ -514,7 +515,6 @@ def private SyncBoxColliders() {
                 cmp |> set("transform", Transform(position = authored.position, rotation = authored.rotation,
                                                   scale = float3(1.0f, 1.0f, 1.0f)))
             }
-            migrated |> push(eid)
             changed = true
         }
     }
@@ -522,10 +522,8 @@ def private SyncBoxColliders() {
     if (changed) {
         commit()
         // The draw matrix is world scale * meshScale and `_world` is still the old scale in
-        // this frame: recompute the migrated roots before the opaque pass reads them.
-        for (eid in migrated) {
-            RefreshWorldSubtree(eid)
-        }
+        // this frame: compose the migrated poses before the opaque pass reads them.
+        UpdateWorldTransforms()
     }
 }
 

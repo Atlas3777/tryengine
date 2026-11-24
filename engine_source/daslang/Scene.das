@@ -191,7 +191,7 @@ def public UnloadActiveScene() {
     active_scene.requireMaterials |> clear()
     active_scene <- Scene()
     decs::restart()
-    ResetWorldTransformCaches()
+    EcsApplyRegistry()
 }
 
 def private ReleaseActiveSceneResources() {

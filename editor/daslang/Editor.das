@@ -23,6 +23,7 @@ require tryengine/Input
 require tryengine/AsyncTaskManager
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/UiScreens
+require tryeditor/UndoRedo
 
 require tryResources
 
@@ -53,6 +54,8 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
     // longer even in range of the lookup table. Panels that query `selected_eid` would
     // index past it; clear the selection at the one place every load goes through.
     selected_eid = INVALID_ENTITY_ID
+    // The history refers to entities of the world that has just been thrown away.
+    UndoRedo::ClearHistory()
 
     // Play runs GameStart unchanged; the editor camera is editor state layered on top.
     // It is tagged `editorCameraTag`, so the game camera query and GameUpdate ignore it,
@@ -69,6 +72,7 @@ def private OnSceneLoaded(name : string; path : string; empty : bool) {
 
 def private OnSceneUnloaded() {
     print("Выгрузка\n")
+    UndoRedo::ClearHistory()
     // A scene load replaces the whole DECS heap, so an id from the previous scene is no
     // longer even in range of the lookup table. Panels that query `selected_eid` would
     // index past it; clear the selection at the one place every load goes through.
@@ -95,6 +99,9 @@ def EditorStart(){
 
 [export, profile]
 def EditorUpdate(){
+    // Play runs with a game world and its changes are thrown away on Stop, and the hotkeys are
+    // gone with it: undo only records and replays edits of the scene being authored.
+    UndoRedo::SetSuspended(is_playing)
     ProcessHotkeys()
     ProcessGizmoHotkeys()
     ProcessProBuilderHotkeys()

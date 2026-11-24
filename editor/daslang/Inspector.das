@@ -22,6 +22,7 @@ require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/AssetKind
 require tryengine/Model
+require tryeditor/UndoRedo
 require daslib/rtti
 
 // ---------------------------------------------------------------------
@@ -179,6 +180,12 @@ def DrawInspector() {
         }
 
         if (show_body) {
+        // One capture around the whole body: every widget below writes straight into the
+        // archetype row, so the panel compares the entity's components before and after it
+        // drew them and records one undo step when they differ. That covers adding,
+        // removing and editing a value with the same mechanism.
+        UndoRedo::BeginPanelEdit(selected_eid)
+
         text("Entity [{selected_eid.id:d}]")
         let a = unsafe(reinterpret<uint64>(selected_eid));
         text("Entity2 [{a:d}]")
@@ -258,6 +265,8 @@ def DrawInspector() {
             g_pending_remove = ""
             clear_inspector_states()
         }
+
+        UndoRedo::EndPanelEdit()
         }
     }
 }

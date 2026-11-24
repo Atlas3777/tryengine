@@ -66,7 +66,7 @@ struct public PrefabNode {
     prev        : int
     next        : int
     local       : Transform = Transform()
-    world       : WorldTransform = WorldTransform()
+    world       : Transform = Transform()
     values      : decs::ComponentMap
     // The authored appearance, repeated here because spawn may not query the const
     // `values`: `mesh` is the guide, `material` the optional override.
@@ -287,7 +287,7 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
 
         let parent_index = nodes[node_index].parent
         if (parent_index < 0) {
-            nodes[node_index].world = WorldTransform(
+            nodes[node_index].world = Transform(
                 position = nodes[node_index].local.position,
                 rotation = nodes[node_index].local.rotation,
                 scale = nodes[node_index].local.scale
@@ -510,7 +510,7 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
                 arch,
                 g_spawn_world_index,
                 idx,
-                WorldTransform(
+                Transform(
                     position = data.nodes[node_index].world.position + origin,
                     rotation = data.nodes[node_index].world.rotation,
                     scale = data.nodes[node_index].world.scale
@@ -570,6 +570,16 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
     }
 
     return g_spawn_ids[0]
+}
+
+//! Same spawn, plus the created ids in node order: `out_ids[i]` is the entity of
+//! `data.nodes[i]`. The editor's undo remaps the ids a deleted subtree was recorded with, and
+//! it can only do that when it knows which new entity is which node.
+def public SpawnPrefabTemplateIds(data : PrefabTemplate?; origin : float3;
+                                  var out_ids : array<EntityId>) : EntityId {
+    let root = SpawnPrefabTemplate(data, origin)
+    clone(out_ids, g_spawn_ids)
+    return root
 }
 
 //! Synchronous spawn from the prefab cache. The spawned entities get their authored
@@ -719,7 +729,6 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     }
 
     var nodes : array<StructField?>
-    var skipped_components = 0
 
     for (node_index in range(length(order))) {
         var arch_idx = -1
@@ -741,7 +750,6 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
             var cf_val = DecsComponentToCF(comp, rec_index)
             if (cf_val == null) {
                 print("[PREFAB WARNING] component '{comp.name}' is declared save = true but has no writer; skipped\n")
-                skipped_components++
                 continue
             }
             cf_val.name = comp.name
@@ -797,9 +805,9 @@ def public BuildPrefabTextFromEntity(eid : EntityId; name : string) : string {
     nodes_cf.name = "nodes"
     root_obj["nodes"] = nodes_cf
 
-    let text = write_config(CF(root_obj))
-    print("[PREFAB] saved '{name}': {length(order)} nodes, skipped {skipped_components} components\n")
-    return text
+    // Building the text is also the editor's copy/undo snapshot, so it stays silent: only
+    // the caller that actually saves a file reports.
+    return write_config(CF(root_obj))
 }
 
 //! Serializes the selected entity subtree and overwrites `path`.

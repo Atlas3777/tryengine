@@ -22,11 +22,11 @@ require tryeditor/EditorHotkeys
 require tryeditor/Hierarchy
 require tryeditor/PlayMode
 require trygame/Game
+require tryengine/EcsMacro
 require tryengine/Input
 require tryengine/Model
 require tryengine/Scene
 require tryengine/Time
-require tryengine/TransformSystem
 require daslib/archive
 require daslib/decs
 require daslib/decs_boost
@@ -95,7 +95,7 @@ def RestoreHotReloadState() {
         print("[RELOAD] DECS heap could not be restored\n")
         return
     }
-    ResetWorldTransformCaches()
+    EcsApplyRegistry()
     // Same reason as PlayMode::EndPlay: the archive does not carry the mesh/material raw
     // pointers, so they are resolved again from the authored `model`.
     Model::ReapplyPointers()

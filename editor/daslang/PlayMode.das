@@ -12,16 +12,17 @@ module PlayMode shared public
 
 require daslib/archive
 require daslib/decs
+require tryengine/EcsMacro
 require tryengine/Loader
 require tryengine/Model
 require tryengine/Physics
 require tryengine/Scene
 require tryengine/Time
-require tryengine/TransformSystem
 require trygame/Game
 require trygame/PhysicsDemo
 require tryeditor/Editor
 require tryeditor/Hierarchy
+require tryeditor/UndoRedo
 
 // The DECS heap is the scene: entities, components and the edited values. The scene
 // state holds what the heap does not: the open path and the resource references the
@@ -54,6 +55,9 @@ def public ApplyReloadState(var state : PlayReloadState) {
 }
 
 def public BeginPlay() {
+    // The editor history describes the authored world; the play snapshot replaces the whole
+    // heap and Stop restores it, so entries from before Play would describe nothing.
+    UndoRedo::ClearHistory()
     g_saved_decs <- mem_archive_save(decsState)
     g_saved_scene <- Scene::CaptureState()
     g_saved_selected_eid = selected_eid
@@ -84,12 +88,13 @@ def public EndPlay() {
     Scene::ApplyState(g_saved_scene)
     decs::restart()
     mem_archive_load(g_saved_decs, decsState)
-    ResetWorldTransformCaches()
+    EcsApplyRegistry()
     // The heap archive zeroes raw pointers; without this every scene model is invisible
     // until its Inspector call re-applies the pair.
     Model::ReapplyPointers()
 
     selected_eid = g_saved_selected_eid
+    UndoRedo::ClearHistory()
 }
 
 def public PausePlay() {

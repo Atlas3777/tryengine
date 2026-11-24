@@ -56,6 +56,7 @@ enum class Key : uint16_t {
     Backspace = 42,
     Tab = 43,
     Space = 44,
+    Delete = 76,
 
     // F-клавиши
     F1 = 58,

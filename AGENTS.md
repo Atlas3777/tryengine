@@ -373,7 +373,8 @@ Conventional стиле на английском языке.
 ## 10. Инструменты
 
 - `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
-  `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`.
+  `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`, `undo-probe.sh` (история undo/redo на
+  мире DECS без GUI).
 - `tools/prof-report.sh [file.tryprof]` — отчёт по кадр-логу (по умолчанию самый свежий из
   `logs/`): длительность и перцентили кадра, таблица зон по суммарному и по **собственному**
   времени (без детей), самые медленные кадры с их содержимым. Собирает `tools/prof_report.cpp`

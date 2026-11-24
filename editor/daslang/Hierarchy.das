@@ -14,6 +14,7 @@ require tryengine/TransformSystem
 require tryengine/Types
 require daslib/decs
 require daslib/decs_boost
+require tryeditor/UndoRedo
 
 var ENTITY_NODE : TreeNodeState
 
@@ -162,6 +163,7 @@ def DrawHierarchy() {
             }
             commit()                       // иначе query в этом кадре не увидит новую entity
             selected_eid = new_eid
+            UndoRedo::RecordCreated(new_eid, "New entity")
         }
         separator()
 

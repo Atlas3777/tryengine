@@ -88,7 +88,8 @@ reader-макрос `%ecs`. Возможность *типа* быть запи�
 `[DecsSerializable]` на структуре одного значения (`tryengine/Serializable`): она
 регистрирует ConfigFormat adder и writer. Типы компонентов приходят из `tryengine/Types`:
 
-- `Types.das` — структуры `Transform`, `WorldTransform`, `Relationship`,
+- `Types.das` — структура `Transform` (она же компонент `_world` — мировая поза того же
+  типа), `Relationship`,
   `[decs_template]`-структуры `Camera`/`PointLight` и один список `%ecs` в конце файла;
 - `game/scripts/Game.das` — живой пример `create_entity`, `query`, `commit`.
 
@@ -96,7 +97,7 @@ reader-макрос `%ecs`. Возможность *типа* быть запи�
 
 ```das
 %ecs~("transform", type<Transform>) %%                 // одно значение, имя явное
-%ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
+%ecs~("_world", type<Transform>, hidden = true, transient = true) %%
 %ecs_template~(type<PointLight>) %%                    // [decs_template], имя = тип
 %ecs~("tag", type<string>) %%
 ```

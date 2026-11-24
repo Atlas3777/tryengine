@@ -45,17 +45,13 @@ struct PointLight {
 // Authored local transform, one component named "transform". [DecsSerializable] is the
 // physical ability to write the value; %ecs below makes it a component and leaves both flags
 // at their defaults, so it is saved and shown.
+//
+// The derived world transform is the same type under the component name "_world": a second
+// struct would only duplicate the three fields and the composition code. It is transient and
+// hidden, so it never reaches a scene, a prefab or the Inspector — TransformSystem writes it
+// and Render reads it.
 [DecsSerializable]
 struct Transform {
-    position : float3 = float3(0.0f, 0.0f, 0.0f)
-    rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
-    scale    : float3 = float3(1.0f, 1.0f, 1.0f)
-}
-
-// Derived world transform, one component named "_world". It is transient and hidden:
-// TransformSystem writes it, Render reads it, and it never reaches a scene, a prefab or the
-// Inspector. No [DecsSerializable] either: there is nothing to write.
-struct WorldTransform {
     position : float3 = float3(0.0f, 0.0f, 0.0f)
     rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
     scale    : float3 = float3(1.0f, 1.0f, 1.0f)
@@ -90,7 +86,7 @@ struct Camera {
 %ecs~("model", type<ModelRender>) %%
 %ecs~("meshScale", type<MeshScale>) %%
 %ecs~("transform", type<Transform>) %%
-%ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
+%ecs~("_world", type<Transform>, hidden = true, transient = true) %%
 %ecs~("relationship", type<Relationship>, transient = true) %%
 %ecs_template~(type<Camera>) %%
 %ecs_template~(type<PointLight>) %%

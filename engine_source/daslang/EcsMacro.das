@@ -6,7 +6,7 @@ module EcsMacro shared public
 //! One declaration system for ECS components, two shapes:
 //!
 //!     %ecs~("transform", type<Transform>) %%                        saved and shown
-//!     %ecs~("_world", type<WorldTransform>, hidden = true, transient = true) %%
+//!     %ecs~("_world", type<Transform>, hidden = true, transient = true) %%
 //!     %ecs~("HP", type<uint>) %%
 //!     %ecs_template~(type<PointLight>) %%                           a [decs_template] component
 //!

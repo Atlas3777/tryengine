@@ -28,6 +28,8 @@ require tryeditor/ProfilerWindow
 require tryeditor/Gizmo
 require tryeditor/ProBuilder
 require tryeditor/EditorActions
+require tryeditor/EditorCommands
+require tryeditor/UndoRedo
 
 require imgui
 require imgui/imgui_containers_builtin
@@ -109,12 +111,33 @@ def DrawMainMenu() {
         }
 
         menu(EDIT_MENU, (text = "Edit", enabled = true)) {
-            menu_label(EDIT_UNDO, (text = "Undo", shortcut = "Ctrl+Z"))
-            menu_label(EDIT_REDO, (text = "Redo", shortcut = "Ctrl+Y"))
+            // The menu names the step it would undo; the shortcut and the item run the same
+            // command function the hotkey does.
+            let undo_title = UndoRedo::UndoTitle()
+            let redo_title = UndoRedo::RedoTitle()
+            if (menu_label(EDIT_UNDO, (text = empty(undo_title) ? "Undo" : "Undo {undo_title}",
+                                       shortcut = "Ctrl+Z", enabled = UndoRedo::CanUndo()))) {
+                UndoCommand()
+            }
+            if (menu_label(EDIT_REDO, (text = empty(redo_title) ? "Redo" : "Redo {redo_title}",
+                                       shortcut = "Ctrl+Y", enabled = UndoRedo::CanRedo()))) {
+                RedoCommand()
+            }
             separator(EDIT_SEP_1)
-            menu_label(EDIT_CUT, (text = "Cut", shortcut = "Ctrl+X"))
-            menu_label(EDIT_COPY, (text = "Copy", shortcut = "Ctrl+C"))
-            menu_label(EDIT_PASTE, (text = "Paste", shortcut = "Ctrl+V"))
+            if (menu_label(EDIT_CUT, (text = "Cut", shortcut = "Ctrl+X", enabled = CanModifySelection()))) {
+                CutCommand()
+            }
+            if (menu_label(EDIT_COPY, (text = "Copy", shortcut = "Ctrl+C", enabled = CanModifySelection()))) {
+                CopyCommand()
+            }
+            if (menu_label(EDIT_PASTE, (text = "Paste", shortcut = "Ctrl+V", enabled = UndoRedo::HasClipboard()))) {
+                PasteCommand()
+            }
+            separator(EDIT_SEP_2)
+            if (menu_label(EDIT_DELETE_ITEM, (text = "Delete Entity", shortcut = "Del",
+                                              enabled = CanModifySelection()))) {
+                DeleteCommand()
+            }
         }
 
         menu(WINDOW_MENU, (text = "Window", enabled = true)) {

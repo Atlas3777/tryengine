@@ -22,6 +22,7 @@ require tryeditor/EditorInput
 require tryeditor/FileSystemUtils
 require tryeditor/Hierarchy
 require tryeditor/Gizmo
+require tryeditor/UndoRedo
 
 var scene_viewport_size : float2 = float2(600, 600)
 var scene_viewport_mouse : Mouse
@@ -68,7 +69,7 @@ def private GetViewportDropPoint() : float3 {
     var origin = float3(0.0f, 0.0f, 0.0f)
     var direction = float3(0.0f, 1.0f, 0.0f)
 
-    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera : Camera) {
+    query() $[REQUIRE(editorCameraTag)] (let _world : Transform, let camera : Camera) {
         let size = float2(max(scene_viewport_size.x, 1.0f), max(scene_viewport_size.y, 1.0f))
         let ndc_x = scene_viewport_mouse.pos.x / size.x * 2.0f - 1.0f
         let ndc_y = 1.0f - scene_viewport_mouse.pos.y / size.y * 2.0f
@@ -95,6 +96,7 @@ def private GetViewportDropPoint() : float3 {
     let eid : EntityId = await(Prefab::SpawnPrefab(path, position))
     if (eid != INVALID_ENTITY_ID) {
         selected_eid = eid
+        UndoRedo::RecordCreated(eid, "Spawn prefab")
     }
 }
 

@@ -33,6 +33,7 @@ require tryengine/Profiling
 require TryEditor
 require tryeditor/Hierarchy
 require tryeditor/EditorInput
+require tryeditor/UndoRedo
 
 enum GizmoMode {
     Translate,
@@ -208,7 +209,7 @@ def private GizmoBasis(target : GizmoTarget; mode : GizmoMode; space : GizmoSpac
 
 def private GetGizmoCamera(var camera : GizmoCamera&) : bool {
     var found = false
-    query() $[REQUIRE(editorCameraTag)] (let _world : WorldTransform, let camera_component : Camera) {
+    query() $[REQUIRE(editorCameraTag)] (let _world : Transform, let camera_component : Camera) {
         camera.position = _world.position
         camera.forward = quat_mul_vec(_world.rotation, float3(0.0f, 1.0f, 0.0f))
         camera.right = quat_mul_vec(_world.rotation, float3(1.0f, 0.0f, 0.0f))
@@ -497,7 +498,7 @@ def private SelectedTarget(var target : GizmoTarget&) : bool {
     }
     var found = false
     var editable_scale = float3(1.0f, 1.0f, 1.0f)
-    query(selected_eid) $(let transform : Transform; let _world : WorldTransform) {
+    query(selected_eid) $(let transform : Transform; let _world : Transform) {
         editable_scale = transform.scale
         target = GizmoTarget(position = _world.position, rotation = _world.rotation, scale = editable_scale)
         found = true
@@ -720,9 +721,12 @@ def public GizmoUpdateDrag(ray : GizmoRay; snap : bool) : GizmoDelta {
     return delta
 }
 
+//! Ends the drag and records it as one undo step (the transform changed from the value it had
+//! when the handle was grabbed). A drag that never started records nothing.
 def public GizmoEndDrag() {
     g_drag.active = false
     g_drag.handle = -1
+    UndoRedo::EndEdit()
 }
 
 //! Drops the drag and the hover highlight. A placement tool calls it every frame it owns the
@@ -736,7 +740,7 @@ def public CancelGizmoInteraction() {
 // Applying a delta to the selected entity.
 // ---------------------------------------------------------------------------
 
-def private ParentWorld(eid : EntityId; var parent_world : WorldTransform&) : bool {
+def private ParentWorld(eid : EntityId; var parent_world : Transform&) : bool {
     var parent_eid = INVALID_ENTITY_ID
     query(eid) $(relationship : Relationship) {
         parent_eid = relationship.parent
@@ -745,7 +749,7 @@ def private ParentWorld(eid : EntityId; var parent_world : WorldTransform&) : bo
         return false
     }
     var has_parent = false
-    query(parent_eid) $(_world : WorldTransform) {
+    query(parent_eid) $(_world : Transform) {
         parent_world = _world
         has_parent = true
     }
@@ -767,7 +771,7 @@ def private ApplyDeltaToSelection(delta : GizmoDelta) {
         return
     }
 
-    var parent_transform = WorldTransform()
+    var parent_transform = Transform()
     let has_parent = ParentWorld(selected_eid, parent_transform)
 
     var has_mesh_scale = false
@@ -815,8 +819,8 @@ def private ApplyDeltaToSelection(delta : GizmoDelta) {
     commit()
 
     // The object is rendered from `_world` in the same frame the gizmo is refreshed from it,
-    // so the subtree must not wait for the next EngineUpdate tick.
-    RefreshWorldSubtree(selected_eid)
+    // so the new pose must not wait for the next EngineUpdate tick.
+    UpdateWorldTransforms()
 }
 
 // ---------------------------------------------------------------------------
@@ -897,6 +901,10 @@ def public UpdateGizmoInteraction(mouse : float2; viewport : float2; hovered : b
     if (clicked && hit_handle != -1) {
         if (!GizmoBeginDrag(target, gizmo_mode, gizmo_space, size, ray, hit_handle)) {
             g_hover = -1
+        } else {
+            // The whole drag is one undo step: the snapshot is taken when the handle is
+            // grabbed, and `GizmoEndDrag` closes it.
+            UndoRedo::BeginEdit(selected_eid)
         }
     }
 }
@@ -944,6 +952,12 @@ def public ToggleGizmoSpace() {
 [profile]
 def public ProcessGizmoHotkeys() {
     if (IsGameViewportFocused() || IsEditorTextInputActive()) {
+        return
+    }
+    // The keys are read directly, without the hotkey framework, so a modified chord has to be
+    // filtered here: Ctrl+V is paste, not "toggle scale with distance".
+    if (IsCtrlDown() || is_down(Key.LShift) || is_down(Key.RShift) ||
+        is_down(Key.LAlt) || is_down(Key.RAlt)) {
         return
     }
     if (is_mouse_down(Mouse.Right)) {
