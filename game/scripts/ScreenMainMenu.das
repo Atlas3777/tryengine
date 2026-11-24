@@ -12,16 +12,13 @@ require trygame/GameFlow
 require trygame/UiTheme
 
 // The menu is the place to edit the scene list: `GameFlow` only knows how to load an entry.
-let private kHome = SceneEntry(title = "Home", scene = "content/home.scene", prefab = "", physics_demo = false)
-let private kTest = SceneEntry(title = "Test", scene = "content/test.scene", prefab = "content/prefabl.prefab",
-                               physics_demo = true)
+// `new_scene.scene` is the scene this repository ships; the player entity lives in it, so it
+// is the entry that actually starts the game.
+let private kNewScene = SceneEntry(title = "New Scene", scene = "content/new_scene.scene", prefab = "",
+                                   physics_demo = false)
 
-def private LoadHome() {
-    GameFlow::LoadScene(kHome)
-}
-
-def private LoadTest() {
-    GameFlow::LoadScene(kTest)
+def private LoadNewScene() {
+    GameFlow::LoadScene(kNewScene)
 }
 
 // Exit is the same quit flag as closing the window: the standalone game ends, the editor closes
@@ -35,8 +32,7 @@ def private BuildMainMenu() {
         Ui::Panel("##menu", UiTheme::kPausePanel, UiLayout(anchor = float2(0.5f, 0.5f), spacing = 12.0f)) {
             Ui::Label("##title", "Main Menu", UiTheme::kTitle)
             Ui::Label("##subtitle", "choose a scene", UiTheme::kMuted)
-            Ui::Button(UiTheme::kPrimaryButton, "##scene_home", kHome.title, @@LoadHome)
-            Ui::Button(UiTheme::kPrimaryButton, "##scene_test", kTest.title, @@LoadTest)
+            Ui::Button(UiTheme::kPrimaryButton, "##scene_new", kNewScene.title, @@LoadNewScene)
             if (GameFlow::IsLoading()) {
                 Ui::Label("##loading", "Loading...", UiTheme::kMuted)
             }

@@ -27,6 +27,8 @@ require tryeditor/PrefabAuthoring
 require tryeditor/ProfilerWindow
 require tryeditor/Gizmo
 require tryeditor/ProBuilder
+require tryeditor/ColliderDebug
+require tryeditor/DebugRender
 require tryeditor/EditorActions
 require tryeditor/EditorCommands
 require tryeditor/UndoRedo
@@ -240,6 +242,13 @@ def DrawEditor() {
     DrawHierarchy()
     DrawInspector()
     DrawAssetBrowser()
+    // The debug line buffer is rebuilt once per frame: the collider overlay of the selected
+    // entity and the ProBuilder preview both append to it. In Play the physics debug pass
+    // draws the real bodies, so the Edit-mode overlay stays off.
+    ClearDebugLines()
+    if (!is_playing) {
+        ColliderDebug::DrawSelectedCollider()
+    }
     DrawProBuilder()
     DrawSceneViewPort()
     UpdateProBuilderPlacement()

@@ -107,7 +107,6 @@ var private pb_vertical : bool = false
 var private pb_status : string = ""
 
 var private g_draft : BoxDraft = BoxDraft()
-var private g_preview_drawn : bool = false
 var private g_pending : BoxSpec = BoxSpec()
 var private g_has_pending : bool = false
 
@@ -543,7 +542,6 @@ def private PreviewEdge(spec : BoxSpec; ax : float; ay : float; az : float; bx :
 //! The box grows from the contact plane along its normal, so its preview is a rotated box,
 //! not an axis-aligned one: build all 12 edges in local space and rotate them.
 def private DrawPreview(spec : BoxSpec) {
-    ClearDebugLines()
     PreviewEdge(spec, -1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f)
     PreviewEdge(spec, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, -1.0f)
     PreviewEdge(spec, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f)
@@ -556,14 +554,6 @@ def private DrawPreview(spec : BoxSpec) {
     PreviewEdge(spec, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f, 1.0f)
     PreviewEdge(spec, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, 1.0f)
     PreviewEdge(spec, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f)
-    g_preview_drawn = true
-}
-
-def private ClearPreview() {
-    if (g_preview_drawn) {
-        ClearDebugLines()
-        g_preview_drawn = false
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -572,7 +562,6 @@ def private ClearPreview() {
 
 def private CancelDraft() {
     g_draft = BoxDraft()
-    ClearPreview()
 }
 
 def private SetToolActive(value : bool) {
@@ -614,7 +603,6 @@ def public ProcessProBuilderHotkeys() {
 def private FinishDraft() {
     let spec = MakeSpec(g_draft)
     g_draft = BoxDraft()
-    ClearPreview()
     if (!CreateBox(spec)) {
         g_pending = spec
         g_has_pending = true
@@ -682,8 +670,6 @@ def public UpdateProBuilderPlacement() {
         // the last on-screen footprint.
         if (g_draft.active && !down) {
             FinishDraft()
-        } elif (!g_draft.active) {
-            ClearPreview()
         }
         return
     }
