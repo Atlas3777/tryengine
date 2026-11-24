@@ -111,6 +111,26 @@
   `decs::remove`. Удаление откладывается до конца обхода архетипа: `commit()` меняет
   архетип, и нельзя продолжать читать старый `arch_idx`.
 
+## Память скриптов: GC и локальные контейнеры
+
+- Редактор работает на `persistent_heap` с `options gc` (`EntryPoint.das`), но сборщик
+  нужно явно запускать: `EditorApp::Run` после `EditorUpdate` зовёт
+  `EngineCollectGarbage` (`engine_source/daslang/Engine.das`). Он сам ставит
+  `gc_dummy`-корни (`MarkGcRoots`), вызывает `heap_collect_if_needed` и снимает корни
+  через `decs::after_gc`. Строки и массивы компонентов лежат в сырой памяти архетипов,
+  и без этих корней GC их не видит. `MarkGcRoots` **пропускает компоненты-указатели**
+  (`mesh`/`material`): они адресуют C++-ресурсы, и общий walker ушёл бы в чужую память
+  (SIGSEGV в `BaseGcDataWalker::walk_struct`); строк в них нет.
+  `EngineCollectGarbage` помечен `[no_jit]`: LLVM JIT не пропускает функцию, достижимую
+  из `heap_collect`, если в ней есть `Archetype&`.
+- Локальный `var arr : array<T>` или `table` сам себя **не освобождает**: в коде, который
+  выполняется каждый кадр, объявляй `var inscope ...`. Иначе даже с GC heap растёт до
+  высокого water-mark, а без вызова GC — безгранично. Так утёк Inspector: он собирал
+  схему полей каждого компонента каждый кадр, и каждый `InspectField` оставлял
+  annotations-массив в heap.
+- `game_client` не объявляет `options gc`; его программа не должна звать
+  `EngineCollectGarbage` (для неё это не collectable heap).
+
 ## Деревья ресурсов (Asset Browser)
 
 - Корень дерева — домен `tryeditor::StorageDomain`; каталоги собраны в одной таблице

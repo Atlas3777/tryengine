@@ -153,6 +153,15 @@ void EditorApp::Run() const {
             reload->ProcessRequested();
         }
 
+        // Граница GC. Скрипты редактора живут на persistent_heap с options gc, но без
+        // явного вызова сборщик не запускается, и каждый кадр панелей оставляет мусор.
+        // DECS-компоненты держат строки и массивы в сырой памяти архетипов, поэтому
+        // перед сборкой нужны gc_dummy-корни: их ставят/снимают скриптовые хуки.
+        {
+            TRY_PROFILE_SCOPE("Script.GC");
+            script_system.InvokeFunctionFast("EngineCollectGarbage");
+        }
+
         {
             TRY_PROFILE_SCOPE("Async.Submit");
             engine_->Get<AsyncFileManager>().Submit();
