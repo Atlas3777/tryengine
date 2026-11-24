@@ -15,6 +15,7 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
@@ -213,6 +214,15 @@ JPH::Ref<JPH::Shape> MakeShape(const BodyDesc& desc) {
     return nullptr;
 }
 
+//! Капсула персонажа в конвенции движка: ось Z, ноги в локальном нуле. Jolt ждёт, что
+//! низ формы лежит в начале координат персонажа, поэтому капсула смещена вверх на
+//! half_height + radius, а её ось повёрнута из Y в Z.
+JPH::Ref<JPH::Shape> MakeCharacterShape(float radius, float half_height) {
+    const JPH::Quat y_to_z = JPH::Quat::sRotation(JPH::Vec3::sAxisX(), 0.5f * kPi);
+    return new JPH::RotatedTranslatedShape(JPH::Vec3(0.0f, 0.0f, half_height + radius), y_to_z,
+                                           new JPH::CapsuleShape(half_height, radius));
+}
+
 struct Color {
     uint8_t r, g, b, a;
 };
@@ -221,6 +231,7 @@ constexpr Color kStaticColor{130, 130, 130, 255};
 constexpr Color kKinematicColor{240, 200, 70, 255};
 constexpr Color kDynamicColor{70, 200, 240, 255};
 constexpr Color kSensorColor{240, 80, 240, 255};
+constexpr Color kCharacterColor{90, 220, 130, 255};
 constexpr Color kContactColor{255, 80, 80, 255};
 
 void PushLine(eastl::vector<PhysicsDebugLine>& out, const JPH::RVec3& a, const JPH::RVec3& b, const Color& color) {
@@ -350,6 +361,19 @@ struct PhysicsWorld::Impl {
         bool sensor = false;
     };
 
+    struct CharacterRecord {
+        uint64_t handle = 0;
+        JPH::Ref<JPH::CharacterVirtual> character;
+        uint64_t entity = 0;
+        float radius = 0.5f;
+        float half_height = 0.5f;
+        float jump_speed = 5.0f;
+        //! Горизонтальное намерение игрока; вертикаль считает UpdateCharacters.
+        das::float3 input_velocity = das::float3(0.0f, 0.0f, 0.0f);
+        //! Защёлка прыжка: SetCharacterInput может прийти между шагами симуляции.
+        bool jump_requested = false;
+    };
+
     struct Listener final : JPH::ContactListener {
         Impl& owner;
 
@@ -377,12 +401,25 @@ struct PhysicsWorld::Impl {
 
     void OnContactAdded(const JPH::Body& body1, const JPH::Body& body2, const JPH::ContactManifold& manifold);
 
+    //! Один фиксированный шаг персонажей: гравитация, прыжок, лестницы и прилипание к
+    //! полу. Импульсы динамическим телам Jolt применяет внутри ExtendedUpdate сам,
+    //! ограничивая их CharacterDesc::max_strength.
+    void UpdateCharacters(float dt);
+
     BodyRecord* Find(uint64_t handle) {
         return bodies.get(tryengine::core::SlotMap<BodyRecord>::Key(handle));
     }
 
     const BodyRecord* Find(uint64_t handle) const {
         return bodies.get(tryengine::core::SlotMap<BodyRecord>::Key(handle));
+    }
+
+    CharacterRecord* FindCharacter(uint64_t handle) {
+        return characters.get(tryengine::core::SlotMap<CharacterRecord>::Key(handle));
+    }
+
+    const CharacterRecord* FindCharacter(uint64_t handle) const {
+        return characters.get(tryengine::core::SlotMap<CharacterRecord>::Key(handle));
     }
 
     PhysicsWorldConfig config;
@@ -395,6 +432,7 @@ struct PhysicsWorld::Impl {
     std::unique_ptr<JPH::PhysicsSystem> system;
 
     tryengine::core::SlotMap<BodyRecord> bodies;
+    tryengine::core::SlotMap<CharacterRecord> characters;
     mutable std::mutex contacts_mutex;
     eastl::vector<ContactEvent> contacts;
     float accumulator = 0.0f;
@@ -426,6 +464,55 @@ void PhysicsWorld::Impl::OnContactAdded(const JPH::Body& body1, const JPH::Body&
         }
     }
     contacts.push_back(event);
+}
+
+void PhysicsWorld::Impl::UpdateCharacters(float dt) {
+    if (!system || characters.empty())
+        return;
+
+    // Персонаж — кинематический объект: он не входит в симуляцию, поэтому его фильтры
+    // задаются слоем kMoving, который по нашим правилам сталкивается со всеми.
+    const JPH::DefaultBroadPhaseLayerFilter broadphase = system->GetDefaultBroadPhaseLayerFilter(Layers::kMoving);
+    const JPH::DefaultObjectLayerFilter object_layer = system->GetDefaultLayerFilter(Layers::kMoving);
+    const JPH::BodyFilter body_filter;
+    const JPH::ShapeFilter shape_filter;
+
+    const JPH::Vec3 up(0.0f, 0.0f, 1.0f);
+    const JPH::Vec3 gravity = ToVec3(config.gravity);
+
+    // Шаг вниз и вверх задан в мировых единицах: в ExtendedUpdateSettings это векторы,
+    // а не длины, поэтому пересчитываем их из направления персонажа.
+    JPH::CharacterVirtual::ExtendedUpdateSettings settings;
+    settings.mStickToFloorStepDown = -up * settings.mStickToFloorStepDown.Length();
+    settings.mWalkStairsStepUp = up * settings.mWalkStairsStepUp.Length();
+
+    for (auto& record : characters) {
+        JPH::CharacterVirtual* character = record.character.GetPtr();
+        if (character == nullptr)
+            continue;
+
+        // Рецепт из сэмпла Jolt: на полу скорость берётся у пола (движущаяся платформа),
+        // в воздухе сохраняется текущая вертикаль, гравитация добавляется каждый шаг.
+        const JPH::Vec3 velocity = character->GetLinearVelocity();
+        const float vertical = velocity.Dot(up);
+        const JPH::Vec3 ground_velocity = character->GetGroundVelocity();
+        const bool on_ground = character->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+        const bool moving_towards_ground = vertical - ground_velocity.Dot(up) < 0.1f;
+
+        JPH::Vec3 new_velocity = up * vertical;
+        if (on_ground && moving_towards_ground) {
+            new_velocity = ground_velocity;
+            if (record.jump_requested)
+                new_velocity += up * record.jump_speed;
+        }
+        new_velocity += gravity * dt;
+        new_velocity += ToVec3(record.input_velocity);
+
+        character->SetLinearVelocity(new_velocity);
+        record.jump_requested = false;
+        character->ExtendedUpdate(dt, gravity, settings, broadphase, object_layer, body_filter, shape_filter,
+                                  *temp_allocator);
+    }
 }
 
 PhysicsWorld::PhysicsWorld(const PhysicsWorldConfig& config) {
@@ -526,6 +613,12 @@ void PhysicsWorld::Clear() {
     if (!impl_)
         return;
 
+    // Персонажи уничтожаются первыми: CharacterVirtual живёт на PhysicsSystem, и его
+    // деструктор обращается к системе, пока та ещё существует.
+    for (auto& record : impl_->characters)
+        record.character = nullptr;
+    impl_->characters.clear();
+
     if (impl_->system) {
         JPH::BodyInterface& body_interface = impl_->system->GetBodyInterface();
         for (auto& record : impl_->bodies) {
@@ -557,6 +650,9 @@ void PhysicsWorld::Step(float dt) {
 
     uint32_t steps = 0;
     while (impl_->accumulator >= impl_->config.fixed_step && steps < impl_->config.max_substeps) {
+        // Персонаж двигается до шага Jolt: его импульсы динамическим телам входят в тот
+        // же шаг, что и столкновения, которые их вызвали.
+        impl_->UpdateCharacters(impl_->config.fixed_step);
         const JPH::EPhysicsUpdateError error =
             impl_->system->Update(impl_->config.fixed_step, 1, impl_->temp_allocator.get(), impl_->job_system.get());
         if (error != JPH::EPhysicsUpdateError::None) {
@@ -737,6 +833,36 @@ bool PhysicsWorld::ApplyImpulseAt(uint64_t handle, const das::float3& impulse, c
     return true;
 }
 
+bool PhysicsWorld::ApplyForce(uint64_t handle, const das::float3& force) {
+    auto* record = impl_ ? impl_->Find(handle) : nullptr;
+    if (!record || !impl_->system || record->body_id.IsInvalid())
+        return false;
+    if (record->motion != MotionType::Dynamic)
+        return false;
+    impl_->system->GetBodyInterface().AddForce(record->body_id, ToVec3(force));
+    return true;
+}
+
+bool PhysicsWorld::ApplyForceAt(uint64_t handle, const das::float3& force, const das::float3& point) {
+    auto* record = impl_ ? impl_->Find(handle) : nullptr;
+    if (!record || !impl_->system || record->body_id.IsInvalid())
+        return false;
+    if (record->motion != MotionType::Dynamic)
+        return false;
+    impl_->system->GetBodyInterface().AddForce(record->body_id, ToVec3(force), ToRVec3(point));
+    return true;
+}
+
+bool PhysicsWorld::ApplyTorque(uint64_t handle, const das::float3& torque) {
+    auto* record = impl_ ? impl_->Find(handle) : nullptr;
+    if (!record || !impl_->system || record->body_id.IsInvalid())
+        return false;
+    if (record->motion != MotionType::Dynamic)
+        return false;
+    impl_->system->GetBodyInterface().AddTorque(record->body_id, ToVec3(torque));
+    return true;
+}
+
 bool PhysicsWorld::SetMotionType(uint64_t handle, MotionType motion) {
     auto* record = impl_ ? impl_->Find(handle) : nullptr;
     if (!record || !impl_->system || record->body_id.IsInvalid())
@@ -745,6 +871,146 @@ bool PhysicsWorld::SetMotionType(uint64_t handle, MotionType motion) {
         return false;
     impl_->system->GetBodyInterface().SetMotionType(record->body_id, ToJoltMotion(motion), JPH::EActivation::Activate);
     record->motion = motion;
+    return true;
+}
+
+uint64_t PhysicsWorld::CreateCharacter(const CharacterDesc& desc) {
+    if (!impl_ || !impl_->system)
+        return 0;
+
+    // One character per entity, like one body per entity: a second character on the same
+    // owner would fight the first one over the same Transform every frame.
+    if (desc.entity != 0) {
+        uint64_t replaced = 0;
+        for (const auto& existing : impl_->characters) {
+            if (existing.entity == desc.entity) {
+                replaced = existing.handle;
+                break;
+            }
+        }
+        if (replaced != 0)
+            DestroyCharacter(replaced);
+    }
+
+    const auto key = impl_->characters.emplace();
+    auto* record = impl_->characters.get(key);
+    TRY_ASSERT(record, "PhysicsWorld: SlotMap returned no record for a fresh character key");
+    record->handle = key;
+    record->entity = desc.entity;
+    record->radius = std::max(kMinShapeSize, std::abs(desc.radius));
+    record->half_height = std::max(kMinShapeSize, std::abs(desc.half_height));
+    record->jump_speed = std::max(0.0f, desc.jump_speed);
+
+    JPH::CharacterVirtualSettings settings;
+    settings.mUp = JPH::Vec3(0.0f, 0.0f, 1.0f);
+    // Поддерживающей считается только нижняя полусфера: касание плечом стены не делает
+    // персонажа «на земле». Плоскость задана в локальном пространстве с ногами в нуле.
+    settings.mSupportingVolume = JPH::Plane(JPH::Vec3(0.0f, 0.0f, 1.0f), -record->radius);
+    settings.mMaxSlopeAngle = JPH::DegreesToRadians(std::clamp(desc.max_slope_angle, 0.0f, 89.0f));
+    settings.mShape = MakeCharacterShape(record->radius, record->half_height);
+    settings.mMass = std::max(0.0f, desc.mass);
+    settings.mMaxStrength = std::max(0.0f, desc.max_strength);
+
+    record->character = new JPH::CharacterVirtual(&settings, ToRVec3(desc.position), ToQuat(desc.rotation),
+                                                  record->handle, impl_->system.get());
+    return record->handle;
+}
+
+bool PhysicsWorld::DestroyCharacter(uint64_t handle) {
+    if (!impl_)
+        return false;
+    auto* record = impl_->FindCharacter(handle);
+    if (!record)
+        return false;
+    record->character = nullptr;
+    return impl_->characters.erase(tryengine::core::SlotMap<Impl::CharacterRecord>::Key(handle));
+}
+
+bool PhysicsWorld::IsCharacterAlive(uint64_t handle) const {
+    return impl_ && impl_->FindCharacter(handle) != nullptr;
+}
+
+uint32_t PhysicsWorld::CharacterCount() const {
+    return impl_ ? static_cast<uint32_t>(impl_->characters.size()) : 0u;
+}
+
+uint64_t PhysicsWorld::CharacterAt(uint32_t index) const {
+    if (!impl_ || index >= impl_->characters.size())
+        return 0;
+    return impl_->characters.data()[index].handle;
+}
+
+uint64_t PhysicsWorld::CharacterEntity(uint64_t handle) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    return record ? record->entity : 0;
+}
+
+bool PhysicsWorld::SetCharacterInput(uint64_t handle, const das::float3& velocity, bool jump) {
+    auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    // Z игнорируется: вертикалью владеет контроллер (гравитация, пол, прыжок).
+    record->input_velocity = das::float3(velocity.x, velocity.y, 0.0f);
+    // Защёлка, а не значение кадра: между двумя шагами симуляции SetCharacterInput
+    // может прийти несколько раз, и нажатие не должно потеряться.
+    record->jump_requested = record->jump_requested || jump;
+    return true;
+}
+
+bool PhysicsWorld::GetCharacterPosition(uint64_t handle, das::float3& out) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    out = FromRVec3(record->character->GetPosition());
+    return true;
+}
+
+bool PhysicsWorld::GetCharacterCenter(uint64_t handle, das::float3& out) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    out = FromRVec3(record->character->GetPosition());
+    // Персонаж всегда стоит вдоль Z, поэтому центр капсулы — ноги плюс её половина.
+    out.z += record->half_height + record->radius;
+    return true;
+}
+
+bool PhysicsWorld::GetCharacterRotation(uint64_t handle, das::float4& out) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    out = FromQuat(record->character->GetRotation());
+    return true;
+}
+
+bool PhysicsWorld::GetCharacterVelocity(uint64_t handle, das::float3& out) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    out = FromVec3(record->character->GetLinearVelocity());
+    return true;
+}
+
+bool PhysicsWorld::IsCharacterGrounded(uint64_t handle) const {
+    const auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    return record->character->GetGroundState() == JPH::CharacterBase::EGroundState::OnGround;
+}
+
+bool PhysicsWorld::SetCharacterPosition(uint64_t handle, const das::float3& position) {
+    auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    record->character->SetPosition(ToRVec3(position));
+    return true;
+}
+
+bool PhysicsWorld::SetCharacterRotation(uint64_t handle, const das::float4& rotation) {
+    auto* record = impl_ ? impl_->FindCharacter(handle) : nullptr;
+    if (!record || record->character == nullptr)
+        return false;
+    record->character->SetRotation(ToQuat(rotation));
     return true;
 }
 
@@ -778,7 +1044,7 @@ void PhysicsWorld::AppendDebugLines(eastl::vector<PhysicsDebugLine>& out) const 
     if (!impl_ || !impl_->system || !impl_->debug_draw)
         return;
 
-    out.reserve(out.size() + impl_->bodies.size() * 24 + 32);
+    out.reserve(out.size() + impl_->bodies.size() * 24 + impl_->characters.size() * 96 + 32);
     JPH::BodyInterface& body_interface = impl_->system->GetBodyInterface();
 
     for (const auto& record : impl_->bodies) {
@@ -814,6 +1080,16 @@ void PhysicsWorld::AppendDebugLines(eastl::vector<PhysicsDebugLine>& out) const 
                 DrawPlane(out, position, rotation, std::max(10.0f, std::abs(record.half_extents.x)), color);
                 break;
         }
+    }
+
+    // Персонаж — не тело, поэтому его капсула рисуется отдельно: зелёный каркас на месте
+    // тела в симуляции заметен без меша-заглушки.
+    for (const auto& record : impl_->characters) {
+        if (record.character == nullptr)
+            continue;
+        const JPH::RVec3 center =
+            record.character->GetPosition() + JPH::RVec3(0.0f, 0.0f, record.half_height + record.radius);
+        DrawCapsule(out, center, record.character->GetRotation(), record.half_height, record.radius, kCharacterColor);
     }
 
     {

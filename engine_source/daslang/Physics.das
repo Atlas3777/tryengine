@@ -8,7 +8,8 @@ module Physics shared public
 //! Jolt owns the simulation in C++; this module owns only the script-side shape of the
 //! API and the bridge to the ECS heap: a body remembers the entity it belongs to, and
 //! `PhysicsSync` copies the resulting pose back into `Transform` before the world
-//! transform pass runs.
+//! transform pass runs. A virtual character follows the same bridge through
+//! `CharacterSync`, but it is not a component: gameplay creates it and keeps its handle.
 
 require math
 require daslib/decs
@@ -54,7 +55,34 @@ struct PhysicsBodyDesc {
     linear_velocity : float3 = float3(0.0f, 0.0f, 0.0f)
     angular_velocity : float3 = float3(0.0f, 0.0f, 0.0f)
     entity : EntityId = INVALID_ENTITY_ID
+    //! Sensor: reports overlaps but never pushes anything. The body is a trigger volume.
     sensor : bool = false
+}
+
+//! Virtual character: a capsule moved by collision queries, not a rigid body. `position` is
+//! the point under the capsule (the feet), not its center, so a character stands on a floor
+//! without a manual offset. The controller owns vertical motion: SetCharacterInput takes
+//! horizontal velocity only, while gravity, jumping and step/slope handling are applied by
+//! Physics::Update on the fixed physics step.
+struct CharacterDesc {
+    position : float3 = float3(0.0f, 0.0f, 0.0f)
+    rotation : float4 = float4(0.0f, 0.0f, 0.0f, 1.0f)
+    //! Capsule radius.
+    radius : float = 0.3f
+    //! Half of the cylindrical part, without the two caps.
+    half_height : float = 0.6f
+    //! Character mass: with it the character presses on the body it stands on.
+    mass : float = 70.0f
+    //! Maximum force (N) with which the character pushes dynamic bodies while walking.
+    max_strength : float = 100.0f
+    //! Steepest slope the character still walks on, in degrees.
+    max_slope_angle : float = 45.0f
+    //! Jump speed along Z, m/s.
+    jump_speed : float = 5.0f
+    //! Optional ECS owner: its Transform follows the capsule center. Must be a root: a
+    //! child's local Transform is not a world pose, so a parented character is not synced.
+    //! One character per entity; creating another for the same entity drops the previous.
+    entity : EntityId = INVALID_ENTITY_ID
 }
 
 //! Begin-contact event. `body_a` and `body_b` are stable body handles; `entity_a` and
@@ -91,6 +119,8 @@ struct RigidBody {
     @min = 0.0
     @max = 1.0
     restitution : float = 0.0f
+    //! Trigger volume: bodies overlap it without being pushed, and Physics::Contacts
+    //! reports the pairs. A character is not a body, so it does not produce these events.
     sensor : bool = false
 }
 
@@ -200,6 +230,7 @@ def Update() {
     }
     PhysicsStep(TimeDelta(g_physics_clock))
     PhysicsSync()
+    CharacterSync()
 }
 
 def private FloatBits(value : float) : uint64 {
@@ -480,6 +511,44 @@ def private PhysicsSync() {
     }
 }
 
+//! Copies each character's capsule center into the Transform of the entity it was created
+//! for. A character without an entity belongs to the caller and is left alone. Characters
+//! whose entity is gone are dropped here, the same way PhysicsPushPoses prunes bodies.
+def private CharacterSync() {
+    var orphans : array<uint64>
+    let count = PhysicsCharacterCount()
+    for (i in range(count)) {
+        let character = PhysicsCharacterAt(i)
+        if (character == 0ul) {
+            continue
+        }
+        let entity = PhysicsCharacterEntity(character)
+        if (entity == 0ul) {
+            continue
+        }
+        let eid = EntityFromRaw(entity)
+        if (!decs::is_alive(eid)) {
+            orphans |> push(character)
+            continue
+        }
+        // A child's local Transform is not a world pose, so components do not own a body
+        // there; the same rule applies to the entity a character follows.
+        let relationship = get_component(eid, "relationship", Relationship())
+        if (relationship.parent != INVALID_ENTITY_ID) {
+            continue
+        }
+        let center = PhysicsGetCharacterCenter(character)
+        let rotation = PhysicsGetCharacterRotation(character)
+        query(eid) $(var transform : Transform) {
+            transform.position = center
+            transform.rotation = rotation
+        }
+    }
+    for (character in orphans) {
+        PhysicsDestroyCharacter(character)
+    }
+}
+
 def private CreateNativeBody(desc : PhysicsBodyDesc) : uint64 {
     // A computed argument must land in a local first: passing a complex expression straight
     // to a native call makes the simulator build a bad call node (daslang 0.6.5, reproduced
@@ -557,6 +626,73 @@ def DestroyBodyForEntity(eid : EntityId) {
     if (body != 0ul) {
         DestroyBody(body)
     }
+}
+
+// --- Character controller ---------------------------------------------------------
+
+//! Creates a virtual character and returns a stable handle (0 when Jolt rejected it). A
+//! character is not a rigid body: other bodies do not see it, but it collides with the
+//! world, climbs steps, slides on slopes and pushes dynamic bodies aside. Characters do not
+//! collide with each other, and there is one character per entity. It moves on the physics
+//! clock, so pausing the game freezes it. Physics::Reset drops every body and character at
+//! once.
+def CreateCharacter(desc : CharacterDesc) : uint64 {
+    var entity = 0ul
+    if (desc.entity != INVALID_ENTITY_ID) {
+        entity = EntityRaw(desc.entity)
+    }
+    return PhysicsCreateCharacter(desc.position, desc.rotation, desc.radius, desc.half_height,
+                                  desc.mass, desc.max_strength, desc.max_slope_angle, desc.jump_speed,
+                                  entity)
+}
+
+def DestroyCharacter(character : uint64) {
+    PhysicsDestroyCharacter(character)
+}
+
+def IsCharacterAlive(character : uint64) : bool {
+    return PhysicsIsCharacterAlive(character)
+}
+
+//! Horizontal intent in world m/s (Z is ignored) plus a latched jump request. Call it every
+//! frame: the velocity stays in effect until the next call, and Physics::Update applies
+//! gravity, jumping, step climbing and slope sliding on its fixed step.
+def SetCharacterInput(character : uint64; velocity : float3; jump : bool = false) {
+    PhysicsSetCharacterInput(character, velocity, jump)
+}
+
+//! Position of the feet, the same point CharacterDesc::position sets.
+def GetCharacterPosition(character : uint64) : float3 {
+    return PhysicsGetCharacterPosition(character)
+}
+
+//! Capsule center: the pose written into an entity Transform when the character has one.
+def GetCharacterCenter(character : uint64) : float3 {
+    return PhysicsGetCharacterCenter(character)
+}
+
+def GetCharacterRotation(character : uint64) : float4 {
+    return PhysicsGetCharacterRotation(character)
+}
+
+//! Actual velocity after the last step, including gravity and the ground's motion.
+def GetCharacterVelocity(character : uint64) : float3 {
+    return PhysicsGetCharacterVelocity(character)
+}
+
+//! True while the character stands on a walkable surface and can jump.
+def IsCharacterGrounded(character : uint64) : bool {
+    return PhysicsIsCharacterGrounded(character)
+}
+
+//! Teleports the character. Velocity is kept: zero the input if it must not continue from
+//! the old point.
+def SetCharacterPosition(character : uint64; position : float3) {
+    PhysicsSetCharacterPosition(character, position)
+}
+
+def SetCharacterRotation(character : uint64; rotation : float4) {
+    PhysicsSetCharacterRotation(character, rotation)
 }
 
 // --- Component helpers ------------------------------------------------------------
@@ -673,6 +809,23 @@ def ApplyImpulse(body : uint64; impulse : float3) {
 
 def ApplyImpulseAt(body : uint64; impulse : float3; point : float3) {
     PhysicsApplyImpulseAt(body, impulse, point)
+}
+
+//! Applies a force (N) to the body's center of mass for the next physics step. Jolt clears
+//! the accumulated force after every fixed step, so call it every frame while the force
+//! acts; a one-shot push is ApplyImpulse. Only dynamic bodies accept force.
+def ApplyForce(body : uint64; force : float3) {
+    PhysicsApplyForce(body, force)
+}
+
+//! ApplyForce at a world-space point: the offset from the center of mass adds torque.
+def ApplyForceAt(body : uint64; force : float3; point : float3) {
+    PhysicsApplyForceAt(body, force, point)
+}
+
+//! Applies torque (N*m) for the next physics step; cleared after that step like force.
+def ApplyTorque(body : uint64; torque : float3) {
+    PhysicsApplyTorque(body, torque)
 }
 
 def SetMotionType(body : uint64; motion : PhysicsMotion) {

@@ -8,6 +8,7 @@
 namespace {
 
 using tryengine::physics::BodyDesc;
+using tryengine::physics::CharacterDesc;
 using tryengine::physics::ContactEvent;
 using tryengine::physics::MotionType;
 using tryengine::physics::PhysicsWorld;
@@ -165,8 +166,98 @@ bool PhysicsApplyImpulseAt(uint64_t handle, das::float3 impulse, das::float3 poi
     return World(ctx).ApplyImpulseAt(handle, impulse, point);
 }
 
+bool PhysicsApplyForce(uint64_t handle, das::float3 force, das::Context* ctx) {
+    return World(ctx).ApplyForce(handle, force);
+}
+
+bool PhysicsApplyForceAt(uint64_t handle, das::float3 force, das::float3 point, das::Context* ctx) {
+    return World(ctx).ApplyForceAt(handle, force, point);
+}
+
+bool PhysicsApplyTorque(uint64_t handle, das::float3 torque, das::Context* ctx) {
+    return World(ctx).ApplyTorque(handle, torque);
+}
+
 bool PhysicsSetMotionType(uint64_t handle, int32_t motion, das::Context* ctx) {
     return World(ctx).SetMotionType(handle, static_cast<MotionType>(ClampMotion(motion)));
+}
+
+uint64_t PhysicsCreateCharacter(das::float3 position, das::float4 rotation, float radius, float half_height, float mass,
+                                float max_strength, float max_slope_angle, float jump_speed, uint64_t entity,
+                                das::Context* ctx) {
+    CharacterDesc desc;
+    desc.position = position;
+    desc.rotation = rotation;
+    desc.radius = radius;
+    desc.half_height = half_height;
+    desc.mass = mass;
+    desc.max_strength = max_strength;
+    desc.max_slope_angle = max_slope_angle;
+    desc.jump_speed = jump_speed;
+    desc.entity = entity;
+    return World(ctx).CreateCharacter(desc);
+}
+
+bool PhysicsDestroyCharacter(uint64_t handle, das::Context* ctx) {
+    return World(ctx).DestroyCharacter(handle);
+}
+
+bool PhysicsIsCharacterAlive(uint64_t handle, das::Context* ctx) {
+    return World(ctx).IsCharacterAlive(handle);
+}
+
+int32_t PhysicsCharacterCount(das::Context* ctx) {
+    return static_cast<int32_t>(World(ctx).CharacterCount());
+}
+
+uint64_t PhysicsCharacterAt(int32_t index, das::Context* ctx) {
+    if (index < 0)
+        return 0;
+    return World(ctx).CharacterAt(static_cast<uint32_t>(index));
+}
+
+uint64_t PhysicsCharacterEntity(uint64_t handle, das::Context* ctx) {
+    return World(ctx).CharacterEntity(handle);
+}
+
+bool PhysicsSetCharacterInput(uint64_t handle, das::float3 velocity, bool jump, das::Context* ctx) {
+    return World(ctx).SetCharacterInput(handle, velocity, jump);
+}
+
+das::float3 PhysicsGetCharacterPosition(uint64_t handle, das::Context* ctx) {
+    das::float3 out = Zero3();
+    World(ctx).GetCharacterPosition(handle, out);
+    return out;
+}
+
+das::float3 PhysicsGetCharacterCenter(uint64_t handle, das::Context* ctx) {
+    das::float3 out = Zero3();
+    World(ctx).GetCharacterCenter(handle, out);
+    return out;
+}
+
+das::float4 PhysicsGetCharacterRotation(uint64_t handle, das::Context* ctx) {
+    das::float4 out = Identity4();
+    World(ctx).GetCharacterRotation(handle, out);
+    return out;
+}
+
+das::float3 PhysicsGetCharacterVelocity(uint64_t handle, das::Context* ctx) {
+    das::float3 out = Zero3();
+    World(ctx).GetCharacterVelocity(handle, out);
+    return out;
+}
+
+bool PhysicsIsCharacterGrounded(uint64_t handle, das::Context* ctx) {
+    return World(ctx).IsCharacterGrounded(handle);
+}
+
+bool PhysicsSetCharacterPosition(uint64_t handle, das::float3 position, das::Context* ctx) {
+    return World(ctx).SetCharacterPosition(handle, position);
+}
+
+bool PhysicsSetCharacterRotation(uint64_t handle, das::float4 rotation, das::Context* ctx) {
+    return World(ctx).SetCharacterRotation(handle, rotation);
 }
 
 int32_t PhysicsContactCount(das::Context* ctx) {
@@ -272,8 +363,42 @@ public:
                                                           das::SideEffects::accessGlobal, "PhysicsApplyImpulse");
         das::addExtern<DAS_BIND_FUN(PhysicsApplyImpulseAt)>(*this, lib, "PhysicsApplyImpulseAt",
                                                             das::SideEffects::accessGlobal, "PhysicsApplyImpulseAt");
+        das::addExtern<DAS_BIND_FUN(PhysicsApplyForce)>(*this, lib, "PhysicsApplyForce", das::SideEffects::accessGlobal,
+                                                        "PhysicsApplyForce");
+        das::addExtern<DAS_BIND_FUN(PhysicsApplyForceAt)>(*this, lib, "PhysicsApplyForceAt",
+                                                          das::SideEffects::accessGlobal, "PhysicsApplyForceAt");
+        das::addExtern<DAS_BIND_FUN(PhysicsApplyTorque)>(*this, lib, "PhysicsApplyTorque",
+                                                         das::SideEffects::accessGlobal, "PhysicsApplyTorque");
         das::addExtern<DAS_BIND_FUN(PhysicsSetMotionType)>(*this, lib, "PhysicsSetMotionType",
                                                            das::SideEffects::accessGlobal, "PhysicsSetMotionType");
+        das::addExtern<DAS_BIND_FUN(PhysicsCreateCharacter)>(*this, lib, "PhysicsCreateCharacter",
+                                                             das::SideEffects::accessGlobal, "PhysicsCreateCharacter");
+        das::addExtern<DAS_BIND_FUN(PhysicsDestroyCharacter)>(
+            *this, lib, "PhysicsDestroyCharacter", das::SideEffects::accessGlobal, "PhysicsDestroyCharacter");
+        das::addExtern<DAS_BIND_FUN(PhysicsIsCharacterAlive)>(
+            *this, lib, "PhysicsIsCharacterAlive", das::SideEffects::accessGlobal, "PhysicsIsCharacterAlive");
+        das::addExtern<DAS_BIND_FUN(PhysicsCharacterCount)>(*this, lib, "PhysicsCharacterCount",
+                                                            das::SideEffects::accessGlobal, "PhysicsCharacterCount");
+        das::addExtern<DAS_BIND_FUN(PhysicsCharacterAt)>(*this, lib, "PhysicsCharacterAt",
+                                                         das::SideEffects::accessGlobal, "PhysicsCharacterAt");
+        das::addExtern<DAS_BIND_FUN(PhysicsCharacterEntity)>(*this, lib, "PhysicsCharacterEntity",
+                                                             das::SideEffects::accessGlobal, "PhysicsCharacterEntity");
+        das::addExtern<DAS_BIND_FUN(PhysicsSetCharacterInput)>(
+            *this, lib, "PhysicsSetCharacterInput", das::SideEffects::accessGlobal, "PhysicsSetCharacterInput");
+        das::addExtern<DAS_BIND_FUN(PhysicsGetCharacterPosition)>(
+            *this, lib, "PhysicsGetCharacterPosition", das::SideEffects::accessGlobal, "PhysicsGetCharacterPosition");
+        das::addExtern<DAS_BIND_FUN(PhysicsGetCharacterCenter)>(
+            *this, lib, "PhysicsGetCharacterCenter", das::SideEffects::accessGlobal, "PhysicsGetCharacterCenter");
+        das::addExtern<DAS_BIND_FUN(PhysicsGetCharacterRotation)>(
+            *this, lib, "PhysicsGetCharacterRotation", das::SideEffects::accessGlobal, "PhysicsGetCharacterRotation");
+        das::addExtern<DAS_BIND_FUN(PhysicsGetCharacterVelocity)>(
+            *this, lib, "PhysicsGetCharacterVelocity", das::SideEffects::accessGlobal, "PhysicsGetCharacterVelocity");
+        das::addExtern<DAS_BIND_FUN(PhysicsIsCharacterGrounded)>(
+            *this, lib, "PhysicsIsCharacterGrounded", das::SideEffects::accessGlobal, "PhysicsIsCharacterGrounded");
+        das::addExtern<DAS_BIND_FUN(PhysicsSetCharacterPosition)>(
+            *this, lib, "PhysicsSetCharacterPosition", das::SideEffects::accessGlobal, "PhysicsSetCharacterPosition");
+        das::addExtern<DAS_BIND_FUN(PhysicsSetCharacterRotation)>(
+            *this, lib, "PhysicsSetCharacterRotation", das::SideEffects::accessGlobal, "PhysicsSetCharacterRotation");
         das::addExtern<DAS_BIND_FUN(PhysicsContactCount)>(*this, lib, "PhysicsContactCount",
                                                           das::SideEffects::accessGlobal, "PhysicsContactCount");
         das::addExtern<DAS_BIND_FUN(PhysicsContactBodyA)>(*this, lib, "PhysicsContactBodyA",

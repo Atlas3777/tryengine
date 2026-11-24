@@ -53,6 +53,31 @@ struct BodyDesc {
     bool sensor = false;
 };
 
+//! Описание виртуального персонажа (Jolt CharacterVirtual). `position` — точка под
+//! капсулой (ноги), а не её центр: персонаж ставится на пол без ручной поправки.
+struct CharacterDesc {
+    das::float3 position = das::float3(0.0f, 0.0f, 0.0f);
+    das::float4 rotation = das::float4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    //! Радиус капсулы.
+    float radius = 0.3f;
+    //! Половина цилиндрической части капсулы, без двух полусфер.
+    float half_height = 0.6f;
+
+    //! Масса персонажа: ею он давит на тело, на котором стоит.
+    float mass = 70.0f;
+    //! Максимальная сила (Н), с которой персонаж толкает динамические тела.
+    float max_strength = 100.0f;
+    //! Наибольший угол наклона, на который персонаж ещё заходит, в градусах.
+    float max_slope_angle = 45.0f;
+    //! Скорость прыжка вдоль Z, м/с.
+    float jump_speed = 5.0f;
+
+    //! EntityId, упакованный в uint64; 0 — персонаж без сущности. Сущность должна быть
+    //! корнем: локальный Transform ребёнка — не мировая поза.
+    uint64_t entity = 0;
+};
+
 //! Одно событие начала контакта. Векторы — в мировом пространстве движка.
 struct ContactEvent {
     uint64_t body_a = 0;
@@ -101,10 +126,11 @@ public:
     uint64_t CreateBody(const BodyDesc& desc);
     bool DestroyBody(uint64_t handle);
 
-    //! Удаляет все тела, не пересоздавая сам PhysicsSystem.
+    //! Удаляет все тела и персонажей, не пересоздавая сам PhysicsSystem.
     void Clear();
 
-    //! Продвигает симуляцию на dt с фиксированным внутренним шагом.
+    //! Продвигает симуляцию на dt с фиксированным внутренним шагом. Персонажи
+    //! обновляются перед каждым шагом Jolt, поэтому персонаж и тела видят один мир.
     void Step(float dt);
 
     void SetGravity(const das::float3& gravity);
@@ -133,7 +159,41 @@ public:
     bool SetAngularVelocity(uint64_t handle, const das::float3& velocity);
     bool ApplyImpulse(uint64_t handle, const das::float3& impulse);
     bool ApplyImpulseAt(uint64_t handle, const das::float3& impulse, const das::float3& point);
+    //! Сила (Н) в центр масс на ближайший шаг симуляции. Jolt сбрасывает накопленную
+    //! силу после каждого шага, поэтому её задают заново, пока она действует.
+    bool ApplyForce(uint64_t handle, const das::float3& force);
+    bool ApplyForceAt(uint64_t handle, const das::float3& force, const das::float3& point);
+    bool ApplyTorque(uint64_t handle, const das::float3& torque);
     bool SetMotionType(uint64_t handle, MotionType motion);
+
+    //! Создаёт виртуального персонажа (Jolt CharacterVirtual) и возвращает стабильную
+    //! ручку (0 при ошибке). Персонаж — не тело: он не виден другим телам и
+    //! сталкивается с ними только сам, зато давит на динамические тела и ходит по
+    //! лестницам и склонам. Вертикалью владеет контроллер, вход задаётся
+    //! SetCharacterInput. Персонажи не сталкиваются друг с другом (Jolt нужен для
+    //! этого отдельный CharacterVsCharacterCollision), и на одну сущность создаётся
+    //! один персонаж: прежний с тем же `entity` уничтожается.
+    uint64_t CreateCharacter(const CharacterDesc& desc);
+    bool DestroyCharacter(uint64_t handle);
+    bool IsCharacterAlive(uint64_t handle) const;
+    uint32_t CharacterCount() const;
+    //! Позиция в dense-списке, меняется при удалении персонажей; храни handle, не index.
+    uint64_t CharacterAt(uint32_t index) const;
+    uint64_t CharacterEntity(uint64_t handle) const;
+
+    //! Горизонтальное намерение (X, Y; Z игнорируется) в мировых м/с. `jump` защёлкивается
+    //! до ближайшего шага симуляции, чтобы нажатие не терялось между кадрами.
+    bool SetCharacterInput(uint64_t handle, const das::float3& velocity, bool jump);
+    bool GetCharacterPosition(uint64_t handle, das::float3& out) const;
+    //! Центр капсулы: позиция ног плюс half_height + radius вдоль Z.
+    bool GetCharacterCenter(uint64_t handle, das::float3& out) const;
+    bool GetCharacterRotation(uint64_t handle, das::float4& out) const;
+    bool GetCharacterVelocity(uint64_t handle, das::float3& out) const;
+    bool IsCharacterGrounded(uint64_t handle) const;
+    //! Телепорт: поза меняется, скорость сохраняется. Обнови её SetCharacterInput,
+    //! если персонаж не должен продолжать движение из старой точки.
+    bool SetCharacterPosition(uint64_t handle, const das::float3& position);
+    bool SetCharacterRotation(uint64_t handle, const das::float4& rotation);
 
     uint32_t ContactCount() const;
     bool ContactAt(uint32_t index, ContactEvent& out) const;
