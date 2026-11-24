@@ -374,6 +374,17 @@ struct PhysicsWorld::Impl {
         bool jump_requested = false;
     };
 
+    //! Сила, заданная за кадр через ApplyForce, ApplyForceAt или ApplyTorque. Копится до
+    //! ближайшего шага и применяется к телу как импульс F * dt: кадр игры и фиксированный
+    //! шаг физики не совпадают, поэтому сырой AddForce зависел бы от частоты кадров.
+    struct PendingForce {
+        uint64_t handle = 0;
+        das::float3 force = das::float3(0.0f, 0.0f, 0.0f);
+        das::float3 torque = das::float3(0.0f, 0.0f, 0.0f);
+        das::float3 point = das::float3(0.0f, 0.0f, 0.0f);
+        bool at_point = false;
+    };
+
     struct Listener final : JPH::ContactListener {
         Impl& owner;
 
@@ -406,6 +417,9 @@ struct PhysicsWorld::Impl {
     //! ограничивая их CharacterDesc::max_strength.
     void UpdateCharacters(float dt);
 
+    //! Применяет накопленные за кадр силы к телам как импульсы F * dt и очищает список.
+    void ApplyPendingForces(float dt);
+
     BodyRecord* Find(uint64_t handle) {
         return bodies.get(tryengine::core::SlotMap<BodyRecord>::Key(handle));
     }
@@ -433,6 +447,7 @@ struct PhysicsWorld::Impl {
 
     tryengine::core::SlotMap<BodyRecord> bodies;
     tryengine::core::SlotMap<CharacterRecord> characters;
+    eastl::vector<PendingForce> pending_forces;
     mutable std::mutex contacts_mutex;
     eastl::vector<ContactEvent> contacts;
     float accumulator = 0.0f;
@@ -513,6 +528,28 @@ void PhysicsWorld::Impl::UpdateCharacters(float dt) {
         character->ExtendedUpdate(dt, gravity, settings, broadphase, object_layer, body_filter, shape_filter,
                                   *temp_allocator);
     }
+}
+
+void PhysicsWorld::Impl::ApplyPendingForces(float dt) {
+    if (pending_forces.empty())
+        return;
+
+    JPH::BodyInterface& body_interface = system->GetBodyInterface();
+    for (const PendingForce& request : pending_forces) {
+        const BodyRecord* record = Find(request.handle);
+        if (record == nullptr || record->body_id.IsInvalid() || record->motion != MotionType::Dynamic)
+            continue;
+
+        // Импульс за кадр: F * dt. Так ускорение тела не зависит от того, сколько кадров
+        // игры прошло между двумя фиксированными шагами физики.
+        if (request.at_point)
+            body_interface.AddImpulse(record->body_id, ToVec3(request.force) * dt, ToRVec3(request.point));
+        else if (request.force.x != 0.0f || request.force.y != 0.0f || request.force.z != 0.0f)
+            body_interface.AddImpulse(record->body_id, ToVec3(request.force) * dt);
+        if (request.torque.x != 0.0f || request.torque.y != 0.0f || request.torque.z != 0.0f)
+            body_interface.AddAngularImpulse(record->body_id, ToVec3(request.torque) * dt);
+    }
+    pending_forces.clear();
 }
 
 PhysicsWorld::PhysicsWorld(const PhysicsWorldConfig& config) {
@@ -618,6 +655,7 @@ void PhysicsWorld::Clear() {
     for (auto& record : impl_->characters)
         record.character = nullptr;
     impl_->characters.clear();
+    impl_->pending_forces.clear();
 
     if (impl_->system) {
         JPH::BodyInterface& body_interface = impl_->system->GetBodyInterface();
@@ -642,7 +680,9 @@ void PhysicsWorld::Step(float dt) {
     if (!impl_ || !impl_->system || dt <= 0.0f)
         return;
 
-    impl_->accumulator += std::min(dt, kMaxFrameDt);
+    const float frame_dt = std::min(dt, kMaxFrameDt);
+    impl_->ApplyPendingForces(frame_dt);
+    impl_->accumulator += frame_dt;
     {
         std::lock_guard lock(impl_->contacts_mutex);
         impl_->contacts.clear();
@@ -839,7 +879,10 @@ bool PhysicsWorld::ApplyForce(uint64_t handle, const das::float3& force) {
         return false;
     if (record->motion != MotionType::Dynamic)
         return false;
-    impl_->system->GetBodyInterface().AddForce(record->body_id, ToVec3(force));
+    Impl::PendingForce request;
+    request.handle = handle;
+    request.force = force;
+    impl_->pending_forces.push_back(request);
     return true;
 }
 
@@ -849,7 +892,12 @@ bool PhysicsWorld::ApplyForceAt(uint64_t handle, const das::float3& force, const
         return false;
     if (record->motion != MotionType::Dynamic)
         return false;
-    impl_->system->GetBodyInterface().AddForce(record->body_id, ToVec3(force), ToRVec3(point));
+    Impl::PendingForce request;
+    request.handle = handle;
+    request.force = force;
+    request.point = point;
+    request.at_point = true;
+    impl_->pending_forces.push_back(request);
     return true;
 }
 
@@ -859,7 +907,10 @@ bool PhysicsWorld::ApplyTorque(uint64_t handle, const das::float3& torque) {
         return false;
     if (record->motion != MotionType::Dynamic)
         return false;
-    impl_->system->GetBodyInterface().AddTorque(record->body_id, ToVec3(torque));
+    Impl::PendingForce request;
+    request.handle = handle;
+    request.torque = torque;
+    impl_->pending_forces.push_back(request);
     return true;
 }
 

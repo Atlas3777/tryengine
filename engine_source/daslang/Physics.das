@@ -811,9 +811,10 @@ def ApplyImpulseAt(body : uint64; impulse : float3; point : float3) {
     PhysicsApplyImpulseAt(body, impulse, point)
 }
 
-//! Applies a force (N) to the body's center of mass for the next physics step. Jolt clears
-//! the accumulated force after every fixed step, so call it every frame while the force
-//! acts; a one-shot push is ApplyImpulse. Only dynamic bodies accept force.
+//! Applies a force (N) to the body's center of mass for one frame: the next physics step
+//! turns it into an impulse F * dt, so acceleration does not depend on the frame rate and
+//! calls made in the same frame add up. Call it every frame while the force acts; a
+//! one-shot push is ApplyImpulse. Only dynamic bodies accept force.
 def ApplyForce(body : uint64; force : float3) {
     PhysicsApplyForce(body, force)
 }
@@ -823,7 +824,8 @@ def ApplyForceAt(body : uint64; force : float3; point : float3) {
     PhysicsApplyForceAt(body, force, point)
 }
 
-//! Applies torque (N*m) for the next physics step; cleared after that step like force.
+//! Applies torque (N*m) for one frame, the same way ApplyForce does; call it every frame
+//! while the torque acts.
 def ApplyTorque(body : uint64; torque : float3) {
     PhysicsApplyTorque(body, torque)
 }

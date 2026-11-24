@@ -159,8 +159,10 @@ public:
     bool SetAngularVelocity(uint64_t handle, const das::float3& velocity);
     bool ApplyImpulse(uint64_t handle, const das::float3& impulse);
     bool ApplyImpulseAt(uint64_t handle, const das::float3& impulse, const das::float3& point);
-    //! Сила (Н) в центр масс на ближайший шаг симуляции. Jolt сбрасывает накопленную
-    //! силу после каждого шага, поэтому её задают заново, пока она действует.
+    //! Сила (Н) на кадр: на ближайшем шаге она применяется как импульс F * dt, поэтому
+    //! ускорение не зависит от частоты кадров, а несколько вызовов за кадр складываются.
+    //! Сила действует один кадр; пока она нужна, вызывай каждый кадр. Мгновенный толчок —
+    //! ApplyImpulse. Только для динамических тел.
     bool ApplyForce(uint64_t handle, const das::float3& force);
     bool ApplyForceAt(uint64_t handle, const das::float3& force, const das::float3& point);
     bool ApplyTorque(uint64_t handle, const das::float3& torque);
