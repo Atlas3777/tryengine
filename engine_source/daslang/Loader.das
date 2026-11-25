@@ -71,8 +71,9 @@ struct public LoaderResourceRequest {
 }
 
 // Builder. Array fields are filled in place; the request is consumed by `Loader::Load`.
-// All paths are relative to the game directory: scenes and prefabs use `content/...`,
-// bundles use `data/...`. Extensions are explicit; `game/` is implied.
+// A path is anything the asset registry resolves: an authored `content/...`/`data/...` path, a
+// bare name relative to the kind's root, a repository path (`game/...`) or an absolute path
+// (what a file dialog returns). Extensions are explicit; nothing is appended.
 struct public LoaderRequest {
     prefabs : array<string>
     bundles : array<string>
@@ -138,9 +139,11 @@ var private g_notified = false
 def private LoaderNoop(maps : table<string; AssetMap>) {
 }
 
-// Loader request paths are relative to the game directory: scenes and prefabs use
-// `content/...`, bundles use `data/...`. `game/` is implied, and the extension is always
-// explicit. The loader needs the leading domain because it reads both folders.
+// Domain check for a path a **document** names (a bundle's parent and its prefab list). Those
+// are authored next to the document, so they keep their domain. A request path is different:
+// the caller may pass what a file dialog or the asset tree gave it (an absolute path, a
+// repository path, an authored `content/...` path), so the loader only asks the asset registry
+// and takes whatever it resolves.
 def private IsContentPath(path : string) : bool {
     return starts_with(path, "content/")
 }
@@ -571,10 +574,6 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
     g_on_loaded = on_loaded
 
     for (bundle_path in request.bundles) {
-        if (!IsDataPath(bundle_path)) {
-            Fail("bundle '{bundle_path}' must be a data/... path")
-            return false
-        }
         if (!QueueBundle(bundle_path)) {
             Fail("bundle '{bundle_path}' was not found; check the data/ path")
             return false
@@ -582,23 +581,15 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
     }
 
     for (scene_path in request.scenes) {
-        if (!IsContentPath(scene_path)) {
-            Fail("scene '{scene_path}' must be a content/... path")
-            return false
-        }
         if (!QueueScene(scene_path)) {
-            Fail("scene '{scene_path}' was not found; check the content/ path")
+            Fail("scene '{scene_path}' was not found; check the path")
             return false
         }
     }
 
     for (prefab_path in request.prefabs) {
-        if (!IsContentPath(prefab_path)) {
-            Fail("prefab '{prefab_path}' must be a content/... path")
-            return false
-        }
         if (!QueuePrefab(prefab_path)) {
-            Fail("prefab '{prefab_path}' was not found; check the content/ path")
+            Fail("prefab '{prefab_path}' was not found; check the path")
             return false
         }
     }

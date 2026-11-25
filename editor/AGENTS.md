@@ -338,6 +338,25 @@
 - `ImGui_ImplVulkan_InitInfo::CheckVkResultFn` выставляется в `ImGuiPass`: без него бэкенд
   молча глотает ошибки Vulkan, и первым симптомом становится SIGSEGV.
 
+## Действия с контентом (EditorContent)
+
+- Открытие сцены, дроп префаба и предпросмотр зависимостей билда — это одно и то же:
+  «инвалидировать запись кеша → `LoaderRequest` → `await(Loader::Load(request))` →
+  синхронное применение». Обёртка живёт в `editor/daslang/EditorContent.das`
+  (`OpenScene`, `SpawnPrefab`, `ReleaseFailedLoad`), чтобы редактор не заводил второй
+  читатель и не повторял разбор путей.
+- Пути здесь редакторские: абсолютный из диалога, репозиторный `game/...` из дерева
+  ассетов или авторский `content/...`. Загрузчик резолвит любой зарегистрированный путь,
+  поэтому обёртка только регистрирует путь из диалога (`Assets::RegisterPath`) и снимает
+  устаревшую запись (`Scene::Invalidate`, `Prefab::InvalidatePrefab`); проверок домена на
+  стороне загрузчика нет — они остались только у путей, которые называет сам документ.
+- `SpawnPrefab` отдаёт `EntityId` через выходной параметр: корутина, возвращающая значение,
+  не может `await` задачу загрузчика (ошибка «res only allowed for variants»), а void-корутина
+  может.
+- Провалившийся запрос оставляет загрузчик активным, пока не прочитан `Error()`.
+  `ReleaseFailedLoad()` делает `Abort` перед каждым новым действием, иначе одно падение
+  заблокировало бы все следующие.
+
 ## Prefabs и drag&drop моделей
 
 - Импорт glTF пишет два editor-артефакта: `10` — `ModelAssetMap` (локальные трансформы,
@@ -369,7 +388,8 @@
   `Type.tPointer`. `eid` — единственное структурное исключение. Видимость в Inspector —
   второй флаг `hidden` (`EcsShouldShow`); «Add component» — `!hidden` + `addable`.
 - `SceneViewPort` принимает payload `Asset`: `.prefab` читается напрямую, glb/gltf — через
-  `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`). Точка спавна — луч
+  `GetModelPrefabArtifactPath` (путь к `artifacts/editor/<guid>/11`, домена `content` у него
+  нет — это репозиторный путь, который загрузчик резолвит как любой другой). Точка спавна — луч
   камеры редактора до плоскости `Z=0`; при взгляде выше горизонта — точка перед камерой.
 - Кеш префабов живёт в `tryengine/AssetCache.das` (типизированная таблица `PrefabTemplate`
   в `tryengine/Prefab.das`), а не в C++ `ResourceManager`: префаб нужен DECS в daslang, у
@@ -398,10 +418,10 @@
   меши/материалы в прогресс; `Prefab::Spawn("props/sword.prefab", origin)` после этого —
   hit кеша и `EntityId`. Путь пишется относительно `content/` или полным; расширение
   обязательно.
-- Дроп префаба (`SceneViewPort::SpawnDroppedPrefab`) идёт тем же путём, что игра: инвалидация
-  записи кеша, `LoaderRequest` + `await(Loader::Load(request))`, затем синхронный
-  `Prefab::Spawn`, поэтому изменённый файл не спавнится старым. `Prefab::SavePrefabFromEntity`
-  пишет текст
+- Дроп префаба (`SceneViewPort::SpawnDroppedPrefab` → `EditorContent::SpawnPrefab`) идёт тем
+  же путём, что игра: инвалидация записи кеша, `LoaderRequest` + `await(Loader::Load(request))`,
+  затем синхронный `Prefab::Spawn`, поэтому изменённый файл не спавнится старым.
+  `Prefab::SavePrefabFromEntity` пишет текст
   через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в
   кеш и обновляет дерево ассетов.
 - `editor/daslang/PrefabInspector.das` выключен: панель обходила CF-дерево префаба, а его

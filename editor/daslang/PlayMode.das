@@ -19,7 +19,6 @@ require tryengine/Physics
 require tryengine/Scene
 require tryengine/Time
 require trygame/Game
-require trygame/PhysicsDemo
 require trygame/Player
 require tryeditor/Editor
 require tryeditor/Hierarchy
@@ -81,7 +80,6 @@ def public EndPlay() {
     // references; the task carries its own generation and exits on the next frame.
     Loader::Abort()
     Physics::Reset()
-    PhysicsDemo::Reset()
     Player::Reset()
 
     // Release the play scene's references, install the editor scene again, and then

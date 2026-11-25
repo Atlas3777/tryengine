@@ -4,10 +4,7 @@ options relaxed_assign = false
 module EditorUI shared public
 
 require tryengine/Scene
-require tryengine/Assets
 require tryengine/AsyncTaskManager
-require tryengine/Loader
-require daslib/async_boost
 require strings
 require math
 
@@ -21,6 +18,7 @@ require tryeditor/Inspector
 require tryeditor/AssetBrowser
 require tryeditor/SceneViewPort
 require tryeditor/AssetSettings
+require tryeditor/EditorContent
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/BuildManager
 require tryeditor/Material
@@ -48,31 +46,6 @@ require tryengine/Profiling
 require tryengine/EcsMacro
 require daslib/decs
 
-//! Opens a `.scene` the user picked. The loader is the only reader, so the read and the
-//! compile happen there; the apply after it is synchronous. A dialog returns an absolute path
-//! and the file may have changed since it was last opened, so it is registered with the asset
-//! API and its cached form is dropped before the request.
-[async]
-def private OpenSceneFile(path : string) : void {
-    Assets::RegisterPath(path)
-
-    // A request that failed keeps the loader active until its error is read; release it, or
-    // every later open would be refused.
-    if (Loader::IsFailed()) {
-        print("[EDITOR] content load failed: {Loader::Error()}\n")
-        Loader::Abort()
-    }
-    Scene::Invalidate(path)
-
-    var request <- LoaderRequest()
-    request.AddScene(path)
-    await(Loader::Load(request))
-
-    if (!Scene::Load(path)) {
-        print("[EDITOR] scene '{path}' failed to open\n")
-    }
-}
-
 [profile]
 def DrawMainMenu() {
     main_menu_bar(MAIN_MENU_BAR) {
@@ -89,7 +62,7 @@ def DrawMainMenu() {
                         filters <- file_filters("Scene Files|scene|All Files|")
                     ),
                     @(path : string; ctx : string) : void {
-                        StartTask(OpenSceneFile(path))
+                        StartTask(EditorContent::OpenScene(path))
                     }
                 )
             }

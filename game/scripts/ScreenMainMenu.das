@@ -17,14 +17,14 @@ require trygame/UiTheme
 //! bundle with the fonts).
 let public kMenuBundle : string = "data/bundles/main_menu.bundle"
 
-// The menu is the place to edit the scene list: the game only knows how to load one entry.
+// The menu is the place to edit the scene list: the game only knows how to load a path.
 // `new_scene.scene` is the scene this repository ships; the player entity lives in it, so it
 // is the entry that actually starts the game.
-let private kNewScene = GameState::SceneRequest(title = "New Scene", scene = "content/new_scene.scene",
-                                                prefab = "", physics_demo = false)
+let private kNewSceneTitle : string = "New Scene"
+let private kNewScenePath : string = "content/new_scene.scene"
 
 def private LoadNewScene() {
-    GameState::RequestScene(kNewScene)
+    GameState::RequestScene(kNewScenePath)
 }
 
 // Exit is the same quit flag as closing the window: the standalone game ends, the editor closes
@@ -38,7 +38,7 @@ def public Draw(_assets : AssetMap) {
         Ui::Panel("##menu", UiTheme::kPausePanel, UiLayout(anchor = float2(0.5f, 0.5f), spacing = 12.0f)) {
             Ui::Label("##title", "Main Menu", UiTheme::kTitle)
             Ui::Label("##subtitle", "choose a scene", UiTheme::kMuted)
-            Ui::Button(UiTheme::kPrimaryButton, "##scene_new", kNewScene.title, @@LoadNewScene)
+            Ui::Button(UiTheme::kPrimaryButton, "##scene_new", kNewSceneTitle, @@LoadNewScene)
             if (Loader::IsActive()) {
                 Ui::Label("##loading", "Loading...", UiTheme::kMuted)
             }

@@ -18,7 +18,7 @@ Retained UI на daslang: узлы (виджеты) живут между кад
 | Навигация | `game/scripts/GameScreens.das` | стек `ScreenRef` и политика поверх него (никогда не пустой) |
 | Boot/манифест | `game/scripts/GameUi.das` | boot-запрос меню, восстановление после горячей перезагрузки, `Frame()` |
 | Состояние экранов | `game/scripts/GameState.das` | hp/gold/volume, общие подписи, флаг паузы |
-| Поток сцен | `game/scripts/Game.das` | загрузка сцены по `GameState::SceneRequest`, флаг готовности для `GameUpdate` |
+| Поток сцен | `game/scripts/Game.das` | загрузка сцены по `GameState::RequestScene(path)`, флаг готовности для `GameUpdate` |
 | Биндинги | `engine_source/graphics/src/Module_Ui.cpp` | измерение текста, размер окна, таблица строк кадра |
 | Проход | `engine_source/graphics/src/UiPass.cpp` | вершины, батчи, scissor, блендинг, SDF-текст |
 

@@ -38,7 +38,8 @@ struct HotReloadState {
     is_playing : bool
     is_paused : bool
     play : PlayReloadState
-    game : GameReloadState
+    // The game's one flag: a scene is applied and gameplay runs.
+    game_ready : bool
 }
 
 //! Asks the C++ frame loop to recompile the scripts. Safe to call from a widget or a hotkey:
@@ -63,7 +64,7 @@ def SaveHotReloadState() {
     state.is_playing = is_playing
     state.is_paused = is_paused
     state.play <- PlayMode::CaptureReloadState()
-    state.game <- Game::CaptureReloadState()
+    state.game_ready = Game::CaptureReloadState()
 
     let data <- mem_archive_save(state)
     ScriptReloadStoreBytes(data)
@@ -102,9 +103,9 @@ def RestoreHotReloadState() {
 
     selected_eid = state.selected_eid
     PlayMode::ApplyReloadState(state.play)
-    Game::ApplyReloadState(state.game)
+    Game::ApplyReloadState(state.game_ready)
 
-    if (is_playing && !state.game.scene_ready) {
+    if (is_playing && !state.game_ready) {
         // Play was requested but the loader had not finished: there is no world to resume,
         // so start the game flow again on the new context.
         GameStart()

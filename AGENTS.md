@@ -276,8 +276,8 @@ transform pass, префабы, сцены, undo). Гейт компиляции
 - Поток игры живёт в `Game.das`: `GameStart` регистрирует время, ставит тему, сбрасывает
   сессию и зовёт `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал;
   callback показывает меню). Экран не может импортировать игру (игра импортирует UI), поэтому
-  меню не грузит сцену само: оно кладёт `GameState::SceneRequest` в общее состояние, а
-  `GameUpdate` забирает его (`ProcessSceneRequest`) и стартует `LoaderRequest` со сценой и
+  меню не грузит сцену само: оно зовёт `GameState::RequestScene(path)`, а `GameUpdate`
+  забирает запрос (`ProcessSceneRequest`) и стартует `LoaderRequest` со сценой и
   `hud`/`pause`/`shop` бандлами; callback применяет `Scene::Load` и `ScreenHud::Show(maps)`.
   `GameUpdate` идёт только при загруженной сцене. Выход из меню — `RequestQuit()`
   (`tryInput`), тот же флаг, что у закрытия окна.
@@ -363,10 +363,12 @@ transform pass, префабы, сцены, undo). Гейт компиляции
 - `Game.das` — игра, точка входа и весь поток сцен; boot/экраны — `trygame/GameUi.das`.
   Отдельного `GameFlow.das` нет: он существовал только чтобы разорвать цикл импортов (игра
   видит UI, UI видит экраны, экран не может видеть игру). Теперь это общее состояние:
-  экран кладёт `GameState::SceneRequest`, игра забирает его и грузит. `GameStart` ставит тему,
+  экран зовёт `GameState::RequestScene(path)`, игра забирает путь и грузит. `GameStart` ставит тему,
   сбрасывает сессию (физика, игрок) и зовёт `GameUi::Start()`. `ProcessSceneRequest` одним
-  запросом читает сцену, `hud`/`pause`/`shop` бандлы и префаб; callback применяет
-  `Scene::Load` и `ScreenHud::Show(maps)`; `GameUpdate` идёт только при загруженной сцене.
+  запросом читает сцену и `hud`/`pause`/`shop` бандлы; callback применяет `Scene::Load` и
+  `ScreenHud::Show(maps)`; `GameUpdate` идёт только при загруженной сцене. Состояния у игры
+  два: `g_ready` (сцена применена) и путь запроса в полёте; «загружаемся» — это
+  `Loader::IsActive()`, отдельного флага нет.
   Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск. Горячая перезагрузка зовёт
   `GameUi::Restore(scene_ready)`: перечитывает бандлы и строит новые карты, мир остаётся.
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,

@@ -9,8 +9,8 @@ module GameState shared public
 //!
 //! It also carries the one message a screen sends to the game: the scene the player picked.
 //! The main menu cannot import the game module (the game imports the UI, so that would be a
-//! cycle), and it must not load anything itself — it fills a `SceneRequest`, and `Game` drains
-//! it in its own frame.
+//! cycle), and it must not load anything itself — it asks for a scene path, and `Game` drains
+//! that request in its own frame.
 
 require math
 require trygame/GameTime
@@ -26,35 +26,21 @@ struct public GameUiState {
 
 var public g_state = GameUiState()
 
-//! A scene the UI asked for: what to load and what to spawn after it. The main menu owns the
-//! list of entries; the game only knows how to load one.
-struct public SceneRequest {
-    title        : string
-    scene        : string
-    prefab       : string
-    physics_demo : bool
+// The scene a screen asked for, "" when there is none. This is the whole hand-off: no title,
+// no flags — the screen already has its label, and what to load is a path.
+var private g_requested_scene : string
+
+//! Asks the game to load `scene`. The game takes the request on its next frame; until then the
+//! screen can show that a load is running by asking `Loader::IsActive()`.
+def public RequestScene(scene : string) {
+    g_requested_scene = scene
 }
 
-var private g_scene_request : SceneRequest
-var private g_scene_pending = false
-
-//! Hands the game the scene the player picked. The request is not a load: the game starts it
-//! on its next frame, and `Loader::IsActive()` is how a screen shows that a load is running.
-def public RequestScene(request : SceneRequest) {
-    g_scene_request = SceneRequest(title = request.title, scene = request.scene,
-                                   prefab = request.prefab, physics_demo = request.physics_demo)
-    g_scene_pending = true
-}
-
-//! Takes the pending request; `scene` is "" when there was none.
-def public TakeSceneRequest() : SceneRequest {
-    if (!g_scene_pending) {
-        return SceneRequest()
-    }
-    g_scene_pending = false
-    var request = g_scene_request
-    g_scene_request = SceneRequest()
-    return <- request
+//! Takes the requested scene path; "" when there was none.
+def public TakeSceneRequest() : string {
+    let scene = g_requested_scene
+    g_requested_scene = ""
+    return scene
 }
 
 // Mutation helpers keep the arithmetic here: a screen must not read and write the shared state

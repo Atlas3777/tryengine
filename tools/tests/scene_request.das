@@ -19,26 +19,16 @@ def Check(ok : bool; what : string) {
 
 [export]
 def main() : int {
-    let first = GameState::SceneRequest(title = "First", scene = "content/first.scene",
-                                        prefab = "content/props/sword.prefab", physics_demo = true)
+    Check(empty(GameState::TakeSceneRequest()), "nothing is pending before a request")
 
-    Check(empty(GameState::TakeSceneRequest().scene), "nothing is pending before a request")
-
-    GameState::RequestScene(first)
-    var taken = GameState::TakeSceneRequest()
-    Check(taken.scene == "content/first.scene", "the request carries the scene path")
-    Check(taken.prefab == "content/props/sword.prefab", "the request carries the prefab")
-    Check(taken.physics_demo, "the request carries the physics flag")
-    Check(taken.title == "First", "the request carries the label")
-    Check(empty(GameState::TakeSceneRequest().scene), "a taken request is not delivered twice")
+    GameState::RequestScene("content/first.scene")
+    Check(GameState::TakeSceneRequest() == "content/first.scene", "the request delivers the scene path")
+    Check(empty(GameState::TakeSceneRequest()), "a taken request is not delivered twice")
 
     // A second click replaces a request the game has not drained yet.
-    GameState::RequestScene(first)
-    GameState::RequestScene(GameState::SceneRequest(title = "Second", scene = "content/second.scene",
-                                                    prefab = "", physics_demo = false))
-    var replaced = GameState::TakeSceneRequest()
-    Check(replaced.scene == "content/second.scene", "a newer request replaces the pending one")
-    Check(!replaced.physics_demo, "the replacement carries its own flags")
+    GameState::RequestScene("content/first.scene")
+    GameState::RequestScene("content/second.scene")
+    Check(GameState::TakeSceneRequest() == "content/second.scene", "a newer request replaces the pending one")
 
     print("-- {g_failures} check(s) failed --\n")
     return g_failures == 0 ? 0 : 1

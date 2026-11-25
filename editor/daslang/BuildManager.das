@@ -20,6 +20,7 @@ require tryengine/Scene
 
 require TryEditor
 require tryeditor/EditorActions
+require tryeditor/EditorContent
 require tryeditor/FileSystemUtils
 require tryengine/Profiling
 require tryengine/FileReader
@@ -209,6 +210,7 @@ def FindPaks(var paths : array<string>&) : void {
 
     // One request for every scene of the build; the loader does the reading, and the headers
     // are then read from the compiled cache in the same order.
+    EditorContent::ReleaseFailedLoad()
     var request <- LoaderRequest()
     for (path in paths) {
         request.AddScene(path)
