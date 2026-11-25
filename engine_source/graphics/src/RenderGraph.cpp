@@ -701,7 +701,7 @@ void RenderGraph::Compile() {
     RefreshActive();
     if (dirty_) {
         Rebuild();
-        LogInfo("Render Graph Rebuild");
+        LogTrace(LogCategory::Graphics, "Render Graph Rebuild");
     }
     BindExternals();
 }

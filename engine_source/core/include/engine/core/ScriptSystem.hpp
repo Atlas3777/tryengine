@@ -103,6 +103,11 @@ public:
     //! вызываться до PollAsync(), который либо подменит его, либо оставит старый.
     void ReloadMainScriptAsync();
 
+    //! Повторяет первую загрузку после ScriptStatus::Failed, не перезапуская процесс:
+    //! свежий FileAccess перечитывает исходники с диска (редактор — F5/Retry в оверлее).
+    //! Возвращает false, если повтор сейчас невозможен (не Failed / уже идёт компиляция).
+    bool RetryMainScriptAsync();
+
     //! Главный поток: забирает готовую фоновую компиляцию. Единственное место, где
     //! устанавливается новое поколение контекста и вызываются reload-хуки.
     void PollAsync();
@@ -236,7 +241,7 @@ private:
 
     Result<CompiledScript> CompileMainScript(eastl::string_view path, bool use_module_cache,
                                              das::smart_ptr<das::FileAccess> file_access, CompileTiming& timing) const;
-    void StartCompile(bool hot_reload);
+    void StartCompile(bool hot_reload, bool fresh_file_access);
     void InstallFirstLoad(CompiledScript&& compiled, eastl::string_view path, const CompileTiming& timing);
     void InstallReload(CompiledScript&& compiled, const CompileTiming& timing);
     void FailCompile(bool hot_reload, eastl::string_view message, const CompileTiming& timing);

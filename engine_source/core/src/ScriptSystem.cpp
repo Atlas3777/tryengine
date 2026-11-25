@@ -5,6 +5,7 @@
 #include <daScript/ast/dyn_modules.h>
 #include <daScript/misc/free_list.h>
 
+#include "engine/core/LogHistory.hpp"
 #include "engine/core/Profiler.hpp"
 
 namespace tryengine::core {
@@ -192,7 +193,7 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
     return result;
 }
 
-void ScriptSystem::StartCompile(bool hot_reload) {
+void ScriptSystem::StartCompile(bool hot_reload, bool fresh_file_access) {
     TRY_ASSERT(!async_, "Фоновая компиляция уже идёт");
     TRY_ASSERT(!compiling_, "Фоновая компиляция уже идёт");
 
@@ -210,8 +211,9 @@ void ScriptSystem::StartCompile(bool hot_reload) {
     const bool use_module_cache = reload_extension_ != nullptr;
     // Первая загрузка переиспользует FileAccess из конструктора (он уже прочитал
     // динамические модули; у игры его фабрика одноразовая — пак отдаётся по move).
-    // Перезагрузке нужен свежий доступ, иначе кеш текста вернул бы старую версию.
-    auto file_access = das_ctx_ ? config_.create_file_access() : file_access_;
+    // Перезагрузке и повторной первой загрузке нужен свежий доступ, иначе кеш текста
+    // вернул бы старую (сломанную) версию скрипта.
+    auto file_access = (das_ctx_ || fresh_file_access) ? config_.create_file_access() : file_access_;
     // daScriptEnvironment is TLS: the worker cannot see the module registry the main thread
     // initialized. Capture it here and bind it inside the job; without this the compiler
     // crashes in AstSerializer before the first module is parsed.
@@ -260,7 +262,7 @@ void ScriptSystem::LoadMainScriptAsync(eastl::string_view path) {
         return LogError(LogCategory::Script, "Движок заперт после ошибки загрузки скриптов");
 
     main_script_path_.assign(path.data(), path.size());
-    StartCompile(/*hot_reload=*/false);
+    StartCompile(/*hot_reload=*/false, /*fresh_file_access=*/false);
 }
 
 void ScriptSystem::ReloadMainScriptAsync() {
@@ -280,7 +282,16 @@ void ScriptSystem::ReloadMainScriptAsync() {
     }
     pending_hook_errors_ = eastl::move(hook_errors);
 
-    StartCompile(/*hot_reload=*/true);
+    StartCompile(/*hot_reload=*/true, /*fresh_file_access=*/false);
+}
+
+bool ScriptSystem::RetryMainScriptAsync() {
+    if (status_ != ScriptStatus::Failed || async_ || compiling_)
+        return false;
+
+    LogInfo(LogCategory::Script, "Скрипт {}: повторная компиляция", main_script_path_.c_str());
+    StartCompile(/*hot_reload=*/false, /*fresh_file_access=*/true);
+    return true;
 }
 
 void ScriptSystem::PollAsync() {
@@ -303,6 +314,13 @@ void ScriptSystem::PollAsync() {
         FailCompile(state->hot_reload, message, state->timing);
         return;
     }
+
+    // A successful compile after a failed one is the moment the stale error stops being
+    // true. Drop the ring so the Log window does not keep showing it; the file on disk is
+    // the run's history and is not touched. Normal reloads keep their history.
+    const bool recovering = compile_error_;
+    if (recovering)
+        LogHistory::instance().clear();
 
     {
         TRY_PROFILE_SCOPE("Script.Install");
@@ -458,6 +476,8 @@ Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
     }
 
     timing.wall_ms = ElapsedMs(begin, std::chrono::steady_clock::now());
+    if (compile_error_)
+        LogHistory::instance().clear();
     InstallFirstLoad(eastl::move(*compiled), path, timing);
     status_ = ScriptStatus::Ready;
     compile_error_ = false;
@@ -492,6 +512,8 @@ Result<void> ScriptSystem::ReloadMainScript() {
         return std::unexpected(std::move(compiled.error()));
     }
 
+    if (compile_error_)
+        LogHistory::instance().clear();
     InstallReload(eastl::move(*compiled), timing);
     status_ = ScriptStatus::Ready;
     compile_error_ = false;

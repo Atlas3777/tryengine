@@ -160,6 +160,15 @@ void EditorApp::Run() {
             script_system.PollAsync();
         }
 
+        // Первая загрузка сломалась: скриптового UI ещё нет, поэтому F5 обрабатывает
+        // кадровый цикл. Retry перечитывает файлы с диска и компилирует их тем же путём,
+        // что и обычная первая загрузка; перезапуск процесса не нужен.
+        if (script_system.IsFailed() && input.GetState().Pressed(Key::F5)) {
+            TRY_PROFILE_SCOPE("Script.Retry");
+            if (script_system.RetryMainScriptAsync())
+                LogInfo(LogCategory::Script, "Повторная компиляция скриптов запрошена клавишей F5");
+        }
+
         if (!scripts_started_ && script_system.IsReady()) {
             TRY_PROFILE_SCOPE("Script.Start");
             script_system.InvokeFunctionFast<"EngineStart">();

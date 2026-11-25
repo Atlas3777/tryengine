@@ -24,11 +24,13 @@ void LogVkResult(VkResult err) {
 
 //! Запасной экран, пока контекста скриптов нет (первая загрузка) или он перекомпилируется.
 //! Интерфейс редактора сам написан на daslang, поэтому без этого окно осталось бы пустым.
-void DrawScriptStatusOverlay(tryengine::core::ScriptSystem& script) {
+bool DrawScriptStatusOverlay(tryengine::core::ScriptSystem& script) {
     const bool failed = script.IsFailed();
     const bool compiling = script.IsCompiling();
     if (!failed && !compiling)
-        return;
+        return false;
+
+    bool retry_requested = false;
 
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -55,10 +57,12 @@ void DrawScriptStatusOverlay(tryengine::core::ScriptSystem& script) {
                 ImGui::TextUnformatted(buffer);
                 ImGui::PopTextWrapPos();
             }
-            ImGui::TextDisabled("The engine is locked until the process is restarted.");
+            if (ImGui::Button("Retry (F5)"))
+                retry_requested = true;
         }
     }
     ImGui::End();
+    return retry_requested;
 }
 
 }  // namespace
@@ -176,8 +180,8 @@ void ImGuiPass::Collect(tryengine::graphics::CollectContext& ctx) {
     auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
     if (script.IsReady())
         script.InvokeFunctionSafe<"DrawEditor">();
-    else
-        DrawScriptStatusOverlay(script);
+    else if (DrawScriptStatusOverlay(script))
+        script.RetryMainScriptAsync();
 
     ImGui::Render();
 }
