@@ -5,6 +5,7 @@
 #include <daScript/ast/dyn_modules.h>
 #include <daScript/misc/free_list.h>
 
+#include "engine/core/LiveStore.hpp"
 #include "engine/core/LogHistory.hpp"
 #include "engine/core/Profiler.hpp"
 
@@ -358,6 +359,10 @@ void ScriptSystem::FailCompile(bool hot_reload, eastl::string_view message, cons
 }
 
 void ScriptSystem::InstallFirstLoad(CompiledScript&& compiled, eastl::string_view path, const CompileTiming& timing) {
+    // Новый прогон в том же процессе (система переиспользована): @live-хранилище от прошлого
+    // поколения к этому отношения не имеет, а первый контекст обязан видеть is_reload() == false.
+    ResetLiveStore();
+
     // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
     // Кеш объявлен первым: он переживает контекст, программу и группу модулей.
     std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
@@ -397,6 +402,9 @@ void ScriptSystem::InstallReload(CompiledScript&& compiled, const CompileTiming&
 
     // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
     // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
+    // is_reload() скрипты видят уже во время реинициализации, как в daslang-live: по нему
+    // точки входа отличают перезагрузку от холодного старта.
+    SetLiveReload(true);
     if (reload_extension_) {
         TRY_PROFILE_SCOPE("Script.Reload.Reinit");
         reload_extension_->ReinitializeContext(*this);

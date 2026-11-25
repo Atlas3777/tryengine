@@ -55,3 +55,6 @@ target_compile_definitions(engine_core PUBLIC
 # Журнал (Logger) отдаётся в daslang тем же биндингом, что C++: скрипт пишет в те же
 # sink'и (консоль, кольцо окна, файл), что и LogInfo/LogError из C++.
 tryengine_add_das_module(tryLog_shared tryLog src/Module_Log.cpp engine::core)
+
+# Хранилище @live-переменных: старый контекст пишет перед перезагрузкой, новый читает после.
+tryengine_add_das_module(tryLive_shared tryLive src/Module_Live.cpp engine::core)
