@@ -189,12 +189,21 @@ public:
     //! `SimpleReturnUnsafe<"GetEditorViewportSize", das::float2>()`.
     template <ScriptFunctionName Name, typename T, typename... Args>
     Result<T> SimpleReturnUnsafe(Args&&... args) {
-        if (!IsReady())
-            return std::unexpected(Error(ErrorCode::EngineInternalError, eastl::string("scripts are not ready")));
+        // Callers of the render paths check only has_value(); the error is already reported
+        // (loading is expected, a missing export is logged by FindFunction), so mark it
+        // checked instead of tripping the debug "unchecked Error" assert on every frame.
+        if (!IsReady()) {
+            Error error(ErrorCode::EngineInternalError, eastl::string("scripts are not ready"));
+            error.Discard();
+            return std::unexpected(eastl::move(error));
+        }
 
         auto* function = FindFunction<Name>();
-        if (!function)
-            return std::unexpected(Error(ErrorCode::EngineInternalError, eastl::string(Name.c_str())));
+        if (!function) {
+            Error error(ErrorCode::EngineInternalError, eastl::string(Name.c_str()));
+            error.Discard();
+            return std::unexpected(eastl::move(error));
+        }
 
         das::Func custom_func(function);
         return das::das_invoke_function<T>::invoke(das_ctx_, nullptr, custom_func, std::forward<Args>(args)...);
