@@ -23,15 +23,17 @@ def RegisterGameTime() {
     TimeRegister(game_ui_clock, game_clock)
 }
 
-//! The game clocks are created on first use, not only in GameStart: the editor's Edit-mode
-//! preview draws the game screens without starting the game, and the screens read the pause
-//! state. TimeInit registers the engine root clock before the first UI frame, so the parent
-//! exists by then. Idempotent; a headless probe without the root clock leaves the tags
-//! unregistered instead of asserting.
+//! The game clocks are wired on first use as well as in GameStart: the game screens read the
+//! pause state, and a host that re-created the script context calls this to put the tags back
+//! without knowing anything else. TimeInit registers the engine root clock before the first
+//! UI frame, so the parent exists by then. Idempotent; a headless probe without the root clock
+//! leaves the tags unregistered instead of asserting.
 def public EnsureGameTime() {
-    if (game_clock.slot_ >= 0 || root_clock.slot_ < 0) {
+    if (root_clock.slot_ < 0) {
         return
     }
+    // Each tag is skipped by TimeRegister when it already has a slot, so this also repairs a
+    // partially restored set (for example a stale @live entry) instead of returning early.
     RegisterGameTime()
 }
 

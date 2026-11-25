@@ -243,15 +243,39 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   инициализатора: смена дефолта в коде отбрасывает старое значение. Хранилище живёт в
   процессе, первая загрузка его чистит; `is_reload()` истинно в поколении после
   перезагрузки. `@live` на `let` — ошибка компиляции.
-- Что помечено `@live`: массив `clocks` и `root_clock` в `Time`, **каждый** тег клока
+- Аннотации `before_reload`/`after_reload` регистрирует **tryLive**, а не TryEditor: это
+  контракт движка, хост подключает только саму перезагрузку. Нативные функции хранилища
+  называются `try_live_*`, а скриптовый фасад — `live_save`/`live_load`/`is_reload`. Имена
+  не совпадают с dasLiveHost намеренно: в программе редактора живут **обе** live-системы
+  (виджеты imgui используют `live/live_vars`/`live_host`), и неквалифицированный
+  `live_store_bytes` был бы неоднозначным. Сгенерированный код вызывает
+  `tryLive::try_live_*`; если в программе есть upstream `live_vars`, его проход может
+  сгенерировать хуки первым (у обоих проходов одно имя функции-маркера) — это нормально,
+  работает любой из двух проходов.
+- Что помечено `@live`: массив `clocks` и `root_clock` в `Time` и **каждый** тег клока
   (`editor_clock`, `game_clock`/`game_world_clock`/`game_ui_clock`, `g_physics_clock`, клок
-  `Ui`, `Physics::g_physics_attached`), состояние прицела в `Player.das` и HUD-состояние
-  `GameState.g_state`. Тег клока — индекс в массиве `clocks`, поэтому восстанавливать его
-  без массива нельзя: слот укажет в чужой клок. Мир, сцена, DECS-куча, порядок экранов и
-  выбранная сущность идут через снимок `editor/daslang/HotReload.das`, а не через `@live`.
+  `Ui`, `Physics::g_physics_attached`); `Scene::active_scene` и `scene_context`; снимок Play
+  (`g_saved_decs`/`g_saved_scene`/`g_saved_selected_eid` в `PlayMode.das`); `is_playing`,
+  `is_paused`, `selected_eid`; `Game::g_ready`/`g_scene`; состояние прицела в `Player.das`
+  и HUD-состояние `GameState.g_state`. Тег клока — индекс в массиве `clocks`, поэтому
+  восстанавливать его без массива нельзя: слот укажет в чужой клок. `active_scene`
+  специально НЕ перезахватывает ресурсы: держания прошлого поколения не освобождались, и
+  `ApplyState` в reload-хуке больше не нужен.
+- Мир DECS (сущности, архетипы, байты компонентов) — это чужой глобал `decsState`, ему
+  `@live` не поставить. Его сохраняет `tryengine/LiveEcs` (`engine_source/daslang/LiveEcs.das`,
+  требуется из `Engine.das`) в то же хранилище: `[before_reload]` кладёт
+  `mem_archive_save(decsState)`, `[after_reload]` делает `decs::restart`,
+  `mem_archive_load`, `EcsApplyRegistry` и `Model::ReapplyPointers` (архив обнуляет
+  указатели `mesh`/`material`). Игра об этом не знает.
+- `editor/daslang/HotReload.das` — только координатор того, что сериализовать нельзя:
+  стек экранов игры (`ScreenRef` = указатель на функцию + хэндл `AssetMap`). До свапа он
+  пишет в то же хранилище пару флагов (`is_playing`, `Game::IsReady()`), после свапа
+  пересоздаёт стек через `GameUi::Restore` (или зовёт `GameStart`, если Play не успел
+  загрузить мир), и идемпотентно доставляет тему/клоки/привязку физики как страховку.
+  Мир, сцена, DECS-куча, выделение и режим Play через него больше не идут.
 - Мир физики — C++ (Jolt), он переживает перезагрузку, а `g_physics_attached` — скриптовый.
-  Поэтому `Game::ApplyReloadState` ещё раз зовёт `Physics::Attach`: без этого сцена «жива»
-  (камера вертится), но персонаж стоит — симуляция не шагает.
+  Если `@live` не вернул привязку (хранилище от сборки без неё), координатор зовёт
+  `Physics::Attach`: без этого сцена «жива» (камера вертится), но персонаж стоит.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
@@ -389,8 +413,9 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `ScreenHud::Show(maps)`; `GameUpdate` идёт только при загруженной сцене. Состояния у игры
   два: `g_ready` (сцена применена) и путь запроса в полёте; «загружаемся» — это
   `Loader::IsActive()`, отдельного флага нет.
-  Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск. Горячая перезагрузка зовёт
-  `GameUi::Restore(scene_ready)`: перечитывает бандлы и строит новые карты, мир остаётся.
+  Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск. После горячей перезагрузки
+  координатор (`editor/daslang/HotReload.das`) зовёт `GameUi::Restore(true)`: игра
+  перечитывает бандлы и строит новые карты, мир и сцена уже восстановлены движком.
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
   которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
   `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно

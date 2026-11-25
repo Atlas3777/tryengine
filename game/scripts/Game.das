@@ -26,29 +26,16 @@ require trygame/ScreenShop
 require trygame/UiTheme
 
 
-var private g_ready = false
-var private g_scene = ""
+//! A scene is applied and gameplay runs. `@live`: the world and the scene come back after a
+//! reload, so the flag must come back with them; the reload coordinator reads it before the
+//! swap and rebuilds the game UI from it. Nothing in this module knows about reload.
+var private @live g_ready = false
+//! The scene request that is being loaded right now ("" when idle).
+var private @live g_scene = ""
 
-def public CaptureReloadState() : bool {
+//! Whether a scene is applied and gameplay runs. A normal query, not a reload hook.
+def public IsReady() : bool {
     return g_ready
-}
-
-def public ApplyReloadState(scene_ready : bool) {
-    // The script context is new: the theme is gone with it and the font keys would resolve to
-    // nothing. Install it again before the screens are rebuilt.
-    Ui::SetTheme(UiTheme::kTheme)
-    g_ready = scene_ready
-    // The script context is new after a reload: the screen stack and its asset maps are gone,
-    // the clocks are gone. Rebuild the stack through the loader (the world itself is preserved).
-    GameUi::Restore(scene_ready)
-    if (scene_ready) {
-        RegisterGameTime()
-        // Physics is script-side state over a C++ Jolt world that survived the reload. The
-        // `@live` clock and attachment flag normally come back with the generation, but a
-        // reload that lost them must not leave a scene that looks alive but does not move:
-        // the camera would still turn while the character stood still. Idempotent.
-        Physics::Attach(game_world_clock)
-    }
 }
 
 //! Fresh game session: no scene, physics attached to the game clock. The UI boot (menu bundle,

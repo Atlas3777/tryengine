@@ -34,8 +34,10 @@ require imgui
 require daslib/decs
 require daslib/decs_boost
 
-var is_playing : bool = false
-var is_paused  : bool = false
+//! Play/pause flags are editor state a reload must not flip: the world and the game UI come
+//! back, so the editor has to keep rendering the same mode.
+var @live is_playing : bool = false
+var @live is_paused  : bool = false
 
 // Reimporting an asset changes the contents of materials/meshes but not their id. By this
 // point EditorApp has already dropped the loaded resources; here entity pointers are

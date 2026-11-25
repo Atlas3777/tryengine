@@ -20,6 +20,7 @@ require tryengine/Content
 require tryengine/EcsMacro
 require tryengine/EntitySet
 require tryengine/FileReader
+require tryengine/Live
 require tryengine/Model
 require tryengine/Serializable
 require tryengine/TransformSystem
@@ -51,8 +52,12 @@ struct LoadedSceneContext {
     scene_path : string
 }
 
-var scene_context : LoadedSceneContext
-var active_scene : Scene
+// The active scene is the resource set the world renders through: the open document and the
+// refcounted mesh/material ids. `@live` carries both across a reload without re-holding
+// anything — the old generation's holds were never released, so the counts stay correct and
+// the caller does not have to call ApplyState from a reload hook.
+var @live scene_context : LoadedSceneContext
+var @live active_scene : Scene
 
 // Scene lifecycle event. The editor subscribes to spawn its camera after every load;
 // the game has no listener and therefore no editor camera. `empty` marks the initial

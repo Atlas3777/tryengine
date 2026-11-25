@@ -13,6 +13,7 @@ module PlayMode shared public
 require daslib/archive
 require daslib/decs
 require tryengine/EcsMacro
+require tryengine/Live
 require tryengine/Loader
 require tryengine/Model
 require tryengine/Physics
@@ -26,33 +27,12 @@ require tryeditor/UndoRedo
 
 // The DECS heap is the scene: entities, components and the edited values. The scene
 // state holds what the heap does not: the open path and the resource references the
-// entities render through.
-var private g_saved_decs : array<uint8>
-var private g_saved_scene : SceneState
-var private g_saved_selected_eid : EntityId = INVALID_ENTITY_ID
-
-//! Play snapshot as seen by hot reload. While Play is running the DECS heap holds the game
-//! world and the editor snapshot lives only in these globals; both must cross the reload so
-//! that Stop still restores the pre-Play scene.
-struct public PlayReloadState {
-    decs : array<uint8>
-    scene : SceneState
-    selected_eid : EntityId
-}
-
-def public CaptureReloadState() : PlayReloadState {
-    var state : PlayReloadState
-    state.decs <- clone(g_saved_decs)
-    state.scene <- clone(g_saved_scene)
-    state.selected_eid = g_saved_selected_eid
-    return <- state
-}
-
-def public ApplyReloadState(var state : PlayReloadState) {
-    g_saved_decs <- clone(state.decs)
-    g_saved_scene <- clone(state.scene)
-    g_saved_selected_eid = state.selected_eid
-}
+// entities render through. While Play is running the heap holds the game world and this
+// snapshot holds the editor world; `@live` carries the snapshot across a reload so that
+// Stop still restores the pre-Play scene without any reload code here.
+var private @live g_saved_decs : array<uint8>
+var private @live g_saved_scene : SceneState
+var private @live g_saved_selected_eid : EntityId = INVALID_ENTITY_ID
 
 def public BeginPlay() {
     // The editor history describes the authored world; the play snapshot replaces the whole

@@ -35,7 +35,7 @@ src="$ROOT/tools/script_reload_probe.cpp"
 bin="$TMP_DIR/script-reload-probe"
 
 ensure_tmp
-if [[ ! -x "$bin" || "$src" -nt "$bin" ]]; then
+if [[ ! -x "$bin" || "$src" -nt "$bin" || "${libs[0]}" -nt "$bin" ]]; then
     log "==> building $(rel "$bin")"
     g++ -std=c++23 -O2 -w -DTRY_DEBUG_EASTL_ALLOCATOR=0 "${abi_defs[@]}" \
         -DDAS_ROOT_DIR="\"$DAS_ROOT\"" \
@@ -59,6 +59,21 @@ var @live title = "cold"
 
 var g_ok = false
 
+// The annotations are registered by tryLive, not by the editor, so a plain host like this
+// probe can use them too. Each hook writes a marker into the live store; ProbeCheck reads
+// both marks after the swap.
+[before_reload]
+def ProbeBeforeHook() {
+    var mark <- [uint8(5)]
+    live_save("probe_before_hook", mark)
+}
+
+[after_reload]
+def ProbeAfterHook() {
+    var mark <- [uint8(7)]
+    live_save("probe_after_hook", mark)
+}
+
 [export]
 def ProbeSetup() {
     TimeInit()
@@ -79,8 +94,12 @@ def ProbeSet() {
 def ProbeCheck() {
     let total = TimeTotal(root_clock)
     let reload = is_reload()
-    g_ok = counter == 12345 && title == "hot" && reload && total > 0.2d
-    print("[PROBE] counter={counter} title={title} is_reload={reload} total={total:0.3f}\n")
+    var before_mark : array<uint8>
+    var after_mark : array<uint8>
+    let before_ok = live_load("probe_before_hook", before_mark) && length(before_mark) == 1 && before_mark[0] == uint8(5)
+    let after_ok = live_load("probe_after_hook", after_mark) && length(after_mark) == 1 && after_mark[0] == uint8(7)
+    g_ok = counter == 12345 && title == "hot" && reload && total > 0.2d && before_ok && after_ok
+    print("[PROBE] counter={counter} title={title} is_reload={reload} total={total:0.3f} before_hook={before_ok} after_hook={after_ok}\n")
 }
 
 [export]

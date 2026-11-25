@@ -38,21 +38,77 @@ bool LiveIsReload() {
     return tryengine::core::IsLiveReload();
 }
 
+//! Контракт жизненного цикла перезагрузки, общий для любого хоста: имя функции становится
+//! префиксом, по которому ScriptSystem находит хуки. Аннотации живут здесь, а не в редакторе:
+//! хост подключает саму перезагрузку, но имена функций — часть движка.
+struct BeforeReloadAnnotation final : das::FunctionAnnotation {
+    BeforeReloadAnnotation() : das::FunctionAnnotation("before_reload") {}
+
+    bool apply(const das::FunctionPtr& func, das::ModuleGroup&, das::AnnotationArgumentList&, das::string&) override {
+        func->exports = true;
+        func->name = "__before_reload_" + func->name;
+        return true;
+    }
+
+    bool apply(das::ExprBlock*, das::ModuleGroup&, das::AnnotationArgumentList&, das::string& err) override {
+        err = "not supported for blocks";
+        return false;
+    }
+
+    bool finalize(const das::FunctionPtr&, das::ModuleGroup&, das::AnnotationArgumentList&,
+                  const das::AnnotationArgumentList&, das::string&) override {
+        return true;
+    }
+
+    bool finalize(das::ExprBlock*, das::ModuleGroup&, das::AnnotationArgumentList&, const das::AnnotationArgumentList&,
+                  das::string&) override {
+        return true;
+    }
+};
+
+struct AfterReloadAnnotation final : das::FunctionAnnotation {
+    AfterReloadAnnotation() : das::FunctionAnnotation("after_reload") {}
+
+    bool apply(const das::FunctionPtr& func, das::ModuleGroup&, das::AnnotationArgumentList&, das::string&) override {
+        func->exports = true;
+        func->name = "__after_reload_" + func->name;
+        return true;
+    }
+
+    bool apply(das::ExprBlock*, das::ModuleGroup&, das::AnnotationArgumentList&, das::string& err) override {
+        err = "not supported for blocks";
+        return false;
+    }
+
+    bool finalize(const das::FunctionPtr&, das::ModuleGroup&, das::AnnotationArgumentList&,
+                  const das::AnnotationArgumentList&, das::string&) override {
+        return true;
+    }
+
+    bool finalize(das::ExprBlock*, das::ModuleGroup&, das::AnnotationArgumentList&, const das::AnnotationArgumentList&,
+                  das::string&) override {
+        return true;
+    }
+};
+
 }  // namespace
 
-//! Хранилище `@live`-переменных (engine/core/LiveStore.hpp) для daslang. Хост ставит и
-//! читает его через ScriptSystem, скрипты — через `tryengine/Live`.
+//! Хранилище `@live`-переменных (engine/core/LiveStore.hpp) и аннотации перезагрузки для
+//! daslang. Хост ставит и читает хранилище через ScriptSystem, скрипты — через `tryengine/Live`.
 class Module_Live : public das::Module {
 public:
     Module_Live() : das::Module("tryLive") {
         das::ModuleLibrary lib(this);
         lib.addBuiltInModule();
 
-        das::addExtern<DAS_BIND_FUN(LiveStoreBytes)>(*this, lib, "live_store_bytes", das::SideEffects::modifyExternal,
-                                                     "LiveStoreBytes");
-        das::addExtern<DAS_BIND_FUN(LiveLoadBytes)>(*this, lib, "live_load_bytes",
+        addAnnotation(new BeforeReloadAnnotation());
+        addAnnotation(new AfterReloadAnnotation());
+
+        das::addExtern<DAS_BIND_FUN(LiveStoreBytes)>(*this, lib, "try_live_store_bytes",
+                                                     das::SideEffects::modifyExternal, "LiveStoreBytes");
+        das::addExtern<DAS_BIND_FUN(LiveLoadBytes)>(*this, lib, "try_live_load_bytes",
                                                     das::SideEffects::modifyArgumentAndExternal, "LiveLoadBytes");
-        das::addExtern<DAS_BIND_FUN(LiveIsReload)>(*this, lib, "live_is_reload", das::SideEffects::accessGlobal,
+        das::addExtern<DAS_BIND_FUN(LiveIsReload)>(*this, lib, "try_live_is_reload", das::SideEffects::accessGlobal,
                                                    "LiveIsReload");
 
         verifyAotReady();

@@ -9,6 +9,7 @@ require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
+require tryengine/Live
 require tryengine/Profiling
 require tryengine/TransformSystem
 require tryengine/Types
@@ -18,7 +19,9 @@ require tryeditor/UndoRedo
 
 var ENTITY_NODE : TreeNodeState
 
-var selected_eid : EntityId = INVALID_ENTITY_ID
+//! The selection is editor state, not world state: `@live` keeps it on the restored heap
+//! (the id is stable there because the heap is the same snapshot).
+var @live selected_eid : EntityId = INVALID_ENTITY_ID
 
 // Selection reveal: when selected_eid changes (viewport pick, prefab spawn, inspector),
 // open the selection's ancestors and its own children once, then scroll it into view.

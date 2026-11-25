@@ -8,7 +8,7 @@ module Live shared public
 //! `@live` globals and struct fields that survive a script generation swap.
 //!
 //! The pass is modelled on `live/live_vars` from dasLiveHost, but the store belongs to this
-//! engine: `live_store_bytes` / `live_load_bytes` are native `tryLive` functions backed by
+//! engine: the `try_live_*` functions are native `tryLive` bindings backed by
 //! `engine/core/LiveStore.hpp`. The host calls the generated hooks around the context swap:
 //! `[before_reload]` in the old generation writes the values, and `[after_reload]` in the new
 //! one reads them back.
@@ -36,7 +36,20 @@ require tryLive public
 
 //! True when the running generation came from a hot reload, not from the process start.
 def is_reload() : bool {
-    return live_is_reload()
+    return tryLive::try_live_is_reload()
+}
+
+//! Advanced use only: `@live` covers globals and fields, and these two functions are for
+//! state a module serializes itself. The names are distinct from dasLiveHost's
+//! `live_store_bytes`/`live_load_bytes` on purpose: the editor program contains both live
+//! systems (imgui widgets use the upstream one), and an unqualified call must not be
+//! ambiguous. `LivePass` calls the native `tryLive::try_live_*` functions directly.
+def live_save(key : string; data : array<uint8>) {
+    tryLive::try_live_store_bytes(key, data)
+}
+
+def live_load(key : string; var data : array<uint8>) : bool {
+    return tryLive::try_live_load_bytes(key, data)
 }
 
 //! `@live` on a constant is a mistake, and it would also crash the save hook trying to write
@@ -160,7 +173,7 @@ class LivePass : AstPassMacro {
                 arch |> _::serialize(init_hash)
                 arch |> _::serialize($i(t.name))
                 let data <- ser->extractData()
-                live_store_bytes($v(t.key), data)
+                tryLive::try_live_store_bytes($v(t.key), data)
                 unsafe { delete ser; }
             }
         }
@@ -172,7 +185,7 @@ class LivePass : AstPassMacro {
                 arch |> _::serialize(init_hash)
                 arch |> _::serialize($i(t.var_name).$f(t.field_name))
                 let data <- ser->extractData()
-                live_store_bytes($v(t.key), data)
+                tryLive::try_live_store_bytes($v(t.key), data)
                 unsafe { delete ser; }
             }
         }
@@ -188,7 +201,7 @@ class LivePass : AstPassMacro {
         for (t in var_targets) {
             load_blocks |> push <| qmacro_block() {
                 var data : array<uint8>
-                if (live_load_bytes($v(t.key), data) && length(data) > 0) {
+                if (tryLive::try_live_load_bytes($v(t.key), data) && length(data) > 0) {
                     var ser = new MemSerializer(data)
                     var arch = Archive(reading = true, stream = ser)
                     var stored_hash : int64
@@ -203,7 +216,7 @@ class LivePass : AstPassMacro {
         for (t in field_targets) {
             load_blocks |> push <| qmacro_block() {
                 var data : array<uint8>
-                if (live_load_bytes($v(t.key), data) && length(data) > 0) {
+                if (tryLive::try_live_load_bytes($v(t.key), data) && length(data) > 0) {
                     var ser = new MemSerializer(data)
                     var arch = Archive(reading = true, stream = ser)
                     var stored_hash : int64

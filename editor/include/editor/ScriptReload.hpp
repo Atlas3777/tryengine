@@ -2,7 +2,6 @@
 
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
-#include <EASTL/vector.h>
 #include <daScript/daScript.h>
 
 #include "engine/core/ScriptSystem.hpp"
@@ -11,9 +10,10 @@ namespace tryeditor {
 
 //! Горячая перезагрузка скриптов редактора.
 //!
-//! Движок даёт только точку расширения (IScriptReloadExtension) и механику подмены
-//! контекста; запрос из UI, снимок состояния и повтор точек входа хоста живут здесь.
-//! Результат перезагрузки пишется в лог; отдельной строки статуса у редактора нет.
+//! Движок даёт точку расширения (IScriptReloadExtension) и механику подмены контекста;
+//! запрос из UI и повтор точек входа хоста живут здесь. Само состояние перезагрузки —
+//! не редакторское: `@live`-переменные и мир возвращает движок (`tryengine/Live`,
+//! `tryengine/LiveEcs`), а редактор восстанавливает только игровой UI (см. HotReload.das).
 //! Игра расширение не подключает и о перезагрузке не знает.
 class ScriptReload final : public tryengine::core::IScriptReloadExtension {
 public:
@@ -38,20 +38,14 @@ public:
         return status_;
     }
 
-    //! Снимок между контекстами: пишет старый контекст, читает новый. Ключей нет — состояние
-    //! одно и принадлежит редактору.
-    void StoreBytes(const das::TArray<uint8_t>& data);
-    bool LoadBytes(das::TArray<uint8_t>& data, das::Context* ctx);
-
 private:
     tryengine::core::ScriptSystem& script_system_;
-    eastl::vector<uint8_t> state_;
     eastl::string status_;
     bool reload_requested_ = false;
 };
 
-//! Регистрирует в модуле TryEditor аннотации before_reload/after_reload и биндинги
-//! ScriptReload*. Держит hot reload одним юнитом, а не набором глобальных функций в
+//! Регистрирует в модуле TryEditor биндинги RequestScriptReload/ScriptReloadStatus. Держит
+//! запрос перезагрузки из UI одним юнитом, а не набором глобальных функций в
 //! Module_TryEditor.cpp.
 void RegisterScriptReloadBindings(das::Module& module, das::ModuleLibrary& library);
 

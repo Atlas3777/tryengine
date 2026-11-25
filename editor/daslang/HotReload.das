@@ -3,44 +3,42 @@ options relaxed_assign = false
 
 module HotReload shared public
 
-//! Script hot reload: snapshot before the old context dies, restore after the new one starts.
+//! Editor hot reload: the one piece of state a serializer cannot carry.
 //!
 //! The editor asks for a reload through RequestScriptReload() (button / F5). The actual
 //! recompilation runs in the C++ frame loop after EditorUpdate returns, because a context
-//! cannot be replaced while one of its functions is still on the stack. ScriptSystem calls
-//! the annotated hooks in order: [before_reload] in the old context, then the host entry
-//! points on the new context, then [after_reload] there.
+//! cannot be replaced while one of its functions is still on the stack.
 //!
-//! The snapshot stores the world (DECS heap), the open scene plus its resource references,
-//! the editor selection, play mode with its saved editor snapshot, and the game state. UI
-//! widget state is intentionally not stored: imgui keeps its own docking/layout state and
-//! the panel globals start from their defaults.
+//! Everything that can be serialized is restored by the engine without code here:
+//! * module globals marked `@live` (the clocks and their tags, the active scene, the Play
+//!   snapshot, editor flags, player look, HUD state, physics attachment) carry themselves;
+//! * `tryengine/LiveEcs` puts the DECS world and the model pointers back.
+//!
+//! What is left is the game's screen stack: a `ScreenRef` is a function pointer plus an
+//! `AssetMap` handle, and neither survives a new script generation. This module captures the
+//! two flags needed to decide which screen belongs on top before the swap and rebuilds the
+//! stack after it. Both sides go through the same `tryLive` store as `@live`.
 
 require TryEditor
 require tryeditor/Editor
 require tryeditor/EditorHotkeys
-require tryeditor/Hierarchy
-require tryeditor/PlayMode
 require trygame/Game
-require tryengine/EcsMacro
+require trygame/GameTime
+require trygame/GameUi
+require trygame/UiTheme
 require tryengine/Input
-require tryengine/Model
-require tryengine/Scene
-require tryengine/Time
+require tryengine/Live
+require tryengine/Physics
+require tryengine/Ui
 require daslib/archive
-require daslib/decs
-require daslib/decs_boost
 
-struct HotReloadState {
-    decs : array<uint8>
-    scene : SceneState
-    selected_eid : EntityId
+//! The part of the session the coordinator has to read while the old context is still alive.
+struct private ReloadUiState {
     is_playing : bool
-    is_paused : bool
-    play : PlayReloadState
-    // The game's one flag: a scene is applied and gameplay runs.
     game_ready : bool
 }
+
+let private kReloadUiKey : string = "__tryeditor_reload_ui"
 
 //! Asks the C++ frame loop to recompile the scripts. Safe to call from a widget or a hotkey:
 //! it only raises a flag, the context is swapped after the current EditorUpdate returns.
@@ -56,60 +54,47 @@ def RegisterReloadHotkey() {
 }
 
 [before_reload]
-def SaveHotReloadState() {
-    var state : HotReloadState
-    state.decs <- mem_archive_save(decsState)
-    state.scene <- Scene::CaptureState()
-    state.selected_eid = selected_eid
+def private SaveReloadUiState() {
+    var state : ReloadUiState
     state.is_playing = is_playing
-    state.is_paused = is_paused
-    state.play <- PlayMode::CaptureReloadState()
-    state.game_ready = Game::CaptureReloadState()
-
+    state.game_ready = Game::IsReady()
     let data <- mem_archive_save(state)
-    ScriptReloadStoreBytes(data)
+    live_save(kReloadUiKey, data)
 }
 
 [after_reload]
-def RestoreHotReloadState() {
+def private RestoreReloadUiState() {
     var data : array<uint8>
-    if (!ScriptReloadLoadBytes(data)) {
-        print("[RELOAD] no saved script state; starting from the default scene\n")
+    if (!live_load(kReloadUiKey, data) || length(data) == 0) {
+        print("[RELOAD] no saved session; the game UI starts from the menu\n")
         return
     }
 
-    var state : HotReloadState
+    var state : ReloadUiState
     if (!mem_archive_load(data, state, canfail = true)) {
-        print("[RELOAD] saved script state cannot be read; starting from the default scene\n")
+        print("[RELOAD] saved session cannot be read; the game UI starts from the menu\n")
         return
     }
 
-    // Flags first: PlayMode/Game restore below branches on them.
-    is_playing = state.is_playing
-    is_paused = state.is_paused
-
-    // ApplyState re-requests the scene resources through the new context; the DECS heap is
-    // restored separately, exactly like EndPlay does.
-    Scene::ApplyState(state.scene)
-    decs::restart()
-    if (!mem_archive_load(state.decs, decsState, canfail = true)) {
-        print("[RELOAD] DECS heap could not be restored\n")
+    if (!state.is_playing) {
+        // Edit mode declares no game UI; the next Play calls GameStart and starts from the menu.
         return
     }
-    EcsApplyRegistry()
-    // Same reason as PlayMode::EndPlay: the archive does not carry the mesh/material raw
-    // pointers, so they are resolved again from the authored `model`.
-    Model::ReapplyPointers()
-
-    selected_eid = state.selected_eid
-    PlayMode::ApplyReloadState(state.play)
-    Game::ApplyReloadState(state.game_ready)
-
-    if (is_playing && !state.game_ready) {
-        // Play was requested but the loader had not finished: there is no world to resume,
-        // so start the game flow again on the new context.
+    if (!state.game_ready) {
+        // Play was requested but the loader had not finished: there is no world to resume, so
+        // start the game flow again on the new context.
         GameStart()
-    } elif (is_playing) {
-        TimeSetPaused(game_clock, is_paused)
+        return
     }
+
+    // The engine restored the clocks and the physics attachment through `@live`; these calls
+    // are idempotent fallbacks for a store written by a build that predates them.
+    GameTime::EnsureGameTime()
+    Physics::Attach(game_world_clock)
+    // The theme is game policy, not engine state: re-install it before the screens resolve
+    // their font and material keys.
+    Ui::SetTheme(UiTheme::kTheme)
+    // The screen stack and its asset maps are gone; rebuild them through the loader. The
+    // world, the scene and the HUD values are already back.
+    GameUi::Restore(true)
 }

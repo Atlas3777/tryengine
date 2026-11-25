@@ -9,6 +9,7 @@ module Engine shared public
 require tryengine/AsyncTaskManager
 require tryengine/EcsMacro
 require tryengine/Input
+require tryengine/LiveEcs
 require tryengine/Profiling
 require daslib/just_in_time
 require tryengine/Physics

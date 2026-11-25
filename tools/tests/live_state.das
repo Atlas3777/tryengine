@@ -33,15 +33,15 @@ def main() : int {
     data |> push(uint8(1))
     data |> push(uint8(2))
     data |> push(uint8(3))
-    live_store_bytes("live_state_test", data)
+    live_save("live_state_test", data)
 
     var loaded : array<uint8>
-    Check(live_load_bytes("live_state_test", loaded), "a stored key is found")
+    Check(live_load("live_state_test", loaded), "a stored key is found")
     Check(length(loaded) == 3, "stored bytes keep their length")
     Check(length(loaded) == 3 && loaded[0] == uint8(1) && loaded[2] == uint8(3), "stored bytes round-trip")
 
     var missing : array<uint8>
-    Check(!live_load_bytes("live_state_test_missing", missing), "an unknown key is not found")
+    Check(!live_load("live_state_test_missing", missing), "an unknown key is not found")
 
     Check(!is_reload(), "a cold load does not report a reload")
 
