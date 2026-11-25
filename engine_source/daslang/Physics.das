@@ -17,6 +17,7 @@ require daslib/decs
 require daslib/decs_boost
 require tryengine/ConfigFormatBoost
 require tryengine/EcsMacro
+require tryengine/Live
 require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/Time
@@ -228,8 +229,11 @@ struct ConstantForce {
 //! simulation, and a slowed game clock slows the physics without touching the engine.
 struct PhysicsClock : ClockTag {}
 
-var private g_physics_clock = PhysicsClock()
-var private g_physics_attached : bool
+//! The clock and the attachment flag are `@live`: the Jolt world itself lives in C++ and
+//! survives a hot reload, and a live session must not stop stepping just because the script
+//! generation that attached it is gone.
+var private @live g_physics_clock = PhysicsClock()
+var private @live g_physics_attached : bool
 
 let private SIGNATURE_OFFSET : uint64 = 14695981039346656037ul
 let private SIGNATURE_PRIME : uint64 = 1099511628211ul

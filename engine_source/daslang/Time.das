@@ -18,6 +18,13 @@ module Time shared public
 //! Ownership: the engine registers the root clock (TimeInit, called from EngineStart) and
 //! nothing else. The game and the editor attach their own subtrees from their own Start
 //! functions, so neither has to know about the other.
+//!
+//! The clock array and the root tag are `@live`: a hot reload replaces the whole generation
+//! but a live session must not jump back to zero time. Every clock tag in the engine, the
+//! editor and the game is `@live` for the same reason: a restored tag addresses its slot in
+//! the restored array.
+
+require tryengine/Live
 
 let k_no_slot = -1
 
@@ -37,14 +44,12 @@ struct ClockTag {
 
 struct RootClock : ClockTag {}
 
-var clocks : array<Clock>
-
+var @live clocks : array<Clock>
+var @live root_clock = RootClock()
 
 //! Upper bound for a single frame. A stall (shader compile, asset import, a breakpoint)
 //! must not become one giant integration step for everything downstream.
 let max_frame_dt = 0.25f
-
-var root_clock = RootClock()
 
 var last_tick_ns : int64 = -1
 

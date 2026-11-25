@@ -3,15 +3,18 @@ options relaxed_assign = false
 
 module GameTime shared public
 
+require tryengine/Live
 require tryengine/Time public
 
 struct GameClock : ClockTag {}
 struct GameWorldClock : ClockTag {}
 struct GameUIClock : ClockTag {}
 
-var game_clock       = GameClock()
-var game_world_clock = GameWorldClock()
-var game_ui_clock    = GameUIClock()
+//! The tags are `@live`: they address slots in the restored clock array, and the game clocks
+//! must keep their pause/scale/total state across a reload of a running scene.
+var @live game_clock       = GameClock()
+var @live game_world_clock = GameWorldClock()
+var @live game_ui_clock    = GameUIClock()
 
 
 def RegisterGameTime() {

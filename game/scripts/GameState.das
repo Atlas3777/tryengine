@@ -13,6 +13,7 @@ module GameState shared public
 //! that request in its own frame.
 
 require math
+require tryengine/Live
 require trygame/GameTime
 
 struct public GameUiState {
@@ -24,7 +25,10 @@ struct public GameUiState {
     damage_taken : int = 0
 }
 
-var public g_state = GameUiState()
+//! HUD values (hp, gold, clicks) are gameplay state, not a scene value: they live through a
+//! hot reload of a running scene with `@live`, while the DECS world is restored by the
+//! editor's reload snapshot.
+var public @live g_state = GameUiState()
 
 // The scene a screen asked for, "" when there is none. This is the whole hand-off: no title,
 // no flags — the screen already has its label, and what to load is a path.

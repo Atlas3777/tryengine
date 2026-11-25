@@ -30,6 +30,7 @@ require daslib/math_boost
 require tryengine/AssetMap
 require tryengine/Time
 require tryengine/Input
+require tryengine/Live
 require tryengine/Profiling
 require tryengine/UiTypes public
 require tryResources
@@ -91,10 +92,11 @@ struct private SoundEvent {
 }
 
 // The UI owns its clock and hangs it off the engine root: pausing game_world_clock must not
-// freeze menus or hover animations.
+// freeze menus or hover animations. The clock tag is `@live`, so hover and animation time
+// keep running across a reload instead of snapping back to zero.
 struct private UiClock : ClockTag {}
 
-var private g_clock = UiClock()
+var private @live g_clock = UiClock()
 
 // Tree.
 var private g_nodes : table<uint64; UiNode>

@@ -22,6 +22,7 @@ require tryengine/TransformSystem
 require tryengine/Ui
 require tryengine/Types
 require tryengine/Input
+require tryengine/Live
 require tryengine/AsyncTaskManager
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/UndoRedo
@@ -51,10 +52,11 @@ struct private EditorCameraTag {
 %ecs~("editorCameraTag", type<EditorCameraTag>, hidden = true, transient = true) %%
 
 // The editor owns its clock and hangs it off the engine root: editor tools (camera, gizmos)
-// keep running while the game is paused, and play mode never slows them down.
+// keep running while the game is paused, and play mode never slows them down. The tag is
+// `@live` so a reload does not reset the camera movement delta to zero.
 struct EditorClock : ClockTag {}
 
-var editor_clock = EditorClock()
+var @live editor_clock = EditorClock()
 
 def private OnSceneLoaded(name : string; path : string; empty : bool) {
     print("Загрузка\n")

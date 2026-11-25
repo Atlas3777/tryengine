@@ -20,6 +20,7 @@ require daslib/decs_boost
 require tryengine/ConfigFormatBoost
 require tryengine/EcsMacro
 require tryengine/Input
+require tryengine/Live
 require tryengine/Physics
 require tryengine/Serializable
 require tryengine/TransformSystem
@@ -47,10 +48,13 @@ let private FORWARD = float3(0.0f, 1.0f, 0.0f)
 let private RIGHT = float3(1.0f, 0.0f, 0.0f)
 let private MAX_PITCH = radians(89.0f)
 
-var private g_look_handle : uint64 = 0ul
-var private g_yaw : float
-var private g_pitch : float
-var private g_mouse_captured : bool
+//! Look state is `@live`: the mouse is still captured by the window across a hot reload, and
+//! restoring the angles instead of taking the yaw from the entity again keeps the camera
+//! from snapping. The character handle survives too, because the Jolt character is C++ state.
+var private @live g_look_handle : uint64 = 0ul
+var private @live g_yaw : float
+var private @live g_pitch : float
+var private @live g_mouse_captured : bool
 
 //! Releases the mouse. Menus, pause and Play stop call it; the game decides the policy, the
 //! platform only hides the cursor. Unconditional: it also repairs a state left over from a

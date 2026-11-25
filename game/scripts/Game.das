@@ -43,6 +43,11 @@ def public ApplyReloadState(scene_ready : bool) {
     GameUi::Restore(scene_ready)
     if (scene_ready) {
         RegisterGameTime()
+        // Physics is script-side state over a C++ Jolt world that survived the reload. The
+        // `@live` clock and attachment flag normally come back with the generation, but a
+        // reload that lost them must not leave a scene that looks alive but does not move:
+        // the camera would still turn while the character stood still. Idempotent.
+        Physics::Attach(game_world_clock)
     }
 }
 
