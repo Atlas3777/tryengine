@@ -70,6 +70,10 @@ ScriptSystem::~ScriptSystem() {
         auto state = async_;
         std::unique_lock lock(state->mutex);
         state->cv.wait(lock, [&state] { return state->done; });
+        // Host exited before PollAsync consumed the result: the error still has to be marked
+        // checked, otherwise its destructor asserts in Debug builds.
+        if (state->result.has_value() && !state->result->has_value())
+            state->result->error().Discard();
         async_.reset();
     }
 
