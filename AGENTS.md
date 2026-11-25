@@ -223,6 +223,11 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   перезагрузка оставляет старое поколение рабочим, но `ScriptsHealthy()` запрещает Play до
   успешного F5. Длительности компиляции/симуляции и готовность приложения пишутся в лог
   категории `Script`.
+- `daScriptEnvironment` — thread-local. Пул-воркер обязан привязать окружение, созданное
+  на главном потоке (`getBound`/`exchangeBound`), и завести `ReuseCacheGuard` на время
+  компиляции; без этого `compileDaScript` падает в `AstSerializer` ещё до разбора первого
+  модуля. Новое окружение на воркере не создавай: модули проекта и генерация должны
+  остаться в том же реестре, что и у главного потока.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.

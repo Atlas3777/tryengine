@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstring>
 #include <daScript/ast/dyn_modules.h>
+#include <daScript/misc/free_list.h>
 
 #include "engine/core/Profiler.hpp"
 
@@ -21,6 +22,24 @@ uint64_t NextScriptRevision() {
 double ElapsedMs(const std::chrono::steady_clock::time_point from, const std::chrono::steady_clock::time_point to) {
     return std::chrono::duration<double, std::milli>(to - from).count();
 }
+
+//! daScript's environment is thread-local. Compiling on a pool worker must bind the
+//! environment created on the main thread (its module registry is the one the generation is
+//! built against), and the worker's reuse caches live only for the duration of the job.
+struct DasWorkerScope {
+    das::ReuseCacheGuard reuse_cache;
+    das::daScriptEnvironment* previous;
+
+    explicit DasWorkerScope(das::daScriptEnvironment* environment)
+        : previous(das::daScriptEnvironment::exchangeBound(environment)) {}
+
+    ~DasWorkerScope() {
+        das::daScriptEnvironment::setBound(previous);
+    }
+
+    DasWorkerScope(const DasWorkerScope&) = delete;
+    DasWorkerScope& operator=(const DasWorkerScope&) = delete;
+};
 
 }  // namespace
 
@@ -193,20 +212,36 @@ void ScriptSystem::StartCompile(bool hot_reload) {
     // динамические модули; у игры его фабрика одноразовая — пак отдаётся по move).
     // Перезагрузке нужен свежий доступ, иначе кеш текста вернул бы старую версию.
     auto file_access = das_ctx_ ? config_.create_file_access() : file_access_;
-    eastl::function<void()> work = [this, state, use_module_cache, file_access]() {
-        auto result = CompileMainScript(state->path, use_module_cache, file_access, state->timing);
-        state->timing.wall_ms = ElapsedMs(state->requested_at, std::chrono::steady_clock::now());
-        {
-            std::lock_guard lock(state->mutex);
-            state->result.emplace(eastl::move(result));
-            state->done = true;
+    // daScriptEnvironment is TLS: the worker cannot see the module registry the main thread
+    // initialized. Capture it here and bind it inside the job; without this the compiler
+    // crashes in AstSerializer before the first module is parsed.
+    auto* environment = das::daScriptEnvironment::getBound();
+    const bool background = config_.post_background && environment != nullptr;
+    if (config_.post_background && environment == nullptr)
+        LogError(LogCategory::Script, "daScriptEnvironment не привязан к главному потоку; компиляция пойдёт на нём");
+
+    eastl::function<void()> work = [this, state, use_module_cache, file_access, environment, background]() {
+        auto compile = [&]() {
+            auto result = CompileMainScript(state->path, use_module_cache, file_access, state->timing);
+            state->timing.wall_ms = ElapsedMs(state->requested_at, std::chrono::steady_clock::now());
+            {
+                std::lock_guard lock(state->mutex);
+                state->result.emplace(eastl::move(result));
+                state->done = true;
+            }
+            state->cv.notify_all();
+        };
+
+        if (background) {
+            DasWorkerScope scope(environment);
+            compile();
+        } else {
+            compile();
         }
-        state->cv.notify_all();
     };
 
-    LogInfo(LogCategory::Script, "Скрипт {}: {}", state->path.c_str(),
-            config_.post_background ? "компиляция в фоне" : "компиляция");
-    if (config_.post_background) {
+    LogInfo(LogCategory::Script, "Скрипт {}: {}", state->path.c_str(), background ? "компиляция в фоне" : "компиляция");
+    if (background) {
         config_.post_background(eastl::move(work));
     } else {
         work();
