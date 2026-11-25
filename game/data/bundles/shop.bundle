@@ -1,0 +1,3 @@
+version: u32 = 3
+name: string = "shop"
+parent: string = "data/bundles/ui.bundle"

@@ -6,12 +6,15 @@ module Game shared public
 
 require tryengine/Input
 require tryengine/Profiling
+require tryengine/Ui
 require trygame/GameFlow
 require trygame/GameScreens
 require trygame/GameTime public
 require trygame/GameUi
 require trygame/GameState
 require trygame/Player
+require trygame/ScreenHud
+require trygame/UiTheme
 
 //! Game state that must survive an editor hot reload. The editor saves it through
 //! Editor HotReload; the standalone game never calls these.
@@ -24,10 +27,13 @@ def public CaptureReloadState() : GameReloadState {
 }
 
 def public ApplyReloadState(var state : GameReloadState) {
+    // The script context is new: the theme is gone with it and the font keys would resolve to
+    // nothing. Install it again before the screens are rebuilt.
+    Ui::SetTheme(UiTheme::kTheme)
     GameFlow::SetReady(state.scene_ready)
-    // The script context is new after a reload: the screen stack is empty and the clocks are
-    // gone. Restore both from the scene flag.
-    GameScreens::Show(state.scene_ready ? "hud" : "main_menu")
+    // The script context is new after a reload: the screen stack and its asset maps are gone,
+    // the clocks are gone. Rebuild the stack through the loader (the world itself is preserved).
+    GameUi::Restore(state.scene_ready)
     if (state.scene_ready) {
         RegisterGameTime()
     }
@@ -39,7 +45,11 @@ def public ApplyReloadState(var state : GameReloadState) {
 def GameStart(){
     print("Game Start\n")
     RegisterGameTime()
+    // The theme is a plain value with font/material keys; it is installed explicitly, not from
+    // an `[init]` side effect. Keys resolve against each screen's asset map.
+    Ui::SetTheme(UiTheme::kTheme)
     GameFlow::Start()
+    GameUi::Start()
 }
 
 //! The UI is declared every frame on its own clock, separately from gameplay. The editor calls
@@ -60,7 +70,7 @@ def GameUpdate() {
     if (pressed(Key.Escape)) {
         GameState::TogglePause()
     }
-    if (GameTime::IsGamePaused() || GameScreens::Top() != "hud") {
+    if (GameTime::IsGamePaused() || GameScreens::Top().build != @@ScreenHud::Draw) {
         Player::ReleaseMouse()
         return
     }

@@ -49,6 +49,8 @@ struct public AssetKindOps {
     advance : function<(path : string) : AssetState>
     deps    : function<(path : string) : Content::Dependencies>
     expands : function<(path : string) : array<string>>
+    //! Documents that must be loaded as well before the kind is usable (a bundle's parent).
+    parents : function<(path : string) : array<string>>
     cancel  : function<(path : string) : void>
     clear   : function<() : void>
 }
@@ -75,6 +77,12 @@ def public FindKind(kind : string; var out : AssetKindOps) : bool {
 
 //! Plan kinds that do not expand into other assets use this for `expands`.
 def public NoExpansion(path : string) : array<string> {
+    var none : array<string>
+    return <- none
+}
+
+//! Kinds without dependent documents use this for `parents`.
+def public NoParents(path : string) : array<string> {
     var none : array<string>
     return <- none
 }

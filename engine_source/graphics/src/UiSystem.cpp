@@ -26,128 +26,41 @@ UiSystem* UiSystem::ForScripts() {
     return instance_;
 }
 
-void UiSystem::SetAssets(uint64_t font_guid, uint64_t material_guid) {
-    if (font_guid != config_.font_guid) {
-        config_.font_guid = font_guid;
-        font_ = nullptr;
-        font_failed_logged_ = false;
-        font_not_requested_logged_ = false;
-        atlas_bound_ = false;
-        assets_missing_logged_ = false;
-    }
-    if (material_guid != config_.material_guid) {
-        config_.material_guid = material_guid;
-        material_ = nullptr;
-        material_failed_logged_ = false;
-        material_not_requested_logged_ = false;
-        atlas_bound_ = false;
-        assets_missing_logged_ = false;
-    }
-}
-
 void UiSystem::Tick() {
-    if (config_.font_guid == 0 || config_.material_guid == 0) {
-        // Startup normally runs a few frames before the game's boot request calls
-        // UiSetAssets; only a lasting absence is a mistake worth a warning.
-        const auto now = std::chrono::steady_clock::now();
-        if (assets_missing_since_ == std::chrono::steady_clock::time_point{})
-            assets_missing_since_ = now;
-        if (!assets_missing_logged_ && now - assets_missing_since_ > std::chrono::seconds(10)) {
-            assets_missing_logged_ = true;
-            LogWarn(LogCategory::Graphics,
-                    "UiSystem: UI assets are not set; call UiSetAssets(font_guid, material_guid) after the ui.bundle "
-                    "request is ready (the game UI stays off until then)");
-        }
-        return;
-    }
-    assets_missing_since_ = {};
-
-    PollFont();
     PollMaterial();
-
-    // Re-import or material live-reload replaces the stored resource; the pointers we hold are
-    // only valid while the cache keeps the same object, so re-read them and rebind the atlas.
-    if (font_ != nullptr) {
-        Font* current = resource_manager_.GetPointerExplicit<Font>(config_.font_guid);
-        if (current != font_ && current != nullptr) {
-            font_ = current;
-            atlas_bound_ = false;
-        }
-    }
-    if (material_ != nullptr && config_.material_guid != 0) {
-        Material* current = resource_manager_.GetPointerExplicit<Material>(config_.material_guid);
-        if (current != material_ && current != nullptr) {
-            material_ = current;
-            atlas_bound_ = false;
-        }
-    }
-
-    BindAtlas();
-}
-
-void UiSystem::PollFont() {
-    if (font_ != nullptr)
-        return;
-
-    if (resource_manager_.IsReady<Font>(config_.font_guid)) {
-        font_ = resource_manager_.GetPointerExplicit<Font>(config_.font_guid);
-        if (font_ != nullptr)
-            LogInfo(LogCategory::Graphics, "UI font {} ready: {} baked glyphs", config_.font_guid,
-                    font_->glyphs.size());
-        return;
-    }
-    if (resource_manager_.IsFailed<Font>(config_.font_guid) && !font_failed_logged_) {
-        font_failed_logged_ = true;
-        LogError("UI font {} failed to load: check the .ttf import", config_.font_guid);
-        return;
-    }
-    // Nobody asked the loader for this asset: the UI will stay blank, and the cause is a
-    // missing ui.bundle entry rather than a slow read.
-    if (!resource_manager_.IsLoading<Font>(config_.font_guid) && !font_not_requested_logged_) {
-        font_not_requested_logged_ = true;
-        LogError("UI font {} was not preloaded; add it to the ui.bundle and load that bundle before the UI frame",
-                 config_.font_guid);
-    }
 }
 
 void UiSystem::PollMaterial() {
-    if (material_ != nullptr)
-        return;
+    if (material_id_ == 0) {
+        const auto& registry = resource_manager_.GetAssetRegistry();
+        const auto resolved = registry.ResolveRef(config_.material_path);
+        if (!resolved.has_value() || *resolved == 0)
+            return;  // registry may still be scanning at startup; retried next frame
+        material_id_ = *resolved;
+    }
 
-    if (resource_manager_.IsReady<Material>(config_.material_guid)) {
-        material_ = resource_manager_.GetPointerExplicit<Material>(config_.material_guid);
+    if (material_ != nullptr) {
+        // Re-import or live material reload replaces the stored resource; the pointer we hold
+        // is only valid while the cache keeps the same object. An aborted request can drop it:
+        // go back to "not ready" instead of drawing through a stale pointer.
+        Material* current = resource_manager_.GetPointerExplicit<Material>(material_id_);
+        if (current == nullptr) {
+            material_ = nullptr;
+            return;
+        }
+        if (current != material_)
+            material_ = current;
         return;
     }
-    if (resource_manager_.IsFailed<Material>(config_.material_guid) && !material_failed_logged_) {
+
+    if (resource_manager_.IsReady<Material>(material_id_)) {
+        material_ = resource_manager_.GetPointerExplicit<Material>(material_id_);
+        return;
+    }
+    if (resource_manager_.IsFailed<Material>(material_id_) && !material_failed_logged_) {
         material_failed_logged_ = true;
-        LogError("UI material {} failed to load", config_.material_guid);
-        return;
+        LogError("UI material '{}' failed to load", config_.material_path.c_str());
     }
-    if (!resource_manager_.IsLoading<Material>(config_.material_guid) && !material_not_requested_logged_) {
-        material_not_requested_logged_ = true;
-        LogError("UI material {} was not preloaded; add it to the ui.bundle and load that bundle before the UI frame",
-                 config_.material_guid);
-    }
-}
-
-void UiSystem::BindAtlas() {
-    if (atlas_bound_ || font_ == nullptr || material_ == nullptr)
-        return;
-
-    const auto* binding = material_->shader->reflection.FindBinding("albedo_map");
-    if (binding == nullptr) {
-        LogError("UI material must sample the font atlas through a sampler named 'albedo_map'");
-        atlas_bound_ = true;  // do not repeat the error every frame
-        return;
-    }
-
-    atlas_binding_ = binding->binding;
-    if (font_->atlas.view != VK_NULL_HANDLE && font_->atlas.sampler != VK_NULL_HANDLE) {
-        material_->SetRawTexture(atlas_binding_, font_->atlas.view, font_->atlas.sampler);
-        ++atlas_version_;
-        LogInfo(LogCategory::Graphics, "UI font atlas bound to material set 1, binding {}", atlas_binding_);
-    }
-    atlas_bound_ = true;
 }
 
 Material* UiSystem::TextureMaterial(uint64_t texture_guid) {
@@ -206,6 +119,70 @@ Material* UiSystem::TextureMaterial(uint64_t texture_guid) {
     return raw;
 }
 
+Material* UiSystem::FontMaterial(uint64_t font_id) {
+    if (font_id == 0 || material_ == nullptr || !material_->shader)
+        return nullptr;
+
+    Font* font = resource_manager_.GetPointerExplicit<Font>(font_id);
+    if (font == nullptr) {
+        if (resource_manager_.IsLoading<Font>(font_id))
+            return nullptr;
+        if (font_missing_logged_.find(font_id) == font_missing_logged_.end()) {
+            font_missing_logged_[font_id] = 1;
+            LogError("UI font {} was not preloaded; add it to the screen bundle (or its parent) and load that bundle",
+                     font_id);
+        }
+        return nullptr;
+    }
+
+    auto cached = font_materials_.find(font_id);
+    if (cached != font_materials_.end()) {
+        if (cached->second.font == font && cached->second.view == font->atlas.view)
+            return cached->second.material.get();
+
+        retired_font_materials_.push_back(eastl::move(cached->second.material));
+        font_materials_.erase(cached);
+    }
+
+    const auto* binding = material_->shader->reflection.FindBinding("albedo_map");
+    if (binding == nullptr) {
+        if (!texture_binding_error_logged_) {
+            texture_binding_error_logged_ = true;
+            LogError("UI material must sample the font atlas through a sampler named 'albedo_map'");
+        }
+        return nullptr;
+    }
+
+    auto created = eastl::make_unique<Material>(material_->shader);
+    created->SetDefaultTexture(device_.GetDefaultWhiteTexture().view, device_.GetDefaultWhiteTexture().sampler);
+    created->InitGpuResources(device_.GetDevice(), device_.GetPhysicalDevice());
+    created->SetRawTexture(binding->binding, font->atlas.view, font->atlas.sampler);
+    created->FinalizeDescriptors();
+
+    if (!frame_params_set_) {
+        frame_params_ = das::float4(font->header.onedge_value / 255.0f, font->header.pixel_dist_scale, 0.0f, 0.0f);
+        frame_params_set_ = true;
+    }
+
+    Material* raw = created.get();
+    FontMaterialEntry entry{};
+    entry.material = eastl::move(created);
+    entry.font = font;
+    entry.view = font->atlas.view;
+    font_materials_.emplace(font_id, eastl::move(entry));
+    ++atlas_version_;
+    return raw;
+}
+
+const Font* UiSystem::FontForMaterial(const Material* material) const {
+    if (material == nullptr)
+        return nullptr;
+    for (const auto& pair : font_materials_)
+        if (pair.second.material.get() == material)
+            return pair.second.font;
+    return nullptr;
+}
+
 uint32_t UiSystem::InternText(const char* text) {
     const uint32_t id = static_cast<uint32_t>(frame_strings_.size());
     frame_strings_.emplace_back(text != nullptr ? text : "");
@@ -234,68 +211,62 @@ das::float2 UiSystem::WindowSize() const {
 }
 
 bool UiSystem::IsReady() const {
-    return font_ != nullptr && material_ != nullptr && material_->shader && material_->shader->vertex_shader &&
-           material_->shader->fragment_shader && atlas_bound_;
+    return material_ != nullptr && material_->shader && material_->shader->vertex_shader &&
+           material_->shader->fragment_shader;
 }
 
 Material* UiSystem::GetMaterial() const {
     return material_;
 }
 
-const Font* UiSystem::GetFont() const {
-    return font_;
-}
-
 UiFrameData UiSystem::FrameData(const das::float2& viewport) const {
     UiFrameData data{};
     data.viewport = viewport;
-    if (font_ != nullptr) {
-        data.params.x = font_->header.onedge_value / 255.0f;
-        data.params.y = font_->header.pixel_dist_scale;
-    }
+    data.params = frame_params_;
     return data;
 }
 
-float UiSystem::LineHeight(float px) const {
-    if (font_ == nullptr || font_->header.em_size <= 0.0f)
-        return 0.0f;
-    return font_->header.line_height * (px / font_->header.em_size);
+const Font* UiSystem::FontById(uint64_t font_id) const {
+    if (font_id == 0)
+        return nullptr;
+    return resource_manager_.GetPointerExplicit<Font>(font_id);
 }
 
-float UiSystem::Ascent(float px) const {
-    if (font_ == nullptr || font_->header.em_size <= 0.0f)
+float UiSystem::LineHeight(uint64_t font_id, float px) const {
+    const Font* font = FontById(font_id);
+    if (font == nullptr || font->header.em_size <= 0.0f)
         return 0.0f;
-    return font_->header.ascender * (px / font_->header.em_size);
+    return font->header.line_height * (px / font->header.em_size);
 }
 
-float UiSystem::Descent(float px) const {
-    if (font_ == nullptr || font_->header.em_size <= 0.0f)
+float UiSystem::Ascent(const Font* font, float px) const {
+    if (font == nullptr || font->header.em_size <= 0.0f)
         return 0.0f;
-    return font_->header.descender * (px / font_->header.em_size);
+    return font->header.ascender * (px / font->header.em_size);
 }
 
-float UiSystem::Advance(uint32_t codepoint, float px) const {
-    if (font_ == nullptr || font_->header.em_size <= 0.0f || px <= 0.0f)
+float UiSystem::Advance(const Font* font, uint32_t codepoint, float px) const {
+    if (font == nullptr || font->header.em_size <= 0.0f || px <= 0.0f)
         return 0.0f;
-    const auto* glyph = font_->FindGlyph(codepoint);
+    const auto* glyph = font->FindGlyph(codepoint);
     if (glyph == nullptr && codepoint != '?')
-        glyph = font_->FindGlyph('?');
+        glyph = font->FindGlyph('?');
     if (glyph == nullptr)
         return 0.0f;
-    return glyph->advance * (px / font_->header.em_size);
+    return glyph->advance * (px / font->header.em_size);
 }
 
-bool UiSystem::Glyph(uint32_t codepoint, float px, UiGlyphQuad& out) const {
-    if (font_ == nullptr || font_->header.em_size <= 0.0f || px <= 0.0f)
+bool UiSystem::Glyph(const Font* font, uint32_t codepoint, float px, UiGlyphQuad& out) const {
+    if (font == nullptr || font->header.em_size <= 0.0f || px <= 0.0f)
         return false;
 
-    const auto* glyph = font_->FindGlyph(codepoint);
+    const auto* glyph = font->FindGlyph(codepoint);
     if (glyph == nullptr && codepoint != '?')
-        glyph = font_->FindGlyph('?');
+        glyph = font->FindGlyph('?');
     if (glyph == nullptr || glyph->plane_right <= glyph->plane_left)
         return false;
 
-    const float scale = px / font_->header.em_size;
+    const float scale = px / font->header.em_size;
     out.u0 = glyph->atlas_left;
     out.v0 = glyph->atlas_top;
     out.u1 = glyph->atlas_right;
@@ -308,8 +279,9 @@ bool UiSystem::Glyph(uint32_t codepoint, float px, UiGlyphQuad& out) const {
     return true;
 }
 
-das::float2 UiSystem::Measure(const char* utf8, float px) const {
-    if (font_ == nullptr || utf8 == nullptr || px <= 0.0f)
+das::float2 UiSystem::Measure(const char* utf8, float px, uint64_t font_id) const {
+    const Font* font = FontById(font_id);
+    if (font == nullptr || utf8 == nullptr || px <= 0.0f)
         return das::float2(0.0f, 0.0f);
 
     float width = 0.0f;
@@ -317,9 +289,9 @@ das::float2 UiSystem::Measure(const char* utf8, float px) const {
     while (*cursor != '\0') {
         uint32_t codepoint = 0;
         cursor = NextCodepoint(cursor, codepoint);
-        width += Advance(codepoint, px);
+        width += Advance(font, codepoint, px);
     }
-    return das::float2(width, LineHeight(px));
+    return das::float2(width, LineHeight(font_id, px));
 }
 
 const char* UiSystem::NextCodepoint(const char* text, uint32_t& codepoint) {

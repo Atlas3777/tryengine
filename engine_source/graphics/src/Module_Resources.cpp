@@ -37,6 +37,13 @@ tryengine::graphics::Material* UiTextureMaterial(uint64_t guid) {
     return ui != nullptr ? ui->TextureMaterial(guid) : nullptr;
 }
 
+// UI font -> material for a text run. Same cache discipline as the texture material: the font
+// was preloaded by the loader, the UI only builds the descriptor set that binds its atlas.
+tryengine::graphics::Material* UiFontMaterial(uint64_t guid) {
+    auto* ui = tryengine::graphics::UiSystem::ForScripts();
+    return ui != nullptr ? ui->FontMaterial(guid) : nullptr;
+}
+
 void RequestLoadMesh(uint64_t guid, das::Context* ctx) {
     if (auto* res_manager = GetResourceManager(ctx))
         res_manager->RequestLoad<tryengine::graphics::Mesh>(guid);
@@ -416,6 +423,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(UiTextureMaterial)>(*this, lib, "UiTextureMaterial", das::SideEffects::accessGlobal,
                                                         "UiTextureMaterial");
+
+        das::addExtern<DAS_BIND_FUN(UiFontMaterial)>(*this, lib, "UiFontMaterial", das::SideEffects::accessGlobal,
+                                                     "UiFontMaterial");
 
         das::addExtern<DAS_BIND_FUN(ResolveAssetRef)>(*this, lib, "ResolveAssetRef", das::SideEffects::accessGlobal,
                                                       "ResolveAssetRef");

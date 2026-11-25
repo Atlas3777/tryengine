@@ -4,7 +4,6 @@
 #include <EASTL/unique_ptr.h>
 #include <EASTL/unordered_map.h>
 #include <EASTL/vector.h>
-#include <chrono>
 #include <daScript/misc/vectypes.h>
 
 #include "engine/graphics/RuntimeTypes.hpp"
@@ -17,14 +16,16 @@ namespace tryengine::graphics {
 
 class VulkanDevice;
 
-//! Optional asset overrides for an embedder that does not use bundles. The game and the editor
-//! leave both at 0 and call `UiSystem::SetAssets` (script binding `UiSetAssets`) once the
-//! loader has made the assets of the `ui.bundle` ready. `UiSystem` itself never requests a
-//! resource: a UI asset that nobody preloaded stays missing, which is a loader bug, not a
-//! reason for the UI to read the disk.
+//! Authored base material of the UI shader. The material is fixed for the whole UI: texture and
+//! font materials are derived from it at runtime (same shader, different `albedo_map`), so no
+//! bundle entry is needed for it. The game's boot request loads it by this path:
+//! `request.AddAsset("material", UiMaterialPath())`.
+inline constexpr const char* kUiMaterialPath = "game/data/materials/ui.mat";
+
+//! UI configuration. The base material path is the only engine-owned asset; fonts, textures
+//! and custom materials come from screen bundles and are resolved by the UI script.
 struct UiConfig {
-    uint64_t font_guid = 0;
-    uint64_t material_guid = 0;
+    eastl::string material_path = kUiMaterialPath;
 };
 
 //! Frame constants of the UI shader, pushed once per draw. Mirrored in Ui.slang.
@@ -49,10 +50,10 @@ struct UiGlyphQuad {
     float px_per_em = 0.0f;
 };
 
-//! Owns the one font the UI draws with: reads the loader-preloaded font and UI material,
-//! binds the distance-field atlas into that material once both are ready, and answers metrics
-//! to the scripts and glyph quads to the pass. It never requests a resource: `SetAssets` is
-//! the game's/editor's promise that the loader already made them ready.
+//! Owns the base UI material and one derived material per font. It never requests a resource:
+//! the base material and every font are preloaded by the loader; `FontMaterial` only builds a
+//! descriptor set when the font is already resident. Text commands carry the font material,
+//! the pass finds the `Font` by it to build glyph quads.
 class UiSystem {
 public:
     UiSystem(UiConfig config, VulkanDevice& device, resources::ResourceManager& resource_manager);
@@ -71,32 +72,50 @@ public:
     //! Advances loading; safe to call every frame and before anything is ready.
     void Tick();
 
+    //! True when the base material is resident; text also needs its font material, which the
+    //! script asks for per style.
     [[nodiscard]] bool IsReady() const;
     [[nodiscard]] Material* GetMaterial() const;
-    [[nodiscard]] const Font* GetFont() const;
+
+    //! Authored path of the base material; diagnostics only.
+    [[nodiscard]] const eastl::string& MaterialPath() const {
+        return config_.material_path;
+    }
 
     //! Material that draws `texture_guid` through the UI shader: the same shader and pipeline as
-    //! the built-in UI material, with the image bound where the font atlas sits. Built once per
-    //! texture and rebuilt if the imported texture is replaced; null while the texture loads.
+    //! the base material, with the image bound where the font atlas sits. Built once per texture
+    //! and rebuilt if the imported texture is replaced; null while the texture loads.
     [[nodiscard]] Material* TextureMaterial(uint64_t texture_guid);
 
-    //! Points the UI at the font and UI material the loader already preloaded. Called from
-    //! the game/editor script (binding `UiSetAssets`) after the `ui.bundle` request finished.
-    //! A changed guid drops the cached pointers and rebinds the atlas on the next `Tick`.
-    void SetAssets(uint64_t font_guid, uint64_t material_guid);
+    //! Material that draws glyphs of `font_id`: same shader as the base material, the font atlas
+    //! bound to `albedo_map`. Null while the font is not resident (the loader preloads it; this
+    //! method never requests). Rebuilt when the font is re-baked.
+    [[nodiscard]] Material* FontMaterial(uint64_t font_id);
 
-    //! True when the built-in material has no unused sampler that still points at the white
-    //! fallback texture; a warning is logged once when that happens.
+    //! Font behind a text command material (the inverse of `FontMaterial`); null for the base
+    //! material and for texture materials.
+    [[nodiscard]] const Font* FontForMaterial(const Material* material) const;
+
     [[nodiscard]] UiFrameData FrameData(const das::float2& viewport) const;
 
-    [[nodiscard]] float LineHeight(float px) const;
-    [[nodiscard]] float Ascent(float px) const;
-    [[nodiscard]] float Descent(float px) const;
-    [[nodiscard]] float Advance(uint32_t codepoint, float px) const;
+    //! Line height of `font_id`; zero while the font is not resident.
+    [[nodiscard]] float LineHeight(uint64_t font_id, float px) const;
+    //! Metrics of a resolved font (the pass uses these after `FontForMaterial`).
+    [[nodiscard]] float Ascent(const Font* font, float px) const;
+    [[nodiscard]] float Advance(const Font* font, uint32_t codepoint, float px) const;
     //! Glyph quad, with '?' as the fallback for a codepoint the font does not have.
-    [[nodiscard]] bool Glyph(uint32_t codepoint, float px, UiGlyphQuad& out) const;
-    //! Width and line height of one line of UTF-8 text; zero width when the font is not ready.
-    [[nodiscard]] das::float2 Measure(const char* utf8, float px) const;
+    [[nodiscard]] bool Glyph(const Font* font, uint32_t codepoint, float px, UiGlyphQuad& out) const;
+    //! Width and line height of one line of UTF-8 text; zero while the font is not resident.
+    [[nodiscard]] das::float2 Measure(const char* utf8, float px, uint64_t font_id) const;
+
+    //! Overlay text has no font when the boot request has not run yet; the fallback draws only
+    //! its dots then. Kept as an overload so the pass does not special-case it.
+    [[nodiscard]] das::float2 Measure(const char* utf8, float px) const {
+        (void) utf8;
+        (void) px;
+        return das::float2(0.0f, 0.0f);
+    }
+
     //! Decodes one UTF-8 codepoint and returns the pointer after it; `text` is never null.
     static const char* NextCodepoint(const char* text, uint32_t& codepoint);
 
@@ -115,7 +134,8 @@ public:
         return overlay_text_.c_str();
     }
 
-    //! Grows when the atlas becomes available; scripts use it to drop cached glyph metrics.
+    //! Grows when a font material is built or rebuilt; scripts use it to drop cached glyph
+    //! metrics.
     [[nodiscard]] uint32_t AtlasVersion() const {
         return atlas_version_;
     }
@@ -124,31 +144,28 @@ public:
     [[nodiscard]] das::float2 WindowSize() const;
 
 private:
-    void PollFont();
     void PollMaterial();
-    void BindAtlas();
+    [[nodiscard]] const Font* FontById(uint64_t font_id) const;
 
     UiConfig config_;
     VulkanDevice& device_;
     resources::ResourceManager& resource_manager_;
 
-    bool font_failed_logged_ = false;
     bool material_failed_logged_ = false;
-    bool font_not_requested_logged_ = false;
-    bool material_not_requested_logged_ = false;
-    bool assets_missing_logged_ = false;
-    bool atlas_bound_ = false;
 
     static UiSystem* instance_;
     uint32_t atlas_version_ = 0;
     eastl::vector<eastl::string> frame_strings_;
     eastl::string overlay_text_;
-    Font* font_ = nullptr;
+    uint64_t material_id_ = 0;
     Material* material_ = nullptr;
-    uint32_t atlas_binding_ = 0;
+    //! SDF constants of the first font material; all UI fonts are expected to share the bake
+    //! settings (`onedge_value`, `pixel_dist_scale`), so one frame constant serves the pass.
+    das::float4 frame_params_ = das::float4(128.0f / 255.0f, 32.0f, 0.0f, 0.0f);
+    bool frame_params_set_ = false;
 
-    //! One material per UI texture. The image is bound as a raw texture, exactly like the atlas,
-    //! so no ResourceManager handle lives inside the material.
+    //! One material per UI texture. The image is bound as a raw texture, exactly like a font
+    //! atlas, so no ResourceManager handle lives inside the material.
     struct TextureMaterialEntry {
         eastl::unique_ptr<Material> material;
         VkImageView view = VK_NULL_HANDLE;
@@ -162,9 +179,17 @@ private:
     //! buffer. Destruction of the GPU resources is deferred to the whole UI's lifetime.
     eastl::vector<eastl::unique_ptr<Material>> retired_texture_materials_;
     bool texture_binding_error_logged_ = false;
-    //! Wall clock since the UI first found its assets unset; a warning is issued only when
-    //! the absence is lasting (a slow first load is normal, a forgotten UiSetAssets is not).
-    std::chrono::steady_clock::time_point assets_missing_since_{};
+
+    //! One material per font asset: base shader + the font atlas bound to `albedo_map`.
+    struct FontMaterialEntry {
+        eastl::unique_ptr<Material> material;
+        const Font* font = nullptr;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+
+    eastl::unordered_map<uint64_t, FontMaterialEntry> font_materials_;
+    eastl::unordered_map<uint64_t, uint8_t> font_missing_logged_;
+    eastl::vector<eastl::unique_ptr<Material>> retired_font_materials_;
 };
 
 }  // namespace tryengine::graphics

@@ -1,5 +1,6 @@
-version: u32 = 2
+version: u32 = 3
 name: string = "hud"
+parent: string = "data/bundles/ui.bundle"
 assets: BundleAsset[] = [
 	{
 		name: string = "logo"

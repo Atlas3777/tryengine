@@ -86,5 +86,6 @@
 - `AssetPak.fonts`/`fonts_data` кладут этот артефакт в common-пак; список берётся из
   `assets` бандлов (`kind = "font"`), потому что ни сцена, ни префаб на шрифт не ссылаются.
   Загрузчик ждёт шрифт как отдельный resource job в фазе Resources; Loader — `FontLoader` в
-  graphics, тип `Font` в `ResourceManager`. `UiSystem` шрифт не запрашивает: игра/редактор
-  зовут `UiSetAssets` после загрузки `ui.bundle`.
+  graphics, тип `Font` в `ResourceManager`. `UiSystem` шрифт не запрашивает: его приносит
+  бандл экрана (обычно общий `ui.bundle`), а `UiSystem::FontMaterial` только вяжет атлас к
+  готовому `Font`. Базовый материал UI грузится boot-запросом `AddResource`.

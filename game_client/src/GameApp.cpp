@@ -73,8 +73,9 @@ void GameApp::Init() {
     rm.RegisterType<TextureSampler>(TextureLoader(*vulkan_device_));
     rm.RegisterType<Font>(FontLoader(*vulkan_device_));
 
-    // Game UI: the loader brings the font and the UI material from `ui.bundle`, and the game
-    // hands them over with UiSetAssets. UiPass draws nothing until that happened.
+    // Game UI: the boot request loads the fixed base material and the screen bundles bring the
+    // fonts and textures; the UI only reads ready resources. UiPass draws nothing until the
+    // base material is resident.
     engine_->RegisterSystem<UiSystem>(UiConfig{}, *vulkan_device_, rm);
 
     // Паки монтируются до старта скриптов: тексты читаются через тот же API, что и в
@@ -100,7 +101,7 @@ void GameApp::Init() {
     auto script_config = GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult()));
     // JIT-компиляция идёт на пуле потоков: главный поток продолжает кадры, а
     // EngineStart/GameStart вызываются первым кадром после установки контекста. Fallback-
-    // оверлей UiPass включается только после boot-запроса ui.bundle, а он идёт уже после
+    // оверлей UiPass включается только после boot-запроса базового материала UI, а он идёт уже после
     // компиляции: на время JIT окно показывает цвет очистки.
     script_config.post_background = [](eastl::function<void()> work) {
         ThreadPool().Post([work = eastl::move(work)]() mutable { work(); });

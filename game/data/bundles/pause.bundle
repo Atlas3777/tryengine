@@ -1,0 +1,3 @@
+version: u32 = 3
+name: string = "pause"
+parent: string = "data/bundles/ui.bundle"

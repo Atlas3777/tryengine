@@ -13,6 +13,7 @@ module UiTypes shared public
 
 require math
 require daslib/math_boost
+require tryengine/AssetMap
 require tryResources
 
 //! No-argument click action. Stored per node: function pointers capture nothing, so a node can
@@ -22,10 +23,18 @@ typedef public UiAction = function<() : void>
 typedef public UiActionData = function<(data : int) : void>
 //! Sound event sink. The UI never plays audio itself; it names what should play and to whom.
 typedef public UiSoundHandler = function<(path : string; node_id : uint64) : void>
-//! One screen: the unique part of the interface, built from widgets. `Ui::RegisterScreen` stores
-//! this pointer, so a screen holds no state of its own — it reads module globals and is drawn by
-//! name. `Ui::Screen` draws it inline, `Ui::FrameScreen` makes it the whole frame.
-typedef public UiScreenBuild = function<() : void>
+//! One screen: the unique part of the interface, built from widgets. It receives the flat
+//! asset map of the screen bundle, so the markup names its assets explicitly and the engine
+//! never has to look a bundle up by path. Function pointers compare with `==`, which is the
+//! stack identity.
+typedef public UiScreenBuild = function<(assets : AssetMap) : void>
+
+//! A screen value: the build function and the asset map it draws with. The engine stack stores
+//! these values; there is no name registry and no `[init]` registration.
+struct public ScreenRef {
+    build : UiScreenBuild = default<UiScreenBuild>
+    assets : AssetMap = AssetMap()
+}
 
 //! Mirror of tryengine::graphics::UiPass::UiDrawCmd. The pass static_asserts this layout, and
 //! glyph geometry is built in C++ from text commands, so no strings live here.
@@ -63,7 +72,8 @@ struct public UiStyle {
     //! left, top, right, bottom; any component < 0 is unset.
     padding : float4 = float4(-1.0f, -1.0f, -1.0f, -1.0f)
 
-    material : string = ""                 // .mat path for kind-2 widgets
+    font : string = ""                     // font key in the screen AssetMap
+    material : string = ""                 // material key in the screen AssetMap
     sound_hover : string = ""
     sound_click : string = ""
     sound_press : string = ""
@@ -94,8 +104,8 @@ struct public UiButtonTemplate {
 
 //! Per-kind default looks: the theme. A widget merges its call-site style over the theme entry
 //! for its kind (see `MergeStyle`), so `Ui::Panel("##hud")` already has colours, padding, radius
-//! and text metrics. A game installs its theme once with `Ui::SetTheme` from `[init]`, which
-//! keeps styles in their own file instead of in the markup. Fields are partial: `SetTheme`
+//! and text metrics. A game installs its theme explicitly with `Ui::SetTheme` (in `GameStart` and after a hot
+//! reload), which keeps styles in their own file instead of in the markup. Fields are partial: `SetTheme`
 //! merges the theme over the engine defaults, so a theme may override one kind and leave the rest.
 struct public UiTheme {
     panel : UiStyle = default<UiStyle>
@@ -155,6 +165,7 @@ def public MergeStyle(base : UiStyle; over : UiStyle) : UiStyle {
     if (IsSetFloat(over.anim_time)) { result.anim_time = over.anim_time }
     if (over.text_align >= 0) { result.text_align = over.text_align }
     if (IsSetPadding(over.padding)) { result.padding = over.padding }
+    if (!empty(over.font)) { result.font = over.font }
     if (!empty(over.material)) { result.material = over.material }
     if (!empty(over.sound_hover)) { result.sound_hover = over.sound_hover }
     if (!empty(over.sound_click)) { result.sound_click = over.sound_click }

@@ -82,6 +82,7 @@ private:
     UiFrameData frame_data_{};
     VkExtent2D viewport_{0, 0};
     bool warned_missing_export_ = false;
+    bool warned_missing_material_ = false;
     bool warned_overflow_ = false;
     bool warned_material_ = false;
 };

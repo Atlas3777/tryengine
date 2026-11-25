@@ -576,27 +576,19 @@
 
 ## Экраны игрового UI
 
-- Панель **Screens** и Edit-превью — `editor/daslang/UiScreens.das`. Список берётся из
-  `Ui::ScreenNames()` (реестр заполняют `[init]` модулей игры — по файлу на экран
-  `game/scripts/Screen*.das` — поэтому имена видны до Play; в Play стартовый экран —
-  `main_menu`, его ставит `GameFlow::Start`),
-  выбор хранится в `preview_screen`, кадр объявляет `DrawPreviewFrame`. Вызывает его
-  `EditorUpdate` в ветке `!is_playing`; в Play редактор зовёт `GameUiFrame()` — тот же экспорт,
-  что и `game_client`. `Pause` замораживает всю игру, UI включённо: при неидущем `game_clock`
-  редактор UI-кадр не объявляет, проход перерисовывает последний список команд, указатель
-  ничего не задевает. `StepPlay` (`PlayMode.das`) объявляет ровно один кадр.
-- Edit-превью рисуется в `SceneGameView` и объявляется внутри `Ui::SetPreviewMode(true)`: hover,
-  press и анимации работают (ввод передаётся, `SetInputViewport` получает `IsItemHovered()`), а
-  `Ui::Button` возвращает false, `@@`-действия и звуки подавлены, `Checkbox`/`Slider` не пишут в
-  переменные. Это единственная защита состояния игры: сама функция экрана может писать в
-  глобальные, поэтому экраны должны только читать.
+- Панели **Screens** и Edit-превью больше нет: `editor/daslang/UiScreens.das` удалён.
+  Экраны — обычные функции `Draw(assets : AssetMap)` из `game/scripts/Screen*.das`, их
+  показывает `GameUiFrame()` в Play (тот же экспорт, что и `game_client`).
+- В Edit игра не запущена: `EditorUpdate` объявляет пустой UI-кадр (`Ui::Begin`+`Ui::End`),
+  чтобы на `SceneGameView` не остался HUD от прошлого Play (список команд очищается только
+  при открытии кадра). Игровые бандлы в Edit не грузятся, `GameStart` их не просит.
+- `Pause` замораживает всю игру, UI включённо: при неидущем `game_clock` редактор UI-кадр
+  не объявляет, проход перерисовывает последний список команд, указатель ничего не задевает.
+  `StepPlay` (`PlayMode.das`) объявляет ровно один кадр.
+- Тему (`Ui::SetTheme`) ставит `GameStart` при входе в Play и `ApplyReloadState` после
+  горячей перезагрузки; `[init]` в игре её больше не ставит.
 - Клик по `SceneGameView` в Edit не конфликтует с редактором: гизмо и `PickingPass` читают
   мышь `SceneView` (редакторская камера), а UI живёт в game scope.
-- Когда превью не выбрано, кадр всё равно открывается пустым (`Ui::Begin`+`Ui::End`): список
-  команд очищается только при открытии кадра, иначе на экране замерзает последний кадр из Play.
-- Строки списка — индексированные виджеты (`selectable_label(g_screen_rows[name], ...)`): один
-  call site на список, состояние на строку. Обычный вызов виджета в цикле паникует
-  (`rendered twice`).
 
 ## Текстуры и настройки импорта
 
@@ -635,9 +627,9 @@
 - Настройки запекания (`em_size`, `px_range`, `padding`, размер атласа, `ranges`) лежат в
   `.meta` ассета: перезапекание не требует правок кода. Меняешь содержимое артефакта —
   поднимай `FontImporter::GetVersion()`.
-- Guid из `game/assets/fonts/<Font>.ttf.meta` пишется в `assets` общего бандла
-  `game/data/bundles/ui.bundle` (`kind = "font"`), а игра/редактор после загрузки бандла
-  зовут `UiSetAssets(font_guid, material_guid)`. Сборка берёт шрифт из `assets` бандлов
+- Guid из `game/assets/fonts/<Font>.ttf.meta` пишется в `assets` корневого бандла
+  `game/data/bundles/ui.bundle` (`kind = "font"`), а стили ссылаются на него ключом
+  (`UiStyle(font = "font/body")`). Сборка берёт шрифт из `assets` бандлов
   (`BuildSystem::CollectBundleDependencies`), отдельных `BuildSettings.fonts` больше нет.
   В редакторе шрифт работает как loose-артефакт, в игре — из common-пака.
 - Инструкция для человека — `game/assets/fonts/README.md`; проверка —

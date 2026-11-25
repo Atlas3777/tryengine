@@ -5,30 +5,31 @@ module GameScreens shared public
 
 //! The game's screen stack and its navigation policy.
 //!
-//! `Ui::ScreenStack` is the mechanism: names, order, drawing. This module is the policy on top
-//! of it — the stack is never empty, closing a layer falls back to the HUD, and a hot reload
-//! restores the layer from `scene_ready`. Screens call these functions instead of touching the
-//! stack directly, so a screen never needs to know where it sits in the stack.
+//! `Ui::ScreenStack` is the mechanism: it stores `ScreenRef` values (a build function plus the
+//! flat asset map it draws with) and draws them bottom first. There are no names and no `[init]`
+//! registration; a screen is identified by its function pointer, which compares with `==`.
+//! This module is the policy: the stack never pops its bottom layer and the HUD is the layer a
+//! closing menu returns to.
 
 require tryengine/Ui
 
 var private g_stack : Ui::ScreenStack
 
-def public Has(name : string) : bool {
-    return g_stack.Has(name)
+def public Has(build : Ui::UiScreenBuild) : bool {
+    return g_stack.Has(build)
 }
 
-def public Top() : string {
+def public Top() : Ui::ScreenRef {
     return g_stack.Top()
 }
 
 //! Replaces the stack with one screen: the main menu at startup, the HUD after a scene load.
-def public Show(name : string) {
-    g_stack.Show(name)
+def public Show(ref : Ui::ScreenRef) {
+    g_stack.Show(ref)
 }
 
-def public Push(name : string) {
-    g_stack.Push(name)
+def public Push(ref : Ui::ScreenRef) {
+    g_stack.Push(ref)
 }
 
 //! Removes the top layer. The bottom layer stays, so the game always has a screen.
@@ -38,11 +39,9 @@ def public Pop() {
     }
 }
 
-def public Close(name : string) {
-    g_stack.Remove(name)
-    if (g_stack.IsEmpty()) {
-        g_stack.Show("hud")
-    }
+//! Removes every layer built by `build` (a screen that is no longer valid).
+def public Remove(build : Ui::UiScreenBuild) {
+    g_stack.Remove(build)
 }
 
 //! Draws the stack, bottom first. Call inside `Ui::Frame`.

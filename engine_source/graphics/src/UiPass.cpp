@@ -69,8 +69,6 @@ void UiPass::Collect(CollectContext& ctx) {
     if (ui == nullptr)
         return;
     ui->Tick();
-    if (!ui->IsReady())
-        return;
 
     const auto* extent = ctx.cpu_bb.GetAs<VkExtent2D>(RGTag_v<"ViewportSize">);
     if (extent == nullptr || extent->width == 0 || extent->height == 0)
@@ -83,16 +81,31 @@ void UiPass::Collect(CollectContext& ctx) {
         // During the first load and during a hot reload the script context is intentionally
         // not called: daScript is compiling in the background. Draw the engine-owned status
         // instead, so the window never turns into a frozen black rectangle.
-        if (script != nullptr && (script->IsCompiling() || script->IsFailed()))
+        if (script != nullptr && (script->IsCompiling() || script->IsFailed()) && ui->IsReady())
             EmitScriptStatus(*script, *ui);
         return;
     }
 
     auto result = script->SimpleReturnUnsafe<"get_ui_draw_cmds", das::Array*>();
-    if (!result.has_value() || *result == nullptr || (*result)->size == 0) {
+    if (!result.has_value() || *result == nullptr) {
         if (!warned_missing_export_) {
             warned_missing_export_ = true;
-            LogInfo(LogCategory::Graphics, "UiPass: 'get_ui_draw_cmds' is missing or empty; the UI draws nothing");
+            LogError(LogCategory::Graphics, "UiPass: 'get_ui_draw_cmds' is missing; the UI draws nothing");
+        }
+        return;
+    }
+    if ((*result)->size == 0)
+        return;  // an empty frame is legitimate (Edit mode declares one to clear the list)
+
+    if (!ui->IsReady()) {
+        // The script produced draw commands, so a UI is really on screen; only now is a
+        // missing base material an error. Before Edit/Play this is the normal idle state.
+        if (!warned_missing_material_) {
+            warned_missing_material_ = true;
+            LogError(
+                LogCategory::Graphics,
+                "UiPass: UI commands were produced but base material '{}' is not loaded; the boot request must add it",
+                ui->MaterialPath().c_str());
         }
         return;
     }
@@ -289,7 +302,11 @@ void UiPass::EmitText(const UiDrawCmd& cmd, UiSystem& ui) {
     if (text == nullptr || *text == '\0')
         return;
 
-    const float baseline = cmd.rect.y + ui.Ascent(px);
+    const auto* font = ui.FontForMaterial(reinterpret_cast<const Material*>(cmd.material));
+    if (font == nullptr)
+        return;
+
+    const float baseline = cmd.rect.y + ui.Ascent(font, px);
     float pen_x = cmd.rect.x;
 
     const char* cursor = text;
@@ -298,7 +315,7 @@ void UiPass::EmitText(const UiDrawCmd& cmd, UiSystem& ui) {
         cursor = UiSystem::NextCodepoint(cursor, codepoint);
 
         UiGlyphQuad glyph{};
-        if (ui.Glyph(codepoint, px, glyph)) {
+        if (ui.Glyph(font, codepoint, px, glyph)) {
             const float x0 = pen_x + glyph.plane_left;
             const float y0 = baseline + glyph.plane_top;
             const das::float4 shape(0.0f, 0.0f, 0.0f, 0.0f);
@@ -307,7 +324,7 @@ void UiPass::EmitText(const UiDrawCmd& cmd, UiSystem& ui) {
                        y0 + (glyph.plane_bottom - glyph.plane_top), glyph.u0, glyph.v0, glyph.u1, glyph.v1, shape,
                        params);
         }
-        pen_x += ui.Advance(codepoint, px);
+        pen_x += ui.Advance(font, codepoint, px);
     }
 }
 

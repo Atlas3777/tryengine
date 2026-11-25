@@ -7,7 +7,6 @@ module GameState shared public
 //! out of the screens lets each screen live in its own file without importing another screen.
 
 require math
-require trygame/GameScreens
 require trygame/GameTime
 
 struct public GameUiState {
@@ -54,23 +53,8 @@ def public PauseLabel() : string {
     return "Running"
 }
 
-def public PhaseLabel() : string {
-    if (GameTime::IsGamePaused()) {
-        return "Paused"
-    }
-    if (GameScreens::Has("shop")) {
-        return "Shop open"
-    }
-    return "Running"
-}
-
-//! Pause is the clock flag plus its menu layer: the layer follows the flag, so nothing can pause
-//! the clock without showing the menu, and a resume closes it.
+//! Pause is only the clock flag. The layer that shows the menu is owned by the HUD, which
+//! pushes and removes it when the flag changes; a state module must not import screens.
 def public TogglePause() {
     GameTime::ToggleGamePaused()
-    if (GameTime::IsGamePaused()) {
-        GameScreens::Push("pause")
-    } else {
-        GameScreens::Close("pause")
-    }
 }

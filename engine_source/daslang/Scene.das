@@ -165,6 +165,7 @@ def private RegisterAssetKind() {
         advance = @@AdvanceAsset,
         deps = @@AssetDeps,
         expands = @@AssetCache::NoExpansion,
+        parents = @@AssetCache::NoParents,
         cancel = @@CancelAsset,
         clear = @@ClearAssets
     ))

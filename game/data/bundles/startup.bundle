@@ -1,4 +1,4 @@
-version: u32 = 2
+version: u32 = 3
 name: string = "startup"
 prefabs: string[] = [
 	"content/prefabl.prefab"

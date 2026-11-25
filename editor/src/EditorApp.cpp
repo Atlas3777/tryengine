@@ -82,8 +82,9 @@ void EditorApp::Init() {
 
     engine_->RegisterSystem<InputService>().CreateFilter<EditorSDLEventFilter>();
 
-    // Game UI: the editor loads `ui.bundle` through the loader (see Editor.das) and hands the
-    // font and material over with UiSetAssets; UiPass draws nothing until that happened.
+    // Game UI: the editor does not load UI assets in Edit mode; Play runs the game's boot
+    // request, which loads the fixed base material and the screen bundles. UiPass draws
+    // nothing until that happened.
     engine_->RegisterSystem<UiSystem>(UiConfig{}, *vulkan_device_, rm);
 
     editor_ = std::make_unique<Editor>(*engine_, *vulkan_device_);

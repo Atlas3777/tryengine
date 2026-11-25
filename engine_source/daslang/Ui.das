@@ -27,6 +27,7 @@ require strings
 require daslib/strings_boost
 require math
 require daslib/math_boost
+require tryengine/AssetMap
 require tryengine/Time
 require tryengine/Input
 require tryengine/Profiling
@@ -55,6 +56,8 @@ struct public UiNode {
     text : string = ""
     style : UiStyle = default<UiStyle>
     layout : UiLayout = default<UiLayout>
+    //! Resolved font asset id of `style.font` in the current screen asset map; 0 = no text.
+    font : uint64 = 0ul
     first_child : uint64 = 0ul
     last_child : uint64 = 0ul
     next_sibling : uint64 = 0ul
@@ -151,7 +154,9 @@ var private g_measure_version : uint = 0xFFFFFFFFu
 
 // Value watchers and material resolution bookkeeping.
 var private g_watch : table<uint64; double>
-var private g_material_guid : table<string; uint64>
+//! Asset aliases of the screen being built; set by `Ui::Screen` for the duration of its build.
+var private g_assets : AssetMap = AssetMap()
+var private g_font_warned : table<string; int>
 var private g_material_warned : table<string; int>
 
 // --- styles -------------------------------------------------------------------------------
@@ -237,8 +242,8 @@ let private kDefaultTheme : UiTheme = UiTheme(
 var private g_theme : UiTheme = kDefaultTheme
 
 //! Installs a game theme: every kind the theme sets overrides the engine default, and the kinds
-//! it leaves alone keep the engine look. Call it once from `[init]` of the module that holds the
-//! styles, not per frame.
+//! it leaves alone keep the engine look. Call it explicitly when a game session starts (and
+//! after a hot reload rebuilt the script context), not per frame.
 def public SetTheme(theme : UiTheme) {
     var merged : UiTheme = default<UiTheme>
     merged.panel = MergeStyle(kDefaultTheme.panel, theme.panel)
@@ -473,22 +478,25 @@ def public Pulse(name : string) {
 
 // --- text ---------------------------------------------------------------------------------
 
-def private MeasureText(text : string; size : float) : float2 {
+def private MeasureText(text : string; size : float; font : uint64) : float2 {
+    if (font == 0ul) {
+        return float2(0.0f, 0.0f)
+    }
     // Dynamic text (resource counters, timers) would otherwise grow the cache forever; a full
     // flush is cheaper than an LRU and happens rarely.
     if (length(g_measure) > 8192) {
         g_measure.clear()
     }
-    let key = MixId(HashString(text), uint64(max(0, int(size * 64.0f))))
+    let key = MixId(HashString(text), MixId(font, uint64(max(0, int(size * 64.0f)))))
     if (key_exists(g_measure, key)) {
         return g_measure[key]
     }
-    let metric = UiTextMeasure(text, size)
+    let metric = UiTextMeasure(text, size, font)
     g_measure[key] = metric
     return metric
 }
 
-def private WrapText(text : string; size : float; max_width : float) : array<string> {
+def private WrapText(text : string; size : float; max_width : float; font : uint64) : array<string> {
     var lines : array<string>
     if (empty(text)) {
         lines |> push("")
@@ -512,8 +520,8 @@ def private WrapText(text : string; size : float; max_width : float) : array<str
             if (empty(word)) {
                 continue
             }
-            let word_width = MeasureText(word, size).x
-            let space_width = empty(line) ? 0.0f : MeasureText(" ", size).x
+            let word_width = MeasureText(word, size, font).x
+            let space_width = empty(line) ? 0.0f : MeasureText(" ", size, font).x
             if (!empty(line) && line_width + space_width + word_width > max_width) {
                 lines |> push(line)
                 line = word
@@ -532,8 +540,8 @@ def private WrapText(text : string; size : float; max_width : float) : array<str
     return <- lines
 }
 
-def private LineHeight(size : float) : float {
-    let h = UiTextLineHeight(size)
+def private LineHeight(size : float; font : uint64) : float {
+    let h = UiTextLineHeight(size, font)
     return h > 0.0f ? h : size * 1.25f
 }
 
@@ -610,6 +618,14 @@ def private ApplyStyle(nid : uint64; kind : uint; style : UiStyle; layout : UiLa
     var node = g_nodes[nid]
     node.style = ResolveStyle(kind, style)
     node.layout = layout
+    node.font = 0ul
+    if (!empty(node.style.font)) {
+        node.font = g_assets.Font(node.style.font)
+        if (node.font == 0ul && !key_exists(g_font_warned, node.style.font)) {
+            g_font_warned[node.style.font] = 1
+            print("[UI ERROR] font '{node.style.font}' is not in the screen asset map\n")
+        }
+    }
     g_nodes[nid] = node
 }
 
@@ -811,6 +827,7 @@ def public Begin() {
     g_open = true
     g_parent = 0ul
     g_salt = 0ul
+    g_assets = AssetMap()
     g_duplicate_warned = false
     g_order.clear()
     g_commands.clear()
@@ -842,27 +859,27 @@ def private MeasureNode(id : uint64) {
 
     var content = float2(0.0f, 0.0f)
     if (kind == UIK_LABEL) {
-        let hash = MixId(HashString(node.text), uint64(max(0, int(style.text_size * 64.0f))))
+        let hash = MixId(HashString(node.text), MixId(node.font, uint64(max(0, int(style.text_size * 64.0f)))))
         if (hash != node.text_hash) {
             node.text_hash = hash
-            node.text_metric = MeasureText(node.text, style.text_size)
+            node.text_metric = MeasureText(node.text, style.text_size, node.font)
         }
         content = node.text_metric
         if (node.layout.size.x > 0.0f && content.x > node.layout.size.x) {
-            let lines <- WrapText(node.text, style.text_size, node.layout.size.x)
+            let lines <- WrapText(node.text, style.text_size, node.layout.size.x, node.font)
             var widest = 0.0f
             for (line in lines) {
-                widest = max(widest, MeasureText(line, style.text_size).x)
+                widest = max(widest, MeasureText(line, style.text_size, node.font).x)
             }
-            content = float2(widest, LineHeight(style.text_size) * float(length(lines)))
+            content = float2(widest, LineHeight(style.text_size, node.font) * float(length(lines)))
         } else {
-            content = float2(content.x, max(content.y, LineHeight(style.text_size)))
+            content = float2(content.x, max(content.y, LineHeight(style.text_size, node.font)))
         }
     } elif (kind == UIK_BUTTON) {
-        let m = MeasureText(node.text, style.text_size)
-        content = float2(m.x + pad.x + pad.z, max(m.y, LineHeight(style.text_size)) + pad.y + pad.w)
+        let m = MeasureText(node.text, style.text_size, node.font)
+        content = float2(m.x + pad.x + pad.z, max(m.y, LineHeight(style.text_size, node.font)) + pad.y + pad.w)
     } elif (kind == UIK_BAR) {
-        content = float2(120.0f, LineHeight(style.text_size) + pad.y + pad.w)
+        content = float2(120.0f, LineHeight(style.text_size, node.font) + pad.y + pad.w)
     } elif (kind == UIK_SLIDER) {
         content = float2(160.0f, 22.0f)
     } elif (kind == UIK_CHECKBOX) {
@@ -1017,14 +1034,21 @@ def private EmitBorder(rect : float4; color : float4; radius : float; width : fl
     g_commands |> push(cmd)
 }
 
-def private EmitTextRun(rect : float4; text : string; px : float; color : float4; scissor : float4) {
-    if (empty(text) || color.w <= 0.0f || rect.z <= 0.0f) {
+def private EmitTextRun(rect : float4; text : string; px : float; color : float4; scissor : float4;
+                        font : uint64) {
+    if (empty(text) || color.w <= 0.0f || rect.z <= 0.0f || font == 0ul) {
+        return
+    }
+    // The font material carries the font atlas; the pass finds the `Font` by this material to
+    // build glyph quads. Null while the font has not been loaded (never requested here).
+    let material = UiFontMaterial(font)
+    if (material == null) {
         return
     }
     var cmd : UiDrawCmd = default<UiDrawCmd>
     cmd.kind = UIDC_TEXT
     cmd.text_id = UiTextId(text)
-    cmd.material = null
+    cmd.material = material
     cmd.rect = rect
     cmd.color = Premul(color)
     cmd.extra = float4(px, 0.0f, 0.0f, 0.0f)
@@ -1061,29 +1085,22 @@ def private StateFill(style : UiStyle; node : UiNode) : float4 {
     return color
 }
 
-// Material of `Ui::Image`: resolved through the registry and read from the resource cache.
-// The UI never requests: a material is in a screen bundle, the loader made it ready before
-// the screen was shown, and a miss is a bundle mistake reported once per path.
+// Material of `Ui::Image`: the style holds a key of the screen asset map. The loader made the
+// material ready before the screen was shown; the UI only reads the cache and reports a key
+// that the map does not know once per key.
 def private MaterialFor(path : string) : TryMat? {
     if (empty(path)) {
         return null
     }
 
-    var guid = 0ul
-    if (key_exists(g_material_guid, path)) {
-        guid = g_material_guid[path]
-    } else {
-        guid = ResolveAssetRef(path)
-        if (guid == 0ul) {
-            if (!key_exists(g_material_warned, path)) {
-                g_material_warned[path] = 1
-                print("[UI ERROR] material '{path}' is not a known asset; add it to the screen bundle\n")
-            }
-            return null
+    let guid = g_assets.Material(path)
+    if (guid == 0ul) {
+        if (!key_exists(g_material_warned, path)) {
+            g_material_warned[path] = 1
+            print("[UI ERROR] material '{path}' is not in the screen asset map\n")
         }
-        g_material_guid[path] = guid
+        return null
     }
-
     if (!ResourceIsReadyMaterial(guid)) {
         return null
     }
@@ -1097,19 +1114,20 @@ def private EmitLabel(node : UiNode; style : UiStyle; clip : float4) {
     EmitBorder(rect, style.border_color, style.radius, style.border_width, clip)
 
     let max_width = rect.z - pad.x - pad.z
-    let lines <- WrapText(node.text, style.text_size, node.layout.size.x > 0.0f ? max_width : 0.0f)
-    let line_height = LineHeight(style.text_size)
+    let lines <- WrapText(node.text, style.text_size, node.layout.size.x > 0.0f ? max_width : 0.0f,
+                          node.font)
+    let line_height = LineHeight(style.text_size, node.font)
     var y = rect.y + pad.y
     for (line in lines) {
         if (!empty(line)) {
-            let metric = MeasureText(line, style.text_size)
+            let metric = MeasureText(line, style.text_size, node.font)
             var x = rect.x + pad.x
             if (style.text_align == 1) {
                 x = rect.x + (rect.z - metric.x) * 0.5f
             } elif (style.text_align == 2) {
                 x = rect.x + rect.z - pad.z - metric.x
             }
-            EmitTextRun(float4(x, y, metric.x, metric.y), line, style.text_size, style.text_color, clip)
+            EmitTextRun(float4(x, y, metric.x, metric.y), line, style.text_size, style.text_color, clip, node.font)
         }
         y += line_height
     }
@@ -1120,10 +1138,10 @@ def private EmitButton(node : UiNode; style : UiStyle; clip : float4) {
     EmitQuad(rect, StateFill(style, node), style.radius, clip)
     EmitBorder(rect, style.border_color, style.radius, style.border_width, clip)
     if (!empty(node.text)) {
-        let metric = MeasureText(node.text, style.text_size)
+        let metric = MeasureText(node.text, style.text_size, node.font)
         let x = rect.x + (rect.z - metric.x) * 0.5f
         let y = rect.y + (rect.w - metric.y) * 0.5f
-        EmitTextRun(float4(x, y, metric.x, metric.y), node.text, style.text_size, style.text_color, clip)
+        EmitTextRun(float4(x, y, metric.x, metric.y), node.text, style.text_size, style.text_color, clip, node.font)
     }
 }
 
@@ -1136,10 +1154,10 @@ def private EmitBar(node : UiNode; style : UiStyle; clip : float4) {
     EmitQuad(fill, style.hover_color, radius, clip)
     EmitBorder(rect, style.border_color, radius, style.border_width, clip)
     if (!empty(node.text)) {
-        let metric = MeasureText(node.text, style.text_size)
+        let metric = MeasureText(node.text, style.text_size, node.font)
         let x = rect.x + (rect.z - metric.x) * 0.5f
         let y = rect.y + (rect.w - metric.y) * 0.5f
-        EmitTextRun(float4(x, y, metric.x, metric.y), node.text, style.text_size, style.text_color, clip)
+        EmitTextRun(float4(x, y, metric.x, metric.y), node.text, style.text_size, style.text_color, clip, node.font)
     }
 }
 
@@ -1269,119 +1287,87 @@ def get_ui_draw_cmds() : array<UiDrawCmd>? {
 
 // --- screens -------------------------------------------------------------------------------
 
-// Named declarations, registered once (from `[init]`) and drawn by name. A screen is the unique
-// part of the interface; the widgets inside it are the part that repeats. Registration stores the
-// function pointer, not a closure, so nothing is captured and nothing can outlive the frame.
-var private g_screens : table<string; UiScreenBuild>
-var private g_screen_order : array<string>
-var private g_screen_reported : table<string; int>
+// A screen is a build function plus the flat asset map it draws with. There is no name
+// registry and no `[init]` registration: the caller pushes a `ScreenRef` and the stack draws
+// it. Function pointers compare with `==`, which is the only identity the engine needs.
 
-//! Registers a screen under `name`. Registering the same name again replaces the build, so a
-//! reloaded module can register its screens again without a diagnostic.
-def public RegisterScreen(name : string; build : UiScreenBuild) {
-    if (empty(name)) {
-        print("[UI] RegisterScreen with an empty name ignored\n")
+//! Draws a screen where the call sits. `layer` namespaces node ids of stacked screens (the
+//! stack passes the layer index), so two screens drawn in one frame do not share ids.
+def public Screen(ref : ScreenRef; layer : uint64 = 1ul) {
+    if (ref.build == null) {
+        print("[UI] Screen with a null build ignored\n")
         return
     }
-    if (build == null) {
-        print("[UI] RegisterScreen('{name}') with a null build ignored\n")
-        return
-    }
-    if (!key_exists(g_screens, name)) {
-        g_screen_order |> push(name)
-    }
-    g_screens[name] = build
-}
-
-def public HasScreen(name : string) : bool {
-    return key_exists(g_screens, name)
-}
-
-//! Screens in registration order: the editor's Screens panel lists them, drawing uses `Screen`.
-def public ScreenNames() : array<string> {
-    var names : array<string>
-    for (name in g_screen_order) {
-        names |> push(name)
-    }
-    return <- names
-}
-
-//! Draws a registered screen where the call sits. Ids are scoped by the screen name, so the same
-//! local id in two screens is two nodes, and a screen drawn inside a panel lays out inside it.
-def public Screen(name : string) {
-    if (!key_exists(g_screens, name)) {
-        if (!key_exists(g_screen_reported, name)) {
-            g_screen_reported[name] = 1
-            print("[UI] no screen '{name}' is registered\n")
-        }
-        return
-    }
-    let build = g_screens[name]
     let saved_parent = g_parent
     let saved_salt = g_salt
-    g_salt = MixId(saved_salt, HashString(name))
-    invoke(build)
+    let saved_assets = g_assets
+    g_salt = MixId(saved_salt, layer)
+    g_assets = ref.assets
+    invoke(ref.build, ref.assets)
+    g_assets = saved_assets
     g_salt = saved_salt
     g_parent = saved_parent
 }
 
 //! One complete frame of one screen: `Begin`, the screen, `End`.
-def public FrameScreen(name : string) {
+def public FrameScreen(ref : ScreenRef) {
     Begin()
-    Screen(name)
+    Screen(ref)
     End()
 }
 
 // --- screen stack --------------------------------------------------------------------------
 
-//! A stack of screen names drawn bottom first: `layers[0]` is the bottom layer, the last one is
-//! the top and receives the pointer where layers overlap. The stack is plain state: the engine
-//! has no "current screen" policy, the caller decides what to show and when.
+//! A stack of `ScreenRef` values drawn bottom first: `layers[0]` is the bottom layer, the last
+//! one is the top and receives the pointer where layers overlap. Plain state: the engine has
+//! no "current screen" policy, the caller decides what to show and when.
 struct public ScreenStack {
-    layers : array<string>
+    layers : array<ScreenRef>
 }
 
 def public IsEmpty(self : ScreenStack) : bool {
     return length(self.layers) == 0
 }
 
-def public Has(self : ScreenStack; name : string) : bool {
+def public Count(self : ScreenStack) : int {
+    return length(self.layers)
+}
+
+//! True when a layer with this build function is open.
+def public Has(self : ScreenStack; build : UiScreenBuild) : bool {
     for (layer in self.layers) {
-        if (layer == name) {
+        if (layer.build == build) {
             return true
         }
     }
     return false
 }
 
-def public Top(self : ScreenStack) : string {
+def public Top(self : ScreenStack) : ScreenRef {
     if (length(self.layers) == 0) {
-        return ""
+        var empty = ScreenRef()
+        return empty
     }
     return self.layers[length(self.layers) - 1]
 }
 
 //! Replaces the whole stack with one screen.
-def public Show(var self : ScreenStack; name : string) {
-    if (!HasScreen(name)) {
-        print("[UI] screen '{name}' is not registered\n")
+def public Show(var self : ScreenStack; ref : ScreenRef) {
+    if (ref.build == null) {
+        print("[UI] ScreenStack::Show with a null build ignored\n")
         return
     }
     self.layers.clear()
-    self.layers |> push(name)
+    self.layers |> push(ref)
 }
 
-//! Draws a screen on top of the current one. A layer that is already open is not pushed twice:
-//! two copies in one frame would declare the same ids.
-def public Push(var self : ScreenStack; name : string) {
-    if (!HasScreen(name)) {
-        print("[UI] screen '{name}' is not registered\n")
+//! Draws a screen on top of the current one.
+def public Push(var self : ScreenStack; ref : ScreenRef) {
+    if (ref.build == null) {
+        print("[UI] ScreenStack::Push with a null build ignored\n")
         return
     }
-    if (Has(self, name)) {
-        return
-    }
-    self.layers |> push(name)
+    self.layers |> push(ref)
 }
 
 def public Pop(var self : ScreenStack) {
@@ -1390,10 +1376,11 @@ def public Pop(var self : ScreenStack) {
     }
 }
 
-def public Remove(var self : ScreenStack; name : string) {
-    var kept : array<string>
+//! Removes every layer built by `build` (a screen that is no longer valid).
+def public Remove(var self : ScreenStack; build : UiScreenBuild) {
+    var kept : array<ScreenRef>
     for (layer in self.layers) {
-        if (layer != name) {
+        if (layer.build != build) {
             kept |> push(layer)
         }
     }
@@ -1402,8 +1389,8 @@ def public Remove(var self : ScreenStack; name : string) {
 
 //! Draws every layer in order, bottom first. Call inside `Ui::Frame`.
 def public Draw(self : ScreenStack) {
-    for (name in self.layers) {
-        Screen(name)
+    for (index in range(length(self.layers))) {
+        Screen(self.layers[index], uint64(index + 1))
     }
 }
 

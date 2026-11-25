@@ -11,20 +11,19 @@ module GameFlow shared public
 
 require daslib/decs
 require math
+require tryengine/AssetMap
 require tryengine/AsyncTaskManager
-require tryengine/Bundle
 require tryengine/Loader
 require tryengine/Physics
 require tryengine/Prefab
 require tryengine/Scene
 require tryengine/Time
-require trygame/GameBundles
-require trygame/GameScreens
 require trygame/GameTime
 require trygame/PhysicsDemo
 require trygame/Player
-
-require tryUi
+require trygame/ScreenHud
+require trygame/ScreenPause
+require trygame/ScreenShop
 
 //! One entry of the main menu: what to load and what to spawn after it.
 struct public SceneEntry {
@@ -46,31 +45,14 @@ def public IsLoading() : bool {
     return Loader::IsActive()
 }
 
-//! Fresh game session: no scene, the main menu on screen, physics attached to the game clock.
-//! The menu is shown by the boot callback, after its bundle made the UI assets ready: a screen
-//! is never shown before the loader brought what it names.
+//! Fresh game session: no scene, physics attached to the game clock. The UI boot (menu bundle,
+//! theme, first screen) belongs to `GameUi::Start`, not here.
 def public Start() {
     Physics::Reset()
     Physics::Attach(game_world_clock)
     PhysicsDemo::Reset()
     Player::Reset()
     g_ready = false
-
-    // The editor may have a preview boot request in flight; a new session owns the loader.
-    if (Loader::IsActive()) {
-        Loader::Abort()
-    }
-
-    var request <- LoaderRequest()
-    request.AddBundle(GameBundles::kUi)
-    StartTask(Loader::Load(request, @@OnUiLoaded))
-}
-
-// The UI bundle carries the font and the UI material by name; the C++ UiSystem only reads
-// what the loader already made ready, so this is the one place that hands them over.
-def private OnUiLoaded() {
-    UiSetAssets(Bundle::Get(GameBundles::kUi, "font"), Bundle::Get(GameBundles::kUi, "material"))
-    GameScreens::Show("main_menu")
 }
 
 //! Loads `entry` through the loader and switches to the HUD when the scene is applied. One
@@ -86,9 +68,11 @@ def public LoadScene(entry : SceneEntry) {
     g_pending = entry
     var request <- LoaderRequest()
     request.AddScene(entry.scene)
-    // The HUD is the screen that appears after the scene; its bundle rides in the same
-    // request, so the first frame with the HUD already has every texture it names.
-    request.AddBundle(GameBundles::kHud)
+    // The HUD is the screen that appears after the scene; its bundle, and the bundles of the
+    // layers it can open, ride in the same request. `ScreenHud::Show` receives their maps.
+    request.AddBundle(ScreenHud::kHudBundle)
+    request.AddBundle(ScreenPause::kPauseBundle)
+    request.AddBundle(ScreenShop::kShopBundle)
     if (!empty(entry.prefab)) {
         request.AddPrefab(entry.prefab)
     }
@@ -101,7 +85,7 @@ def public SetReady(ready : bool) {
     g_ready = ready
 }
 
-def private OnSceneLoaded() {
+def private OnSceneLoaded(maps : table<string; AssetMap>) {
     if (!Scene::Load(g_pending.scene)) {
         print("[GameFlow] scene '{g_pending.scene}' failed to apply\n")
         return
@@ -121,5 +105,5 @@ def private OnSceneLoaded() {
     }
     g_ready = true
     print("[GameFlow] scene '{g_pending.scene}' loaded\n")
-    GameScreens::Show("hud")
+    ScreenHud::Show(maps)
 }

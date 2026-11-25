@@ -1,10 +1,12 @@
 options gen2
 options relaxed_assign = false
 
-//! Bundle format: the authored `assets` table becomes a ready name -> id map at parse time,
-//! and the same table feeds `Content::Dependencies` so the loader requests exactly what the
-//! screen names. Covers the guid/path reference forms, the duplicate-name and unknown-kind
-//! rejections, and the version gate. No files, no GPU: the document is built as text.
+//! Bundle format: the authored `assets` table and the optional parent are parsed into a ready
+//! manifest, and the same table feeds `Content::Dependencies` so the loader requests exactly
+//! what the screen names. Covers the guid/path reference forms, the duplicate-name and
+//! unknown-kind rejections, the version gate and the parent path. No files, no GPU: the
+//! document is built as text; hierarchy flattening itself needs a loaded cache and is covered
+//! by the loader path.
 
 require strings
 require tryengine/Bundle
@@ -21,6 +23,18 @@ def Contains(ids : array<uint64>; id : uint64) : bool {
     return false
 }
 
+def EntryId(data : Bundle::BundleData?; name : string) : uint64 {
+    if (data == null) {
+        return 0ul
+    }
+    for (entry in data.entries) {
+        if (entry.name == name) {
+            return entry.id
+        }
+    }
+    return 0ul
+}
+
 def Check(ok : bool; what : string) {
     if (!ok) {
         g_failures++
@@ -31,9 +45,12 @@ def Check(ok : bool; what : string) {
 let kLogoGuid : uint64 = 14429000468236573201ul
 let kFontGuid : uint64 = 7732110565556845333ul
 
-def BuildText(assets : string; version : string = "2") : string {
+def BuildText(assets : string; version : string = "3"; parent : string = "") : string {
     var text = "version: u32 = " + version + "\n"
     text += "name: string = \"hud\"\n"
+    if (!empty(parent)) {
+        text += "parent: string = \"{parent}\"\n"
+    }
     text += "prefabs: string[] = [\n  \"content/probe.prefab\"\n]\n"
     text += "assets: BundleAsset[] = [\n{assets}]\n"
     return text
@@ -57,12 +74,29 @@ def main() : int {
         var compiled = Bundle::Parse(document)
         Check(compiled != null, "the bundle compiles")
         if (compiled != null) {
-            Check((compiled.by_name?["logo"] ?? 0ul) == kLogoGuid, "the texture key resolves")
-            Check((compiled.by_name?["font"] ?? 0ul) == kFontGuid, "the font key resolves")
-            Check((compiled.by_name?["missing"] ?? 0ul) == 0ul, "an unknown key resolves to 0")
+            Check(EntryId(compiled, "logo") == kLogoGuid, "the texture key resolves")
+            Check(EntryId(compiled, "font") == kFontGuid, "the font key resolves")
+            Check(EntryId(compiled, "missing") == 0ul, "an unknown key resolves to 0")
             Check(length(compiled.prefabs) == 1, "the prefab list survives the compile")
         }
     }
+
+    var hierarchy = Content::ParseFor(DocumentKind.Bundle, "data/bundles/probe.bundle",
+                                      BuildText(Asset("logo", "texture", "guid:14429000468236573201"),
+                                                "3", "data/bundles/ui.bundle"))
+    Check(hierarchy != null, "a bundle with a parent parses")
+    if (hierarchy != null) {
+        var linked = Bundle::Parse(hierarchy)
+        Check(linked != null, "a bundle with a parent compiles")
+        if (linked != null) {
+            Check(linked.parent_path == "data/bundles/ui.bundle", "the parent path survives the compile")
+        }
+    }
+
+    var bad_parent = Content::ParseFor(DocumentKind.Bundle, "data/bundles/probe.bundle",
+                                       BuildText(Asset("logo", "texture", "guid:14429000468236573201"),
+                                                 "3", "content/not-a-bundle.bundle"))
+    Check(bad_parent != null && Bundle::Parse(bad_parent) == null, "a parent outside data/ is rejected")
 
     var duplicate = Content::ParseFor(DocumentKind.Bundle, "data/bundles/probe.bundle",
                                       BuildText(Asset("logo", "texture", "guid:14429000468236573201") +

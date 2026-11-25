@@ -101,11 +101,13 @@ if (Loader::IsFailed()) {
 
 ## Бандлы
 
-`game/data/bundles/*.bundle` — манифест одного экрана:
+`game/data/bundles/*.bundle` — **манифест загрузки**, не рантайм-объект. Он описывает, что
+прочитать и как назвать результат; экран видит только плоскую карту алиасов.
 
 ```
-version: u32 = 2
+version: u32 = 3
 name: string = "hud"
+parent: string = "data/bundles/ui.bundle"   // один родитель, "" у корня
 prefabs: string[] = [
     "content/props/sword.prefab"
 ]
@@ -115,30 +117,32 @@ assets: BundleAsset[] = [
         kind: string = "texture"
         ref: string = "guid:14429000468236573201"
     }
-    {
-        name: string = "material"
-        kind: string = "material"
-        ref: string = "game/data/materials/ui.mat"
-    }
 ]
 ```
 
-`AddBundle("data/bundles/hud.bundle")` находит файл, читает его текст в фазе `Bundles`,
-добавляет префабы в очередь фазы `Prefabs` и тем самым увеличивает её `total`.
-`prefabs` — пути `content/...` с расширением.
+`AddBundle("data/bundles/hud.bundle")` находит файл, читает его текст в фазе `Bundles` и
+ставит родителя (`parent`) в ту же фазу; затем `Bundle::Validate` проверяет, что вся цепочка
+загружена и без циклов. Префабы бандла идут в фазу `Prefabs`.
 
-`assets` — таблица `ключ -> runtime id` для экрана. `kind` — `texture`, `font`, `material`
-или `mesh`; `ref` — `guid:<id>` (импортированный ассет) или авторский путь (`.mat`).
-`Content::Parse` собирает ids в `Content::Dependencies.textures`/`fonts`, поэтому загрузчик
-запрашивает их в фазе `Resources` вместе с мешами и материалами. Готовый бандл кешируется
-как таблица `name -> id`; экран читает её синхронно через `Bundle::Get(path, "logo")`.
-Бандл не хранит байты и ничего не грузит сам: единица загрузки — **путь** к бандлу, а
-`Bundle` — готовый продукт, как `PrefabTemplate` (CF-документ после разбора выбрасывается).
+`assets` — авторские имена экрана. `kind` — `texture`, `font`, `material` или `mesh`;
+`ref` — `guid:<id>` (импортированный ассет) или авторский путь (`.mat`). `Content::Parse`
+собирает ids в `Content::Dependencies.textures`/`fonts`; загрузчик запрашивает их в фазе
+`Resources` вместе с мешами и материалами.
 
-Пути бандлов экранов живут в `game/scripts/GameBundles.das`: `kUi` — общий бандл (шрифт и
-UI-материал), `kHud` — HUD. Игра грузит `kUi` на boot, экран — свой бандл в том же
-`LoaderRequest`, что и сцену, поэтому к первому кадру экрана всё, что он называет, уже
-готово.
+После `Ready` `Bundle::Flatten` идёт по цепочке родителей, кладёт корень первым и
+перекрывает его ребёнком; получается таблица `ключ -> (kind, id)`, которая регистрируется
+в `tryengine/AssetMap` и живёт там как дескриптор. Callback запроса получает
+`maps : table<string; AssetMap>`; экран берёт свою карту через
+`Loader::MapOf(maps, kHudBundle)` и дальше зовёт `assets.Texture("logo")`. Ни `Bundle::Get`,
+ни пути в разметке нет. CF-документ после разбора выбрасывается; в `AssetCache` остаётся
+готовый манифест, в `AssetMap` — плоские алиасы.
+
+Пути бандлов экранов — константы в файлах экранов: `kMenuBundle` (`main_menu.bundle`),
+`kHudBundle`, `kPauseBundle`, `kShopBundle`. `main_menu`/`hud`/`pause`/`shop` объявляют
+`parent = "data/bundles/ui.bundle"`; `ui.bundle` — корень со шрифтом. Базовый материал UI в
+бандле не нужен: `UiConfig.material_path` фиксирован, boot-запрос добавляет его как ресурс
+(`AddResource("material", AssetPathId(UiMaterialPath()))`), а `UiSystem` только ждёт
+готовности.
 
 ## Где грузятся префабы
 
@@ -177,10 +181,9 @@ Play использует тот же путь: `PlayMode.BeginPlay` снима�
 selection, затем `GameStart` запускает `Loader::Load`. `EditorUpdate` вызывает
 `GameUpdate`, который не знает про загрузку.
 
-В Edit режиме редактор грузит те же бандлы через `Loader::Load` (`EditorStart`/`EditorUpdate`,
-`GameBundles::All()`), потому что панель **Screens** рисует экраны игры и им нужны шрифт,
-UI-материал и текстуры. Ленивого запроса из `UiSystem` больше нет: UI читает только то, что
-уже принёс загрузчик. `Scene::Load` в callback создаёт editor-камеру
+В Edit режиме редактор **не** грузит игровые бандлы и не рисует экраны: панели **Screens**
+больше нет, вьюпорт объявляет пустой UI-кадр. Ленивого запроса из `UiSystem` нет: UI читает
+только то, что уже принёс загрузчик. `Scene::Load` в callback создаёт editor-камеру
 через `NotifySceneLoaded`. Stop не вызывает игру: `EndPlay` делает `Loader::Abort` и
 восстанавливает снимок, а задача `Load` завершается по своему поколению.
 

@@ -30,27 +30,15 @@ void UiFrameBegin() {
 
 // Metrics are read-only: the UI script measures text to lay widgets out; the pass rebuilds
 // the same glyph quads from the same font, so both sides agree by construction.
-das::float2 UiTextMeasure(const char* text, float px) {
+das::float2 UiTextMeasure(const char* text, float px, uint64_t font_id) {
     if (auto* ui = Ui())
-        return ui->Measure(text, px);
+        return ui->Measure(text, px, font_id);
     return das::float2(0.0f, 0.0f);
 }
 
-float UiTextLineHeight(float px) {
+float UiTextLineHeight(float px, uint64_t font_id) {
     if (auto* ui = Ui())
-        return ui->LineHeight(px);
-    return 0.0f;
-}
-
-float UiTextAscent(float px) {
-    if (auto* ui = Ui())
-        return ui->Ascent(px);
-    return 0.0f;
-}
-
-float UiGlyphAdvance(uint32_t codepoint, float px) {
-    if (auto* ui = Ui())
-        return ui->Advance(codepoint, px);
+        return ui->LineHeight(font_id, px);
     return 0.0f;
 }
 
@@ -71,11 +59,10 @@ uint32_t UiAtlasVersion() {
     return 0u;
 }
 
-//! The game/editor calls this once the `ui.bundle` request is ready: the UI then draws with
-//! assets the loader already brought, and never requests one itself.
-void UiSetAssets(uint64_t font_guid, uint64_t material_guid) {
-    if (auto* ui = Ui())
-        ui->SetAssets(font_guid, material_guid);
+//! Authored path of the base UI material. The game adds it to the boot request explicitly
+//! (`AddAsset("material", UiMaterialPath())`), so the loader, not the UI, reads it from disk.
+const char* UiMaterialPath() {
+    return tryengine::graphics::kUiMaterialPath;
 }
 
 class Module_Ui : public das::Module {
@@ -93,17 +80,13 @@ public:
                                                     "UiTextMeasure");
         das::addExtern<DAS_BIND_FUN(UiTextLineHeight)>(*this, lib, "UiTextLineHeight", das::SideEffects::accessGlobal,
                                                        "UiTextLineHeight");
-        das::addExtern<DAS_BIND_FUN(UiTextAscent)>(*this, lib, "UiTextAscent", das::SideEffects::accessGlobal,
-                                                   "UiTextAscent");
-        das::addExtern<DAS_BIND_FUN(UiGlyphAdvance)>(*this, lib, "UiGlyphAdvance", das::SideEffects::accessGlobal,
-                                                     "UiGlyphAdvance");
         das::addExtern<DAS_BIND_FUN(UiWindowSize)>(*this, lib, "UiWindowSize", das::SideEffects::accessGlobal,
                                                    "UiWindowSize");
         das::addExtern<DAS_BIND_FUN(UiIsReady)>(*this, lib, "UiIsReady", das::SideEffects::accessGlobal, "UiIsReady");
         das::addExtern<DAS_BIND_FUN(UiAtlasVersion)>(*this, lib, "UiAtlasVersion", das::SideEffects::accessGlobal,
                                                      "UiAtlasVersion");
-        das::addExtern<DAS_BIND_FUN(UiSetAssets)>(*this, lib, "UiSetAssets", das::SideEffects::accessGlobal,
-                                                  "UiSetAssets");
+        das::addExtern<DAS_BIND_FUN(UiMaterialPath)>(*this, lib, "UiMaterialPath", das::SideEffects::none,
+                                                     "UiMaterialPath");
 
         verifyAotReady();
     }

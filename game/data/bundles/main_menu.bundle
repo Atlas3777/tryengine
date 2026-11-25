@@ -1,0 +1,3 @@
+version: u32 = 3
+name: string = "main_menu"
+parent: string = "data/bundles/ui.bundle"

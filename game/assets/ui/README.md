@@ -27,12 +27,14 @@ has no UI texture.
 4. Use the key in the screen:
 
    ```das
-   Ui::ImageTexture("##logo", Bundle::Get(GameBundles::kHud, "logo"), float2(24.0f, 24.0f))
+   def public Draw(assets : AssetMap) {
+       Ui::ImageTexture("##logo", assets.Texture("logo"), float2(24.0f, 24.0f))
+   }
    ```
 
-   `Bundle::Get` is a cache read: the loader has already brought the texture, because the
-   screen's bundle is part of the request that shows it (`GameFlow::LoadScene` for the HUD,
-   `GameFlow::Start` for the shared `ui.bundle`).
+   `assets` is the flat alias map the scene request returns for this screen's bundle
+   (`Loader::MapOf`); `Texture` is a cache read. The loader has already brought the texture,
+   because the bundle is part of the request that shows the screen (`GameFlow::LoadScene`).
 5. Rebuild the editor and the game client. The build packs every asset named by a bundle into
    the common pak, so a UI-only texture has no separate build setting.
 

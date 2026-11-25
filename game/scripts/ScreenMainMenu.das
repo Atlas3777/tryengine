@@ -4,12 +4,17 @@ options relaxed_assign = false
 module ScreenMainMenu shared public
 
 //! The main menu: one button per scene plus Exit. It is the initial screen; a scene load
-//! replaces it with the HUD.
+//! replaces it with the HUD. `GameUi::Start` shows it after the menu bundle is ready.
 
+require tryengine/AssetMap
 require tryengine/Input
 require tryengine/Ui
 require trygame/GameFlow
 require trygame/UiTheme
+
+//! Bundle of this screen; the boot request loads the same path (its parent is the shared UI
+//! bundle with the fonts).
+let public kMenuBundle : string = "data/bundles/main_menu.bundle"
 
 // The menu is the place to edit the scene list: `GameFlow` only knows how to load an entry.
 // `new_scene.scene` is the scene this repository ships; the player entity lives in it, so it
@@ -22,12 +27,12 @@ def private LoadNewScene() {
 }
 
 // Exit is the same quit flag as closing the window: the standalone game ends, the editor closes
-// too. In Edit-mode preview the action is suppressed, like every other screen action.
+// too.
 def private ExitGame() {
     RequestQuit()
 }
 
-def private BuildMainMenu() {
+def public Draw(_assets : AssetMap) {
     Ui::Backdrop("##menu_backdrop", UiTheme::kPauseCurtain) {
         Ui::Panel("##menu", UiTheme::kPausePanel, UiLayout(anchor = float2(0.5f, 0.5f), spacing = 12.0f)) {
             Ui::Label("##title", "Main Menu", UiTheme::kTitle)
@@ -39,11 +44,4 @@ def private BuildMainMenu() {
             Ui::Button(UiTheme::kQuietButton, "##exit", "Exit", @@ExitGame)
         }
     }
-}
-
-// The registry lives in the script context, so it is filled when the module initializes — the
-// editor's Screens panel can list the screens before Play has ever started.
-[init]
-def private RegisterScreen() {
-    Ui::RegisterScreen("main_menu", @@BuildMainMenu)
 }

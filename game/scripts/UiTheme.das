@@ -7,8 +7,9 @@ module UiTheme shared public
 //!
 //! Two layers live here:
 //! - `kTheme` — the per-kind defaults (panel, text, button, bar, slider, checkbox). It is
-//!   installed once from `[init]` with `Ui::SetTheme`, so a screen declares structure only:
-//!   `Ui::Panel("##hud")` already has colours, padding, radius, text metrics and sounds.
+//!   installed explicitly in `GameStart` (and after a hot reload) with `Ui::SetTheme`, so a
+//!   screen declares structure only: `Ui::Panel("##hud")` already has colours, padding,
+//!   radius, text metrics and sounds.
 //! - named styles and button templates that screens reference for a deliberate variant
 //!   (`UiTheme::kDangerButton`, `UiTheme::kMuted`).
 //!
@@ -56,12 +57,14 @@ let public kTheme = UiTheme(
         padding = float4(16.0f, 14.0f, 16.0f, 14.0f)
     ),
     text = UiStyle(
+        font = "font/body",
         text_size = 18.0f,
         text_color = kPaper,
         text_align = 0,
         anim_time = 0.0f
     ),
     button = UiStyle(
+        font = "font/body",
         color = kInkRaised,
         hover_color = float4(0.22f, 0.29f, 0.42f, 1.0f),
         press_color = float4(0.10f, 0.12f, 0.16f, 1.0f),
@@ -78,6 +81,7 @@ let public kTheme = UiTheme(
         sound_click = kSfxClick
     ),
     bar = UiStyle(
+        font = "font/body",
         color = kInkSoft,
         hover_color = kAccent,
         border_color = kLine,
@@ -170,10 +174,3 @@ let public kQuietButton : UiButtonTemplate = ButtonTemplate(
         )
     )
 )
-
-// The theme is installed when the script context starts, so every screen in the game — and the
-// editor's screen preview — sees it without wiring a call into `GameStart`.
-[init]
-def private InstallTheme() {
-    Ui::SetTheme(kTheme)
-}

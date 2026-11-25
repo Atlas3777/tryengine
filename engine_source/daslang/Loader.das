@@ -25,6 +25,7 @@ require daslib/async_boost
 require strings
 require tryengine/AssetCache
 require tryengine/Assets
+require tryengine/AssetMap
 require tryengine/Bundle
 require tryengine/Content
 require tryengine/Prefab
@@ -42,15 +43,20 @@ enum public LoadPhase {
     Failed
 }
 
-//! Called once when the request reaches `Ready`. Failure is reported through `IsFailed` /
-//! `Error`; the callback is not called for a failed request.
-typedef public LoaderCallback = function<() : void>
+//! Ready alias tables of one request: canonical bundle path -> `AssetMap` handle. The screen
+//! stack gets a handle from here and never looks a path up again.
+typedef public LoaderCallback = function<(maps : table<string; AssetMap>) : void>
 
-// Builder. Array fields are filled in place; the request is consumed by `Loader::Load`.
-// All paths are relative to the game directory: scenes and prefabs use `content/...`,
-// bundles use `data/...`. Extensions are explicit; `game/` is implied.
-// `AddAsset` takes any kind registered in `AssetCache`, so a new asset type needs no
-// loader change and no dedicated field here.
+//! Handle of a requested bundle (`data/...` or canonical path); the empty map when the request
+//! did not ask for it.
+def public MapOf(maps : table<string; AssetMap>; bundle_path : string) : AssetMap {
+    let resolved = Content::ResolvePath(DocumentKind.Bundle, bundle_path)
+    if (!key_exists(maps, resolved)) {
+        return AssetMap()
+    }
+    return maps?[resolved] ?? AssetMap()
+}
+
 // One generic asset request. Any kind registered in `AssetCache` can be added without a
 // dedicated field or a loader edit: the kind string is whatever its `[init]` registered.
 struct public LoaderAssetRequest {
@@ -58,11 +64,23 @@ struct public LoaderAssetRequest {
     path : string
 }
 
+// One already-addressed resource (mesh/material/texture/font). Content dependencies are
+// collected automatically; this is for engine-owned ids that no document names, such as the
+// fixed UI material.
+struct public LoaderResourceRequest {
+    kind : string
+    id : uint64
+}
+
+// Builder. Array fields are filled in place; the request is consumed by `Loader::Load`.
+// All paths are relative to the game directory: scenes and prefabs use `content/...`,
+// bundles use `data/...`. Extensions are explicit; `game/` is implied.
 struct public LoaderRequest {
     prefabs : array<string>
     bundles : array<string>
     scenes : array<string>
     assets  : array<LoaderAssetRequest>
+    resources : array<LoaderResourceRequest>
 
     def static AddPrefab(var self : LoaderRequest; name : string) {
         self.prefabs |> push(name)
@@ -78,6 +96,10 @@ struct public LoaderRequest {
 
     def static AddAsset(var self : LoaderRequest; kind : string; path : string) {
         self.assets |> push(LoaderAssetRequest(kind = kind, path = path))
+    }
+
+    def static AddResource(var self : LoaderRequest; kind : string; id : uint64) {
+        self.resources |> push(LoaderResourceRequest(kind = kind, id = id))
     }
 }
 
@@ -102,6 +124,9 @@ struct private AssetJob {
 struct private ResourceJob {
     kind : ResourceJobKind
     id : uint64
+    //! Asset that named this resource (scene/prefab/bundle path), or "request" for an
+    //! explicit AddResource. Used only by failure messages.
+    source : string
     held : bool
     done : bool
 }
@@ -115,9 +140,10 @@ var private g_asset_jobs : array<AssetJob>
 var private g_resource_jobs : array<ResourceJob>
 var private g_error = ""
 var private g_on_loaded : LoaderCallback = @@LoaderNoop
+var private g_maps : table<string; AssetMap>
 var private g_notified = false
 
-def private LoaderNoop() {
+def private LoaderNoop(maps : table<string; AssetMap>) {
 }
 
 // Loader request paths are relative to the game directory: scenes and prefabs use
@@ -264,35 +290,39 @@ def private ResetState() {
     g_generation++
     g_error = ""
     g_on_loaded = @@LoaderNoop
+    clear(g_maps)
     g_notified = false
     clear(g_asset_jobs)
     clear(g_resource_jobs)
 }
 
-def private AddResourceJob(kind : ResourceJobKind; id : uint64) {
+def private AddResourceJob(kind : ResourceJobKind; id : uint64; source : string = "") {
     if (id == 0ul) {
         return
     }
-    for (job in g_resource_jobs) {
-        if (job.kind == kind && job.id == id) {
+    for (index in range(length(g_resource_jobs))) {
+        if (g_resource_jobs[index].kind == kind && g_resource_jobs[index].id == id) {
+            if (empty(g_resource_jobs[index].source) && !empty(source)) {
+                g_resource_jobs[index].source = source
+            }
             return
         }
     }
-    g_resource_jobs |> push(ResourceJob(kind = kind, id = id))
+    g_resource_jobs |> push(ResourceJob(kind = kind, id = id, source = source))
 }
 
-def private AddDependencies(deps : Dependencies) {
+def private AddDependencies(deps : Dependencies; source : string) {
     for (mesh in deps.meshes) {
-        AddResourceJob(ResourceJobKind.Mesh, mesh)
+        AddResourceJob(ResourceJobKind.Mesh, mesh, source)
     }
     for (material in deps.materials) {
-        AddResourceJob(ResourceJobKind.Material, material)
+        AddResourceJob(ResourceJobKind.Material, material, source)
     }
     for (texture in deps.textures) {
-        AddResourceJob(ResourceJobKind.Texture, texture)
+        AddResourceJob(ResourceJobKind.Texture, texture, source)
     }
     for (font in deps.fonts) {
-        AddResourceJob(ResourceJobKind.Font, font)
+        AddResourceJob(ResourceJobKind.Font, font, source)
     }
 }
 
@@ -371,7 +401,20 @@ def private ProcessAssets(kind : string) {
             continue
         }
 
-        AddDependencies(job.ops.deps(job.path))
+        AddDependencies(job.ops.deps(job.path), job.path)
+
+        // A bundle declares its parent as another document that must be ready before the
+        // hierarchy can be linked; the parent itself is a bundle job and joins this phase.
+        for (parent_path in job.ops.parents(job.path)) {
+            if (!IsDataPath(parent_path)) {
+                Fail("bundle '{job.path}': parent '{parent_path}' must be a data/... path")
+                return
+            }
+            if (!QueueDocument(DocumentKind.Bundle, parent_path)) {
+                Fail("bundle '{job.path}': parent '{parent_path}' was not found")
+                return
+            }
+        }
 
         for (prefab_path in job.ops.expands(job.path)) {
             if (!IsContentPath(prefab_path)) {
@@ -388,12 +431,37 @@ def private ProcessAssets(kind : string) {
     }
 }
 
+// Validates every bundle of the request (parents are bundle jobs too): a missing parent or a
+// cycle fails the request before any scene or prefab is allowed to run.
+def private ValidateBundles() : bool {
+    for (job in g_asset_jobs) {
+        if (job.kind != "bundle") {
+            continue
+        }
+        if (!Bundle::Validate(job.path)) {
+            Fail("bundle '{job.path}' has an invalid parent chain")
+            return false
+        }
+    }
+    return true
+}
+
+def private FillMaps() {
+    clear(g_maps)
+    for (job in g_asset_jobs) {
+        if (job.kind == "bundle") {
+            g_maps[job.path] = Bundle::Flatten(job.path)
+        }
+    }
+}
+
 def private NotifyReady() {
     if (g_notified) {
         return
     }
     g_notified = true
-    invoke(g_on_loaded)
+    FillMaps()
+    invoke(g_on_loaded, g_maps)
 }
 
 // Starts a request and records its callback. The loader must be idle. Asset requests are
@@ -447,6 +515,28 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("asset '{asset.path}' of kind '{asset.kind}' was not found")
             return false
         }
+    }
+
+    for (resource in request.resources) {
+        // Map the name inline: an enum passed as `var out` does not write back in this
+        // daslang version (checked with a minimal probe), so a helper would leave the
+        // default Mesh and request a material as a mesh.
+        var kind = ResourceJobKind.Mesh
+        if (resource.kind == "material") {
+            kind = ResourceJobKind.Material
+        } elif (resource.kind == "texture") {
+            kind = ResourceJobKind.Texture
+        } elif (resource.kind == "font") {
+            kind = ResourceJobKind.Font
+        } elif (resource.kind != "mesh") {
+            Fail("resource of unknown kind '{resource.kind}'")
+            return false
+        }
+        if (resource.id == 0ul) {
+            Fail("resource of kind '{resource.kind}' has id 0")
+            return false
+        }
+        AddResourceJob(kind, resource.id, "request")
     }
 
     g_phase = NextPhase(LoadPhase.Idle)
@@ -506,6 +596,9 @@ def private Advance() {
             return
         }
         if (AllAssetsDone("bundle")) {
+            if (!ValidateBundles()) {
+                return
+            }
             g_phase = NextPhase(g_phase)
         }
     }
@@ -542,7 +635,7 @@ def private Advance() {
             let kind = g_resource_jobs[index].kind
             if (kind == ResourceJobKind.Mesh) {
                 if (ResourceIsFailedMesh(id)) {
-                    Fail("mesh {id} failed to load")
+                    Fail("mesh {id} (from {g_resource_jobs[index].source}) failed to load")
                     return
                 }
                 if (ResourceIsReadyMesh(id)) {
@@ -552,7 +645,7 @@ def private Advance() {
                     // загрузка не считается законченной, пока он не готов.
                     let default_material = MeshDefaultMaterial(id)
                     if (default_material != 0ul) {
-                        AddResourceJob(ResourceJobKind.Material, default_material)
+                        AddResourceJob(ResourceJobKind.Material, default_material, "mesh {id}")
                         complete = false
                     }
                 } else {
@@ -560,7 +653,7 @@ def private Advance() {
                 }
             } elif (kind == ResourceJobKind.Material) {
                 if (ResourceIsFailedMaterial(id)) {
-                    Fail("material {id} failed to load")
+                    Fail("material {id} (from {g_resource_jobs[index].source}) failed to load")
                     return
                 }
                 if (ResourceIsReadyMaterial(id)) {
@@ -570,7 +663,7 @@ def private Advance() {
                 }
             } elif (kind == ResourceJobKind.Texture) {
                 if (ResourceIsFailedTexture(id)) {
-                    Fail("texture {id} failed to load")
+                    Fail("texture {id} (from {g_resource_jobs[index].source}) failed to load")
                     return
                 }
                 if (ResourceIsReadyTexture(id)) {
@@ -580,7 +673,7 @@ def private Advance() {
                 }
             } else {
                 if (ResourceIsFailedFont(id)) {
-                    Fail("font {id} failed to load")
+                    Fail("font {id} (from {g_resource_jobs[index].source}) failed to load")
                     return
                 }
                 if (ResourceIsReadyFont(id)) {

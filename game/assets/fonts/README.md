@@ -1,27 +1,28 @@
 # UI font
 
-The game UI draws text with one baked font. Put a `.ttf` here (Latin + Cyrillic glyphs) and
-import it once:
+The game UI can use any number of baked fonts; each is named by a key in the shared UI bundle.
+Put a `.ttf` here (Latin + Cyrillic glyphs) and import it once:
 
 1. Copy `YourFont.ttf` into this folder.
 2. Start the editor. `FontImporter` registers `.ttf` assets, so the first scan imports the font
    and writes `YourFont.ttf.meta` (the asset guid) plus the runtime artifact
    `game/artifacts/runtime/<guid>/0` in the `FontBinary` format (SDF atlas + glyph metrics).
-3. Put the guid from the `.meta` into the `font` entry of the shared UI bundle,
-   `game/data/bundles/ui.bundle`:
+3. Put the guid from the `.meta` into the shared UI bundle, `game/data/bundles/ui.bundle`,
+   under a style key:
 
    ```text
    {
-       name: string = "font"
+       name: string = "font/body"
        kind: string = "font"
        ref: string = "guid:1234567890123456789"
    }
    ```
 
-   The game and the editor read this key after the bundle is loaded and hand it to
-   `UiSetAssets`; no C++ constant needs editing, and a new font is a one-line change here.
-   Without a resolvable `font` entry the UI stays off: the tree is still built, but `UiPass`
-   draws nothing and `UiSystem` logs why.
+   A style names the key (`UiStyle(font = "font/body")`); the UI resolves it through the
+   screen's `AssetMap` and `UiSystem` builds the per-font material. Add another font as another
+   key and use it in the style that needs it. A screen bundle can override the same key with its
+   `parent = "data/bundles/ui.bundle"` hierarchy. Without a resolvable key the text is not
+   drawn and `UiSystem` logs why.
 4. Rebuild the editor and the game client. The build packs the font into the common pak because
    it reads `assets` of every bundle (`kind = "font"`); there is no separate build setting.
 

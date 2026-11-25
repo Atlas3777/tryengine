@@ -219,9 +219,9 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `ScriptSystemConfig::post_background`. Пока идёт компиляция, `ScriptSystem::IsReady()` ложно,
   и вызовы скриптов отклоняются: компилятор daScript не потокобезопасен. Экран
   загрузки/ошибки рисует C++ (ImGui в редакторе, fallback `UiPass` с точками в игре), а не
-  скрипт. Оверлею `UiPass` нужны шрифт и материал: в игре они приходят из `ui.bundle`,
-  который грузит boot-запрос уже после компиляции, поэтому на время JIT окно пустое, а
-  ошибка компиляции остаётся только в `logs/`. Первая неудачная загрузка запирает скрипты
+  скрипт. Оверлею `UiPass` нужен базовый материал UI: в игре его грузит boot-запрос уже
+  после компиляции, поэтому на время JIT окно пустое, а ошибка компиляции остаётся только
+  в `logs/`. Первая неудачная загрузка запирает скрипты
   (`ScriptStatus::Failed`), но процесс
   не перезапускается: оверлей редактора и F5 зовут `RetryMainScriptAsync`, который читает
   файлы заново. Неудачная перезагрузка оставляет старое поколение рабочим, но
@@ -264,18 +264,19 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   воспроизведение: аудио-подсистемы в движке нет. Полный контракт — `engine_source/daslang/UI.md`.
 - Слои UI: виджеты-примитивы (`tryengine/Ui`, повторяются), составные виджеты игры
   (`game/scripts/UiWidgets.das`: функция с id-параметром, без своего состояния и цветов),
-  тема (`game/scripts/UiTheme.das`, ставится один раз `Ui::SetTheme` из `[init]`: по стилю на
-  вид + именованные стили и шаблоны кнопок) и экраны: **по файлу на экран**
-  (`game/scripts/ScreenMainMenu.das`, `ScreenHud.das`, `ScreenPause.das`, `ScreenShop.das`),
-  каждый сам регистрируется в `[init]` (`Ui::RegisterScreen("hud", @@BuildHud)`) и рисуется
-  `Ui::Screen`/`FrameScreen`; экран уникален и собран из виджетов. Общие состояние и подписи —
-  `game/scripts/GameState.das`, навигация — `game/scripts/GameScreens.das` (политика поверх
-  движкового `Ui::ScreenStack`), `game/scripts/GameUi.das` — только манифест (require экранов)
-  и `Frame()`. У одинакового локального id в двух экранах разные узлы: имя экрана входит в id.
+  тема (`game/scripts/UiTheme.das`: дефолтный `UiStyle` на вид + именованные стили, ставится
+  явно `Ui::SetTheme` в `GameStart`, не из `[init]`) и экраны: **по файлу на экран**
+  (`ScreenMainMenu.das`, `ScreenHud.das`, `ScreenPause.das`, `ScreenShop.das`), функция
+  `def public Draw(assets : AssetMap)`. Ни реестра, ни имён, ни `[init]`: движковый
+  `Ui::ScreenStack` хранит `ScreenRef` (указатель на функцию + хэндл карты ассетов), а
+  `GameScreens.das` — политика поверх стека (`Show`/`Push`/`Pop`/`Has` по указателю). Общие
+  состояние и подписи — `GameState.das`, boot/манифест — `GameUi.das`. У одинакового
+  локального id в двух слоях разные узлы: `Screen` подмешивает в id номер слоя.
   Новые стили и цвета добавляются в тему, а не в разметку.
-- Поток игры: `GameStart` регистрирует время и зовёт `GameFlow::Start()` — boot-запрос
-  `ui.bundle`, по callback `UiSetAssets` и главное меню; физика на `game_world_clock`, ни
-  одной сцены. Экран меню грузит сцену `GameFlow::LoadScene` (loader → `Scene::Load` → HUD).
+- Поток игры: `GameStart` регистрирует время, ставит тему и зовёт `GameFlow::Start()`
+  (физика) + `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал; callback
+  показывает меню). Экран меню грузит сцену `GameFlow::LoadScene`: тот же запрос несёт
+  `hud`/`pause`/`shop` бандлы, callback применяет `Scene::Load` и `ScreenHud::Show(maps)`.
   `GameUpdate` идёт только при `GameFlow::IsReady()`. Выход из меню — `RequestQuit()`
   (`tryInput`), тот же флаг, что у закрытия окна.
 - UI не часть `GameUpdate`: `[export] GameUiFrame()` (`game/scripts/Game.das`) вызывает и
@@ -283,29 +284,28 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   поэтому пауза `game_world_clock` его не останавливает — это нужно меню паузы игры.
   Пауза **редактора** (`Pause`) замораживает всю игру, UI включённо: редактор не объявляет
   UI-кадр, проход перерисовывает последний список команд, и указатель ничего не задевает.
-  В Edit режиме игра не запущена: редактор рисует выбранный в панели **Screens** экран
-  (`editor/daslang/UiScreens.das`) внутри `Ui::SetPreviewMode(true)` — hover/press работают, но
-  действия, звуки и записи в `var` подавлены. Точки `GameUiFrame`, `Ui::Frame`,
-  `Ui::Begin/End`, `get_ui_draw_cmds` — контракт с C++: переименование ломает молча.
-- Стек экранов — механизм в движке (`Ui::ScreenStack`: `Show`/`Push`/`Pop`/`Remove`/`Draw`,
-  имена проверяются по реестру), политика — в игре (`game/scripts/GameScreens.das`: стек
-  никогда не пустой, `Close` возвращает HUD). Экземпляр стека один и живёт в игре; порядок
-  массива = порядок отрисовки, поэтому второй экран ложится поверх HUD. Модальные окна
+  В Edit режиме игра не запущена: панели **Screens** больше нет, редактор объявляет пустой
+  UI-кадр (`Ui::Begin/End`), чтобы на вьюпорте не остался HUD от прошлого Play. Точки
+  `GameUiFrame`, `Ui::Frame`, `Ui::Begin/End`, `get_ui_draw_cmds` — контракт с C++:
+  переименование ломает молча.
+- Стек экранов — механизм в движке (`Ui::ScreenStack`: `Show`/`Push`/`Pop`/`Remove`/`Draw`
+  по `ScreenRef`), политика — в игре (`GameScreens.das`). Экземпляр стека один и живёт в
+  игре; порядок массива = порядок отрисовки, номер слоя входит в id узлов. Модальные окна
   рисуются через `Ui::Backdrop` — полноэкранный слой, который забирает указатель, иначе
   нижний слой кликается сквозь окно.
 - Шрифт игрового UI — импортируемый ассет `.ttf` в `game/assets/fonts`; `FontImporter` печёт
-  SDF-атлас в артефакт `FontBinary`. Шрифт и материал UI объявлены в общем бандле
-  `game/data/bundles/ui.bundle` (`assets`: `font`, `material`), а игра/редактор после загрузки
-  бандла зовут `UiSetAssets(font_guid, material_guid)`. `UiSystem` ничего не запрашивает:
-  не принесённый загрузчиком ассет просто не рисуется; см. `game/assets/fonts/README.md`.
-- Текстуры игрового UI: экран называет их ключом своего бандла —
-  `Ui::ImageTexture("##logo", Bundle::Get(GameBundles::kHud, "logo"), size)`. Бандл
-  (`game/data/bundles/<screen>.bundle`) хранит `ключ -> guid:<id>`, поэтому guid пишется один
-  раз в одном авторском файле, а не в коде экрана. `TextureImporter` (`.png`/`.jpg`/`.jpeg`)
-  печёт `TextureBinary` по настройкам из `.meta` (`format`, `generate_mips`, `max_size`,
-  `filter`, `wrap`); билд берёт UI-текстуры из `assets` бандлов и кладёт в common-пак.
-  Настройки импорта редактируются в панели **Import Settings**, там же кнопка
-  **Reimport** (перезапекание без перезапуска редактора); проверка запекания —
+  SDF-атлас в `FontBinary`. Шрифт объявляется в корневом бандле `ui.bundle` (`assets`,
+  `kind = "font"`), а стиль ссылается на него ключом: `UiStyle(font = "font/body")`. UI
+  резолвит ключ через `AssetMap` текущего экрана (`UiSystem` строит материал на шрифт),
+  поэтому шрифты наследуются от `ui.bundle` и переопределяются экраном. Базовый материал UI
+  фиксирован (`UiConfig.material_path`), грузится boot-запросом (`AddResource`), сеттера
+  `UiSetAssets` нет; см. `game/assets/fonts/README.md`.
+- Текстуры игрового UI: экран получает карту ассетов и называет ключ —
+  `Ui::ImageTexture("##logo", assets.Texture("logo"), size)`. Бандл
+  (`game/data/bundles/<screen>.bundle`) хранит `ключ -> guid:<id>`; `TextureImporter`
+  (`.png`/`.jpg`/`.jpeg`) печёт `TextureBinary` по настройкам из `.meta` (`format`,
+  `generate_mips`, `max_size`, `filter`, `wrap`); билд берёт UI-текстуры из `assets` бандлов
+  и кладёт в common-пак. Настройки импорта — **Import Settings**, **Reimport**; проверка —
   `tools/agent/texture-probe.sh`; см. `game/assets/ui/README.md`.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
@@ -339,20 +339,24 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   (пути `content/...` и `data/...`). Полного `RefreshContent` больше нет: префаб грузится
   точечно через `Prefab::LoadPrefabFile`, а редакторская панель `Prefab Inspector`
   выключена и будет переделана под готовые компоненты.
-- Ассет-бандлы: `tryengine/Bundle.das`, файлы `game/data/bundles/*.bundle` (ConfigFormat,
-  `version = 2`, `name`, `prefabs: string[]`, `assets: {name, kind, ref}[]`). Один бандл на
-  экран; пути — `game/scripts/GameBundles.das`. `ref` — `guid:<id>` (текстура, шрифт) или
-  авторский путь (`.mat`). Готовый бандл — таблица `name -> id`: экран читает её через
-  `Bundle::Get(path, "logo")`, а игра грузит тот же путь `LoaderRequest::AddBundle` до показа
-  экрана. `Loader` разворачивает `prefabs` и добавляет `textures`/`fonts` бандла в
-  `Content::Dependencies`; билд читает `assets` всех бандлов и кладёт эти ассеты в common-пак.
-- `Game.das` — игра и точка входа, а поток сцен — `trygame/GameFlow.das`. `GameStart`
-  регистрирует время и зовёт `GameFlow::Start()`: boot-запрос `ui.bundle`, по его callback
-  `UiSetAssets` и главное меню; физика на `game_world_clock`, ни одной сцены. Экран
-  `main_menu` грузит сцену через `GameFlow::LoadScene` (loader читает сцену, `hud.bundle` и
-  опциональный префаб, затем `Scene::Load` применяет документ из кеша, физика сбрасывается,
-  стек переключается на HUD); `GameUpdate` идёт только при `GameFlow::IsReady()`. Ни
-  загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск.
+- Ассет-бандлы: `tryengine/Bundle.das` — **манифест загрузки** (`version = 3`, `name`,
+  `parent`, `prefabs`, `assets: {name, kind, ref}[]`), его видит только Loader. `ref` —
+  `guid:<id>` (текстура, шрифт) или авторский путь (`.mat`). Один родитель; ребёнок
+  переопределяет ключ. После загрузки `Bundle::Flatten` собирает плоскую таблицу
+  `ключ -> (kind, id)` и регистрирует её в `tryengine/AssetMap`; экран получает дескриптор
+  `AssetMap` из callback (`Loader::MapOf(maps, path)`), а не путь. Пути экранов — константы
+  `kHudBundle`/`kPauseBundle`/`kShopBundle`/`kMenuBundle` в файлах экранов; `GameFlow`
+  добавляет те же пути в запрос. `Loader` разворачивает `prefabs`, ставит в очередь родителей
+  (`parents`) и добавляет `textures`/`fonts` в `Content::Dependencies`; билд читает `assets`
+  всех бандлов и кладёт их в common-пак.
+- `Game.das` — игра и точка входа, поток сцен — `trygame/GameFlow.das`, boot/экраны —
+  `trygame/GameUi.das`. `GameStart` ставит тему, зовёт `GameFlow::Start()` (физика) и
+  `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал; callback показывает
+  меню). `GameFlow::LoadScene` одним запросом читает сцену, `hud`/`pause`/`shop` бандлы и
+  префаб; callback применяет `Scene::Load` и `ScreenHud::Show(maps)`; `GameUpdate` идёт только
+  при `GameFlow::IsReady()`. Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск.
+  Горячая перезагрузка зовёт `GameUi::Restore(scene_ready)`: перечитывает бандлы и строит
+  новые карты, мир остаётся.
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
   которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
   `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно
@@ -362,7 +366,9 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `GameApp::Init` ничего не прогревает: только паки и `script_pak`. В редакторе Play тот
   же путь; `PlayMode.EndPlay` делает `Loader::Abort`, а задача `Load` завершается по
   своему поколению. `LoaderRequest::AddAsset(kind, path)` принимает любой вид из
-  `AssetCache`, поэтому новый ассет не требует правок загрузчика.
+  `AssetCache`, поэтому новый ассет не требует правок загрузчика; `AddResource(kind, id)`
+  добавляет уже адресованный ресурс (базовый материал UI: `AssetPathId(UiMaterialPath())`).
+  Callback получает `maps : table<string; AssetMap>` — плоские карты алиасов запроса.
   `Content::Dependencies` несёт meshes/materials/textures/fonts, поэтому бандл грузит и
   свои текстуры со шрифтом. Рантайм берёт ссылки только через `Hold*` (refcount без I/O):
   сцена, префаб и UI не могут начать чтение с диска — это делает только Loader.
@@ -435,7 +441,8 @@ Conventional стиле на английском языке.
 
 - `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
   `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`, `test.sh` (headless-сюита поведения
-  `.das`), `undo-probe.sh` (история undo/redo на мире DECS без GUI), `log-probe.sh`
+  `.das`), `ui-smoke.sh` (headless-виджеты UI, тема, режим превью), `undo-probe.sh`
+  (история undo/redo на мире DECS без GUI), `log-probe.sh`
   (файловый sink, кольцо журнала, фильтр и Clear без GUI), `shader-probe.sh` (компиляция
   шейдеров и их модулей через настоящий `ShaderCompilerSystem`, без GUI), `gltf-probe.sh`
   (поворот корней модели в Z-up и `.meta` модели через кодек импортёра, без GUI).

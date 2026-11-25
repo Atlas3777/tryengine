@@ -7,8 +7,8 @@ module UiSmoke shared public
 //! Headless test of the retained UI: no window, no GPU, injected mouse. It exercises the
 //! parts that can be wrong without looking at pixels — id addressing, hit-testing, the
 //! press/click state machine, sound events, `var` write-back and the draw command list, plus
-//! the layers above the widgets: the screen registry, the theme, preview mode and modal
-//! backdrops, and the image path that has no texture behind it.
+//! the layers above the widgets: the theme, preview mode, and the image path that has no
+//! texture behind it.
 //!
 //! Run with tools/agent/ui-smoke.sh. A failure prints every failed check and panics, so the
 //! exit code is non-zero.
@@ -86,69 +86,6 @@ def private Center(rect : float4) : float2 {
 
 // --- screens and theme --------------------------------------------------------------------
 
-var private g_hits_a : int = 0
-var private g_hits_b : int = 0
-
-def private OnHitA() {
-    g_hits_a++
-}
-
-def private OnHitB() {
-    g_hits_b++
-}
-
-// Both screens declare the same local id: the screen name is part of the id, so they are two
-// nodes and a click cannot cross from one screen to the other.
-def private BuildScreenA() {
-    Ui::Button("##shared", "A", @@OnHitA)
-}
-
-def private BuildScreenB() {
-    Ui::Button("##shared", "B", @@OnHitB)
-}
-
-def private ClickInScreen(name : string; point : float2) {
-    Ui::InjectInput(point, true, true, false)
-    Ui::FrameScreen(name)
-    Ui::InjectInput(point, false, false, true)
-    Ui::FrameScreen(name)
-}
-
-def private RunScreenChecks() {
-    Check(!Ui::HasScreen("smoke_missing"), "an unregistered screen is not addressable")
-    Ui::RegisterScreen("smoke_a", @@BuildScreenA)
-    Ui::RegisterScreen("smoke_b", @@BuildScreenB)
-    Check(Ui::HasScreen("smoke_a"), "RegisterScreen makes a screen addressable")
-
-    let names <- Ui::ScreenNames()
-    Check(length(names) == 2, "ScreenNames lists the registered screens")
-    if (length(names) == 2) {
-        Check(names[0] == "smoke_a", "ScreenNames keeps registration order (first)")
-        Check(names[1] == "smoke_b", "ScreenNames keeps registration order (second)")
-    }
-
-    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
-    Ui::FrameScreen("smoke_a")
-    Check(Ui::DebugCommandCount() > 0, "FrameScreen draws the registered screen")
-    let rect_a = Ui::DebugRect("##shared", "smoke_a")
-    Check(rect_a.z > 0.0f, "a screen node is addressable through its screen name")
-    Check(Ui::DebugRect("##shared", "smoke_b").z <= 0.0f, "the same path under another screen is a different node")
-
-    // A point well inside the button in both screens (same origin, padding corner).
-    let inside = float2(rect_a.x + 2.0f, rect_a.y + 2.0f)
-    ClickInScreen("smoke_a", inside)
-    Check(g_hits_a == 1 && g_hits_b == 0, "the click reaches only the screen that declared the id")
-    // A node has to exist before it can be pressed: draw B once, then click it. That is the
-    // normal retained-UI rule (the first frame of a screen only creates its nodes).
-    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
-    Ui::FrameScreen("smoke_b")
-    ClickInScreen("smoke_b", inside)
-    Check(g_hits_b == 1, "the other screen's button reacts under its own name")
-
-    Ui::FrameScreen("smoke_missing")
-    Check(Ui::DebugCommandCount() == 0, "an unregistered screen draws nothing")
-}
-
 def private ColorNear(a : float4; b : float4) : bool {
     return abs(a.x - b.x) < 1e-4f && abs(a.y - b.y) < 1e-4f && abs(a.z - b.z) < 1e-4f && abs(a.w - b.w) < 1e-4f
 }
@@ -184,98 +121,58 @@ def private BuildPreviewScreen() {
     }
 }
 
-def private BuildBaseScreen() {
-    Ui::Button("##under", "Under", @@OnBaseClick, kButtonStyle)
-}
-
-def private BuildModalScreen() {
-    Ui::Backdrop("##modal", UiStyle(color = float4(0.0f, 0.0f, 0.0f, 0.5f))) {
-        Ui::Panel("##box", UiStyle(), UiLayout(anchor = float2(0.5f, 0.5f))) {
-            Ui::Button("##inside", "Inside", @@OnModalClick, kButtonStyle)
-        }
+def private FramePreview() {
+    Ui::Frame() {
+        BuildPreviewScreen()
     }
 }
 
-def private RunPreviewChecks() {
-    Ui::RegisterScreen("preview", @@BuildPreviewScreen)
-    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
-    Ui::FrameScreen("preview")
+def private ClickPreview(point : float2) {
+    Ui::InjectInput(point, true, true, false)
+    FramePreview()
+    Ui::InjectInput(point, false, false, true)
+    FramePreview()
+}
 
-    let go = Ui::DebugRect("##row/##go", "preview")
-    let check = Ui::DebugRect("##row/##check", "preview")
-    let slider = Ui::DebugRect("##row/##slider", "preview")
+def private RunPreviewChecks() {
+    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
+    FramePreview()
+
+    let go = Ui::DebugRect("##row/##go")
+    let check = Ui::DebugRect("##row/##check")
+    let slider = Ui::DebugRect("##row/##slider")
     Check(go.z > 0.0f && check.z > 0.0f && slider.z > 0.0f, "the preview screen lays out its widgets")
 
     // Preview: the pointer still presses and hovers, nothing leaves the tree.
     Ui::SetPreviewMode(true)
     Check(Ui::IsPreviewing(), "preview mode reports itself")
-    ClickInScreen("preview", Center(go))
+    ClickPreview(Center(go))
     Check(g_preview_clicks == 0, "preview mode invokes no action")
     Check(!g_preview_button_true, "Button returns false in preview mode")
 
-    ClickInScreen("preview", Center(check))
+    ClickPreview(Center(check))
     Check(!g_preview_checked, "the checkbox does not write its variable in preview mode")
 
     let slider_low = float2(slider.x + slider.z * 0.2f, slider.y + slider.w * 0.5f)
     let slider_high = float2(slider.x + slider.z * 0.8f, slider.y + slider.w * 0.5f)
     Ui::InjectInput(slider_low, true, true, false)
-    Ui::FrameScreen("preview")
+    FramePreview()
     Ui::InjectInput(slider_high, true, false, false)
-    Ui::FrameScreen("preview")
+    FramePreview()
     Ui::InjectInput(slider_high, false, false, true)
-    Ui::FrameScreen("preview")
+    FramePreview()
     Check(g_preview_value == 0.25f, "the slider does not write its variable in preview mode")
 
     // Hover state is still tracked, so the preview looks alive.
     Ui::InjectInput(Center(go), false, false, false)
-    Ui::FrameScreen("preview")
+    FramePreview()
     Check(Ui::HotId() != 0ul, "preview mode still hit-tests")
 
     Ui::SetPreviewMode(false)
     Check(!Ui::IsPreviewing(), "preview mode turns off")
-    ClickInScreen("preview", Center(go))
+    ClickPreview(Center(go))
     Check(g_preview_clicks == 1, "the same click works once preview mode is off")
     Check(g_preview_button_true, "Button returns true outside preview mode")
-}
-
-def private RunModalChecks() {
-    Ui::RegisterScreen("smoke_base", @@BuildBaseScreen)
-    Ui::RegisterScreen("smoke_modal", @@BuildModalScreen)
-    Ui::InjectInput(float2(-1000.0f, -1000.0f), false, false, false)
-    Ui::Frame() {
-        Ui::Screen("smoke_base")
-        Ui::Screen("smoke_modal")
-    }
-
-    let under = Ui::DebugRect("##under", "smoke_base")
-    let inside = Ui::DebugRect("##modal/##box/##inside", "smoke_modal")
-    Check(under.z > 0.0f && inside.z > 0.0f, "the two layers lay out in one frame")
-
-    // The backdrop is drawn after the base screen, so it wins the pointer where they overlap.
-    Ui::InjectInput(Center(under), true, true, false)
-    Ui::Frame() {
-        Ui::Screen("smoke_base")
-        Ui::Screen("smoke_modal")
-    }
-    Ui::InjectInput(Center(under), false, false, true)
-    Ui::Frame() {
-        Ui::Screen("smoke_base")
-        Ui::Screen("smoke_modal")
-    }
-    Check(g_base_clicks == 0, "a backdrop swallows the pointer above an earlier layer")
-
-    // Widgets declared inside the backdrop still get it.
-    Ui::InjectInput(Center(inside), true, true, false)
-    Ui::Frame() {
-        Ui::Screen("smoke_base")
-        Ui::Screen("smoke_modal")
-    }
-    Ui::InjectInput(Center(inside), false, false, true)
-    Ui::Frame() {
-        Ui::Screen("smoke_base")
-        Ui::Screen("smoke_modal")
-    }
-    Check(g_modal_clicks == 1, "widgets inside the backdrop stay clickable")
 }
 
 def private RunImageChecks() {
@@ -396,11 +293,9 @@ def run_smoke() {
     Check(Ui::HotId() == 0ul, "an unfocused viewport has no hot node")
     Ui::SetInputViewport(float2(0.0f, 0.0f), float2(800.0f, 600.0f), true)
 
-    RunScreenChecks()
     RunThemeChecks()
     RunImageChecks()
     RunPreviewChecks()
-    RunModalChecks()
 
     if (g_failures != 0) {
         panic("ui-smoke failed: {g_failures} of {g_checks} checks")
