@@ -9,15 +9,14 @@ module Model shared public
 //! needs live in two runtime-only components (`mesh`, `material`), exactly the pair the
 //! renderer reads. Resolution happens when an entity is created (`Prefab::Spawn`,
 //! `Scene::Load`) or when the editor re-applies a material — never in the frame loop:
-//! loading is the loader's job (`Loader::Load`, `Scene::LoadAsync`), and a model that is not
-//! ready is an error, not a pop-in.
+//! loading is the loader's job (`Loader::Load`), and a model that is not ready is an error,
+//! not a pop-in.
 //!
 //! The material id is the override path when it is set, and the mesh artifact default
 //! otherwise. A derived (imported) material therefore never appears in authored content:
 //! `guid:<id>` in the material field is rejected, the default is the way to reach it.
 
 require strings
-require daslib/async_boost
 require daslib/decs
 require daslib/decs_boost
 require tryengine/Types
@@ -83,11 +82,10 @@ def public IsReady(refs : ModelRefs) : bool {
     return GetMaterialPointer(refs.material) != null
 }
 
-//! Requests everything the pair needs and holds the reference for the entity that is about
-//! to be created, then reports whether it is usable right now. `false` means a resource is
-//! missing or still loading: the caller must not create the entity / must report the error.
-//! The reference is what keeps a spawned prefab's resources alive after the loader lets go.
-//! Editor paths use this (they may load on demand); runtime spawn uses `Hold`.
+//! Requests everything the pair needs and reports whether it is usable right now: no waiting,
+//! no coroutine. `false` means a resource is missing or still loading, and the caller must not
+//! create the entity. This is the editor's on-demand path (ProBuilder's grid material is
+//! requested when the tool is used); runtime spawn uses `Hold` and never starts a read.
 def public Reserve(refs : ModelRefs) : bool {
     if (!refs.ok || refs.mesh == 0ul) {
         return false
@@ -124,64 +122,6 @@ def public MeshPointer(refs : ModelRefs) : TryMesh? {
 
 def public MaterialPointer(refs : ModelRefs) : TryMat? {
     return refs.material != 0ul ? GetMaterialPointer(refs.material) : null
-}
-
-[async]
-def private AwaitMesh(mesh : uint64) : bool {
-    RequestLoadMesh(mesh)
-
-    // The loop body is the suspension point alone: a coroutine cannot suspend from inside a
-    // nested block, so the failure is judged after the loop.
-    while (!ResourceIsReadyMesh(mesh) && !ResourceIsFailedMesh(mesh)) {
-        await_next_frame()
-    }
-
-    if (ResourceIsFailedMesh(mesh)) {
-        print("[MODEL ERROR] mesh {mesh:d} failed to load\n")
-        yield false
-    }
-    yield true
-}
-
-[async]
-def private AwaitMaterial(material : uint64) : bool {
-    RequestLoadMaterial(material)
-
-    while (!ResourceIsReadyMaterial(material) && !ResourceIsFailedMaterial(material)) {
-        await_next_frame()
-    }
-
-    if (ResourceIsFailedMaterial(material)) {
-        print("[MODEL ERROR] material {material:d} failed to load\n")
-        yield false
-    }
-    yield true
-}
-
-//! Requests and waits until every mesh and every material of the set is resident. A mesh's
-//! default material is known only once the mesh artifact is loaded, so meshes are awaited
-//! first and each one hands its default to the material pass (`materials` grows by them).
-//! The arrays are taken as `var` because a coroutine cannot capture a const parameter.
-[async]
-def public AwaitDeps(var meshes : array<uint64>; var materials : array<uint64>) : bool {
-    var ok = true
-
-    for (mesh in meshes) {
-        let loaded : bool <- await(AwaitMesh(mesh))
-        ok = ok && loaded
-
-        let default_material = MeshMaterial(mesh)
-        if (default_material != 0ul) {
-            materials |> push(default_material)
-        }
-    }
-
-    for (material in materials) {
-        let loaded : bool <- await(AwaitMaterial(material))
-        ok = ok && loaded
-    }
-
-    yield ok
 }
 
 // Last appearance applied by `ApplyToEntity`: entity plus the ids it was resolved to.

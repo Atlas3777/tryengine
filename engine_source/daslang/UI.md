@@ -18,7 +18,7 @@ Retained UI на daslang: узлы (виджеты) живут между кад
 | Навигация | `game/scripts/GameScreens.das` | стек `ScreenRef` и политика поверх него (никогда не пустой) |
 | Boot/манифест | `game/scripts/GameUi.das` | boot-запрос меню, восстановление после горячей перезагрузки, `Frame()` |
 | Состояние экранов | `game/scripts/GameState.das` | hp/gold/volume, общие подписи, флаг паузы |
-| Поток сцен | `game/scripts/GameFlow.das` | загрузка сцены из главного меню, `IsReady` для `GameUpdate` |
+| Поток сцен | `game/scripts/Game.das` | загрузка сцены по `GameState::SceneRequest`, флаг готовности для `GameUpdate` |
 | Биндинги | `engine_source/graphics/src/Module_Ui.cpp` | измерение текста, размер окна, таблица строк кадра |
 | Проход | `engine_source/graphics/src/UiPass.cpp` | вершины, батчи, scissor, блендинг, SDF-текст |
 
@@ -277,7 +277,7 @@ def public Draw(assets : AssetMap) {
 }
 ```
 
-Бандл загружается до показа экрана: `GameFlow::LoadScene` кладёт `hud.bundle` в тот же
+Бандл загружается до показа экрана: `Game::ProcessSceneRequest` кладёт `hud.bundle` в тот же
 `LoaderRequest`, что и сцену; `ui.bundle` — корневой, в нём шрифт. `AssetMap` — только
 чтение зарегистрированной таблицы: UI сам никогда не просит ресурс, а непринесённая
 текстура просто не рисуется и один раз пишет ошибку в лог.
@@ -394,8 +394,8 @@ Ui::Frame() {
   над замороженной сценой;
 - в Edit игра не запущена: пустой кадр, без экранов.
 
-`GameStart` ставит тему, зовёт `GameFlow::Start()` (физика) и `GameUi::Start()`: boot-запрос
-`main_menu.bundle` + базовый материал UI, по callback — `ScreenRef` меню. `GameFlow::LoadScene`
+`GameStart` ставит тему, сбрасывает сессию и зовёт `GameUi::Start()`: boot-запрос
+`main_menu.bundle` + базовый материал UI, по callback — `ScreenRef` меню. `Game::ProcessSceneRequest`
 кладёт в запрос сцену и `hud`/`pause`/`shop` бандлы, по callback — `ScreenHud::Show(maps)`.
 `GameUi::Frame()` синхронизирует слой паузы с флагом клока и рисует стек.
 

@@ -3,8 +3,14 @@ options relaxed_assign = false
 
 module GameState shared public
 
-//! State shared by the HUD, the pause menu and the shop, plus the labels they show. Keeping it
-//! out of the screens lets each screen live in its own file without importing another screen.
+//! State shared by the HUD, the pause menu, the shop and the main menu, plus the labels they
+//! show. Keeping it out of the screens lets each screen live in its own file without importing
+//! another screen.
+//!
+//! It also carries the one message a screen sends to the game: the scene the player picked.
+//! The main menu cannot import the game module (the game imports the UI, so that would be a
+//! cycle), and it must not load anything itself — it fills a `SceneRequest`, and `Game` drains
+//! it in its own frame.
 
 require math
 require trygame/GameTime
@@ -19,6 +25,37 @@ struct public GameUiState {
 }
 
 var public g_state = GameUiState()
+
+//! A scene the UI asked for: what to load and what to spawn after it. The main menu owns the
+//! list of entries; the game only knows how to load one.
+struct public SceneRequest {
+    title        : string
+    scene        : string
+    prefab       : string
+    physics_demo : bool
+}
+
+var private g_scene_request : SceneRequest
+var private g_scene_pending = false
+
+//! Hands the game the scene the player picked. The request is not a load: the game starts it
+//! on its next frame, and `Loader::IsActive()` is how a screen shows that a load is running.
+def public RequestScene(request : SceneRequest) {
+    g_scene_request = SceneRequest(title = request.title, scene = request.scene,
+                                   prefab = request.prefab, physics_demo = request.physics_demo)
+    g_scene_pending = true
+}
+
+//! Takes the pending request; `scene` is "" when there was none.
+def public TakeSceneRequest() : SceneRequest {
+    if (!g_scene_pending) {
+        return SceneRequest()
+    }
+    g_scene_pending = false
+    var request = g_scene_request
+    g_scene_request = SceneRequest()
+    return <- request
+}
 
 // Mutation helpers keep the arithmetic here: a screen must not read and write the shared state
 // through two module hops (a cross-module field is a reference, and `min` takes values).

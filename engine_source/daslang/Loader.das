@@ -647,6 +647,14 @@ def public Load(var request : LoaderRequest; on_loaded : LoaderCallback) : auto 
     return <- LoadTask(generation)
 }
 
+//! Same request without a callback: the caller awaits the task and then reads the cache
+//! itself (`Scene::Load`, `Prefab::Spawn`). This is the editor's on-demand form — opening a
+//! file or previewing a build — where the read is what was asked for, and the apply that
+//! follows is synchronous.
+def public Load(var request : LoaderRequest) : auto {
+    return <- Load(request, @@LoaderNoop)
+}
+
 [async]
 def private NoopTask() : void {
 }

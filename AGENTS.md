@@ -273,11 +273,13 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   состояние и подписи — `GameState.das`, boot/манифест — `GameUi.das`. У одинакового
   локального id в двух слоях разные узлы: `Screen` подмешивает в id номер слоя.
   Новые стили и цвета добавляются в тему, а не в разметку.
-- Поток игры: `GameStart` регистрирует время, ставит тему и зовёт `GameFlow::Start()`
-  (физика) + `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал; callback
-  показывает меню). Экран меню грузит сцену `GameFlow::LoadScene`: тот же запрос несёт
-  `hud`/`pause`/`shop` бандлы, callback применяет `Scene::Load` и `ScreenHud::Show(maps)`.
-  `GameUpdate` идёт только при `GameFlow::IsReady()`. Выход из меню — `RequestQuit()`
+- Поток игры живёт в `Game.das`: `GameStart` регистрирует время, ставит тему, сбрасывает
+  сессию и зовёт `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал;
+  callback показывает меню). Экран не может импортировать игру (игра импортирует UI), поэтому
+  меню не грузит сцену само: оно кладёт `GameState::SceneRequest` в общее состояние, а
+  `GameUpdate` забирает его (`ProcessSceneRequest`) и стартует `LoaderRequest` со сценой и
+  `hud`/`pause`/`shop` бандлами; callback применяет `Scene::Load` и `ScreenHud::Show(maps)`.
+  `GameUpdate` идёт только при загруженной сцене. Выход из меню — `RequestQuit()`
   (`tryInput`), тот же флаг, что у закрытия окна.
 - UI не часть `GameUpdate`: `[export] GameUiFrame()` (`game/scripts/Game.das`) вызывает и
   `game_client`, и редактор. UI живёт на своём клоке (`game_ui_clock`/внутренний UiClock),
@@ -330,8 +332,8 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   ConfigFormat на применении. `Content::Document` живёт только до компиляции: вид сам
   читает свои правила формата и отдаёт готовые узлы.
 - Префабы: `tryengine/Prefab.das` — формат, компиляция и спавн.
-  `Prefab::LoadPrefabFile(path)` читает и компилирует один `.prefab` по требованию;
-  `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`.
+  `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`;
+  читает префаб только `Loader::Load`.
   Префаб адресуется путём относительно `content/` (`prefabl.prefab`,
   `props/sword.prefab`) или полным путём; расширение обязательно. Компилированный
   `PrefabTemplate` лежит в `AssetCache`, а не в C++ `ResourceManager`: данные нужны DECS а
@@ -345,27 +347,28 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   (`Scene::CompileScene`), потому что `parentLocalId` сцены — индекс в файле: он разрешается
   после того, как созданы все узлы, и родитель может стоять в файле после ребёнка. Игра не
   прогревает все префабы: `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное
-  (пути `content/...` и `data/...`). Полного `RefreshContent` больше нет: префаб грузится
-  точечно через `Prefab::LoadPrefabFile`, а редакторская панель `Prefab Inspector`
-  выключена и будет переделана под готовые компоненты.
+  (пути `content/...` и `data/...`). Полного `RefreshContent` больше нет: чтение делает
+  только `Loader::Load`, а редакторская панель `Prefab Inspector` выключена и будет
+  переделана под готовые компоненты.
 - Ассет-бандлы: `tryengine/Bundle.das` — **манифест загрузки** (`version = 3`, `name`,
   `parent`, `prefabs`, `assets: {name, kind, ref}[]`), его видит только Loader. `ref` —
   `guid:<id>` (текстура, шрифт) или авторский путь (`.mat`). Один родитель; ребёнок
   переопределяет ключ. После загрузки `Bundle::Flatten` собирает плоскую таблицу
   `ключ -> (kind, id)` и регистрирует её в `tryengine/AssetMap`; экран получает дескриптор
   `AssetMap` из callback (`Loader::MapOf(maps, path)`), а не путь. Пути экранов — константы
-  `kHudBundle`/`kPauseBundle`/`kShopBundle`/`kMenuBundle` в файлах экранов; `GameFlow`
+  `kHudBundle`/`kPauseBundle`/`kShopBundle`/`kMenuBundle` в файлах экранов; `Game`
   добавляет те же пути в запрос. `Loader` разворачивает `prefabs`, ставит в очередь родителей
   (`parents`) и добавляет `textures`/`fonts` в `Content::Dependencies`; билд читает `assets`
   всех бандлов и кладёт их в common-пак.
-- `Game.das` — игра и точка входа, поток сцен — `trygame/GameFlow.das`, boot/экраны —
-  `trygame/GameUi.das`. `GameStart` ставит тему, зовёт `GameFlow::Start()` (физика) и
-  `GameUi::Start()` (boot-запрос `main_menu.bundle` + базовый материал; callback показывает
-  меню). `GameFlow::LoadScene` одним запросом читает сцену, `hud`/`pause`/`shop` бандлы и
-  префаб; callback применяет `Scene::Load` и `ScreenHud::Show(maps)`; `GameUpdate` идёт только
-  при `GameFlow::IsReady()`. Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск.
-  Горячая перезагрузка зовёт `GameUi::Restore(scene_ready)`: перечитывает бандлы и строит
-  новые карты, мир остаётся.
+- `Game.das` — игра, точка входа и весь поток сцен; boot/экраны — `trygame/GameUi.das`.
+  Отдельного `GameFlow.das` нет: он существовал только чтобы разорвать цикл импортов (игра
+  видит UI, UI видит экраны, экран не может видеть игру). Теперь это общее состояние:
+  экран кладёт `GameState::SceneRequest`, игра забирает его и грузит. `GameStart` ставит тему,
+  сбрасывает сессию (физика, игрок) и зовёт `GameUi::Start()`. `ProcessSceneRequest` одним
+  запросом читает сцену, `hud`/`pause`/`shop` бандлы и префаб; callback применяет
+  `Scene::Load` и `ScreenHud::Show(maps)`; `GameUpdate` идёт только при загруженной сцене.
+  Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск. Горячая перезагрузка зовёт
+  `GameUi::Restore(scene_ready)`: перечитывает бандлы и строит новые карты, мир остаётся.
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
   которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
   `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно
@@ -388,8 +391,9 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   создаёт и не чинит отсутствующую. `Scene::Load(path)` не принимает callback: успех —
   это `bool`, а scene-specific setup идёт сразу после него. Применение сцены синхронно и
   ничего не парсит: `Scene::Load` создаёт мир из готового набора, а не из документа.
-  Единственная асинхронность — `Loader::Load` (и редакторское открытие файла, которое
-  читает его до применения). `tryengine/startup`
+  Асинхронность есть только в `Loader::Load`; редакторские открытие сцены и drop префаба
+  тоже идут через него (у загрузчика есть форма `Load(request)` без callback: caller
+  дожидается задачи и читает кеш сам). `tryengine/startup`
   автоматически не загружается. Подробности — `engine_source/daslang/LOADER.md`.
 - Журнал — один на C++ и скрипты: нативные `LogInfo`/`LogWarn`/`LogError`/`LogCritical`/
   `LogTrace` модуля `tryLog` (доступны через `tryengine/Log`) повторяют C++

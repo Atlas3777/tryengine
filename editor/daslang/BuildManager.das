@@ -15,6 +15,7 @@ require daslib/coroutines
 require daslib/linq
 
 require tryengine/AsyncTaskManager
+require tryengine/Loader
 require tryengine/Scene
 
 require TryEditor
@@ -206,12 +207,20 @@ def CrearBuildSettigs() {
 def FindPaks(var paths : array<string>&) : void {
     CrearBuildSettigs()
 
+    // One request for every scene of the build; the loader does the reading, and the headers
+    // are then read from the compiled cache in the same order.
+    var request <- LoaderRequest()
     for (path in paths) {
-        let header : SceneHeader <- await(Scene::GetSceneHeader(path))
-        for (a in header.requireMeshs){
+        request.AddScene(path)
+    }
+    await(Loader::Load(request))
+
+    for (path in paths) {
+        var header <- Scene::GetSceneHeader(path)
+        for (a in header.requireMeshs) {
             print("das Req Mesh {a:d}\n")
         }
-        for (b in header.requireMaterials){
+        for (b in header.requireMaterials) {
             print("das Req Mat {b:d}\n")
         }
         build.scenes |> emplace(header)

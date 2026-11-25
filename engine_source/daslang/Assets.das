@@ -19,7 +19,6 @@ module Assets shared public
 // what stays. The pollable form (`RequestText`/`TextIsReady`/`TakeText`) is what the
 // loader and the game boot use.
 
-require daslib/async_boost
 require strings
 require tryResources
 
@@ -117,24 +116,4 @@ def public CancelText(handle : uint64) {
     if (handle != 0ul) {
         CancelTextRequest(handle)
     }
-}
-
-// Full text of one asset. Returns "" when the path is unknown or the chunk failed:
-// callers treat that as a missing/invalid file, never as an empty document.
-[async]
-def public ReadText(path : string) : string {
-    let handle = RequestText(path)
-    if (handle == 0ul) {
-        yield ""
-    }
-
-    while (!TextIsReady(handle)) {
-        if (TextIsFailed(handle)) {
-            CancelText(handle)
-            yield ""
-        }
-        await_next_frame()
-    }
-
-    yield TakeText(handle)
 }

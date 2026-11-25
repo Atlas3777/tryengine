@@ -34,7 +34,7 @@ has no UI texture.
 
    `assets` is the flat alias map the scene request returns for this screen's bundle
    (`Loader::MapOf`); `Texture` is a cache read. The loader has already brought the texture,
-   because the bundle is part of the request that shows the screen (`GameFlow::LoadScene`).
+   because the bundle is part of the request that shows the screen (`Game::ProcessSceneRequest`).
 5. Rebuild the editor and the game client. The build packs every asset named by a bundle into
    the common pak, so a UI-only texture has no separate build setting.
 

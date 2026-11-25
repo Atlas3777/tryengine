@@ -379,8 +379,9 @@
   не читает файл, не парсит и не разбирает имена полей. CF-дерево после компиляции
   выбрасывается; строки, запечённые в байты компонентов, держит
   `PrefabTemplate.strings` (`ComponentValue` их не считает). После сохранения префаба
-  `AssetCache::Store` кладёт новое значение сразу, а `Prefab::LoadPrefabFile`/`SpawnPrefab`
-  делают `AssetCache::Refresh` и читают файл заново.
+  `AssetCache::Store` кладёт новое значение сразу, так что следующий `Prefab::Spawn` видит
+  записанное; дроп из Asset Browser сначала делает `Prefab::InvalidatePrefab`, чтобы
+  загрузчик перечитал изменённый файл, а не отдал готовый кеш.
 - Спавн идёт группами по набору компонентов (`PrefabTemplate.groups`, считается в
   `CompilePrefab`): на группу один `create_entities_from_cmp` вместо `create_entity` на
   сущность, компоненты копируются в архетип готовыми байтами, `relationship` пишется
@@ -392,21 +393,22 @@
   сцена компилируется так же (`Scene::CompileScene` → тот же набор), создание сущностей
   общее — `EntitySet::CreateEntities`.
 - Полного прогрева префабов больше нет: `Prefab::RefreshContent` и
-  `Assets::ContentManifest` удалены. `Prefab::LoadPrefabFile(path)` читает и компилирует
-  один `.prefab` через `tryengine/Content`; `Prefab::Spawn("props/sword.prefab", origin)`
-  после этого — hit кеша и `EntityId`. Путь пишется относительно `content/` или полным;
-  расширение обязательно. Игра читает только запрошенные префабы через
-  `LoaderRequest::AddPrefab`/`AddBundle`; загрузчик кладёт значение в `AssetCache` и
-  добавляет меши/материалы в прогресс.
-- `SpawnPrefab(path)` (drag&drop) каждый раз читает текст через asset API и обновляет кеш,
-  поэтому изменённый prefab не спавнится старым. `Prefab::SavePrefabFromEntity` пишет текст
+  `Assets::ContentManifest` удалены. Читает префаб только `Loader::Load`
+  (`LoaderRequest::AddPrefab`/`AddBundle`), кладёт значение в `AssetCache` и добавляет
+  меши/материалы в прогресс; `Prefab::Spawn("props/sword.prefab", origin)` после этого —
+  hit кеша и `EntityId`. Путь пишется относительно `content/` или полным; расширение
+  обязательно.
+- Дроп префаба (`SceneViewPort::SpawnDroppedPrefab`) идёт тем же путём, что игра: инвалидация
+  записи кеша, `LoaderRequest` + `await(Loader::Load(request))`, затем синхронный
+  `Prefab::Spawn`, поэтому изменённый файл не спавнится старым. `Prefab::SavePrefabFromEntity`
+  пишет текст
   через `FileReader::WriteFile` (файловый менеджер сам создаёт папки), сразу кладёт его в
   кеш и обновляет дерево ассетов.
 - `editor/daslang/PrefabInspector.das` выключен: панель обходила CF-дерево префаба, а его
   больше нет (компилированный префаб хранит готовые компоненты), и её модель
   взаимодействия всё равно требует переделки. Файл оставлен заглушкой, панели нет в меню
-  Window. Спавн идёт через drag&drop из Asset Browser (`Prefab::SpawnPrefab`) или
-  `Prefab::Spawn` как cache-hit.
+  Window. Спавн идёт через drag&drop из Asset Browser (запрос в загрузчик + синхронный
+  `Prefab::Spawn`).
 - `PrefabAuthoring.SaveSelectionAsPrefab` (File → Save Selection as Prefab...) сериализует
   выделенную ветку в pre-order и выкидывает `eid` и всё, у чего нет writer'а
   (`relationship`, `_world`, указатели `mesh`/`material`, `editorCameraTag`); позиция корня

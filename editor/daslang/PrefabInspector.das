@@ -10,7 +10,7 @@ module PrefabInspector shared public
 // ready to be spawned (`Prefab::PrefabTemplate`). The panel was a quick first pass and its
 // interaction model needs a rework on top of the new form, so it draws nothing until then.
 // Everything it used to do is still reachable: the Asset Browser loads a selected prefab on
-// demand through `Prefab::SpawnPrefab` on drop, and `Prefab::Spawn` is the synchronous
+// demand through `Loader::Load` on drop, and `Prefab::Spawn` is the synchronous
 // cache-hit path.
 
 def public DrawPrefabInspector() {

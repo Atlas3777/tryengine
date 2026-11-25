@@ -9,9 +9,9 @@ module Scene shared public
 //! entities that have a parent; a root stores no such field. `eid` and the derived
 //! `relationship` never reach the file.
 //!
-//! A scene is applied from a parsed `Content::Document`; the text is read by whoever owns
-//! the flow (`Scene::LoadAsync` for the editor, `Loader` for preloaded target scenes).
-//! `Scene::Load` is the synchronous apply step: it never reads the disk and never waits.
+//! A scene is applied from its compiled entity set; the text is read and compiled by
+//! `Loader::Load`. `Scene::Load` is the synchronous apply step: it never reads the disk and
+//! never waits.
 
 require tryengine/AssetCache
 require tryengine/ConfigFormat
@@ -50,9 +50,6 @@ struct LoadedSceneContext {
     scene_name : string // derived from the file name
     scene_path : string
 }
-
-// Called after a scene is applied, so scene-specific code has the new DECS world.
-typedef public SceneCallback = function<() : void>
 
 var scene_context : LoadedSceneContext
 var active_scene : Scene
@@ -331,6 +328,13 @@ def public Cancel(path : string) {
     AssetCache::Cancel(g_values, path)
 }
 
+//! Drops the compiled scene so the next load re-reads and re-validates the file. An editor
+//! action that may have changed the document on disk calls this before it starts a request:
+//! the loader trusts the cache and would otherwise apply the previous version.
+def public Invalidate(path : string) {
+    AssetCache::Invalidate(g_values, ScenePath(path))
+}
+
 //! Drops every compiled scene, ready or failed.
 def public Clear() {
     AssetCache::Clear(g_values, "scene")
@@ -413,55 +417,10 @@ def public ApplyState(var state : SceneState) {
     }
 }
 
-//! Reads a scene document asynchronously, compiles it, applies it and then calls
-//! `on_loaded`. This is the editor's Open Scene path: the read is the only asynchronous part,
-//! the world swap is synchronous. A game that already loaded the scene through `Loader::Load`
-//! calls synchronous `Scene::Load` instead of this.
-[async]
-def public LoadAsync(path : string) : void {
-    await(LoadAsync(path, @@SceneNoop))
-}
-
-[async]
-def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
-    let resolved = ScenePath(path)
-    AssetCache::Refresh(g_values, "scene", resolved)
-
-    while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
-                               @@CompileScene) == AssetCache::AssetState.Loading) {
-        await_next_frame()
-    }
-
-    let compiled = CachedTemplate(resolved)
-    if (compiled == null) {
-        print("[SCENE ERROR] Scene '{resolved}' is not available or not a valid scene document.\n")
-    } else {
-        // Opening a file is the one path that may wait for resources: the loader did not
-        // preload them and the user asked for this read. The apply itself stays synchronous.
-        var deps_meshes : array<uint64>
-        var deps_materials : array<uint64>
-        for (mesh in compiled.deps.meshes) {
-            deps_meshes |> push(mesh)
-        }
-        for (material in compiled.deps.materials) {
-            deps_materials |> push(material)
-        }
-        let resources_ready : bool <- await(Model::AwaitDeps(deps_meshes, deps_materials))
-        if (!resources_ready) {
-            print("[SCENE ERROR] Scene '{resolved}': meshes or materials failed to load.\n")
-        } elif (!ApplyTemplate(compiled)) {
-            print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
-        } else {
-            NotifySceneLoaded(scene_context.scene_name, resolved, false)
-            invoke(on_loaded)
-        }
-    }
-}
-
 //! Synchronous scene apply from the compiled cache. It never reads the disk and never waits:
-//! the caller must have preloaded the scene first (`Loader::Load` with `AddScene`, or
-//! `Scene::LoadAsync`). Returns false and prints what was missing when the scene was not
-//! preloaded or its resources are not resident.
+//! the caller must have preloaded the scene first (`Loader::Load` with `AddScene`). Returns
+//! false and prints what was missing when the scene was not preloaded or its resources are not
+//! resident.
 def public Load(path : string) : bool {
     let resolved = ScenePath(path)
     let compiled = CachedTemplate(resolved)
@@ -691,28 +650,22 @@ struct SceneHeader {
     requireMaterials : array<uint64>
 }
 
-//! Reads a scene document header for the build preview without applying it.
-[async]
+//! Header of an already loaded scene: stem, path and the resource ids it needs. The caller
+//! loads the scene first (`Loader::Load` with `AddScene`) and reads this from the cache; the
+//! build preview requests every scene of a build once and then asks for their headers.
 def public GetSceneHeader(path : string) : SceneHeader {
     let resolved = ScenePath(path)
-    AssetCache::Refresh(g_values, "scene", resolved)
-
-    while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
-                               @@CompileScene) == AssetCache::AssetState.Loading) {
-        await_next_frame()
-    }
-
-    var empty_header : SceneHeader
-    let compiled = CachedTemplate(resolved)
-    if (compiled == null) {
-        print("[SCENE ERROR] Scene '{resolved}' is not a valid scene document.\n")
-        yield <- empty_header
-    }
-
     var header <- SceneHeader()
     header.name = Content::Stem(resolved)
     header.path = resolved
+
+    let compiled = CachedTemplate(resolved)
+    if (compiled == null) {
+        print("[SCENE ERROR] Scene '{resolved}' is not loaded; request it before reading its header.\n")
+        return <- header
+    }
+
     clone(header.requireMeshs, compiled.deps.meshes)
     clone(header.requireMaterials, compiled.deps.materials)
-    yield <- header
+    return <- header
 }

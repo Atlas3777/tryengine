@@ -27,10 +27,10 @@ module Prefab shared public
 //! mesh/material dependencies; this module validates the prefab shape and compiles it into a
 //! `PrefabTemplate` (resolved component values plus parent/sibling indices). The parsed
 //! document is dropped after that, so repeated spawns do no I/O, no parsing and no
-//! ConfigFormat lookups. `LoadPrefabFile` reads one prefab on demand: the game caches exactly
-//! the prefabs a `LoaderRequest` asked for, the editor loads the selected one. `Spawn` is a
-//! synchronous cache hit and returns the root `EntityId`. A prefab is addressed by a path
-//! relative to `content/` (`prefabl.prefab`) or by a full path; the extension is explicit.
+//! ConfigFormat lookups. Only `Loader::Load` reads a prefab: the cache holds exactly the
+//! prefabs a `LoaderRequest` asked for, and `Spawn` is a synchronous cache hit that returns
+//! the root `EntityId`. A prefab is addressed by a path relative to `content/`
+//! (`prefabl.prefab`) or by a full path; the extension is explicit.
 
 require strings
 require daslib/async_boost
@@ -347,7 +347,7 @@ def public SpawnPrefabTemplateIds(data : PrefabTemplate?; origin : float3;
 //! Synchronous spawn from the prefab cache. The spawned entities get their authored
 //! `Transform`, the baked `_world` (already moved to `origin`) and the sibling graph, so
 //! they are correctly placed in the same call and need no transform pass. The prefab must
-//! have been loaded by a `LoaderRequest` or by `LoadPrefabFile` first; an unknown prefab
+//! have been loaded by a `LoaderRequest` first; an unknown prefab
 //! returns INVALID_ENTITY_ID.
 //! Accepts a path relative to `content/` ("prefabl.prefab", "props/sword.prefab"), a
 //! `content/...` path, or a repo-relative/absolute .prefab path. The extension is
@@ -355,63 +355,10 @@ def public SpawnPrefabTemplateIds(data : PrefabTemplate?; origin : float3;
 def public Spawn(name_or_path : string; origin : float3 = float3(0.0f, 0.0f, 0.0f)) : EntityId {
     let data = GetPrefabTemplate(name_or_path)
     if (data == null) {
-        print("[PREFAB ERROR] prefab '{name_or_path}' was not preloaded; add it to the LoaderRequest or call Prefab::LoadPrefabFile() first\n")
+        print("[PREFAB ERROR] prefab '{name_or_path}' was not preloaded; add it to the LoaderRequest first\n")
         return INVALID_ENTITY_ID
     }
     return SpawnPrefabTemplate(data, origin)
-}
-
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
-
-//! Reads, validates and caches one .prefab file through the content layer.
-[async]
-def public LoadPrefabFile(path : string) : bool {
-    let canonical = Content::ResolvePath(DocumentKind.Prefab, path)
-    AssetCache::Refresh(g_values, "prefab", canonical)
-
-    while (AssetCache::Advance(g_values, canonical, Content::ItemsField(DocumentKind.Prefab),
-                               @@CompilePrefab) == AssetCache::AssetState.Loading) {
-        await_next_frame()
-    }
-
-    let loaded = AssetCache::State(canonical) == AssetCache::AssetState.Ready
-    if (!loaded) {
-        print("[PREFAB ERROR] file '{canonical}' is missing, empty or not a valid prefab\n")
-    }
-    yield loaded
-}
-
-//! Reads and caches a .prefab file, then spawns it. The editor uses this for drops,
-//! so an edited file is re-read instead of using a stale cache entry.
-[async]
-def public SpawnPrefab(path : string; origin : float3) : EntityId {
-    let loaded : bool <- await(LoadPrefabFile(path))
-    if (!loaded) {
-        yield INVALID_ENTITY_ID
-    }
-
-    // Drop-in spawn has no Loader behind it, so it waits for the resources itself; the sync
-    // `Spawn` above requires them to be resident already.
-    let canonical = Content::ResolvePath(DocumentKind.Prefab, path)
-    var deps <- AssetCache::Dependencies(canonical)
-    var meshes : array<uint64>
-    var materials : array<uint64>
-    for (mesh in deps.meshes) {
-        meshes |> push(mesh)
-    }
-    for (material in deps.materials) {
-        materials |> push(material)
-    }
-
-    let resources_ready : bool <- await(Model::AwaitDeps(meshes, materials))
-    if (!resources_ready) {
-        print("[PREFAB ERROR] '{canonical}': meshes or materials failed to load\n")
-        yield INVALID_ENTITY_ID
-    }
-
-    yield SpawnPrefabTemplate(GetPrefabTemplate(path), origin)
 }
 
 // ---------------------------------------------------------------------------

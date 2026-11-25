@@ -6,6 +6,7 @@ module SceneViewPort shared
 
 require tryengine/Profiling
 require tryengine/AsyncTaskManager
+require tryengine/Loader
 require tryengine/Prefab
 require tryengine/Ui
 require tryengine/Types
@@ -93,7 +94,20 @@ def private GetViewportDropPoint() : float3 {
 }
 
 [async] def private SpawnDroppedPrefab(path : string; position : float3) : void {
-    let eid : EntityId = await(Prefab::SpawnPrefab(path, position))
+    // A request that failed keeps the loader active until its error is read; release it, or
+    // every later drop would be refused.
+    if (Loader::IsFailed()) {
+        print("[EDITOR] content load failed: {Loader::Error()}\n")
+        Loader::Abort()
+    }
+    // A drop may follow an edit of the file: drop the compiled prefab so the loader re-reads it.
+    Prefab::InvalidatePrefab(path)
+
+    var request <- LoaderRequest()
+    request.AddPrefab(path)
+    await(Loader::Load(request))
+
+    let eid : EntityId = Prefab::Spawn(path, position)
     if (eid != INVALID_ENTITY_ID) {
         selected_eid = eid
         UndoRedo::RecordCreated(eid, "Spawn prefab")
