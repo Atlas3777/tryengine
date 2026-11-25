@@ -237,7 +237,7 @@ transform pass, префабы, сцены, undo). Гейт компиляции
 - `@live` — аннотация глобальной переменной или поля структуры: значение переживает горячую
   перезагрузку. Живёт в `tryengine/Live` (`engine_source/daslang/Live.das`, infer-макрос по
   образцу `live/live_vars` из dasLiveHost): в модуле появляются
-  `__before_reload_live_vars`/`__after_reload_live_vars`, которые `ScriptSystem` находит по
+  `__before_reload_try_live`/`__after_reload_try_live`, которые `ScriptSystem` находит по
   префиксу. Значение пишется в `tryLive` (`engine_source/core/src/Module_Live.cpp` +
   `LiveStore.hpp`) под ключом из имени модуля и переменной, вместе с хешем выражения
   инициализатора: смена дефолта в коде отбрасывает старое значение. Хранилище живёт в
@@ -249,9 +249,15 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   не совпадают с dasLiveHost намеренно: в программе редактора живут **обе** live-системы
   (виджеты imgui используют `live/live_vars`/`live_host`), и неквалифицированный
   `live_store_bytes` был бы неоднозначным. Сгенерированный код вызывает
-  `tryLive::try_live_*`; если в программе есть upstream `live_vars`, его проход может
-  сгенерировать хуки первым (у обоих проходов одно имя функции-маркера) — это нормально,
-  работает любой из двух проходов.
+  `tryLive::try_live_*`. Маркер своего прохода — `__before_reload_try_live`, а не общий с
+  upstream `__before_reload_live_vars`: иначе в программе с обеими live-системами (редактор)
+  модуль доставался бы то одному проходу, то другому, и его значения могли не попасть в наш
+  store. Теперь наш проход генерирует хуки для каждого модуля с `@live`; два прохода могут
+  работать над одним модулем, но у них разные хранилища и одинаковые сохранённые значения.
+- Модуль, объявляющий `@live`, обязан сам `require tryengine/Live`: infer-проход виден только
+  в области модуля. Без require `@live` — просто аргумент аннотации: если в программе есть
+  upstream `live_vars`, он может сгенерировать хуки в своё хранилище, но к нашему store они
+  отношения не имеют (так `Game.das` однажды потерял `g_ready` после перезагрузки).
 - Что помечено `@live`: массив `clocks` и `root_clock` в `Time` и **каждый** тег клока
   (`editor_clock`, `game_clock`/`game_world_clock`/`game_ui_clock`, `g_physics_clock`, клок
   `Ui`, `Physics::g_physics_attached`); `Scene::active_scene` и `scene_context`; снимок Play

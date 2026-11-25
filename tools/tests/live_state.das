@@ -48,10 +48,10 @@ def main() : int {
     var before_hook = false
     var after_hook = false
     context_for_each_function() $(info) {
-        if (info.name == "__before_reload_live_vars") {
+        if (info.name == "__before_reload_try_live") {
             before_hook = true
         }
-        if (info.name == "__after_reload_live_vars") {
+        if (info.name == "__after_reload_try_live") {
             after_hook = true
         }
     }

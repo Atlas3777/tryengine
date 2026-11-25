@@ -101,9 +101,13 @@ class LivePass : AstPassMacro {
         if (mod.name == "Live") {
             return false
         }
-        // One pass per module: the compiler may run the infer phase again.
+        // One pass per module: the compiler may run the infer phase again. The marker name is
+        // ours, not upstream live_vars': both passes can be in one program (the editor runs
+        // imgui widgets on live_vars), and a shared marker would let the other pass own a
+        // module while this one's store stayed empty. Both sets of hooks then run; the stores
+        // are independent and the saved values are identical.
         var found = false
-        mod |> for_each_function("__before_reload_live_vars") $(_fn) {
+        mod |> for_each_function("__before_reload_try_live") $(_fn) {
             found = true
         }
         if (found) {
@@ -190,7 +194,7 @@ class LivePass : AstPassMacro {
             }
         }
 
-        var save_fn = qmacro_function("__before_reload_live_vars") $() {
+        var save_fn = qmacro_function("__before_reload_try_live") $() {
             $b(save_blocks)
         }
         save_fn.flags |= FunctionFlags.exports | FunctionFlags.generated
@@ -229,7 +233,7 @@ class LivePass : AstPassMacro {
             }
         }
 
-        var load_fn = qmacro_function("__after_reload_live_vars") $() {
+        var load_fn = qmacro_function("__after_reload_try_live") $() {
             $b(load_blocks)
         }
         load_fn.flags |= FunctionFlags.exports | FunctionFlags.generated
