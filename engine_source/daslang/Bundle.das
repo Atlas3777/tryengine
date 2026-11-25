@@ -241,21 +241,20 @@ def public Flatten(path : string) : AssetMap {
 // AssetCache kind
 // ---------------------------------------------------------------------------
 
-def private RequestAsset(path : string) : bool {
+//! Starts loading a bundle document. False means the storage layer does not know the path.
+def public Request(path : string) : bool {
     return AssetCache::Request("bundle", path)
 }
 
-def private AdvanceAsset(path : string) : AssetCache::AssetState {
+//! One step of the bundle state machine: the loader calls it once per ready path per frame.
+def public Advance(path : string) : AssetCache::AssetState {
     return AssetCache::Advance(g_values, path, Content::ItemsField(DocumentKind.Bundle),
                                @@Bundle::Parse)
 }
 
-def private AssetDeps(path : string) : Content::Dependencies {
-    return <- AssetCache::Dependencies(path)
-}
-
-//! The loader expands a ready bundle into prefab jobs through this.
-def private ExpandAsset(path : string) : array<string> {
+//! Prefab paths a ready manifest asks for, in authored `content/...` form. The loader expands
+//! a bundle through this, so the prefab phase is fed by the bundles of the same request.
+def public PrefabPaths(path : string) : array<string> {
     var out : array<string>
     if (!key_exists(g_values, path)) {
         return <- out
@@ -270,27 +269,12 @@ def private ExpandAsset(path : string) : array<string> {
     return <- out
 }
 
-def private ParentsAsset(path : string) : array<string> {
-    return <- Parents(path)
-}
-
-def private CancelAsset(path : string) {
+//! Abandons a bundle that is still loading; a ready manifest stays cached.
+def public Cancel(path : string) {
     AssetCache::Cancel(g_values, path)
 }
 
-def private ClearAssets() {
+//! Drops every cached manifest, ready or failed.
+def public Clear() {
     AssetCache::Clear(g_values, "bundle")
-}
-
-[init]
-def private RegisterAssetKind() {
-    AssetCache::RegisterKind("bundle", AssetCache::AssetKindOps(
-        request = @@RequestAsset,
-        advance = @@AdvanceAsset,
-        deps = @@AssetDeps,
-        expands = @@ExpandAsset,
-        parents = @@ParentsAsset,
-        cancel = @@CancelAsset,
-        clear = @@ClearAssets
-    ))
 }

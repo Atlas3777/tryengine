@@ -9,15 +9,16 @@ module AssetCache shared public
 //! `g_meta` holds the state machine (read text once, parse, compile), the dependencies and
 //! the text-request handle for every asset, whatever its type. The value itself lives in
 //! the kind's own `table<string; T?>`, so nothing is erased or cast: the kind passes its
-//! table to the generic `Advance`/`Store`/`Clear`. Adding a new kind means declaring that
-//! table and a compile function — no central registry of types, no `void?`.
+//! table to the generic `Advance`/`Store`/`Clear`.
+//!
+//! The kind owns its own public entry points (`Scene::Request`, `Prefab::Request`,
+//! `Bundle::Request` and the matching `Advance`/`Cancel`); there is no registry of kinds and
+//! no string dispatch. A caller that needs every kind names them, and a new kind is a
+//! compile error until it is named.
 //!
 //! The value type is inferred from the table (`table<string; auto(TT)?>`), so no
 //! `type<...>` expression is passed at runtime; that keeps the lint rule "a type tag may
 //! be passed but not read" out of every call.
-//!
-//! `AssetKindOps` is the non-generic face of the same cache: kind modules publish one set
-//! of closures, and the loader/editor can drive any kind without naming its type.
 
 require daslib/async_boost
 require strings
@@ -33,8 +34,9 @@ enum public AssetState {
     Failed
 }
 
-//! One ledger row: kind for diagnostics, the state machine and the dependencies collected
-//! while parsing. Written only by this module; kind modules just own the value tables.
+//! One ledger row: kind for diagnostics and for `Clear`, the state machine and the
+//! dependencies collected while parsing. Written only by this module; kind modules just own
+//! the value tables.
 struct public AssetMeta {
     kind   : string
     state  : AssetState
@@ -42,54 +44,14 @@ struct public AssetMeta {
     handle : uint64
 }
 
-//! Non-generic operations of one asset kind. The closures work with the kind's typed value
-//! table internally, so no type cast crosses this boundary.
-struct public AssetKindOps {
-    request : function<(path : string) : bool>
-    advance : function<(path : string) : AssetState>
-    deps    : function<(path : string) : Content::Dependencies>
-    expands : function<(path : string) : array<string>>
-    //! Documents that must be loaded as well before the kind is usable (a bundle's parent).
-    parents : function<(path : string) : array<string>>
-    cancel  : function<(path : string) : void>
-    clear   : function<() : void>
-}
-
 // One row per canonical path. Paths identify assets uniquely: the domains (`content`,
 // `data`) and the extensions do not overlap between kinds.
 var private g_meta : table<string; AssetMeta>
 
-var private g_kinds : table<string; AssetKindOps>
-
-//! Registers the operations of a kind ("prefab", "scene", "bundle", ...). Kind modules call
-//! this once from `[init]`; the loader never names a concrete type.
-def public RegisterKind(kind : string; ops : AssetKindOps) {
-    g_kinds[kind] = ops
-}
-
-def public FindKind(kind : string; var out : AssetKindOps) : bool {
-    if (!key_exists(g_kinds, kind)) {
-        return false
-    }
-    out = g_kinds[kind]
-    return true
-}
-
-//! Plan kinds that do not expand into other assets use this for `expands`.
-def public NoExpansion(path : string) : array<string> {
-    var none : array<string>
-    return <- none
-}
-
-//! Kinds without dependent documents use this for `parents`.
-def public NoParents(path : string) : array<string> {
-    var none : array<string>
-    return <- none
-}
-
 //! Starts loading `path` unless the ledger already knows it. Returns false only when the
 //! storage layer does not know the path; a failed record is retried, because a read error
-//! may be transient and nothing was stored for it.
+//! may be transient and nothing was stored for it. `kind` is a label: it is what `Clear`
+//! filters by and what a diagnostic prints.
 def public Request(kind : string; path : string) : bool {
     if (key_exists(g_meta, path)) {
         if (g_meta[path].state != AssetState.Failed) {
@@ -123,7 +85,7 @@ def public Refresh(var values : table<string; auto(TT)?>; kind : string; path : 
 //! One step of the state machine: takes the text when it arrived, parses the document and
 //! compiles the value into the kind's table. Safe to call every frame; a `Ready`/`Failed`
 //! record is unchanged. `items_field` and `compile` belong to the kind and are passed by its
-//! `advance` closure.
+//! `Advance` entry point.
 def public Advance(var values : table<string; auto(TT)?>; path : string; items_field : string;
                    compile : function<(var document : Content::Document?) : TT?>) : AssetState {
     if (!key_exists(g_meta, path)) {
@@ -152,8 +114,8 @@ def public Advance(var values : table<string; auto(TT)?>; path : string; items_f
         return AssetState.Failed
     }
 
-    // Dependencies are copied before `compile` takes the document: a scene's compiled value
-    // is that very document, and the call may move it.
+    // Dependencies are copied before `compile` takes the document: a prefab's compiled value
+    // consumes its tree, and the ledger still has to answer `Dependencies`.
     clone(g_meta[path].deps.meshes, document.deps.meshes)
     clone(g_meta[path].deps.materials, document.deps.materials)
     clone(g_meta[path].deps.textures, document.deps.textures)
@@ -244,16 +206,6 @@ def public Clear(var values : table<string; auto(TT)?>; kind : string) {
     for (key in keys(g_meta)) {
         if (g_meta[key].kind == kind) {
             Invalidate(values, key)
-        }
-    }
-}
-
-//! Drops every record of every registered kind. Used by a full unload.
-def public ClearAll() {
-    for (kind in keys(g_kinds)) {
-        var ops : AssetKindOps
-        if (FindKind(kind, ops)) {
-            invoke(ops.clear)
         }
     }
 }

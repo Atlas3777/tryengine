@@ -42,6 +42,7 @@ require tryengine/Assets
 require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
+require tryengine/EntitySet
 require tryengine/FileReader
 require tryengine/Model
 require tryengine/Profiling
@@ -59,36 +60,11 @@ let public PREFAB_ROOT_PARENT : uint = 4294967295u
 // authored transform and `world` the composed one: both are already in `values`, and kept
 // here so spawn moves the subtree by the origin without a lookup. Sibling links are
 // precomputed as indices into `PrefabTemplate.nodes`.
-struct public PrefabNode {
-    local_id    : uint
-    parent      : int
-    first_child : int
-    prev        : int
-    next        : int
-    local       : Transform = Transform()
-    world       : Transform = Transform()
-    values      : decs::ComponentMap
-    // The authored appearance, repeated here because spawn may not query the const
-    // `values`: `mesh` is the guide, `material` the optional override.
-    model       : ModelRender = ModelRender()
-}
-
-//! Nodes that share one component set. DECS creates a whole archetype row at once, so a
-//! prefab spawns one group per archetype instead of one entity at a time.
-struct public PrefabGroup {
-    //! Indices into `PrefabTemplate.nodes`, in creation order.
-    nodes : array<int>
-}
-
-struct public PrefabTemplate {
-    path    : string
-    name    : string
-    // `ComponentValue.data` is raw bytes: a component value that holds a string copies the
-    // pointer and never increments its count, so the template owns every string it baked in.
-    strings : array<string>
-    nodes   : array<PrefabNode>
-    groups  : array<PrefabGroup>
-}
+//!
+//! The compiled form itself is `EntitySet::EntitySetTemplate`: a scene compiles into the same
+//! value, and creating entities from it is one shared routine. What a prefab adds is its
+//! format rules (`localId`, one root, pre-order parents), checked in `CompilePrefab`.
+typedef public PrefabTemplate = EntitySet::EntitySetTemplate
 
 // Compiled prefabs live in `tryengine/AssetCache`, one typed record per canonical path.
 // The template is self-contained: it holds resolved components and the strings they
@@ -105,34 +81,6 @@ def private NodeParentLocalId(cf : StructField?) : uint {
 // ---------------------------------------------------------------------------
 // Compilation: parsed document -> validated PrefabTemplate
 // ---------------------------------------------------------------------------
-
-//! Collects every string the document holds, so the compiled template can keep them alive.
-//! `ComponentValue.data` is raw bytes: copying a `string` into it copies the pointer without
-//! touching the count, so the array returned here is the owner the component bytes rely on.
-def private CollectStrings(cf : StructField?; var out : array<string>) {
-    if (cf == null) {
-        return
-    }
-
-    assume value = cf.value
-    if (value is _string) {
-        out |> push(value as _string)
-        return
-    }
-    if (value is _object) {
-        assume obj = value as _object
-        for (name in keys(obj)) {
-            CollectStrings(obj?[name] ?? null, out)
-        }
-        return
-    }
-    if (value is _array) {
-        assume arr = value as _array
-        for (element in arr) {
-            CollectStrings(element, out)
-        }
-    }
-}
 
 //! Validates a parsed document and compiles it into the runtime form: resolved component
 //! values per node, the sibling graph and the archetype groups. The document is consumed and
@@ -159,9 +107,9 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
     assume nodes_arr = nodes_cf.value as _array
 
     var local_ids : table<uint; int>
-    var nodes : array<PrefabNode>
+    var nodes : array<EntityNode>
     var strings : array<string>
-    CollectStrings(document.root, strings)
+    EntitySet::CollectStrings(document.root, strings)
 
     var roots = 0
     var root_index = -1
@@ -215,7 +163,7 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
             parent_index = local_ids[parent_local_id]
         }
 
-        var node <- PrefabNode()
+        var node <- EntityNode()
         node.local_id = local_id
         node.parent = parent_index
         node.first_child = -1
@@ -278,26 +226,9 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
     }
 
     // The derived world transform is baked here, once, and becomes part of the node's
-    // components. The transform pass never adds `_world` to an existing entity (that moves it
-    // to another archetype and copies its whole row), so a spawned prefab must be born with
-    // it, and a spawn is then correctly placed in the same call. Nodes are pre-order, so a
-    // parent is always composed before its children.
-    for (node_index in range(node_count)) {
-        nodes[node_index].local = decs::get(nodes[node_index].values, TRANSFORM_FIELD, Transform())
-
-        let parent_index = nodes[node_index].parent
-        if (parent_index < 0) {
-            nodes[node_index].world = Transform(
-                position = nodes[node_index].local.position,
-                rotation = nodes[node_index].local.rotation,
-                scale = nodes[node_index].local.scale
-            )
-        } else {
-            nodes[node_index].world = ComposeWorld(nodes[parent_index].world, nodes[node_index].local)
-        }
-
-        nodes[node_index].values |> set(WORLD_FIELD, nodes[node_index].world)
-    }
+    // components, so a spawned prefab is correctly placed in the same call without the
+    // transform pass.
+    EntitySet::BakeWorldTransforms(nodes)
 
     var name = from_CF(root_obj?["name"] ?? null, type<string>)
     if (empty(name)) {
@@ -305,34 +236,22 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
     }
 
     // Nodes with the same component set share an archetype, so spawn creates them as one bulk
-    // row. The key is the sorted component names the values already carry.
-    var groups : array<PrefabGroup>
-    var group_of_key : table<string; int>
-    for (node_index in range(node_count)) {
-        var key = ""
-        for (cv in nodes[node_index].values) {
-            key += cv.name
-            key += "|"
-        }
+    // row.
+    var groups <- EntitySet::BuildGroups(nodes)
 
-        var group_index = -1
-        if (key_exists(group_of_key, key)) {
-            group_index = group_of_key[key]
-        } else {
-            group_index = length(groups)
-            group_of_key[key] = group_index
-            var new_group : PrefabGroup
-            groups |> emplace(new_group)
-        }
-        groups[group_index].nodes |> push(node_index)
-    }
+    var deps : Content::Dependencies
+    clone(deps.meshes, document.deps.meshes)
+    clone(deps.materials, document.deps.materials)
+    clone(deps.textures, document.deps.textures)
+    clone(deps.fonts, document.deps.fonts)
 
-    return new PrefabTemplate(
+    return new EntitySet::EntitySetTemplate(
         path = document.path,
         name = name,
         strings <- strings,
         nodes <- nodes,
-        groups <- groups
+        groups <- groups,
+        deps <- deps
     )
 }
 
@@ -342,38 +261,26 @@ def public CompilePrefab(var document : Content::Document?) : PrefabTemplate? {
 
 var private g_values : table<string; PrefabTemplate?>
 
-def private RequestAsset(path : string) : bool {
+//! Starts loading one prefab document. False means the storage layer does not know the path.
+def public Request(path : string) : bool {
     return AssetCache::Request("prefab", path)
 }
 
-def private AdvanceAsset(path : string) : AssetCache::AssetState {
+//! One step of the prefab state machine: reads the text once, validates the shape and
+//! compiles the template into the cache.
+def public Advance(path : string) : AssetCache::AssetState {
     return AssetCache::Advance(g_values, path, Content::ItemsField(DocumentKind.Prefab),
                                @@CompilePrefab)
 }
 
-def private AssetDeps(path : string) : Content::Dependencies {
-    return <- AssetCache::Dependencies(path)
-}
-
-def private CancelAsset(path : string) {
+//! Abandons a prefab that is still loading; a compiled template stays cached.
+def public Cancel(path : string) {
     AssetCache::Cancel(g_values, path)
 }
 
-def private ClearAssets() {
+//! Drops every compiled prefab, ready or failed.
+def public Clear() {
     AssetCache::Clear(g_values, "prefab")
-}
-
-[init]
-def private RegisterAssetKind() {
-    AssetCache::RegisterKind("prefab", AssetCache::AssetKindOps(
-        request = @@RequestAsset,
-        advance = @@AdvanceAsset,
-        deps = @@AssetDeps,
-        expands = @@AssetCache::NoExpansion,
-        parents = @@AssetCache::NoParents,
-        cancel = @@CancelAsset,
-        clear = @@ClearAssets
-    ))
 }
 
 def public GetPrefabTemplate(name_or_path : string) : PrefabTemplate? {
@@ -399,178 +306,34 @@ def public InvalidatePrefab(name_or_path : string) {
 // Spawning
 // ---------------------------------------------------------------------------
 
-// Scratch of the bulk fill: `create_entities_from_cmp` reports ids through a block, and a
-// block cannot carry an array back out (daslang captures arrays by move). Spawn runs on the
-// script thread and never nests, so module-level scratch is enough.
-var private g_spawn_ids : array<EntityId>
-var private g_spawn_component_indices : array<int>
-var private g_spawn_world_index : int
-var private g_spawn_mesh_index : int
-var private g_spawn_material_index : int
+// One spawn for both entry points: resolve and reserve the models, then let the shared
+// entity-set routine create the rows. The reservation is the entity's own reference, which
+// outlives the loader's; a model that is not resident is a spawn error, because the frame
+// loop never loads.
+def private SpawnTemplate(data : PrefabTemplate?; origin : float3;
+                          var out_ids : array<EntityId>) : EntityId {
+    var model_refs : array<Model::ModelRefs>
+    if (!EntitySet::ResolveModels(data, model_refs)) {
+        return INVALID_ENTITY_ID
+    }
 
+    for (refs in model_refs) {
+        if (refs.mesh != 0ul && !Model::Hold(refs)) {
+            print("[PREFAB ERROR] prefab '{data.path}': mesh {refs.mesh:d} / material {refs.material:d} is not loaded; add the prefab to the LoaderRequest first\n")
+            return INVALID_ENTITY_ID
+        }
+    }
+
+    return EntitySet::CreateEntities(data, origin, model_refs, out_ids)
+}
+
+//! Spawns a compiled prefab: the spawned entities get their authored `Transform`, the baked
+//! `_world` (already moved to `origin`) and the sibling graph, so they are correctly placed in
+//! the same call and need no transform pass.
 [profile]
 def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : EntityId {
-    if (data == null) {
-        return INVALID_ENTITY_ID
-    }
-
-    let entity_count = length(data.nodes)
-    if (entity_count == 0 || data.nodes[0].parent != -1) {
-        print("[PREFAB ERROR] compiled prefab '{data.path}' has no root\n")
-        return INVALID_ENTITY_ID
-    }
-    if (empty(data.groups)) {
-        print("[PREFAB ERROR] prefab '{data.path}' has no archetype groups; compile it with CompilePrefab\n")
-        return INVALID_ENTITY_ID
-    }
-
-    // Appearance is resolved and reserved before anything is created: the frame loop never
-    // loads, so a model that is not resident is a spawn error. The reservation is the
-    // entity's own reference, which outlives the loader's.
-    var model_refs : array<Model::ModelRefs>
-    resize(model_refs, entity_count)
-    for (node_index in range(entity_count)) {
-        let model = data.nodes[node_index].model
-        let refs = Model::Resolve(model.mesh, model.material)
-        if (!refs.ok) {
-            print("[PREFAB ERROR] prefab '{data.path}' node {node_index}: material '{model.material}' is not an existing authored .mat path; a derived material is reached through the mesh default\n")
-            return INVALID_ENTITY_ID
-        }
-        if (model.mesh != 0ul && !Model::Hold(refs)) {
-            print("[PREFAB ERROR] prefab '{data.path}': mesh {model.mesh:d} / material {refs.material:d} is not loaded; add the prefab to the LoaderRequest first\n")
-            return INVALID_ENTITY_ID
-        }
-        model_refs[node_index] = refs
-    }
-
-    resize(g_spawn_ids, entity_count)
-
-    // One archetype row per group: DECS resolves the archetype and grows the component arrays
-    // once per group, then every entity is written straight into storage.
-    for (group_index in range(length(data.groups))) {
-        let first_node = data.groups[group_index].nodes[0]
-
-        var prototype : decs::ComponentMap
-        for (cv in data.nodes[first_node].values) {
-            prototype |> push(cv)
-        }
-        // The draw pointers are part of every spawned entity from birth: they are written
-        // below with `set_direct_at`, so no entity changes archetype after creation.
-        var no_mesh : TryMesh? = null
-        var no_material : TryMat? = null
-        prototype |> set(Model::MESH_POINTER_FIELD, no_mesh)
-        prototype |> set(Model::MATERIAL_POINTER_FIELD, no_material)
-        g_spawn_component_indices |> clear()
-
-        let group_size = length(data.groups[group_index].nodes)
-        create_entities_from_cmp(group_size, prototype) $(var arch : Archetype; idx : int; eid : EntityId; i : int) {
-            let node_index = data.groups[group_index].nodes[i]
-            if (empty(g_spawn_component_indices)) {
-                g_spawn_component_indices |> push(arch.eidIndex)
-                for (cv in data.nodes[node_index].values) {
-                    g_spawn_component_indices |> push(decs::find_component_index(arch, cv.name))
-                }
-                g_spawn_world_index = decs::find_component_index(arch, WORLD_FIELD)
-                g_spawn_mesh_index = decs::find_component_index(arch, Model::MESH_POINTER_FIELD)
-                g_spawn_material_index = decs::find_component_index(arch, Model::MATERIAL_POINTER_FIELD)
-            }
-
-            decs::set_direct_at(arch, g_spawn_component_indices[0], idx, eid)
-
-            // The prepared bytes are already the component layout, so they are copied as is.
-            var slot = 1
-            for (cv in data.nodes[node_index].values) {
-                let component_index = g_spawn_component_indices[slot]
-                slot++
-                unsafe {
-                    memcpy(
-                        addr(arch.components[component_index].data[idx * arch.components[component_index].stride]),
-                        addr(cv.data),
-                        arch.components[component_index].stride
-                    )
-                }
-            }
-
-            let refs = model_refs[node_index]
-            if (refs.mesh != 0ul) {
-                var mesh_ptr := Model::MeshPointer(refs)
-                if (mesh_ptr != null) {
-                    decs::set_direct_at(arch, g_spawn_mesh_index, idx, mesh_ptr)
-                }
-            }
-            if (refs.material != 0ul) {
-                var material_ptr := Model::MaterialPointer(refs)
-                if (material_ptr != null) {
-                    decs::set_direct_at(arch, g_spawn_material_index, idx, material_ptr)
-                }
-            }
-
-            // The baked world transform contains the authored root position; the spawn point
-            // translates the whole subtree, so every node moves by `origin`.
-            decs::set_direct_at(
-                arch,
-                g_spawn_world_index,
-                idx,
-                Transform(
-                    position = data.nodes[node_index].world.position + origin,
-                    rotation = data.nodes[node_index].world.rotation,
-                    scale = data.nodes[node_index].world.scale
-                )
-            )
-            g_spawn_ids[node_index] = eid
-        }
-    }
-
-    commit()
-
-    // Only the root's local transform moves to the spawn point; every node's world position
-    // was already shifted in the fill above. The root may live in another group than the last
-    // one spawned, so its component index is resolved from its own archetype.
-    let root_record = decsState.entityLookup[int(g_spawn_ids[0].id)]
-    let root_arch_index = int(decsState.archetypeLookup[root_record.archetype]) - 1
-    decs::set_direct_at(
-        decsState.allArchetypes[root_arch_index],
-        decs::find_component_index(decsState.allArchetypes[root_arch_index], TRANSFORM_FIELD),
-        int(root_record.index),
-        Transform(
-            position = origin + data.nodes[0].local.position,
-            rotation = data.nodes[0].local.rotation,
-            scale = data.nodes[0].local.scale
-        )
-    )
-
-    // The links are known only once the ids exist, and `update_entity` would copy a whole
-    // entity row to change one component: write it straight into archetype storage, with
-    // the component index resolved once per archetype.
-    var relationship_index : table<int; int>
-    for (entity_index in range(entity_count)) {
-        let eid = g_spawn_ids[entity_index]
-        let record = decsState.entityLookup[int(eid.id)]
-        let arch_index = int(decsState.archetypeLookup[record.archetype]) - 1
-
-        let parent_index = data.nodes[entity_index].parent
-        let first_child = data.nodes[entity_index].first_child
-        let prev_index = data.nodes[entity_index].prev
-        let next_index = data.nodes[entity_index].next
-
-        if (!key_exists(relationship_index, arch_index)) {
-            relationship_index[arch_index] = decs::find_component_index(
-                decsState.allArchetypes[arch_index], RELATIONSHIP_FIELD)
-        }
-        decs::set_direct_at(
-            decsState.allArchetypes[arch_index],
-            relationship_index[arch_index],
-            int(record.index),
-            Relationship(
-                parent = parent_index >= 0 ? g_spawn_ids[parent_index] : INVALID_ENTITY_ID,
-                first_child = first_child >= 0 ? g_spawn_ids[first_child] : INVALID_ENTITY_ID,
-                prev = prev_index >= 0 ? g_spawn_ids[prev_index] : INVALID_ENTITY_ID,
-                next = next_index >= 0 ? g_spawn_ids[next_index] : INVALID_ENTITY_ID
-            )
-        )
-    }
-
-    return g_spawn_ids[0]
+    var ids : array<EntityId>
+    return SpawnTemplate(data, origin, ids)
 }
 
 //! Same spawn, plus the created ids in node order: `out_ids[i]` is the entity of
@@ -578,9 +341,7 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
 //! it can only do that when it knows which new entity is which node.
 def public SpawnPrefabTemplateIds(data : PrefabTemplate?; origin : float3;
                                   var out_ids : array<EntityId>) : EntityId {
-    let root = SpawnPrefabTemplate(data, origin)
-    clone(out_ids, g_spawn_ids)
-    return root
+    return SpawnTemplate(data, origin, out_ids)
 }
 
 //! Synchronous spawn from the prefab cache. The spawned entities get their authored

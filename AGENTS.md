@@ -319,10 +319,16 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   не кеширует: готовые значения живут в `tryengine/AssetCache.das`.
 - `tryengine/AssetCache.das` — один кеш на все виды ассетов: общая ledger-таблица
   (`state`, `deps`, запрос текста) плюс типизированная `table<string; T?>` в модуле вида.
-  Вид публикует `AssetKindOps` из `[init]`, поэтому Loader, прогресс и `ClearAll` не знают
-  типов. Новый ассет = таблица значений + compile-функция + `RegisterKind`; центрального
-  реестра типов нет. `Invalidate`/`Clear`/`ClearAll` идут через типизированную таблицу вида
-  и `AssetKindOps`.
+  Вид сам объявляет публичные `Request`/`Advance`/`Cancel` и владеет своей таблицей;
+  реестра видов и строкового диспетчера нет, загрузчик называет виды явно. Поэтому новый
+  вид = таблица значений + compile-функция + три точки входа + явная ветка в Loader, и
+  забытый вид — ошибка компиляции, а не молчаливый `kind is not registered`.
+- `tryengine/EntitySet.das` — скомпилированный набор сущностей, общая форма сцены и
+  префаба: готовые байты `ComponentValue` на узел, граф сиблингов, запечённый `_world`,
+  группы архетипов и `deps` документа. Создание сущностей (`CreateEntities`) копирует
+  подготовленные байты прямо в архетип, поэтому ни сцена, ни префаб не разбирают
+  ConfigFormat на применении. `Content::Document` живёт только до компиляции: вид сам
+  читает свои правила формата и отдаёт готовые узлы.
 - Префабы: `tryengine/Prefab.das` — формат, компиляция и спавн.
   `Prefab::LoadPrefabFile(path)` читает и компилирует один `.prefab` по требованию;
   `Prefab::Spawn("props/sword.prefab", origin)` — синхронный cache-hit и `EntityId`.
@@ -334,7 +340,10 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `PrefabTemplate.strings` держит строки, запечённые в байты компонентов. Спавн создаёт
   сущности группами по набору компонентов (`create_entities_from_cmp`), а не по одной.
   `CompilePrefab` компонует мировые `_world` и кладёт их в шаблон, поэтому спавн не
-  вызывает `UpdateWorldTransforms`: он только сдвигает мир на `origin`. Игра не
+  вызывает `UpdateWorldTransforms`: он только сдвигает мир на `origin`. Компилированный
+  префаб — это `EntitySet::EntitySetTemplate`; сцена компилируется в ту же форму
+  (`Scene::CompileScene`), потому что `parentLocalId` сцены — индекс в файле: он разрешается
+  после того, как созданы все узлы, и родитель может стоять в файле после ребёнка. Игра не
   прогревает все префабы: `LoaderRequest::AddPrefab`/`AddBundle` читают только запрошенное
   (пути `content/...` и `data/...`). Полного `RefreshContent` больше нет: префаб грузится
   точечно через `Prefab::LoadPrefabFile`, а редакторская панель `Prefab Inspector`
@@ -360,21 +369,27 @@ transform pass, префабы, сцены, undo). Гейт компиляции
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
   которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
   `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно
-  (`10/26` и т.п.), а `PhaseName(phase)` — имя. Callback вызывается один раз на `Ready`;
+  (`10/26` и т.п.), `PhaseName(phase)` — имя, `CurrentItem()` — путь документа, который
+  грузится сейчас: этого хватает экрану загрузки. Фаза — свойство работы в очереди, а не
+  состояние машины: `NextPhase` не сканирует имена видов. Callback вызывается один раз на `Ready`;
   после его возврата загрузчик сам делает `Finish` и освобождает ссылки. При ошибке
   callback не вызывается, фаза остаётся `Failed`, доступны `IsFailed()`/`Error()`.
   `GameApp::Init` ничего не прогревает: только паки и `script_pak`. В редакторе Play тот
   же путь; `PlayMode.EndPlay` делает `Loader::Abort`, а задача `Load` завершается по
-  своему поколению. `LoaderRequest::AddAsset(kind, path)` принимает любой вид из
-  `AssetCache`, поэтому новый ассет не требует правок загрузчика; `AddResource(kind, id)`
-  добавляет уже адресованный ресурс (базовый материал UI: `AssetPathId(UiMaterialPath())`).
+  своему поколению. Запрос типизирован (`AddScene`/`AddPrefab`/`AddBundle`), а
+  `AddResource(kind, id)` добавляет уже адресованный ресурс (базовый материал UI:
+  `AssetPathId(UiMaterialPath())`). Четыре ресурсных вида (mesh/material/texture/font)
+  обслуживает одна таблица операций в Loader: «где запрашивается текстура» — одно место.
   Callback получает `maps : table<string; AssetMap>` — плоские карты алиасов запроса.
   `Content::Dependencies` несёт meshes/materials/textures/fonts, поэтому бандл грузит и
   свои текстуры со шрифтом. Рантайм берёт ссылки только через `Hold*` (refcount без I/O):
   сцена, префаб и UI не могут начать чтение с диска — это делает только Loader.
 - Камера — часть сцены: `test.scene` содержит свою `Camera`, игровой код её двигает, а не
   создаёт и не чинит отсутствующую. `Scene::Load(path)` не принимает callback: успех —
-  это `bool`, а scene-specific setup идёт сразу после него. `tryengine/startup`
+  это `bool`, а scene-specific setup идёт сразу после него. Применение сцены синхронно и
+  ничего не парсит: `Scene::Load` создаёт мир из готового набора, а не из документа.
+  Единственная асинхронность — `Loader::Load` (и редакторское открытие файла, которое
+  читает его до применения). `tryengine/startup`
   автоматически не загружается. Подробности — `engine_source/daslang/LOADER.md`.
 - Журнал — один на C++ и скрипты: нативные `LogInfo`/`LogWarn`/`LogError`/`LogCritical`/
   `LogTrace` модуля `tryLog` (доступны через `tryengine/Log`) повторяют C++

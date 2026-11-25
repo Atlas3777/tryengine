@@ -18,6 +18,7 @@ require tryengine/ConfigFormat
 require tryengine/ConfigFormatBoost
 require tryengine/Content
 require tryengine/EcsMacro
+require tryengine/EntitySet
 require tryengine/FileReader
 require tryengine/Model
 require tryengine/Serializable
@@ -118,57 +119,221 @@ def private RelationshipAt(var arch : Archetype&; comp_idx : int; index : int64)
 }
 
 // ---------------------------------------------------------------------------
-// AssetCache kind
+// Compilation: parsed document -> ready-to-create entity set
 // ---------------------------------------------------------------------------
-// The ready value of a scene is its parsed document; applying it stays in this module.
 
-var private g_values : table<string; Content::Document?>
+//! Compiles a parsed scene document into its runtime form: resolved component bytes per
+//! entity, the sibling graph, the baked world transforms and the archetype groups. The parsed
+//! document is consumed here, so what stays in the cache is the form the world is created
+//! from, not a ConfigFormat tree: applying a scene neither parses a field nor dispatches one
+//! by name, and an invalid document fails at load instead of in the middle of an apply.
+//!
+//! A scene stores `parentLocalId` as an index into the file's `entities` order, and a parent
+//! may come after its child, so the hierarchy is resolved after every node exists. An entity
+//! that is not an object is skipped with a warning, and a parent that does not name a loaded
+//! entity leaves the node a root.
+def public CompileScene(var document : Content::Document?) : EntitySet::EntitySetTemplate? {
+    if (document == null || document.root == null || !(document.root.value is _object)) {
+        print("[SCENE ERROR] scene document root is not an object.\n")
+        return null
+    }
 
-def private CompileSceneDocument(var document : Content::Document?) : Content::Document? {
-    return <- document
+    assume root_obj = document.root.value as _object
+    if (!root_obj |> key_exists("entities")) {
+        print("[SCENE ERROR] scene document is missing 'entities'.\n")
+        return null
+    }
+
+    let entities_cf = root_obj?["entities"] ?? null
+    if (entities_cf == null || !(entities_cf.value is _array)) {
+        print("[SCENE ERROR] 'entities' field is not an array.\n")
+        return null
+    }
+    assume entities_arr = entities_cf.value as _array
+
+    var strings : array<string>
+    EntitySet::CollectStrings(document.root, strings)
+
+    // A root stores no `parentLocalId`; spelling the root parent id out is an error, not a
+    // second way to say the same thing.
+    for (ent_idx in range(length(entities_arr))) {
+        let ent_cf = entities_arr[ent_idx]
+        if (ent_cf == null || !(ent_cf.value is _object)) {
+            continue
+        }
+        assume ent_obj = ent_cf.value as _object
+        let parent_cf = ent_obj?["parentLocalId"] ?? null
+        if (parent_cf != null && from_CF(parent_cf, type<uint>) == SCENE_ROOT_PARENT) {
+            print("[SCENE ERROR] Element #{ent_idx}: a root must not store parentLocalId.\n")
+            return null
+        }
+    }
+
+    var nodes : array<EntitySet::EntityNode>
+    // File index of a node -> index in `nodes`; a skipped element leaves a hole.
+    var node_of : table<int; int>
+    var file_parent : array<int>
+    var warnings_count = 0
+
+    for (ent_idx in range(length(entities_arr))) {
+        let ent_cf = entities_arr[ent_idx]
+        if (ent_cf == null || !(ent_cf.value is _object)) {
+            print("[SCENE WARNING] Element #{ent_idx} is not a valid Config object. Skipped.\n")
+            warnings_count++
+            continue
+        }
+
+        assume ent_obj = ent_cf.value as _object
+
+        var entity_tag = "Entity_{ent_idx}"
+        if (ent_obj |> key_exists("tag")) {
+            let tag_cf = ent_obj?["tag"] ?? null
+            if (tag_cf != null && tag_cf.value is _string) {
+                entity_tag = from_CF(tag_cf, type<string>)
+            }
+        }
+
+        var parent_index = -1
+        let parent_cf = ent_obj?["parentLocalId"] ?? null
+        if (parent_cf != null) {
+            parent_index = int(from_CF(parent_cf, type<uint>))
+        }
+
+        var node <- EntitySet::EntityNode()
+        node.parent = -1
+        node.first_child = -1
+        node.prev = -1
+        node.next = -1
+
+        // The defaults come first so every entity has an identity transform and an unlinked
+        // relationship even when the file omits them; the derived `_world` is added below.
+        node.values |> set(TRANSFORM_FIELD, Transform())
+        node.values |> set(RELATIONSHIP_FIELD, Relationship())
+
+        for (field_name in keys(ent_obj)) {
+            // `eid` is assigned by DECS, and the hierarchy is structural (written below).
+            if (field_name == "eid" || field_name == "parentLocalId") {
+                continue
+            }
+            let cf = ent_obj?[field_name] ?? null
+            // Only components declared `save = true` are authored data. A runtime component in
+            // a hand-edited scene is dropped like an unknown field.
+            if (!EcsShouldSave(field_name)) {
+                print("[SCENE WARNING] Entity '{entity_tag}': field '{field_name}' is not a saved component. Skipped.\n")
+                warnings_count++
+                continue
+            }
+            if (cf == null || cf.value is _null) {
+                print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' is null. Skipped.\n")
+                warnings_count++
+                continue
+            }
+            if (!ApplyDecsConfigField(node.values, field_name, cf, cf.typeName)) {
+                print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' has unsupported ConfigFormat type. Skipped.\n")
+                warnings_count++
+            }
+        }
+
+        node.model = decs::get(node.values, Model::MODEL_FIELD, ModelRender())
+
+        node_of[ent_idx] = length(nodes)
+        nodes |> emplace(node)
+        file_parent |> push(parent_index)
+    }
+
+    // Resolve file indices to node indices. A parent that is missing, skipped or points at the
+    // node itself leaves the entity a root.
+    for (node_index in range(length(nodes))) {
+        let file_index = file_parent[node_index]
+        var parent = -1
+        if (file_index >= 0 && key_exists(node_of, file_index)) {
+            parent = node_of[file_index]
+            if (parent == node_index) {
+                parent = -1
+            }
+        }
+        if (file_index >= 0 && parent < 0) {
+            print("[SCENE WARNING] Element #{file_index} does not name a loaded entity; treated as a root.\n")
+            warnings_count++
+        }
+        nodes[node_index].parent = parent
+    }
+
+    // Derived relationship graph: only parents are stored on disk, and the file order is also
+    // sibling order.
+    var last_child : table<int; int>
+    for (node_index in range(length(nodes))) {
+        let parent = nodes[node_index].parent
+        if (parent < 0) {
+            continue
+        }
+        if (key_exists(last_child, parent)) {
+            let previous = last_child[parent]
+            nodes[previous].next = node_index
+            nodes[node_index].prev = previous
+        } else {
+            nodes[parent].first_child = node_index
+        }
+        last_child[parent] = node_index
+    }
+
+    EntitySet::BakeWorldTransforms(nodes)
+
+    var deps : Content::Dependencies
+    clone(deps.meshes, document.deps.meshes)
+    clone(deps.materials, document.deps.materials)
+    clone(deps.textures, document.deps.textures)
+    clone(deps.fonts, document.deps.fonts)
+
+    if (warnings_count > 0) {
+        print("[SCENE] '{document.path}': {warnings_count} warning(s) while compiling\n")
+    }
+
+    var groups <- EntitySet::BuildGroups(nodes)
+    return new EntitySet::EntitySetTemplate(
+        path = document.path,
+        name = Content::Stem(document.path),
+        strings <- strings,
+        nodes <- nodes,
+        groups <- groups,
+        deps <- deps
+    )
 }
 
-def private RequestAsset(path : string) : bool {
+// ---------------------------------------------------------------------------
+// AssetCache kind
+// ---------------------------------------------------------------------------
+
+var private g_values : table<string; EntitySet::EntitySetTemplate?>
+
+//! Starts loading one scene document. False means the storage layer does not know the path.
+def public Request(path : string) : bool {
     return AssetCache::Request("scene", path)
 }
 
-def private AdvanceAsset(path : string) : AssetCache::AssetState {
+//! One step of the scene state machine: reads the text once and compiles the document.
+def public Advance(path : string) : AssetCache::AssetState {
     return AssetCache::Advance(g_values, path, Content::ItemsField(DocumentKind.Scene),
-                               @@CompileSceneDocument)
+                               @@CompileScene)
 }
 
-def private AssetDeps(path : string) : Content::Dependencies {
-    return <- AssetCache::Dependencies(path)
-}
-
-// Reading the scene's own table is a plain non-generic access; the generic cache only
-// writes values, so the returned document keeps its non-const type.
-def private CachedDocument(resolved : string) : Content::Document? {
+//! Reading the scene's own table is a plain non-generic access; the generic cache only writes
+//! values, so the returned set keeps its non-const type.
+def private CachedTemplate(resolved : string) : EntitySet::EntitySetTemplate? {
     if (AssetCache::State(resolved) != AssetCache::AssetState.Ready) {
         return null
     }
     return g_values[resolved]
 }
 
-def private CancelAsset(path : string) {
+//! Abandons a scene that is still loading; a compiled scene stays cached.
+def public Cancel(path : string) {
     AssetCache::Cancel(g_values, path)
 }
 
-def private ClearAssets() {
+//! Drops every compiled scene, ready or failed.
+def public Clear() {
     AssetCache::Clear(g_values, "scene")
-}
-
-[init]
-def private RegisterAssetKind() {
-    AssetCache::RegisterKind("scene", AssetCache::AssetKindOps(
-        request = @@RequestAsset,
-        advance = @@AdvanceAsset,
-        deps = @@AssetDeps,
-        expands = @@AssetCache::NoExpansion,
-        parents = @@AssetCache::NoParents,
-        cancel = @@CancelAsset,
-        clear = @@ClearAssets
-    ))
 }
 
 //! The editor's first load: there is no file yet, but it is still a scene load.
@@ -248,10 +413,10 @@ def public ApplyState(var state : SceneState) {
     }
 }
 
-//! Reads a scene document asynchronously, parses it, applies it and then calls
-//! `on_loaded`. This is the editor's Open Scene path: the text read is the only
-//! asynchronous part; the world swap is synchronous. A game that already loaded the scene
-//! through `Loader::Load` calls synchronous `Scene::Load` instead of this.
+//! Reads a scene document asynchronously, compiles it, applies it and then calls
+//! `on_loaded`. This is the editor's Open Scene path: the read is the only asynchronous part,
+//! the world swap is synchronous. A game that already loaded the scene through `Loader::Load`
+//! calls synchronous `Scene::Load` instead of this.
 [async]
 def public LoadAsync(path : string) : void {
     await(LoadAsync(path, @@SceneNoop))
@@ -263,55 +428,49 @@ def public LoadAsync(path : string; on_loaded : SceneCallback) : void {
     AssetCache::Refresh(g_values, "scene", resolved)
 
     while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
-                               @@CompileSceneDocument) == AssetCache::AssetState.Loading) {
+                               @@CompileScene) == AssetCache::AssetState.Loading) {
         await_next_frame()
     }
 
-    await(ApplyLoadedAsync(resolved, CachedDocument(resolved), on_loaded))
-}
-
-// Reading the text is the only asynchronous part of the editor path; resources are awaited
-// next, so `ApplyDocument` can hand every entity its pointers in the same apply. Keeping the
-// awaits at the top level of the body is what the coroutine transform requires.
-[async]
-def private ApplyLoadedAsync(resolved : string; document : Content::Document?; on_loaded : SceneCallback) : void {
-    var deps_meshes : array<uint64>
-    var deps_materials : array<uint64>
-    if (document != null) {
-        for (mesh in document.deps.meshes) {
+    let compiled = CachedTemplate(resolved)
+    if (compiled == null) {
+        print("[SCENE ERROR] Scene '{resolved}' is not available or not a valid scene document.\n")
+    } else {
+        // Opening a file is the one path that may wait for resources: the loader did not
+        // preload them and the user asked for this read. The apply itself stays synchronous.
+        var deps_meshes : array<uint64>
+        var deps_materials : array<uint64>
+        for (mesh in compiled.deps.meshes) {
             deps_meshes |> push(mesh)
         }
-        for (material in document.deps.materials) {
+        for (material in compiled.deps.materials) {
             deps_materials |> push(material)
         }
-    }
-
-    let resources_ready : bool <- await(Model::AwaitDeps(deps_meshes, deps_materials))
-    if (document == null) {
-        print("[SCENE ERROR] Scene '{resolved}' is not available or not a valid scene document.\n")
-    } elif (!resources_ready) {
-        print("[SCENE ERROR] Scene '{resolved}': meshes or materials failed to load.\n")
-    } elif (!ApplyDocument(document)) {
-        print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
-    } else {
-        NotifySceneLoaded(scene_context.scene_name, resolved, false)
-        invoke(on_loaded)
+        let resources_ready : bool <- await(Model::AwaitDeps(deps_meshes, deps_materials))
+        if (!resources_ready) {
+            print("[SCENE ERROR] Scene '{resolved}': meshes or materials failed to load.\n")
+        } elif (!ApplyTemplate(compiled)) {
+            print("[SCENE ERROR] Scene '{resolved}' failed to apply.\n")
+        } else {
+            NotifySceneLoaded(scene_context.scene_name, resolved, false)
+            invoke(on_loaded)
+        }
     }
 }
 
-//! Synchronous scene apply from the asset cache. It never reads the disk and never waits:
+//! Synchronous scene apply from the compiled cache. It never reads the disk and never waits:
 //! the caller must have preloaded the scene first (`Loader::Load` with `AddScene`, or
 //! `Scene::LoadAsync`). Returns false and prints what was missing when the scene was not
-//! preloaded.
+//! preloaded or its resources are not resident.
 def public Load(path : string) : bool {
     let resolved = ScenePath(path)
-    let document = CachedDocument(resolved)
-    if (document == null) {
+    let compiled = CachedTemplate(resolved)
+    if (compiled == null) {
         print("[SCENE ERROR] Scene '{resolved}' was not preloaded; add it to the LoaderRequest before Scene::Load.\n")
         return false
     }
 
-    if (!ApplyDocument(document)) {
+    if (!ApplyTemplate(compiled)) {
         return false
     }
 
@@ -319,93 +478,31 @@ def public Load(path : string) : bool {
     return true
 }
 
-//! Applies the parsed document: swaps the world, installs the resource set and requests
-//! its meshes and materials. The document was validated by `Content::Parse` (the root is
-//! an object); this checks the scene-specific shape.
-def private ApplyDocument(document : Content::Document?) : bool {
-    if (document == null || document.root == null || !(document.root.value is _object)) {
-        print("[SCENE ERROR] scene document root is not an object.\n")
+//! Swaps the world for a compiled scene: validates that every model it names is resident,
+//! installs the resource set and creates the entities. Everything is checked before the world
+//! is touched, so a cold cache is one clear error instead of a half-applied scene.
+def private ApplyTemplate(compiled : EntitySet::EntitySetTemplate?) : bool {
+    if (compiled == null) {
         return false
     }
-
-    assume root_obj = document.root.value as _object
-    if (!root_obj |> key_exists("entities")) {
-        print("[SCENE ERROR] scene document is missing 'entities'.\n")
-        return false
-    }
-
-    let entities_cf = root_obj?["entities"] ?? null
-    if (entities_cf == null || !(entities_cf.value is _array)) {
-        print("[SCENE ERROR] 'entities' field is not an array.\n")
-        return false
-    }
-
-    assume entities_arr = entities_cf.value as _array
 
     // Appearance is resolved before the world is touched: the frame loop never loads, so a
-    // model that is not resident is a load error, not a pop-in. The scene takes its own
-    // references below, which is what keeps the resources alive after the loader lets go.
-    var ref_meshes : array<uint64>
-    var ref_materials : array<uint64>
-    resize(ref_meshes, length(entities_arr))
-    resize(ref_materials, length(entities_arr))
-    for (ent_idx in range(length(entities_arr))) {
-        ref_meshes[ent_idx] = 0ul
-        ref_materials[ent_idx] = 0ul
-
-        let ent_cf = entities_arr[ent_idx]
-        if (ent_cf == null || !(ent_cf.value is _object)) {
-            continue
-        }
-        assume ent_obj = ent_cf.value as _object
-        let model_cf = ent_obj?["model"] ?? null
-        if (model_cf == null || !(model_cf.value is _object)) {
-            continue
-        }
-        assume model_obj = model_cf.value as _object
-
-        let mesh_id = from_CF(model_obj?["mesh"] ?? null, type<uint64>)
-        let material_path = from_CF(model_obj?["material"] ?? null, type<string>)
-
-        let refs = Model::Resolve(mesh_id, material_path)
-        if (!refs.ok) {
-            print("[SCENE ERROR] Element #{ent_idx}: material '{material_path}' is not an existing authored .mat path; a derived material is reached through the mesh default.\n")
-            return false
-        }
-        if (mesh_id != 0ul && !Model::IsReady(refs)) {
-            print("[SCENE ERROR] Element #{ent_idx}: model is not loaded (mesh {mesh_id:d}, material {refs.material:d}); preload the scene first.\n")
-            return false
-        }
-        ref_meshes[ent_idx] = mesh_id
-        ref_materials[ent_idx] = refs.material
-    }
-
-    // A root stores no `parentLocalId`; spelling the root parent id out is an error, not a
-    // second way to say the same thing. Validate before the world is cleared, so a bad
-    // document leaves the current scene alone.
-    for (ent_idx in range(length(entities_arr))) {
-        let ent_cf = entities_arr[ent_idx]
-        if (ent_cf == null || !(ent_cf.value is _object)) {
-            continue
-        }
-        assume ent_obj = ent_cf.value as _object
-        let parent_cf = ent_obj?["parentLocalId"] ?? null
-        if (parent_cf != null && from_CF(parent_cf, type<uint>) == SCENE_ROOT_PARENT) {
-            print("[SCENE ERROR] Element #{ent_idx}: a root must not store parentLocalId.\n")
-            return false
-        }
+    // model that is not resident is a load error, not a pop-in.
+    var model_refs : array<Model::ModelRefs>
+    if (!EntitySet::ResolveModels(compiled, model_refs)) {
+        print("[SCENE ERROR] Scene '{compiled.path}' was not fully preloaded; add it to the LoaderRequest before Scene::Load.\n")
+        return false
     }
 
     // The header may list ids no entity uses; they are still the document's dependencies and
-    // the loader was asked for them. Check before touching the world, so a cold cache is one
-    // clear error instead of a half-applied scene.
-    for (mesh_id in document.deps.meshes) {
+    // the loader was asked for them.
+    for (mesh_id in compiled.deps.meshes) {
         if (!ResourceIsReadyMesh(mesh_id)) {
             print("[SCENE ERROR] mesh {mesh_id:d} is not loaded; preload the scene first.\n")
             return false
         }
     }
-    for (mat_id in document.deps.materials) {
+    for (mat_id in compiled.deps.materials) {
         if (!ResourceIsReadyMaterial(mat_id)) {
             print("[SCENE ERROR] material {mat_id:d} is not loaded; preload the scene first.\n")
             return false
@@ -413,20 +510,20 @@ def private ApplyDocument(document : Content::Document?) : bool {
     }
 
     UnloadActiveScene()
-    scene_context.scene_name = Content::Stem(document.path)
-    scene_context.scene_path = document.path
+    scene_context.scene_name = Content::Stem(compiled.path)
+    scene_context.scene_path = compiled.path
 
-    // The dependency set was collected once while parsing the document (header arrays and
-    // entity components together), so the active scene releases exactly what it requested.
-    clone(active_scene.requireMeshs, document.deps.meshes)
-    clone(active_scene.requireMaterials, document.deps.materials)
+    // The dependency set was collected once while compiling, so the active scene releases
+    // exactly what it requested.
+    clone(active_scene.requireMeshs, compiled.deps.meshes)
+    clone(active_scene.requireMaterials, compiled.deps.materials)
 
     // The document lists the explicit overrides; a model without one uses the mesh artifact
     // default, so the scene takes its own reference on that material as well and releases it
     // on unload together with everything else.
-    for (mat_id in ref_materials) {
-        if (mat_id != 0ul && !active_scene.requireMaterials.contains(mat_id)) {
-            active_scene.requireMaterials |> push(mat_id)
+    for (refs in model_refs) {
+        if (refs.material != 0ul && !active_scene.requireMaterials.contains(refs.material)) {
+            active_scene.requireMaterials |> push(refs.material)
         }
     }
 
@@ -443,206 +540,16 @@ def private ApplyDocument(document : Content::Document?) : bool {
         }
     }
 
-    let ent_count = length(entities_arr)
-    var total_loaded = 0
-    var warnings_count = 0
-
-    // A hierarchy link names a position in the file, so it is resolved after every entity
-    // exists. `local_of` maps a file index to a loaded entity (skipped elements leave holes).
     var entity_ids : array<EntityId>
-    var entity_tags : array<string>
-    var parent_file : array<int>
-    var local_of : table<int; int>
-    entity_ids |> reserve(ent_count)
-    entity_tags |> reserve(ent_count)
-    parent_file |> reserve(ent_count)
-
-    for (ent_idx in range(ent_count)) {
-        let ent_cf = entities_arr[ent_idx]
-        if (ent_cf == null || !(ent_cf.value is _object)) {
-            print("[SCENE WARNING] Element #{ent_idx} is not a valid Config object. Skipped.\n")
-            warnings_count++
-            continue
+    if (length(compiled.nodes) > 0) {
+        let root = EntitySet::CreateEntities(compiled, float3(0.0f, 0.0f, 0.0f), model_refs, entity_ids)
+        if (root == INVALID_ENTITY_ID) {
+            return false
         }
-
-        assume ent_obj = ent_cf.value as _object
-
-        var entity_tag = "Entity_{ent_idx}"
-        if (ent_obj |> key_exists("tag")) {
-            let tag_cf = ent_obj?["tag"] ?? null
-            if (tag_cf != null && tag_cf.value is _string) {
-                entity_tag = from_CF(tag_cf, type<string>)
-            }
-        }
-
-        var parent_index = -1
-        let parent_cf = ent_obj?["parentLocalId"] ?? null
-        if (parent_cf != null) {
-            parent_index = int(from_CF(parent_cf, type<uint>))
-        }
-
-        local_of[ent_idx] = total_loaded
-        let entity_mesh = ref_meshes[ent_idx]
-        let entity_material = ref_materials[ent_idx]
-        var new_eid : EntityId
-        unsafe {
-            new_eid = create_entity() @(eid : EntityId; var cmp : ComponentMap) {
-                assume cur_ent_obj = ent_cf.value as _object
-                for (field_name in keys(cur_ent_obj)) {
-                    // `eid` is assigned by DECS, and the hierarchy is structural (written
-                    // below, after every id exists).
-                    if (field_name == "eid" || field_name == "parentLocalId") {
-                        continue
-                    }
-                    let cf = cur_ent_obj?[field_name] ?? null
-                    // Only components declared `save = true` are authored data. A runtime
-                    // component in a hand-edited scene is dropped like an unknown field.
-                    if (!EcsShouldSave(field_name)) {
-                        print("[SCENE WARNING] Entity '{entity_tag}': field '{field_name}' is not a saved component. Skipped.\n")
-                        warnings_count++
-                        continue
-                    }
-                    let type_name = cf != null ? cf.typeName : ""
-                    parse_and_apply_field(cmp, entity_tag, field_name, cf, warnings_count, type_name)
-                }
-                // The draw pointers are part of the entity from birth: adding them later
-                // would move the entity to another archetype and copy its whole row.
-                if (entity_mesh != 0ul) {
-                    var mesh_ptr := GetMeshPointer(entity_mesh)
-                    if (mesh_ptr != null) {
-                        cmp |> set(Model::MESH_POINTER_FIELD, mesh_ptr)
-                    }
-                }
-                if (entity_material != 0ul) {
-                    var material_ptr := GetMaterialPointer(entity_material)
-                    if (material_ptr != null) {
-                        cmp |> set(Model::MATERIAL_POINTER_FIELD, material_ptr)
-                    }
-                }
-                cmp |> set(RELATIONSHIP_FIELD, Relationship())
-                ApplyWorldTransform(cmp)
-            }
-        }
-        entity_ids |> push(new_eid)
-        entity_tags |> push(entity_tag)
-        parent_file |> push(parent_index)
-        total_loaded++
     }
 
-    commit()
-
-    // Resolve file indices to loaded entities and build the sibling graph. A parent that is
-    // missing, skipped or points at the entity itself leaves the entity as a root.
-    var parent_local : array<int>
-    resize(parent_local, total_loaded)
-    for (i in range(total_loaded)) {
-        let file_parent = parent_file[i]
-        var local_parent = -1
-        if (file_parent >= 0 && key_exists(local_of, file_parent)) {
-            local_parent = local_of[file_parent]
-            if (local_parent == i) {
-                local_parent = -1
-            }
-        }
-        if (file_parent >= 0 && local_parent < 0) {
-            print("[SCENE WARNING] Entity '{entity_tags[i]}': parentLocalId {file_parent} does not name a loaded entity; treated as a root.\n")
-            warnings_count++
-        }
-        parent_local[i] = local_parent
-    }
-
-    var first_child, prev_sibling, next_sibling : array<int>
-    resize(first_child, total_loaded)
-    resize(prev_sibling, total_loaded)
-    resize(next_sibling, total_loaded)
-    for (i in range(total_loaded)) {
-        first_child[i] = -1
-        prev_sibling[i] = -1
-        next_sibling[i] = -1
-    }
-
-    var last_child : table<int; int>
-    for (i in range(total_loaded)) {
-        let p = parent_local[i]
-        if (p < 0) {
-            continue
-        }
-        if (key_exists(last_child, p)) {
-            let previous = last_child[p]
-            next_sibling[previous] = i
-            prev_sibling[i] = previous
-        } else {
-            first_child[p] = i
-        }
-        last_child[p] = i
-    }
-
-    // The one relationship component goes straight into archetype storage: `update_entity`
-    // would copy a whole entity row to change it.
-    var relationship_index : table<int; int>
-    for (i in range(total_loaded)) {
-        let eid = entity_ids[i]
-        let record = decsState.entityLookup[int(eid.id)]
-        let arch_index = int(decsState.archetypeLookup[record.archetype]) - 1
-        if (!key_exists(relationship_index, arch_index)) {
-            relationship_index[arch_index] = decs::find_component_index(
-                decsState.allArchetypes[arch_index], RELATIONSHIP_FIELD)
-        }
-        let p = parent_local[i]
-        let c = first_child[i]
-        let pv = prev_sibling[i]
-        let nx = next_sibling[i]
-        decs::set_direct_at(
-            decsState.allArchetypes[arch_index],
-            relationship_index[arch_index],
-            int(record.index),
-            Relationship(
-                parent = p >= 0 ? entity_ids[p] : INVALID_ENTITY_ID,
-                first_child = c >= 0 ? entity_ids[c] : INVALID_ENTITY_ID,
-                prev = pv >= 0 ? entity_ids[pv] : INVALID_ENTITY_ID,
-                next = nx >= 0 ? entity_ids[nx] : INVALID_ENTITY_ID
-            )
-        )
-    }
-
-    // A loaded scene is rendered in the frame it finishes, and the editor loads scenes after
-    // the engine tick: compose the hierarchy once here instead of showing local transforms
-    // for one frame.
-    UpdateWorldTransforms()
-
-    print("[SCENE] '{scene_context.scene_path}': {total_loaded} entities, {length(active_scene.requireMeshs)} mesh(es), {length(active_scene.requireMaterials)} material(s), {warnings_count} warning(s)\n")
+    print("[SCENE] '{scene_context.scene_path}': {length(entity_ids)} entities, {length(active_scene.requireMeshs)} mesh(es), {length(active_scene.requireMaterials)} material(s)\n")
     return true
-}
-
-// `_world` is derived, but it must exist from the moment the entity does: the transform pass
-// never adds a component. Its value starts as the local transform; the pass that runs right
-// after the load composes the hierarchy into it.
-def private ApplyWorldTransform(var cmp : ComponentMap) {
-    if (!decs::has(cmp, TRANSFORM_FIELD)) {
-        return
-    }
-    ApplyEntityTransform(cmp, decs::get(cmp, TRANSFORM_FIELD, Transform()))
-}
-
-def private parse_and_apply_field(var cmp : ComponentMap;
-                                  entity_tag : string;
-                                  field_name : string;
-                                  cf : StructField?;
-                                  var out_warnings : int&,
-                                  type_name : string) : bool {
-    if (cf == null || cf.value is _null) {
-        print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' is null. Skipped.\n")
-        out_warnings++
-        return false
-    }
-
-    if (ApplyDecsConfigField(cmp, field_name, cf, type_name)) {
-        return true
-    }
-
-    print("[SCENE WARNING] Entity '{entity_tag}': Field '{field_name}' has unsupported ConfigFormat type. Skipped.\n")
-    out_warnings++
-    return false
 }
 
 [async]
@@ -791,13 +698,13 @@ def public GetSceneHeader(path : string) : SceneHeader {
     AssetCache::Refresh(g_values, "scene", resolved)
 
     while (AssetCache::Advance(g_values, resolved, Content::ItemsField(DocumentKind.Scene),
-                               @@CompileSceneDocument) == AssetCache::AssetState.Loading) {
+                               @@CompileScene) == AssetCache::AssetState.Loading) {
         await_next_frame()
     }
 
     var empty_header : SceneHeader
-    let document = CachedDocument(resolved)
-    if (document == null) {
+    let compiled = CachedTemplate(resolved)
+    if (compiled == null) {
         print("[SCENE ERROR] Scene '{resolved}' is not a valid scene document.\n")
         yield <- empty_header
     }
@@ -805,7 +712,7 @@ def public GetSceneHeader(path : string) : SceneHeader {
     var header <- SceneHeader()
     header.name = Content::Stem(resolved)
     header.path = resolved
-    clone(header.requireMeshs, document.deps.meshes)
-    clone(header.requireMaterials, document.deps.materials)
+    clone(header.requireMeshs, compiled.deps.meshes)
+    clone(header.requireMaterials, compiled.deps.materials)
     yield <- header
 }

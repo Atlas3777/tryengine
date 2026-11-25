@@ -7,12 +7,17 @@ module Loader shared public
 //!
 //! The caller builds a `LoaderRequest` (bundles, scenes, prefabs), starts
 //! `Loader::Load(request, @@OnLoaded)` as a task and reads `GetProgress(phase)` while it
-//! runs. The loader expands bundles, compiles prefabs, collects mesh/material
+//! runs. The loader expands bundles, compiles prefabs and scenes, collects mesh/material
 //! dependencies and waits for the resources.
 //!
-//! Every document kind is served by `tryengine/AssetCache`: a record that is already ready
-//! is not read or parsed again, and the loader drives kinds through `AssetCache::AssetKindOps`
-//! without naming their types. Text reads are one-shot, so no source text outlives the parse.
+//! Every document kind is served by `tryengine/AssetCache`; the kind modules own their public
+//! `Request`/`Advance`/`Cancel`, and this module names them explicitly. There is no registry
+//! of kinds and no string dispatch: a new document kind is a compile error until it is named
+//! here.
+//!
+//! A job carries the phase it belongs to from the moment it is queued, so `LoadPhase` is
+//! output for the loading screen, not a state machine over kind names: progress and
+//! `CurrentItem` read the queue.
 //!
 //! It never applies a scene and never switches what the player sees: scene entry is
 //! `Scene::Load` and belongs to the callback.
@@ -57,13 +62,6 @@ def public MapOf(maps : table<string; AssetMap>; bundle_path : string) : AssetMa
     return maps?[resolved] ?? AssetMap()
 }
 
-// One generic asset request. Any kind registered in `AssetCache` can be added without a
-// dedicated field or a loader edit: the kind string is whatever its `[init]` registered.
-struct public LoaderAssetRequest {
-    kind : string
-    path : string
-}
-
 // One already-addressed resource (mesh/material/texture/font). Content dependencies are
 // collected automatically; this is for engine-owned ids that no document names, such as the
 // fixed UI material.
@@ -79,7 +77,6 @@ struct public LoaderRequest {
     prefabs : array<string>
     bundles : array<string>
     scenes : array<string>
-    assets  : array<LoaderAssetRequest>
     resources : array<LoaderResourceRequest>
 
     def static AddPrefab(var self : LoaderRequest; name : string) {
@@ -94,10 +91,6 @@ struct public LoaderRequest {
         self.scenes |> push(path)
     }
 
-    def static AddAsset(var self : LoaderRequest; kind : string; path : string) {
-        self.assets |> push(LoaderAssetRequest(kind = kind, path = path))
-    }
-
     def static AddResource(var self : LoaderRequest; kind : string; id : uint64) {
         self.resources |> push(LoaderResourceRequest(kind = kind, id = id))
     }
@@ -110,17 +103,16 @@ enum private ResourceJobKind {
     Font
 }
 
-// One requested asset. `kind` is the AssetCache kind ("bundle", "scene", "prefab", ...) and
-// `ops` is that kind's non-generic face, so the loader never names the value type.
+//! One queued document. `phase` is fixed when the job is queued: the queue is the plan, so no
+//! pass has to ask a kind what it is.
 struct private AssetJob {
-    kind : string
-    path : string
-    id : uint64
-    ops : AssetCache::AssetKindOps
-    done : bool
+    phase : LoadPhase
+    path  : string
+    id    : uint64
+    done  : bool
 }
 
-// One mesh/material the requested assets depend on.
+//! One mesh/material/texture/font the requested documents depend on.
 struct private ResourceJob {
     kind : ResourceJobKind
     id : uint64
@@ -157,18 +149,22 @@ def private IsDataPath(path : string) : bool {
     return starts_with(path, "data/")
 }
 
-// LoadPhase groups assets by kind for progress only; the request itself stays typed.
-def private PhaseKind(phase : LoadPhase) : string {
-    if (phase == LoadPhase.Bundles) {
-        return "bundle"
+def private HasJobs(phase : LoadPhase) : bool {
+    for (job in g_asset_jobs) {
+        if (job.phase == phase) {
+            return true
+        }
     }
-    if (phase == LoadPhase.Scenes) {
-        return "scene"
+    return false
+}
+
+def private AllJobsDone(phase : LoadPhase) : bool {
+    for (job in g_asset_jobs) {
+        if (job.phase == phase && !job.done) {
+            return false
+        }
     }
-    if (phase == LoadPhase.Prefabs) {
-        return "prefab"
-    }
-    return ""
+    return true
 }
 
 //! Items done and total for one phase. `Loader::GetProgress(LoadPhase.Prefabs)` returns
@@ -179,18 +175,17 @@ def public GetProgress(phase : LoadPhase) : float2 {
     var done = 0
     var total = 0
 
-    let kind = PhaseKind(phase)
-    if (!empty(kind)) {
-        for (job in g_asset_jobs) {
-            if (job.kind != kind) {
-                continue
-            }
-            total++
-            if (job.done) {
-                done++
-            }
+    for (job in g_asset_jobs) {
+        if (job.phase != phase) {
+            continue
         }
-    } elif (phase == LoadPhase.Resources) {
+        total++
+        if (job.done) {
+            done++
+        }
+    }
+
+    if (phase == LoadPhase.Resources) {
         total = length(g_resource_jobs)
         for (job in g_resource_jobs) {
             if (job.done) {
@@ -224,18 +219,68 @@ def public PhaseName(phase : LoadPhase) : string {
     return "Idle"
 }
 
-// Resolves an authored path of a known document kind and queues it as an asset job.
-def private QueueDocument(kind : DocumentKind; path : string) : bool {
-    let resolved = Content::Find(kind, path)
+//! Authored path of the document the request is working on, or "" when every document is
+//! ready (the loader is waiting for resources). A loading screen shows
+//! `PhaseName(Phase())`, `GetProgress(Phase())` and this.
+def public CurrentItem() : string {
+    for (job in g_asset_jobs) {
+        if (!job.done) {
+            return job.path
+        }
+    }
+    return ""
+}
+
+// The three document phases are fixed: a bundle expands into prefabs, so it always resolves
+// first, and resources wait for every document. `NextPhase` returns the first phase that has
+// work left, and `Resources` when there is none.
+def private NextPhase(phase : LoadPhase) : LoadPhase {
+    if (phase == LoadPhase.Idle && HasJobs(LoadPhase.Bundles)) {
+        return LoadPhase.Bundles
+    }
+    if ((phase == LoadPhase.Idle || phase == LoadPhase.Bundles) && HasJobs(LoadPhase.Scenes)) {
+        return LoadPhase.Scenes
+    }
+    if ((phase == LoadPhase.Idle || phase == LoadPhase.Bundles || phase == LoadPhase.Scenes) &&
+        HasJobs(LoadPhase.Prefabs)) {
+        return LoadPhase.Prefabs
+    }
+    return LoadPhase.Resources
+}
+
+// ---------------------------------------------------------------------------
+// Document jobs
+// ---------------------------------------------------------------------------
+
+//! Starts loading one bundle, scene or prefab by its authored path. False means the path was
+//! not found or the storage layer cannot read it.
+def private QueueBundle(path : string) : bool {
+    let resolved = Content::Find(DocumentKind.Bundle, path)
     if (empty(resolved)) {
         return false
     }
-    return QueueAsset(Content::KindName(kind), resolved)
+    return QueueDocument(LoadPhase.Bundles, resolved)
 }
 
-// Queues one canonical path. A record that already exists (loading, ready or failed) is
-// not requested again, so a repeated load of unchanged content does no I/O.
-def private QueueAsset(kind : string; resolved : string) : bool {
+def private QueueScene(path : string) : bool {
+    let resolved = Content::Find(DocumentKind.Scene, path)
+    if (empty(resolved)) {
+        return false
+    }
+    return QueueDocument(LoadPhase.Scenes, resolved)
+}
+
+def private QueuePrefab(path : string) : bool {
+    let resolved = Content::Find(DocumentKind.Prefab, path)
+    if (empty(resolved)) {
+        return false
+    }
+    return QueueDocument(LoadPhase.Prefabs, resolved)
+}
+
+// Queues one canonical path in its phase. A record that already exists (loading, ready or
+// failed) is not requested again, so a repeated load of unchanged content does no I/O.
+def private QueueDocument(phase : LoadPhase; resolved : string) : bool {
     let id = Assets::IdOf(resolved)
     if (id == 0ul) {
         return false
@@ -247,53 +292,198 @@ def private QueueAsset(kind : string; resolved : string) : bool {
         }
     }
 
-    var ops : AssetCache::AssetKindOps
-    if (!AssetCache::FindKind(kind, ops)) {
-        print("[LOADER ERROR] asset kind '{kind}' is not registered\n")
+    var requested = false
+    if (phase == LoadPhase.Bundles) {
+        requested = Bundle::Request(resolved)
+    } elif (phase == LoadPhase.Scenes) {
+        requested = Scene::Request(resolved)
+    } elif (phase == LoadPhase.Prefabs) {
+        requested = Prefab::Request(resolved)
+    } else {
+        print("[LOADER ERROR] phase '{PhaseName(phase)}' is not a document phase\n")
         return false
     }
-    if (!ops.request(resolved)) {
+    if (!requested) {
         return false
     }
 
-    g_asset_jobs |> push(AssetJob(kind = kind, path = resolved, id = id, ops = ops))
+    g_asset_jobs |> push(AssetJob(phase = phase, path = resolved, id = id))
     return true
 }
 
-def private ReleaseAll() {
-    for (index in range(length(g_asset_jobs))) {
-        if (g_asset_jobs[index].done) {
-            continue
-        }
-        g_asset_jobs[index].ops.cancel(g_asset_jobs[index].path)
+def private AdvanceDocument(job : AssetJob) : AssetCache::AssetState {
+    if (job.phase == LoadPhase.Bundles) {
+        return Bundle::Advance(job.path)
     }
-    for (index in range(length(g_resource_jobs))) {
-        if (!g_resource_jobs[index].held) {
-            continue
-        }
-        if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
-            ReleaseMeshResource(g_resource_jobs[index].id)
-        } elif (g_resource_jobs[index].kind == ResourceJobKind.Material) {
-            ReleaseMaterialResource(g_resource_jobs[index].id)
-        } elif (g_resource_jobs[index].kind == ResourceJobKind.Texture) {
-            ReleaseTextureResource(g_resource_jobs[index].id)
-        } else {
-            ReleaseFontResource(g_resource_jobs[index].id)
-        }
-        g_resource_jobs[index].held = false
+    if (job.phase == LoadPhase.Scenes) {
+        return Scene::Advance(job.path)
+    }
+    if (job.phase == LoadPhase.Prefabs) {
+        return Prefab::Advance(job.path)
+    }
+    return AssetCache::AssetState.Failed
+}
+
+def private CancelDocument(job : AssetJob) {
+    if (job.phase == LoadPhase.Bundles) {
+        Bundle::Cancel(job.path)
+    } elif (job.phase == LoadPhase.Scenes) {
+        Scene::Cancel(job.path)
+    } elif (job.phase == LoadPhase.Prefabs) {
+        Prefab::Cancel(job.path)
     }
 }
 
-def private ResetState() {
-    g_active = false
-    g_phase = LoadPhase.Idle
-    g_generation++
-    g_error = ""
-    g_on_loaded = @@LoaderNoop
+// Polls one phase: advances its records, adds dependencies of ready documents and expands a
+// ready bundle into the prefabs and the parent bundle it asks for. Kind-specific validation
+// and error printing live in the kind's compile function.
+def private ProcessJobs(phase : LoadPhase) {
+    let count = length(g_asset_jobs)
+    for (index in range(count)) {
+        let job = g_asset_jobs[index]
+        if (job.phase != phase || job.done) {
+            continue
+        }
+
+        let state = AdvanceDocument(job)
+        if (state == AssetCache::AssetState.Failed) {
+            Fail("'{job.path}' failed to load")
+            return
+        }
+        if (state == AssetCache::AssetState.Loading) {
+            continue
+        }
+
+        AddDependencies(AssetCache::Dependencies(job.path), job.path)
+
+        // A bundle declares its parent as another document that must be ready before the
+        // hierarchy can be linked, and expands into its own prefabs; both join the queue in
+        // the phase they belong to.
+        if (phase == LoadPhase.Bundles) {
+            for (parent_path in Bundle::Parents(job.path)) {
+                if (!IsDataPath(parent_path)) {
+                    Fail("bundle '{job.path}': parent '{parent_path}' must be a data/... path")
+                    return
+                }
+                if (!QueueBundle(parent_path)) {
+                    Fail("bundle '{job.path}': parent '{parent_path}' was not found")
+                    return
+                }
+            }
+
+            for (prefab_path in Bundle::PrefabPaths(job.path)) {
+                if (!IsContentPath(prefab_path)) {
+                    Fail("bundle '{job.path}': prefab '{prefab_path}' must be a content/... path")
+                    return
+                }
+                if (!QueuePrefab(prefab_path)) {
+                    Fail("bundle '{job.path}': prefab '{prefab_path}' was not found; check the content/ path")
+                    return
+                }
+            }
+        }
+
+        g_asset_jobs[index].done = true
+    }
+}
+
+// Validates every bundle of the request (parents are bundle jobs too): a missing parent or a
+// cycle fails the request before any scene or prefab is allowed to run.
+def private ValidateBundles() : bool {
+    for (job in g_asset_jobs) {
+        if (job.phase != LoadPhase.Bundles) {
+            continue
+        }
+        if (!Bundle::Validate(job.path)) {
+            Fail("bundle '{job.path}' has an invalid parent chain")
+            return false
+        }
+    }
+    return true
+}
+
+def private FillMaps() {
     clear(g_maps)
-    g_notified = false
-    clear(g_asset_jobs)
-    clear(g_resource_jobs)
+    for (job in g_asset_jobs) {
+        if (job.phase == LoadPhase.Bundles) {
+            g_maps[job.path] = Bundle::Flatten(job.path)
+        }
+    }
+}
+
+def private NotifyReady() {
+    if (g_notified) {
+        return
+    }
+    g_notified = true
+    FillMaps()
+    invoke(g_on_loaded, g_maps)
+}
+
+// ---------------------------------------------------------------------------
+// Resource jobs
+// ---------------------------------------------------------------------------
+// Four resource kinds, four operations each. The loader owns the whole table so "where is a
+// texture requested" is one place; a new kind is a compile error until every operation
+// handles it.
+
+def private RequestResource(kind : ResourceJobKind; id : uint64) {
+    if (kind == ResourceJobKind.Mesh) {
+        RequestLoadMesh(id)
+    } elif (kind == ResourceJobKind.Material) {
+        RequestLoadMaterial(id)
+    } elif (kind == ResourceJobKind.Texture) {
+        RequestLoadTexture(id)
+    } else {
+        RequestLoadFont(id)
+    }
+}
+
+def private ReleaseResource(kind : ResourceJobKind; id : uint64) {
+    if (kind == ResourceJobKind.Mesh) {
+        ReleaseMeshResource(id)
+    } elif (kind == ResourceJobKind.Material) {
+        ReleaseMaterialResource(id)
+    } elif (kind == ResourceJobKind.Texture) {
+        ReleaseTextureResource(id)
+    } else {
+        ReleaseFontResource(id)
+    }
+}
+
+def private ResourceReady(kind : ResourceJobKind; id : uint64) : bool {
+    if (kind == ResourceJobKind.Mesh) {
+        return ResourceIsReadyMesh(id)
+    }
+    if (kind == ResourceJobKind.Material) {
+        return ResourceIsReadyMaterial(id)
+    }
+    if (kind == ResourceJobKind.Texture) {
+        return ResourceIsReadyTexture(id)
+    }
+    return ResourceIsReadyFont(id)
+}
+
+def private ResourceFailed(kind : ResourceJobKind; id : uint64) : bool {
+    if (kind == ResourceJobKind.Mesh) {
+        return ResourceIsFailedMesh(id)
+    }
+    if (kind == ResourceJobKind.Material) {
+        return ResourceIsFailedMaterial(id)
+    }
+    if (kind == ResourceJobKind.Texture) {
+        return ResourceIsFailedTexture(id)
+    }
+    return ResourceIsFailedFont(id)
+}
+
+//! Default material baked into a mesh artifact, 0 for every other kind. A mesh default is
+//! known only once the mesh is loaded, so the queue grows while the phase is checked.
+def private ResourceDefaultMaterial(kind : ResourceJobKind; id : uint64) : uint64 {
+    if (kind != ResourceJobKind.Mesh) {
+        return 0ul
+    }
+    return MeshDefaultMaterial(id)
 }
 
 def private AddResourceJob(kind : ResourceJobKind; id : uint64; source : string = "") {
@@ -331,140 +521,44 @@ def private RequestResources() {
         if (g_resource_jobs[index].held) {
             continue
         }
-        if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
-            RequestLoadMesh(g_resource_jobs[index].id)
-        } elif (g_resource_jobs[index].kind == ResourceJobKind.Material) {
-            RequestLoadMaterial(g_resource_jobs[index].id)
-        } elif (g_resource_jobs[index].kind == ResourceJobKind.Texture) {
-            RequestLoadTexture(g_resource_jobs[index].id)
-        } else {
-            RequestLoadFont(g_resource_jobs[index].id)
-        }
+        RequestResource(g_resource_jobs[index].kind, g_resource_jobs[index].id)
         g_resource_jobs[index].held = true
     }
 }
 
-def private HasAssetKind(kind : string) : bool {
-    for (job in g_asset_jobs) {
-        if (job.kind == kind) {
-            return true
-        }
-    }
-    return false
-}
-
-def private NextPhase(phase : LoadPhase) : LoadPhase {
-    if (phase == LoadPhase.Idle) {
-        if (HasAssetKind("bundle")) {
-            return LoadPhase.Bundles
-        }
-    }
-    if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles) {
-        if (HasAssetKind("scene")) {
-            return LoadPhase.Scenes
-        }
-    }
-    if (phase == LoadPhase.Idle || phase == LoadPhase.Bundles || phase == LoadPhase.Scenes) {
-        if (HasAssetKind("prefab")) {
-            return LoadPhase.Prefabs
-        }
-    }
-    return LoadPhase.Resources
-}
-
-def private AllAssetsDone(kind : string) : bool {
-    for (job in g_asset_jobs) {
-        if (job.kind == kind && !job.done) {
-            return false
-        }
-    }
-    return true
-}
-
-// Polls one kind: advances its records, adds dependencies of ready assets and expands plan
-// kinds (a bundle returns its prefab list through `expands`). Kind-specific validation and
-// error printing live in the kind's compile function.
-def private ProcessAssets(kind : string) {
-    let count = length(g_asset_jobs)
-    for (index in range(count)) {
-        let job = g_asset_jobs[index]
-        if (job.kind != kind || job.done) {
+def private ReleaseAll() {
+    for (index in range(length(g_asset_jobs))) {
+        if (g_asset_jobs[index].done) {
             continue
         }
-
-        let state = job.ops.advance(job.path)
-        if (state == AssetCache::AssetState.Failed) {
-            Fail("'{job.path}' failed to load")
-            return
-        }
-        if (state == AssetCache::AssetState.Loading) {
+        CancelDocument(g_asset_jobs[index])
+    }
+    for (index in range(length(g_resource_jobs))) {
+        if (!g_resource_jobs[index].held) {
             continue
         }
-
-        AddDependencies(job.ops.deps(job.path), job.path)
-
-        // A bundle declares its parent as another document that must be ready before the
-        // hierarchy can be linked; the parent itself is a bundle job and joins this phase.
-        for (parent_path in job.ops.parents(job.path)) {
-            if (!IsDataPath(parent_path)) {
-                Fail("bundle '{job.path}': parent '{parent_path}' must be a data/... path")
-                return
-            }
-            if (!QueueDocument(DocumentKind.Bundle, parent_path)) {
-                Fail("bundle '{job.path}': parent '{parent_path}' was not found")
-                return
-            }
-        }
-
-        for (prefab_path in job.ops.expands(job.path)) {
-            if (!IsContentPath(prefab_path)) {
-                Fail("bundle '{job.path}': prefab '{prefab_path}' must be a content/... path")
-                return
-            }
-            if (!QueueDocument(DocumentKind.Prefab, prefab_path)) {
-                Fail("bundle '{job.path}': prefab '{prefab_path}' was not found; check the content/ path")
-                return
-            }
-        }
-
-        g_asset_jobs[index].done = true
+        ReleaseResource(g_resource_jobs[index].kind, g_resource_jobs[index].id)
+        g_resource_jobs[index].held = false
     }
 }
 
-// Validates every bundle of the request (parents are bundle jobs too): a missing parent or a
-// cycle fails the request before any scene or prefab is allowed to run.
-def private ValidateBundles() : bool {
-    for (job in g_asset_jobs) {
-        if (job.kind != "bundle") {
-            continue
-        }
-        if (!Bundle::Validate(job.path)) {
-            Fail("bundle '{job.path}' has an invalid parent chain")
-            return false
-        }
-    }
-    return true
-}
-
-def private FillMaps() {
+def private ResetState() {
+    g_active = false
+    g_phase = LoadPhase.Idle
+    g_generation++
+    g_error = ""
+    g_on_loaded = @@LoaderNoop
     clear(g_maps)
-    for (job in g_asset_jobs) {
-        if (job.kind == "bundle") {
-            g_maps[job.path] = Bundle::Flatten(job.path)
-        }
-    }
+    g_notified = false
+    clear(g_asset_jobs)
+    clear(g_resource_jobs)
 }
 
-def private NotifyReady() {
-    if (g_notified) {
-        return
-    }
-    g_notified = true
-    FillMaps()
-    invoke(g_on_loaded, g_maps)
-}
+// ---------------------------------------------------------------------------
+// Request
+// ---------------------------------------------------------------------------
 
-// Starts a request and records its callback. The loader must be idle. Asset requests are
+// Starts a request and records its callback. The loader must be idle. Document requests are
 // issued immediately; a record that is already cached needs no read at all.
 def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : bool {
     if (g_active) {
@@ -481,7 +575,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("bundle '{bundle_path}' must be a data/... path")
             return false
         }
-        if (!QueueDocument(DocumentKind.Bundle, bundle_path)) {
+        if (!QueueBundle(bundle_path)) {
             Fail("bundle '{bundle_path}' was not found; check the data/ path")
             return false
         }
@@ -492,7 +586,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("scene '{scene_path}' must be a content/... path")
             return false
         }
-        if (!QueueDocument(DocumentKind.Scene, scene_path)) {
+        if (!QueueScene(scene_path)) {
             Fail("scene '{scene_path}' was not found; check the content/ path")
             return false
         }
@@ -503,16 +597,8 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
             Fail("prefab '{prefab_path}' must be a content/... path")
             return false
         }
-        if (!QueueDocument(DocumentKind.Prefab, prefab_path)) {
+        if (!QueuePrefab(prefab_path)) {
             Fail("prefab '{prefab_path}' was not found; check the content/ path")
-            return false
-        }
-    }
-
-    for (asset in request.assets) {
-        let resolved = Assets::ResolveGamePath(asset.path, "")
-        if (empty(resolved) || !QueueAsset(asset.kind, resolved)) {
-            Fail("asset '{asset.path}' of kind '{asset.kind}' was not found")
             return false
         }
     }
@@ -549,7 +635,7 @@ def private Begin(var request : LoaderRequest; on_loaded : LoaderCallback) : boo
 //!     request.AddScene("content/main.scene")
 //!     StartTask(Loader::Load(request, @@OnLoaded))
 //!
-//! `on_loaded` runs once when every requested asset and resource is ready; `Scene::Load`
+//! `on_loaded` runs once when every requested document and resource is ready; `Scene::Load`
 //! and `Prefab::Spawn` are synchronous cache hits there. After the callback returns, the
 //! loader releases its references. On failure the callback is not called and the phase
 //! stays `Failed` for `IsFailed()`/`Error()`.
@@ -582,8 +668,8 @@ def private LoadTask(generation : uint64) : void {
     }
 }
 
-// One frame of loading. Asset polling, bundle expansion, dependency collection and resource
-// polling all happen here. Does nothing after Ready/Failed.
+// One frame of loading. Document polling, bundle expansion, dependency collection and
+// resource polling all happen here. Does nothing after Ready/Failed.
 [profile]
 def private Advance() {
     if (!g_active || g_phase == LoadPhase.Ready || g_phase == LoadPhase.Failed) {
@@ -591,11 +677,11 @@ def private Advance() {
     }
 
     if (g_phase == LoadPhase.Bundles) {
-        ProcessAssets("bundle")
+        ProcessJobs(LoadPhase.Bundles)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllAssetsDone("bundle")) {
+        if (AllJobsDone(LoadPhase.Bundles)) {
             if (!ValidateBundles()) {
                 return
             }
@@ -604,21 +690,21 @@ def private Advance() {
     }
 
     if (g_phase == LoadPhase.Scenes) {
-        ProcessAssets("scene")
+        ProcessJobs(LoadPhase.Scenes)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllAssetsDone("scene")) {
+        if (AllJobsDone(LoadPhase.Scenes)) {
             g_phase = NextPhase(g_phase)
         }
     }
 
     if (g_phase == LoadPhase.Prefabs) {
-        ProcessAssets("prefab")
+        ProcessJobs(LoadPhase.Prefabs)
         if (g_phase == LoadPhase.Failed) {
             return
         }
-        if (AllAssetsDone("prefab")) {
+        if (AllJobsDone(LoadPhase.Prefabs)) {
             g_phase = NextPhase(g_phase)
         }
     }
@@ -633,54 +719,24 @@ def private Advance() {
             }
             let id = g_resource_jobs[index].id
             let kind = g_resource_jobs[index].kind
-            if (kind == ResourceJobKind.Mesh) {
-                if (ResourceIsFailedMesh(id)) {
-                    Fail("mesh {id} (from {g_resource_jobs[index].source}) failed to load")
-                    return
-                }
-                if (ResourceIsReadyMesh(id)) {
-                    g_resource_jobs[index].done = true
-                    // Материал по умолчанию лежит в артефакте меша, поэтому он известен
-                    // только теперь: очередь ресурсов пополняется по ходу проверки, и
-                    // загрузка не считается законченной, пока он не готов.
-                    let default_material = MeshDefaultMaterial(id)
-                    if (default_material != 0ul) {
-                        AddResourceJob(ResourceJobKind.Material, default_material, "mesh {id}")
-                        complete = false
-                    }
-                } else {
-                    complete = false
-                }
-            } elif (kind == ResourceJobKind.Material) {
-                if (ResourceIsFailedMaterial(id)) {
-                    Fail("material {id} (from {g_resource_jobs[index].source}) failed to load")
-                    return
-                }
-                if (ResourceIsReadyMaterial(id)) {
-                    g_resource_jobs[index].done = true
-                } else {
-                    complete = false
-                }
-            } elif (kind == ResourceJobKind.Texture) {
-                if (ResourceIsFailedTexture(id)) {
-                    Fail("texture {id} (from {g_resource_jobs[index].source}) failed to load")
-                    return
-                }
-                if (ResourceIsReadyTexture(id)) {
-                    g_resource_jobs[index].done = true
-                } else {
-                    complete = false
-                }
-            } else {
-                if (ResourceIsFailedFont(id)) {
-                    Fail("font {id} (from {g_resource_jobs[index].source}) failed to load")
-                    return
-                }
-                if (ResourceIsReadyFont(id)) {
-                    g_resource_jobs[index].done = true
-                } else {
-                    complete = false
-                }
+            let source = g_resource_jobs[index].source
+            if (ResourceFailed(kind, id)) {
+                Fail("{ResourceKindName(kind)} {id} (from {source}) failed to load")
+                return
+            }
+            if (!ResourceReady(kind, id)) {
+                complete = false
+                continue
+            }
+
+            g_resource_jobs[index].done = true
+            // Материал по умолчанию лежит в артефакте меша, поэтому он известен только
+            // теперь: очередь ресурсов пополняется по ходу проверки, и загрузка не
+            // считается законченной, пока он не готов.
+            let default_material = ResourceDefaultMaterial(kind, id)
+            if (default_material != 0ul) {
+                AddResourceJob(ResourceJobKind.Material, default_material, "mesh {id}")
+                complete = false
             }
         }
 
@@ -694,6 +750,19 @@ def private Advance() {
     }
 }
 
+def private ResourceKindName(kind : ResourceJobKind) : string {
+    if (kind == ResourceJobKind.Mesh) {
+        return "mesh"
+    }
+    if (kind == ResourceJobKind.Material) {
+        return "material"
+    }
+    if (kind == ResourceJobKind.Texture) {
+        return "texture"
+    }
+    return "font"
+}
+
 // Releases the loader's references after the callback. Text requests are one-shot and are
 // already gone; ready values stay in `AssetCache`, so a later `Scene::Load` /
 // `Prefab::Spawn` still works.
@@ -705,8 +774,8 @@ def private Finish() {
     ResetState()
 }
 
-//! Cancels the request. Assets that already became ready stay in `AssetCache`; pending text
-//! reads are cancelled. Also invalidates a task that was started but has not run yet.
+//! Cancels the request. Documents that already became ready stay in `AssetCache`; pending
+//! text reads are cancelled. Also invalidates a task that was started but has not run yet.
 def public Abort() {
     if (g_active) {
         ReleaseAll()
