@@ -80,13 +80,14 @@ cmake --build build-debug --target editor -j "$(nproc)"
   `engine_source/resources/src/Module_AsyncFileManager.cpp`,
   `engine_source/graphics/src/Module_Renderer.cpp` и `Module_Resources.cpp`,
   `engine_source/physics/src/Module_Physics.cpp`, `editor/src/Module_TryEditor.cpp`,
-  `engine_source/core/src/Module_Log.cpp` (журнал — тип ядра).
+  `engine_source/core/src/Module_Log.cpp` (журнал — тип ядра) и
+  `engine_source/core/src/Module_Live.cpp` (хранилище `@live` — тоже состояние ядра).
 - Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
-  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`; агрегат для
-  всех — `das_modules` (`tools/agent/build.sh modules`).
+  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`, `tryLive_shared`;
+  агрегат для всех — `das_modules` (`tools/agent/build.sh modules`).
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
@@ -127,6 +128,7 @@ daslang -dry-run \
   -load_module "$PWD/modules/tryPhysics" \
   -load_module "$PWD/modules/tryUi" \
   -load_module "$PWD/modules/tryLog" \
+  -load_module "$PWD/modules/tryLive" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
 ```
@@ -232,6 +234,24 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   компиляции; без этого `compileDaScript` падает в `AstSerializer` ещё до разбора первого
   модуля. Новое окружение на воркере не создавай: модули проекта и генерация должны
   остаться в том же реестре, что и у главного потока.
+- `@live` — аннотация глобальной переменной или поля структуры: значение переживает горячую
+  перезагрузку. Живёт в `tryengine/Live` (`engine_source/daslang/Live.das`, infer-макрос по
+  образцу `live/live_vars` из dasLiveHost): в модуле появляются
+  `__before_reload_live_vars`/`__after_reload_live_vars`, которые `ScriptSystem` находит по
+  префиксу. Значение пишется в `tryLive` (`engine_source/core/src/Module_Live.cpp` +
+  `LiveStore.hpp`) под ключом из имени модуля и переменной, вместе с хешем выражения
+  инициализатора: смена дефолта в коде отбрасывает старое значение. Хранилище живёт в
+  процессе, первая загрузка его чистит; `is_reload()` истинно в поколении после
+  перезагрузки. `@live` на `let` — ошибка компиляции.
+- Что помечено `@live`: массив `clocks` и `root_clock` в `Time`, **каждый** тег клока
+  (`editor_clock`, `game_clock`/`game_world_clock`/`game_ui_clock`, `g_physics_clock`, клок
+  `Ui`, `Physics::g_physics_attached`), состояние прицела в `Player.das` и HUD-состояние
+  `GameState.g_state`. Тег клока — индекс в массиве `clocks`, поэтому восстанавливать его
+  без массива нельзя: слот укажет в чужой клок. Мир, сцена, DECS-куча, порядок экранов и
+  выбранная сущность идут через снимок `editor/daslang/HotReload.das`, а не через `@live`.
+- Мир физики — C++ (Jolt), он переживает перезагрузку, а `g_physics_attached` — скриптовый.
+  Поэтому `Game::ApplyReloadState` ещё раз зовёт `Physics::Attach`: без этого сцена «жива»
+  (камера вертится), но персонаж стоит — симуляция не шагает.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.
@@ -466,7 +486,10 @@ Conventional стиле на английском языке.
   (история undo/redo на мире DECS без GUI), `log-probe.sh`
   (файловый sink, кольцо журнала, фильтр и Clear без GUI), `shader-probe.sh` (компиляция
   шейдеров и их модулей через настоящий `ShaderCompilerSystem`, без GUI), `gltf-probe.sh`
-  (поворот корней модели в Z-up и `.meta` модели через кодек импортёра, без GUI).
+  (поворот корней модели в Z-up и `.meta` модели через кодек импортёра, без GUI),
+  `script-reload-probe.sh` (настоящий `ScriptSystem`: `@live`, хуки, клоки и `is_reload()`
+  после подмены поколения, без GUI), `live-probe.sh` (`@live` переживает перезагрузку под
+  настоящим `daslang-live`: файловый вотчер `live/live_watch` + правка файла).
 - `tools/tests/` — сама сюита: по файлу на тему, каждый тест — самостоятельная программа.
   Соглашения о `Check`, коде возврата и `//! expect:` — в §4.
 - `tools/prof-report.sh [file.tryprof]` — отчёт по кадр-логу (по умолчанию самый свежий из

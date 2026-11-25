@@ -36,7 +36,7 @@ description: 'Мост C++ ↔ daslang в tryengine: DECLARE_MODULE/PULL_MODULE,
 | `engine_source/daslang/*.das` | API движка: `Engine`, `Render`, `Input`, `Scene`, `Types`, `EcsMacro`, `Serializable`, `QuadTree`, `ConfigFormat` |
 | `editor/daslang/*.das` | редактор: `EntryPoint`, `Editor`, `EditorUI`, `Hierarchy`, `Inspector`, `SceneViewPort`, `AssetBrowser`, `BuildManager`, `EditorActions` |
 | `game/scripts/Game.das` | игра: `GameStart`, `GameUpdate`, спавн сущностей |
-| `modules/<имя>/.das_module` | дескриптор нативного модуля для CLI/редактора: `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile`, `tryeditor`, `tryPhysics` |
+| `modules/<имя>/.das_module` | дескриптор нативного модуля для CLI/редактора: `tryRenderer`, `tryResources`, `tryInput`, `tryAsyncFile`, `tryeditor`, `tryPhysics`, `tryUi`, `tryLog`, `tryLive` |
 | `project.das_project` | резолвер модулей (`module_get`) и абсолютный `DAS_PAK_ROOT` |
 
 ## Точки входа и вызовы
@@ -173,6 +173,9 @@ ast-grep), `cpp_compile_check`, `cpp_build_info`, `cpp_status`.
     "/home/artem/tryengine/modules/tryAsyncFile",
     "/home/artem/tryengine/modules/tryeditor",
     "/home/artem/tryengine/modules/tryPhysics",
+    "/home/artem/tryengine/modules/tryUi",
+    "/home/artem/tryengine/modules/tryLog",
+    "/home/artem/tryengine/modules/tryLive",
     "/opt/daslang/modules/dasLLVM"
   ]
 }
