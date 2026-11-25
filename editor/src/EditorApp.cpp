@@ -72,9 +72,11 @@ void EditorApp::Init() {
     engine_->RegisterSystem<BuildSystem>(engine_->Get<ResourceManager>(), async_file_manager);
 
     // Компилятор шейдеров живёт столько же, сколько редактор: global session Slang
-    // создаётся один раз на контекст, а не на каждый импортируемый .slang.
+    // создаётся один раз на контекст, а не на каждый импортируемый .slang. Модули — обычные
+    // исходники без .meta и артефактов; шейдеры подключают их через `import engine.*` /
+    // `import game.*`, поэтому здесь только корни shader_modules.
     engine_->RegisterSystem<ShaderCompilerSystem>(ShaderCompilerConfig{
-        .module_search_paths = {"engine_content/assets/shaders", "game/assets/shaders"},
+        .module_search_paths = {"engine_content/shader_modules", "game/shader_modules"},
         .context_count = 2,
     });
 
@@ -151,6 +153,23 @@ void EditorApp::Run() {
             TRY_PROFILE_SCOPE("Async.Pull");
             async_file_manager.Pull();
             MainThread().Pull();
+        }
+
+        // Переимпорт из панели Import Settings. Импорт уже записал артефакты (фоновая
+        // задача), здесь main thread сбрасывает загруженные ресурсы: материал, который
+        // ссылался на перезапечённую текстуру, обязан пересоздаться. Скрипты узнают о
+        // событии по AssetPipeline::ReimportGeneration().
+        if (auto reimported = editor_->GetAssetSourceDatabase().ApplyPendingTreeChanges(); !reimported.empty()) {
+            TRY_PROFILE_SCOPE("Assets.Reimport");
+            auto& resources = engine_->Get<ResourceManager>();
+            for (const uint64_t guid : reimported) {
+                resources.Invalidate<Shader>(guid);
+                resources.Invalidate<Material>(guid);
+                resources.Invalidate<Mesh>(guid);
+                resources.Invalidate<TextureSampler>(guid);
+                resources.Invalidate<Font>(guid);
+            }
+            resources.InvalidateAll<Material>();
         }
 
         // Единственное место, где устанавливается готовое поколение скриптов и вызываются

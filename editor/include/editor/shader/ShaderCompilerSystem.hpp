@@ -19,6 +19,10 @@ struct ShaderCompilerConfig {
     // Каталоги, в которых Slang ищет модули для `import` (порядок важен: первый найденный
     // выигрывает). Каталог исходника добавляется автоматически, поэтому соседние модули
     // находятся без настройки.
+    //
+    // Шейдерные модули — обычные исходники без .meta/guid/артефакта. Они не входят ни в
+    // один asset-домен и видны только здесь; шейдеры импортируют их как `engine.geometry`
+    // и `game.<имя>`.
     eastl::vector<eastl::string> module_search_paths;
 
     // Количество независимых компиляторных контекстов. IGlobalSession в Slang не
@@ -32,28 +36,17 @@ struct ShaderDependency {
     eastl::string path;  // путь файла, по возможности относительно cwd
 };
 
-enum class ShaderAssetKind : uint8_t {
-    Shader,  // есть вершинная и фрагментная точки входа: результат — SPIR-V + рефлексия
-    Module,  // точек входа нет: результат — сериализованный модуль
-};
-
 struct ShaderCompileRequest {
     eastl::string path;  // путь исходника для диагностики и относительного поиска модулей
     eastl::string source;
 };
 
 struct ShaderCompileResult {
-    ShaderAssetKind kind = ShaderAssetKind::Shader;
-
-    // Заполняется для Shader: SPIR-V обеих стадий, отфильтрованная рефлексия и счётчики.
+    // SPIR-V обеих стадий, отфильтрованная рефлексия и счётчики.
     tryengine::graphics::ShaderBinaryContent shader;
 
-    // Заполняется для Shader: текстовый дамп для editor-артефакта.
+    // Текстовый дамп для editor-артефакта.
     eastl::string reflection_dump;
-
-    // Заполняется для Module: сериализованный checked-модуль Slang (ISession::loadModuleFromIRBlob).
-    eastl::vector<uint8_t> module_ir;
-    eastl::string module_name;
 
     // Всё, что компиляция реально прочитала из каталогов модулей: import-модули и include-файлы.
     // AssetPipeline сохраняет это в штамп, чтобы правка модуля переимпортировала зависимые шейдеры.

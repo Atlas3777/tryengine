@@ -5,6 +5,9 @@
 // Цвета вершин премультиплицированы: пасс блендит (ONE, ONE_MINUS_SRC_ALPHA), поэтому
 // альфа сцены остаётся 1.0 (текстура вьюпорта рисуется через ImGui).
 
+// Gizmo triangles come from a CPU-built buffer, not from a mesh material.
+public static const uint MESH_ATTRIBUTES = 0xFFFFFFFEu;
+
 struct GizmoCamera
 {
     float4x4 view;

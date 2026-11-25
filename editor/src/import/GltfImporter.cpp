@@ -4,6 +4,7 @@
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot_builtin_matrix.h>
 
+#include "editor/import/GltfUpAxis.hpp"
 #include "editor/import/MeshProcessor.hpp"
 #include "editor/import/TextureImporter.hpp"
 #include "editor/import/TextureProcessor.hpp"
@@ -443,6 +444,42 @@ void ProcessNodes(const tg3_model* m, ModelAssetMap& asset_map,
     }
 }
 
+//! Корни сцены: список default scene, а если его нет — все ноды, на которые никто не ссылается
+//! как на ребёнка. Перевод в Z-up и префаб работают с одним и тем же набором, поэтому
+//! ориентация модели и её префаб не могут разойтись.
+eastl::vector<int32_t> CollectModelRoots(const ModelAssetMap& map) {
+    const int32_t node_count = static_cast<int32_t>(map.nodes.size());
+
+    eastl::vector<int32_t> roots;
+    for (int32_t index : map.scene_roots)
+        if (index >= 0 && index < node_count)
+            roots.push_back(index);
+    if (!roots.empty())
+        return roots;
+
+    eastl::vector<bool> is_child(static_cast<size_t>(node_count), false);
+    for (const ModelNodeData& node : map.nodes)
+        for (int32_t child : node.children_indices)
+            if (child >= 0 && child < node_count)
+                is_child[static_cast<size_t>(child)] = true;
+    for (int32_t i = 0; i < node_count; ++i)
+        if (!is_child[static_cast<size_t>(i)])
+            roots.push_back(i);
+    return roots;
+}
+
+//! Приводит модель к Z-up движка. Поворот композируется в корни, а не в вершины: локальный
+//! трансформ ноды живёт в системе координат файла, поэтому только «поворот над корнем» даёт
+//! world = R * T. Геометрия меш-артефакта остаётся в исходном пространстве glTF — это норма
+//! для меша, который адресуют отдельно от ноды.
+void ApplyUpAxis(ModelAssetMap& map, GltfUpAxis axis) {
+    if (axis == GltfUpAxis::Z)
+        return;
+
+    for (const int32_t root : CollectModelRoots(map))
+        ConvertGltfTransformToEngineUp(axis, map.nodes[static_cast<size_t>(root)].local_transform);
+}
+
 // ---------------------------------------------------------------------------
 // Prefab-ready view of a model (editor artifact only).
 //
@@ -468,22 +505,7 @@ void FlattenModelNodes(const ModelAssetMap& map, eastl::vector<PrefabFlatNode>& 
         return;
 
     const int32_t node_count = static_cast<int32_t>(map.nodes.size());
-    eastl::vector<int32_t> roots;
-    for (int32_t index : map.scene_roots)
-        if (index >= 0 && index < node_count)
-            roots.push_back(index);
-
-    if (roots.empty()) {
-        // У модели без default scene корни — все ноды, на которые никто не ссылается.
-        eastl::vector<bool> is_child(static_cast<size_t>(node_count), false);
-        for (const ModelNodeData& node : map.nodes)
-            for (int32_t child : node.children_indices)
-                if (child >= 0 && child < node_count)
-                    is_child[static_cast<size_t>(child)] = true;
-        for (int32_t i = 0; i < node_count; ++i)
-            if (!is_child[static_cast<size_t>(i)])
-                roots.push_back(i);
-    }
+    const eastl::vector<int32_t> roots = CollectModelRoots(map);
     if (roots.empty())
         return;
 
@@ -638,12 +660,11 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
 
     AssetMeta<GltfImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        // Мета — вход импорта. Неизвестные поля игнорируем (схема настроек может новеть),
+        // Мета — вход импорта. Незнакомые поля игнорируем (схема настроек может новеть),
         // но битую мету не подменяем дефолтной: иначе молча сменится guid ассета.
-        auto parsed_meta =
-            tryengine::resources::Json::DeserializePartial<AssetMeta<GltfImportSettings>>(ctx.meta_bytes);
+        auto parsed_meta = ParseAssetMeta<GltfImportSettings>(ctx.meta_bytes);
         if (!parsed_meta.has_value())
-            co_return tryengine::core::Error("Failed to parse AssetMeta");
+            co_return eastl::move(parsed_meta.error());
 
         meta = eastl::move(*parsed_meta);
     } else {
@@ -667,6 +688,10 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
     eastl::vector<eastl::vector<uint64_t>> mesh_primitive_guids =
         ProcessMeshes(result, m, meta.header.guid, asset_map, material_guids);
     ProcessNodes(m, asset_map, mesh_primitive_guids, material_guids);
+
+    // Модель в системе файла, а дальше и префаб, и карта нод строятся уже в Z-up движка.
+    // Незнакомое имя оси отсекает кодек при разборе меты, поэтому здесь только значения enum.
+    ApplyUpAxis(asset_map, meta.settings.up_axis);
 
     ProducedArtifact map_artifact;
     auto asset_map_bytes = tryengine::resources::Json::Serialize(asset_map);
@@ -696,11 +721,7 @@ AssetMeta<GltfImportSettings> GltfImporter::GenerateDefaultMeta() const {
     for (const auto& [key, _] : asset_map.sub_assets)
         meta.header.sub_assets.push_back(key);
 
-    auto meta_bytes = tryengine::resources::Json::Serialize(meta);
-    if (meta_bytes.has_value())
-        result.meta_bytes = *meta_bytes;
-    else
-        co_return tryengine::core::Error("Failed to serialize AssetMeta");
+    result.meta_bytes = WriteAssetMeta(meta);
 
     LogCritical("END IMPORTING GLTF");
 

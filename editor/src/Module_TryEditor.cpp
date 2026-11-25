@@ -9,8 +9,8 @@
 #include "editor/BuildSystem.hpp"
 #include "editor/ScriptReload.hpp"
 #include "editor/TryEditorContext.hpp"
-#include "editor/import/FontImporter.hpp"
-#include "editor/import/TextureImporter.hpp"
+#include "editor/import/GltfUpAxis.hpp"
+#include "editor/meta/AssetMetaHeader.hpp"
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
@@ -22,11 +22,14 @@
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AssetTypes.hpp"
 #include "engine/resources/AsyncFileManager.hpp"
-#include "engine/resources/Json.hpp"
 #include "engine/resources/ResourceManager.hpp"
 
 // Биндинг домена дерева — ДО using namespace das (иначе коллизии имён)
-DAS_BASE_BIND_ENUM(tryeditor::StorageDomain, StorageDomain, Engine, Game, Content, Data)
+DAS_BASE_BIND_ENUM(tryeditor::StorageDomain, StorageDomain, Engine, Game, Content, Data, EngineShaders, GameShaders)
+
+// Ось импорта glTF. Имя значения — это то, что пишется в `.meta` (`string(enum)` в daslang) и
+// что показывает комбо панели Import Settings: форма перебирает значения через `each(t)`.
+DAS_BASE_BIND_ENUM(tryeditor::GltfUpAxis, GltfUpAxis, Y, Z, X)
 
 using UiFolderVector = eastl::vector<tryeditor::UiFolder>;
 using UiFileVector = eastl::vector<tryeditor::UiFile>;
@@ -81,65 +84,7 @@ bool ReadWholeFile(const eastl::string& path, eastl::vector<uint8_t>& out) {
     return file.good();
 }
 
-eastl::string FormatTextureSettings(const tryeditor::TextureImportSettings& settings) {
-    return tryengine::fmt::format(
-        "settings:\n  format        : {}\n  mips          : {}\n  max size      : {}\n  filter        : {}\n"
-        "  wrap          : {}\n",
-        settings.format.c_str(), settings.generate_mips ? "on" : "off", settings.max_size, settings.filter.c_str(),
-        settings.wrap.c_str());
-}
-
-eastl::string FormatFontSettings(const tryeditor::FontBakeSettings& settings) {
-    return tryengine::fmt::format(
-        "settings:\n  em size       : {}\n  px range      : {}\n  padding       : {}\n  atlas         : {}x{}\n"
-        "  dist scale    : {}\n  onedge value  : {}\n  ranges        : {}\n",
-        settings.em_size, settings.px_range, settings.padding, settings.atlas_width, settings.atlas_height,
-        settings.pixel_dist_scale, settings.onedge_value, settings.ranges.c_str());
-}
-
 }  // namespace
-
-// Сводка настроек импорта для выбранного ассета: панель Import Settings показывает её, а
-// ниже — сырой .meta, чтобы ничего не было спрятано. nullptr — у файла нет .meta (авторитетный
-// content/data) или он не разобрался.
-char* DescribeAssetMeta(const char* asset_path, das::Context* ctx, das::LineInfoArg* at) {
-    if (asset_path == nullptr || *asset_path == '\0' || ctx == nullptr)
-        return nullptr;
-
-    eastl::string meta_path(asset_path);
-    meta_path.append(".meta");
-
-    eastl::vector<uint8_t> bytes;
-    if (!ReadWholeFile(meta_path, bytes))
-        return nullptr;
-
-    const eastl::span<const uint8_t> span(bytes.data(), bytes.size());
-    auto header = tryengine::resources::Json::DeserializePartial<tryeditor::HeaderOnly>(span);
-    if (!header.has_value())
-        return nullptr;
-
-    eastl::string text = tryengine::fmt::format("importer  : {}\nguid      : {}\nsub assets: {}\n\n",
-                                                header->header.importer_type.c_str(), header->header.guid,
-                                                header->header.sub_assets.size());
-
-    const eastl::string_view importer = header->header.importer_type;
-    if (importer == "TextureImporter") {
-        auto meta =
-            tryengine::resources::Json::DeserializePartial<tryeditor::AssetMeta<tryeditor::TextureImportSettings>>(
-                span);
-        if (meta.has_value())
-            text.append(FormatTextureSettings(meta->settings));
-    } else if (importer == "FontImporter") {
-        auto meta =
-            tryengine::resources::Json::DeserializePartial<tryeditor::AssetMeta<tryeditor::FontBakeSettings>>(span);
-        if (meta.has_value())
-            text.append(FormatFontSettings(meta->settings));
-    }
-
-    text.append("\nraw .meta:\n");
-    text.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-    return ctx->allocateString(text.c_str(), text.size(), at);
-}
 
 struct SceneDTODas {
     const char* name;
@@ -321,6 +266,40 @@ uint64_t ReloadMaterialFile(const char* path, das::Context* ctx) {
     return id;
 }
 
+// Атрибуты меша, которые требует материал: читает .mat, находит шейдер и отдаёт маску из
+// его рефлексии. UINT32_MAX — шейдер ещё не загружен (запрос поставлен), решать «совместим
+// ли» пока нельзя; редактор такие материалы не прячет.
+uint32_t GetMaterialFileAttributes(const char* mat_path, das::Context* ctx) {
+    if (!mat_path || !*mat_path || !ctx)
+        return 0xFFFFFFFFu;
+
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    auto* res_manager = try_ctx ? try_ctx->engine.TryGet<tryengine::resources::ResourceManager>() : nullptr;
+    if (!res_manager)
+        return 0xFFFFFFFFu;
+
+    eastl::vector<uint8_t> bytes;
+    if (!ReadWholeFile(mat_path, bytes))
+        return 0xFFFFFFFFu;
+
+    const auto config =
+        tryengine::graphics::ParseMaterialConfig(eastl::span<const uint8_t>(bytes.data(), bytes.size()));
+    if (!config.has_value())
+        return 0xFFFFFFFFu;
+
+    auto* shader = res_manager->GetPointerExplicit<tryengine::graphics::Shader>(config->shader);
+    if (!shader) {
+        // Шейдер нужен только для фильтрации; просим его асинхронно и в этом кадре считаем
+        // совместимость неизвестной. IsLoading не даёт повторным кадрам растить refcount.
+        if (!res_manager->IsLoading<tryengine::graphics::Shader>(config->shader) &&
+            !res_manager->IsFailed<tryengine::graphics::Shader>(config->shader)) {
+            res_manager->RequestLoad<tryengine::graphics::Shader>(config->shader);
+        }
+        return 0xFFFFFFFFu;
+    }
+    return shader->reflection.required_attributes;
+}
+
 // Путь loose-файла по его id. Для артефактов (glTF-суб-ассеты) путь ведёт в artifacts,
 // у авторитетных файлов — в game/data; по пути редактор решает, можно ли материал править.
 char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
@@ -338,6 +317,138 @@ char* GetAssetFilePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
     if (!loose)
         return nullptr;
     return ctx->allocateString(loose->path.c_str(), static_cast<uint32_t>(loose->path.size()), at);
+}
+
+// Содержимое .meta как текст: панель Import Settings даёт его править. nullptr — меты нет
+// (content/data) или файл не читается.
+char* ReadAssetMeta(const char* asset_path, das::Context* ctx, das::LineInfoArg* at) {
+    if (!asset_path || !*asset_path || !ctx)
+        return nullptr;
+
+    eastl::string meta_path(asset_path);
+    meta_path.append(".meta");
+
+    eastl::vector<uint8_t> bytes;
+    if (!ReadWholeFile(meta_path, bytes))
+        return nullptr;
+    return ctx->allocateString(reinterpret_cast<const char*>(bytes.data()), static_cast<uint32_t>(bytes.size()), at);
+}
+
+// Запись отредактированной меты. Возвращает текст ошибки (пустая строка — успех).
+// Идентичность ассета — guid и importer_type — менять нельзя: на guid ссылаются материалы,
+// сцены и пак. Настройки проверяются кодеком самого импортёра, иначе ошибка в .meta
+// привела бы к fallback на default-мету с новым guid и потере ссылок.
+char* SaveAssetMeta(const char* asset_path, const char* text, das::Context* ctx, das::LineInfoArg* at) {
+    if (!ctx)
+        return nullptr;
+    auto fail = [&](const char* message) {
+        return ctx->allocateString(message, static_cast<uint32_t>(std::strlen(message)), at);
+    };
+    if (!asset_path || !*asset_path || !text || !ctx)
+        return fail("invalid path or text");
+
+    eastl::string meta_path(asset_path);
+    meta_path.append(".meta");
+
+    eastl::vector<uint8_t> old_bytes;
+    if (!ReadWholeFile(meta_path, old_bytes))
+        return fail("no .meta file for this asset");
+
+    const auto old_header = tryeditor::ParseMetaHeader(eastl::span<const uint8_t>(old_bytes.data(), old_bytes.size()));
+    if (!old_header.has_value()) {
+        old_header.error().Discard();
+        return fail("current .meta does not parse");
+    }
+
+    const eastl::span<const uint8_t> new_bytes(reinterpret_cast<const uint8_t*>(text), std::strlen(text));
+    const auto new_header = tryeditor::ParseMetaHeader(new_bytes);
+    if (!new_header.has_value()) {
+        new_header.error().Discard();
+        return fail("edited .meta is not valid ConfigFormat with a header");
+    }
+
+    if (new_header->guid != old_header->guid)
+        return fail("guid is the asset identity and cannot be changed");
+    if (new_header->importer_type != old_header->importer_type)
+        return fail("importer_type is the asset identity and cannot be changed");
+    if (new_header->sub_assets != old_header->sub_assets)
+        return fail("sub_assets are generated by the importer and cannot be edited by hand");
+
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return fail("editor context required");
+    auto* importer =
+        try_ctx->editor.GetAssetSourceDatabase().GetImportSystem().GetImporterByName(new_header->importer_type);
+    if (!importer)
+        return fail("no importer registered for this asset type");
+    if (!importer->ValidateMeta(new_bytes))
+        return fail("settings do not match the importer schema");
+
+    std::ofstream file(meta_path.c_str(), std::ios::binary | std::ios::trunc);
+    if (!file.is_open())
+        return fail("cannot open .meta for writing");
+    file.write(text, static_cast<std::streamsize>(std::strlen(text)));
+    if (!file.good())
+        return fail("cannot write .meta");
+
+    return fail("");
+}
+
+// Явный переимпорт одного ассета из редактора. Асинхронный: панель не ждёт, а событие
+// приходит через AssetPipeline::ReimportGeneration().
+bool RequestReimport(const char* asset_path, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || !asset_path || !*asset_path)
+        return false;
+    auto& file_manager = try_ctx->engine.Get<tryengine::resources::AsyncFileManager>();
+    return try_ctx->editor.GetAssetSourceDatabase().RequestReimport(eastl::string_view(asset_path), file_manager);
+}
+
+uint64_t AssetReimportGeneration(das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    return try_ctx ? try_ctx->editor.GetAssetSourceDatabase().ReimportGeneration() : 0ul;
+}
+
+// Авторский путь импортируемого ассета (для показа человеку). У авторитетных файлов он
+// совпадает с GetAssetFilePath; у импортируемых — это исходник, а не artifacts/runtime/...
+char* GetAssetSourcePath(uint64_t guid, das::Context* ctx, das::LineInfoArg* at) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || guid == 0)
+        return nullptr;
+    const eastl::string path = try_ctx->editor.GetAssetSourceDatabase().SourcePathOf(guid);
+    if (path.empty())
+        return nullptr;
+    return ctx->allocateString(path.c_str(), path.size(), at);
+}
+
+// Дескриптор ImGui для превью текстуры-ассета. 0 — текстура ещё не загружена (запрос
+// поставлен). Превью нужно панели материала: guid в поле textures — не то, что человек
+// может проверить глазами.
+void* GetTexturePreview(uint64_t texture_guid, das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx || texture_guid == 0)
+        return 0;
+    auto* res_manager = try_ctx->engine.TryGet<tryengine::resources::ResourceManager>();
+    if (!res_manager)
+        return 0;
+
+    auto* texture = res_manager->GetPointerExplicit<tryengine::graphics::TextureSampler>(texture_guid);
+    if (!texture) {
+        if (!res_manager->IsLoading<tryengine::graphics::TextureSampler>(texture_guid) &&
+            !res_manager->IsFailed<tryengine::graphics::TextureSampler>(texture_guid)) {
+            res_manager->RequestLoad<tryengine::graphics::TextureSampler>(texture_guid);
+        }
+        return 0;
+    }
+
+    auto* render = try_ctx->engine.TryGet<tryeditor::EditorRender>();
+    if (!render)
+        return 0;
+    auto& rg = try_ctx->engine.Get<tryengine::graphics::RenderGraph>();
+    auto* pass = rg.Get<tryeditor::ImGuiPass>(tryeditor::EditorRender::kEditorScope);
+    if (!pass)
+        return 0;
+    return reinterpret_cast<void*>(pass->GetAssetTexture(texture_guid, texture->view, texture->sampler));
 }
 
 // Путь editor-артефакта с плоской композицией модели. Импортёр пишет его в формате
@@ -458,6 +569,7 @@ public:
         das::ModuleLibrary lib(this);
 
         addEnumeration(new EnumerationStorageDomain());
+        addEnumeration(new EnumerationGltfUpAxis());
 
         addAnnotation(new UiFileAnnotation(lib));
 
@@ -491,6 +603,15 @@ public:
         das::addExtern<DAS_BIND_FUN(GetAssetFilePath)>(*this, lib, "GetAssetFilePath", das::SideEffects::accessGlobal,
                                                        "GetAssetFilePath");
 
+        das::addExtern<DAS_BIND_FUN(GetMaterialFileAttributes)>(
+            *this, lib, "GetMaterialFileAttributes", das::SideEffects::accessGlobal, "GetMaterialFileAttributes");
+
+        das::addExtern<DAS_BIND_FUN(GetAssetSourcePath)>(*this, lib, "GetAssetSourcePath",
+                                                         das::SideEffects::accessGlobal, "GetAssetSourcePath");
+
+        das::addExtern<DAS_BIND_FUN(GetTexturePreview)>(*this, lib, "GetTexturePreview", das::SideEffects::accessGlobal,
+                                                        "GetTexturePreview");
+
         das::addExtern<DAS_BIND_FUN(GetModelPrefabArtifactPath)>(
             *this, lib, "GetModelPrefabArtifactPath", das::SideEffects::accessGlobal, "GetModelPrefabArtifactPath");
 
@@ -507,8 +628,17 @@ public:
 
         das::addExtern<DAS_BIND_FUN(AssetExtKey)>(*this, lib, "asset_ext_key", das::SideEffects::none, "AssetExtKey");
 
-        das::addExtern<DAS_BIND_FUN(DescribeAssetMeta)>(*this, lib, "DescribeAssetMeta", das::SideEffects::accessGlobal,
-                                                        "DescribeAssetMeta");
+        das::addExtern<DAS_BIND_FUN(ReadAssetMeta)>(*this, lib, "ReadAssetMeta", das::SideEffects::accessGlobal,
+                                                    "ReadAssetMeta");
+
+        das::addExtern<DAS_BIND_FUN(SaveAssetMeta)>(*this, lib, "SaveAssetMeta", das::SideEffects::accessGlobal,
+                                                    "SaveAssetMeta");
+
+        das::addExtern<DAS_BIND_FUN(RequestReimport)>(*this, lib, "RequestReimport", das::SideEffects::accessGlobal,
+                                                      "RequestReimport");
+
+        das::addExtern<DAS_BIND_FUN(AssetReimportGeneration)>(
+            *this, lib, "AssetReimportGeneration", das::SideEffects::accessGlobal, "AssetReimportGeneration");
 
         das::addExtern<DAS_BIND_FUN(CreateBuild)>(*this, lib, "CreateBuild", das::SideEffects::accessGlobal,
                                                   "CreateBuild");

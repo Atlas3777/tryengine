@@ -24,12 +24,27 @@ import it once:
 Everything about the bake lives in the asset's `.meta` (`settings`), so the font can be
 re-imported without touching code:
 
-```json
-{"header":{"guid":1234567890123456789,"importer_type":"FontImporter","sub_assets":[]},
- "settings":{"em_size":40.0,"px_range":4.0,"padding":4,"atlas_width":1024,"atlas_height":1024,
-             "pixel_dist_scale":32.0,"onedge_value":128,
-             "ranges":"0x20-0x7E,0xA0-0xFF,0x400-0x4FF,0x2010-0x2027,0x2030,0x2039,0x203A,0x20AC"}}
+```text
+header: AssetMetaHeader = {
+	guid: u64 = 1234567890123456789
+	importer_type: string = "FontImporter"
+	sub_assets: u64[] = [
+	]
+}
+settings: FontBakeSettings = {
+	em_size: f32 = 40
+	px_range: f32 = 4
+	padding: u32 = 4
+	atlas_width: u32 = 1024
+	atlas_height: u32 = 1024
+	pixel_dist_scale: f32 = 32
+	onedge_value: u8 = 128
+	ranges: string = "0x20-0x7E,0xA0-0xFF,0x400-0x4FF,0x2010-0x2027,0x2030,0x2039,0x203A,0x20AC"
+}
 ```
+
+Select the `.ttf` in the Asset Browser to edit these fields in the **Import Settings** panel and
+press **Save & Reimport**; the panel does not show raw text.
 
 - `ranges` is the glyph set. A script/language needs its codepoints baked here; there is no
   runtime rasterizer.

@@ -94,6 +94,13 @@
 - Раскладка UBO берётся из рефлексии Slang; в `.mat` поле `type` — тип хранения
   (`u64` у текстур), а `kind` — `uniform` или `texture`. C++-сторона — `MaterialConfig`,
   редакторская — `editor/daslang/Material.das`.
+- `ShaderReflectionData::required_attributes` — маска `MeshAttributeFlags`, которую читает
+  вершинная стадия (`MESH_ATTRIBUTES` в исходнике шейдера). Она едет в `.tshd` рядом с
+  биндингами, `BuildMaterialSchemaConfig` кладёт её в схему материала как `attributes:
+  u32`; редактор сравнивает с `Mesh::attribute_flags`, чтобы не предлагать материал,
+  которому у меша не хватает атрибутов. `0` — только позиции, `0xFFFFFFFE` — не материал
+  для меша (UI/editor pass). Меняешь сериализацию рефлексии — поднимай
+  `kShaderBinaryVersion`, иначе старые `.tshd` не прочитаются.
 - После загрузки загрузчик вызывает `Material::FinalizeDescriptors()`. До этого набор
   ещё не отдан в кадр, и `UpdateDescriptors()` пишет в него на месте. После — старый
   набор мог попасть в записанный command buffer: по

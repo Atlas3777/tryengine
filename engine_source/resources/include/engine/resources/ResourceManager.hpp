@@ -69,6 +69,12 @@ public:
     }
 
     template <typename T>
+    bool IsLoading(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->IsLoading(guid) : false;
+    }
+
+    template <typename T>
     bool IsFailed(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
         return cache ? cache->IsFailed(guid) : false;
@@ -98,6 +104,25 @@ public:
     bool Invalidate(uint64_t guid) {
         auto* cache = GetTypedCache<T>();
         return cache ? cache->Invalidate(guid) : false;
+    }
+
+    //! Сбрасывает все загруженные ресурсы типа. После переимпорта текстуры или шейдера
+    //! материалы обязаны пересоздаться: их дескрипторы и указатель на Shader относятся к
+    //! старым данным. Старые ресурсы остаются жить до конца кеша, поэтому кадр, который
+    //! уже держит указатели, не повисает.
+    template <typename T>
+    size_t InvalidateAll() {
+        auto* cache = GetTypedCache<T>();
+        if (!cache)
+            return 0;
+
+        eastl::vector<uint64_t> guids;
+        cache->CollectGuids(guids);
+        size_t invalidated = 0;
+        for (const uint64_t guid : guids)
+            if (cache->Invalidate(guid))
+                ++invalidated;
+        return invalidated;
     }
 
     template <typename T>

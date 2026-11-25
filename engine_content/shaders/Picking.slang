@@ -1,8 +1,7 @@
-struct Camera
-{
-    float4x4 view;
-    float4x4 proj;
-};
+import engine.common;
+
+// Picking is an editor pass over a generated object table, not a mesh material.
+public static const uint MESH_ATTRIBUTES = 0xFFFFFFFEu;
 
 struct PickingObjectData
 {

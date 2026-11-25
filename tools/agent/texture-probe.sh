@@ -15,12 +15,16 @@ ensure_tmp
 need_tool g++
 
 libs=()
+abi_defs=()
 for dir in "$RELEASE_DIR" "$DEBUG_DIR"; do
     resources="$dir/engine_source/resources/libengine_resources.a"
     core="$dir/engine_source/core/libengine_core.a"
     bc7="$dir/editor/libbc7enc_lib.a"
     if [[ -f "$resources" && -f "$core" && -f "$bc7" ]]; then
         libs=("$resources" "$core" "$bc7")
+        # core::Error carries a debug-only member, so the probe must match the libraries'
+        # NDEBUG or the std::expected error object is read through the wrong layout.
+        [[ "$dir" == "$RELEASE_DIR" ]] && abi_defs=(-DNDEBUG)
         break
     fi
 done
@@ -52,7 +56,7 @@ bin="$TMP_DIR/texture-probe"
 
 if [[ ! -x "$bin" || "$src" -nt "$bin" || "$src_baker" -nt "$bin" || "$src_processor" -nt "$bin" ]]; then
     log "==> building $(rel "$bin")"
-    g++ -std=c++23 -O2 -w -fopenmp -include cstdint -DTRY_DEBUG_EASTL_ALLOCATOR=0 \
+    g++ -std=c++23 -O2 -w -fopenmp -include cstdint -DTRY_DEBUG_EASTL_ALLOCATOR=0 "${abi_defs[@]}" \
         -I "$ROOT/engine_source/core/include" -I "$ROOT/engine_source/resources/include" \
         -I "$ROOT/engine_source/async/include" -I "$ROOT/editor/include" \
         -I "$eastl_include" -I "$eabase_include" -I "$stb_include" -I "$resize_include" \

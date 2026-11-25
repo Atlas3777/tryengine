@@ -1,1 +1,16 @@
-{"header":{"guid":7732110565556845333,"importer_type":"FontImporter","sub_assets":[]},"settings":{"em_size":40,"px_range":4,"padding":4,"atlas_width":1024,"atlas_height":1024,"pixel_dist_scale":32,"onedge_value":128,"ranges":"0x20-0x7E,0xA0-0xFF,0x400-0x4FF,0x2010-0x2027,0x2030,0x2039,0x203A,0x20AC"}}
+header: AssetMetaHeader = {
+	guid: u64 = 7732110565556845333
+	importer_type: string = "FontImporter"
+	sub_assets: u64[] = [
+	]
+}
+settings: FontBakeSettings = {
+	em_size: f32 = 40
+	px_range: f32 = 4
+	padding: u32 = 4
+	atlas_width: u32 = 1024
+	atlas_height: u32 = 1024
+	pixel_dist_scale: f32 = 32
+	onedge_value: u8 = 128
+	ranges: string = "0x20-0x7E,0xA0-0xFF,0x400-0x4FF,0x2010-0x2027,0x2030,0x2039,0x203A,0x20AC"
+}

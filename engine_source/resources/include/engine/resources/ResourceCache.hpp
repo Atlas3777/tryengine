@@ -25,10 +25,14 @@ public:
     virtual bool Invalidate(uint64_t guid) = 0;
     virtual void RequestLoad(uint64_t guid) = 0;
     virtual bool IsReady(uint64_t guid) = 0;
+    virtual bool IsLoading(uint64_t guid) = 0;
     virtual bool IsFailed(uint64_t guid) = 0;
     virtual void* GetRawPointer(uint64_t guid) = 0;
     virtual bool Release(uint64_t guid) = 0;
     virtual bool HasGuid(uint64_t guid) const = 0;
+    //! Снимок guid'ов, лежащих в кеше. Нужен редактору после переимпорта: загруженные
+    //! материалы пересоздаются, чтобы подхватить новую текстуру/шейдер.
+    virtual void CollectGuids(eastl::vector<uint64_t>& out) const = 0;
 };
 
 template <typename T>
@@ -90,6 +94,14 @@ public:
         return false;
     }
 
+    bool IsLoading(uint64_t guid) override {
+        std::lock_guard lock(cache_mutex_);
+        auto it = cache_.find(guid);
+        if (it != cache_.end() && it->second)
+            return it->second->state.load(std::memory_order_acquire) == ResourceState::Loading;
+        return false;
+    }
+
     bool IsFailed(uint64_t guid) override {
         std::lock_guard lock(cache_mutex_);
         auto it = cache_.find(guid);
@@ -124,6 +136,13 @@ public:
         if (cache_.find(guid) != cache_.end())
             return true;
         return registry_.GetAssetLocation(guid).has_value();
+    }
+
+    void CollectGuids(eastl::vector<uint64_t>& out) const override {
+        std::lock_guard lock(cache_mutex_);
+        out.reserve(out.size() + cache_.size());
+        for (const auto& entry : cache_)
+            out.push_back(entry.first);
     }
 
     // Убирает ресурс из кеша, не уничтожая его: старые handles продолжают жить.

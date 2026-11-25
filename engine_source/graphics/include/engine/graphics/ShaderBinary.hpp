@@ -13,7 +13,7 @@
 namespace tryengine::graphics {
 
 constexpr uint32_t kShaderBinaryMagic = 0x44485354u;  // 'TSHD'
-constexpr uint32_t kShaderBinaryVersion = 1u;
+constexpr uint32_t kShaderBinaryVersion = 2u;         // v2: required_attributes в рефлексии
 
 struct StageResourceCounts {
     uint32_t num_samplers = 0;

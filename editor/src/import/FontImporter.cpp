@@ -2,7 +2,6 @@
 
 #include "engine/core/MakeError.hpp"
 #include "engine/core/Random.hpp"
-#include "engine/resources/Json.hpp"
 
 namespace tryeditor {
 
@@ -23,8 +22,17 @@ tryengine::async::Task<ImportResult> FontImporter::Import(ImportContext ctx) con
 
     AssetMeta<FontBakeSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<FontBakeSettings>>(ctx.meta_bytes);
-        meta = parsed_meta.value_or(GenerateDefaultMeta());
+        auto parsed_meta = ParseAssetMeta<FontBakeSettings>(ctx.meta_bytes);
+        if (parsed_meta.has_value()) {
+            meta = eastl::move(*parsed_meta);
+        } else {
+            // Keep the guid even when the settings do not parse, otherwise the baked artifact
+            // would land under a new id and orphan the asset.
+            auto header = ParseMetaHeader(ctx.meta_bytes);
+            meta.header = header.has_value() ? eastl::move(*header) : GenerateDefaultMeta().header;
+            LogError(LogCategory::Importer, "Font '{}': .meta settings are invalid; using defaults",
+                     eastl::string(ctx.path.data(), ctx.path.size()).c_str());
+        }
     } else {
         meta = GenerateDefaultMeta();
     }
@@ -49,10 +57,7 @@ tryengine::async::Task<ImportResult> FontImporter::Import(ImportContext ctx) con
 
     result.main_guid = meta.header.guid;
 
-    auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<FontBakeSettings>>(meta);
-    if (!meta_bytes.has_value())
-        co_return LogAndMakeError("Failed to serialize font meta");
-    result.meta_bytes = eastl::move(meta_bytes.value());
+    result.meta_bytes = WriteAssetMeta(meta);
 
     co_return result;
 }

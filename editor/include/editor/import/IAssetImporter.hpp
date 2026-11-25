@@ -46,6 +46,13 @@ public:
 
     virtual eastl::string_view GetName() const = 0;
 
+    //! Проверка, что отредактированный .meta разбирается настройками именно этого
+    //! импортёра. Редактор пишет мету до реимпорта, и молчаливый fallback импортёра на
+    //! default-мету (с новым guid) потерял бы адресацию ассета. Default — «не проверяю».
+    [[nodiscard]] virtual bool ValidateMeta(eastl::span<const uint8_t>) const {
+        return true;
+    }
+
     // Версия логики импортёра. Поднимай, когда меняется содержимое артефактов: штамп импорта
     // перестанет совпадать, и ассеты этого типа переимпортируются без ручной чистки.
     [[nodiscard]] virtual uint32_t GetVersion() const {

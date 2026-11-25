@@ -30,8 +30,8 @@ Linux; сборка — CMake + Ninja с GCC 15, `ccache` и `mold`.
 | `editor/daslang` | редакторские скрипты (`require tryeditor/...`), точка входа `EntryPoint.das` |
 | `game_client` | рантайм-приложение (читает `./script_pak`, `.das` не компилирует) |
 | `game_server` | headless-заглушка; в сборку пока не добавлена |
-| `game/scripts`, `game/assets`, `game/artifacts` | игровая логика и контент |
-| `engine_content` | поставляемый с движком контент и его артефакты |
+| `game/scripts`, `game/assets`, `game/shaders`, `game/shader_modules`, `game/artifacts` | игровая логика, контент, шейдеры, их модули и артефакты |
+| `engine_content` | поставляемый с движком контент: `assets`, `shaders`, `shader_modules` и их артефакты |
 | `modules/` | по папке на daslang-модуль: дескриптор `.das_module` (в git) и собранный `.shared_module` |
 | `build-debug`, `build-release` | каталоги сборки CMake (генерируются) |
 | `tools/agent/`, `tools/tests/`, `.dsh/skills/` | скрипты для агентов, headless-сюита `.das`, скиллы |
@@ -298,7 +298,8 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `TextureImporter` (`.png`/`.jpg`/`.jpeg`) печёт `TextureBinary` по настройкам из `.meta`
   (`format`, `generate_mips`, `max_size`, `filter`, `wrap`); guid пишется и в тему игры, и в
   `UiConfig.textures`, потому что билд кладёт UI-текстуры в common-пак только по этому списку.
-  Настройки импорта видны в панели **Import Settings**; проверка запекания —
+  Настройки импорта редактируются в панели **Import Settings**, там же кнопка
+  **Reimport** (перезапекание без перезапуска редактора); проверка запекания —
   `tools/agent/texture-probe.sh`; см. `game/assets/ui/README.md`.
 - Текст контента читается только через `tryengine/Assets.das`, документ разбирается через
   `tryengine/Content.das`: скрипт называет авторский путь,
@@ -424,7 +425,9 @@ Conventional стиле на английском языке.
 - `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
   `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`, `test.sh` (headless-сюита поведения
   `.das`), `undo-probe.sh` (история undo/redo на мире DECS без GUI), `log-probe.sh`
-  (файловый sink, кольцо журнала, фильтр и Clear без GUI).
+  (файловый sink, кольцо журнала, фильтр и Clear без GUI), `shader-probe.sh` (компиляция
+  шейдеров и их модулей через настоящий `ShaderCompilerSystem`, без GUI), `gltf-probe.sh`
+  (поворот корней модели в Z-up и `.meta` модели через кодек импортёра, без GUI).
 - `tools/tests/` — сама сюита: по файлу на тему, каждый тест — самостоятельная программа.
   Соглашения о `Check`, коде возврата и `//! expect:` — в §4.
 - `tools/prof-report.sh [file.tryprof]` — отчёт по кадр-логу (по умолчанию самый свежий из

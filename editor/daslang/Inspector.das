@@ -560,6 +560,15 @@ def private draw_asset_field(ptr : void?; type_name : string; display_name : str
         return
     }
 
+    // A material is offered only for meshes that have every attribute its shader reads.
+    // Other asset references are not filtered.
+    var mesh_guid = 0ul
+    if (ui.asset.ext == ".mat" && is_alive(selected_eid)) {
+        query(selected_eid) $(let model : ModelRender) {
+            mesh_guid = model.mesh
+        }
+    }
+
     unsafe {
         var path_ptr = reinterpret<string?>(ptr)
         if (ui.readonly) {
@@ -572,7 +581,7 @@ def private draw_asset_field(ptr : void?; type_name : string; display_name : str
             init_input_text(W_STRING[id_key], current_val)
         }
         if (button(BT_ASSET_OPEN, (text = "...", size = float2(30.0f, 0.0f)))) {
-            OpenAssetPicker(ui.asset, display_name, current_val, id_key)
+            OpenAssetPicker(ui.asset, display_name, current_val, id_key, mesh_guid, ui.asset.ext == ".mat")
         }
         same_line()
         if (input_text(W_STRING[id_key], (text = display_name, flags = ImGuiInputTextFlags.None))) {

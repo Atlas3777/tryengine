@@ -41,6 +41,11 @@ public:
     [[nodiscard]] VkDescriptorSet GetEditorViewportTexture();
     [[nodiscard]] VkDescriptorSet GetGameViewportTexture();
 
+    //! Дескриптор для превью текстуры-ассета в панели материала. Кешируется по guid, а не
+    //! по view: перезапечённая текстура приходит с новым view, и старый набор уходит в
+    //! retired. Вызывать только с main thread, между кадрами ImGui.
+    [[nodiscard]] VkDescriptorSet GetAssetTexture(uint64_t guid, VkImageView view, VkSampler sampler);
+
     void ClearTextureCache();
 
 private:
@@ -70,6 +75,13 @@ private:
     };
 
     eastl::hash_map<tryengine::graphics::RGTagKey, ViewportTexture> viewport_textures_;
+
+    struct AssetTexture {
+        VkImageView view = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+    };
+
+    eastl::hash_map<uint64_t, AssetTexture> asset_textures_;
     eastl::vector<RetiredTextureSet> retired_sets_;
     uint64_t frame_number_ = 0;
 

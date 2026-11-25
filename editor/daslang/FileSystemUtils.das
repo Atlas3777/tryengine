@@ -27,12 +27,12 @@ var private g_query_cache : array<table<uint64; FilesQuery>>
 
 [init]
 def private InitQueryCache() {
-    resize(g_query_cache, 4)  // engine, game, content, data
+    resize(g_query_cache, 6)  // engine, game, content, data, engine shaders, game shaders
 }
 
-// kind — это домен хранения (engine/game/content/data), а не подпапка. Фильтр по
-// расширению применяется ко всем папкам домена, поэтому сцены и префабы ищутся по
-// всему content, а не только в content/scenes.
+// kind — это домен хранения (engine/game/content/data/engine_shaders/game_shaders), а не
+// подпапка. Фильтр по расширению применяется ко всем папкам домена, поэтому сцены и префабы
+// ищутся по всему content, а не только в content/scenes.
 def public AssetDomainOfKind(kind : string) : StorageDomain {
     if (kind == "engine") {
         return StorageDomain.Engine
@@ -40,6 +40,10 @@ def public AssetDomainOfKind(kind : string) : StorageDomain {
         return StorageDomain.Game
     } elif (kind == "content") {
         return StorageDomain.Content
+    } elif (kind == "engine_shaders") {
+        return StorageDomain.EngineShaders
+    } elif (kind == "game_shaders") {
+        return StorageDomain.GameShaders
     }
     return StorageDomain.Data
 }

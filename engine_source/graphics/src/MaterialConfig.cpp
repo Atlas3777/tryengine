@@ -214,6 +214,14 @@ eastl::string BuildMaterialSchemaConfig(const ShaderReflectionData& reflection) 
     params_field.value = eastl::make_unique<ConfigArray>(eastl::move(params));
     root.fields.push_back(eastl::move(params_field));
 
+    // Контракт с мешем: биты MeshAttributeFlags, которые читает вершинная стадия. Редактор
+    // сравнивает их с флагами меша, прежде чем предложить материал. 0 — нужны только позиции.
+    ConfigField attributes_field;
+    attributes_field.name = "attributes";
+    attributes_field.type_name = "u32";
+    attributes_field.value = reflection.required_attributes;
+    root.fields.push_back(eastl::move(attributes_field));
+
     return tryengine::resources::WriteConfig(root);
 }
 

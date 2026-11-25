@@ -1,5 +1,7 @@
 ================ SHADER REFLECTION DUMP ================
 
+Required mesh attributes: normal, texcoord0
+
 ========================================================
   VERTEX SHADER BINDINGS
 ========================================================
@@ -25,13 +27,6 @@ Resource: "albedo_map" (Hash: 0x756D3891)
 ========================================================
   FULL PROGRAM COMBINED BINDINGS
 ========================================================
-Resource: "pc" (Hash: 0x4E4E5564)
-  - Scope: Pass (Set 0) | Kind: UniformBuffer
-  - Set: 0, Binding: 0, Size: 16 bytes
-  - Members:
-      * "objects" | Offset: 0 | Size: 8 | Type: Float
-      * "fragment" | Offset: 8 | Size: 8 | Type: Float
---------------------------------------------------------
 Resource: "MaterialUBO" (Hash: 0x220A6028)
   - Scope: Material (Set 1) | Kind: UniformBuffer
   - Set: 1, Binding: 0, Size: 32 bytes
@@ -44,5 +39,12 @@ Resource: "MaterialUBO" (Hash: 0x220A6028)
 Resource: "albedo_map" (Hash: 0x756D3891)
   - Scope: Material (Set 1) | Kind: SampledTexture
   - Set: 1, Binding: 1, Size: 0 bytes
+--------------------------------------------------------
+Resource: "pc" (Hash: 0x4E4E5564)
+  - Scope: Pass (Set 0) | Kind: UniformBuffer
+  - Set: 0, Binding: 0, Size: 16 bytes
+  - Members:
+      * "objects" | Offset: 0 | Size: 8 | Type: Float
+      * "fragment" | Offset: 8 | Size: 8 | Type: Float
 --------------------------------------------------------
 

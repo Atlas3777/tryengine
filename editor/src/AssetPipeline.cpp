@@ -37,8 +37,12 @@ UiTree& AssetPipeline::Tree(StorageDomain domain) {
     switch (domain) {
         case StorageDomain::Engine:
             return engine_tree_;
+        case StorageDomain::EngineShaders:
+            return engine_shaders_tree_;
         case StorageDomain::Game:
             return game_tree_;
+        case StorageDomain::GameShaders:
+            return game_shaders_tree_;
         case StorageDomain::Content:
             return content_tree_;
         case StorageDomain::Data:
@@ -57,6 +61,12 @@ const eastl::vector<UiFolder>& AssetPipeline::GetFolders(StorageDomain domain) c
 
 uint64_t AssetPipeline::GetTreeRevision(StorageDomain domain) const {
     return GetTree(domain).Version();
+}
+
+eastl::string AssetPipeline::SourcePathOf(uint64_t guid) const {
+    std::lock_guard lock(db_mutex_);
+    auto it = guid_to_path_.find(guid);
+    return it != guid_to_path_.end() ? it->second : eastl::string();
 }
 
 void AssetPipeline::BuildTreeFromDisk(StorageDomain domain) {
@@ -112,33 +122,37 @@ void AssetPipeline::RegisterEditorArtifactPaths(const AssetMountPoint& mount,
     }
 }
 
+Task<void> AssetPipeline::ImportDomain(StorageDomain domain, AsyncFileManager& file_manager) {
+    const StorageRoot& root = RootOf(domain);
+
+    LogInfo(LogCategory::Importer, "{} scanning...", root.dir);
+    ScanResult scan_data = AssetScanner::ScanDirectory(root.dir);
+
+    AssetMountPoint mount{.name = root.dir, .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
+
+    LogInfo(LogCategory::Importer, "{} processing...", root.dir);
+    co_await ProcessDomain(mount, eastl::move(scan_data), file_manager, domain);
+
+    // Вотчеры пока заглушка, но новый корень должен попасть в будущий список наблюдения.
+    if (domain == StorageDomain::Game || domain == StorageDomain::GameShaders)
+        file_watcher_.WatchDirrectory(mount.assets_dir.c_str());
+
+    LogInfo(LogCategory::Importer, "{} Ready!", root.dir);
+    co_return {};
+}
+
 Task<void> AssetPipeline::ImportEngineContent(AsyncFileManager& file_manager) {
-    const StorageRoot& root = RootOf(StorageDomain::Engine);
-    AssetMountPoint engine_mount{.name = "engine", .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
-
-    LogInfo(LogCategory::Importer, "EngineContent scanning...");
-    ScanResult scan_data = AssetScanner::ScanDirectory(engine_mount.assets_dir.c_str());
-
-    LogInfo(LogCategory::Importer, "EngineContent processing...");
-    co_await ProcessDomain(engine_mount, eastl::move(scan_data), file_manager, StorageDomain::Engine);
-
-    LogInfo(LogCategory::Importer, "EngineContent Ready!");
+    // Шейдеры идут тем же конвейером, но своим корнем: источник — engine_content/shaders,
+    // артефакты — общий engine_content/artifacts. ImportEngineContent блокирующий на старте,
+    // поэтому к моменту создания EditorRender все guid'ы шейдеров уже зарегистрированы.
+    co_await ImportDomain(StorageDomain::Engine, file_manager);
+    co_await ImportDomain(StorageDomain::EngineShaders, file_manager);
     co_return {};
 }
 
 Task<void> AssetPipeline::ImportGameContent(AsyncFileManager& file_manager) {
-    const StorageRoot& root = RootOf(StorageDomain::Game);
-    AssetMountPoint game_mount{.name = "game", .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
-
-    LogInfo(LogCategory::Importer, "GameContent scanning...");
-    ScanResult scan_data = AssetScanner::ScanDirectory(game_mount.assets_dir.c_str());
-
-    LogInfo(LogCategory::Importer, "GameContent processing...");
-    co_await ProcessDomain(game_mount, eastl::move(scan_data), file_manager, StorageDomain::Game);
-
-    file_watcher_.WatchDirrectory(game_mount.assets_dir.c_str());
-
-    LogInfo(LogCategory::Importer, "GameContent Ready!");
+    co_await ImportDomain(StorageDomain::Game, file_manager);
+    co_await ImportDomain(StorageDomain::GameShaders, file_manager);
     co_return {};
 }
 
@@ -151,9 +165,18 @@ Task<void> AssetPipeline::ProcessDomain(const AssetMountPoint& mount, ScanResult
     for (auto& pair : scan_data.matched_assets)
         tasks.push_back(ProcessExistingAsset(eastl::move(pair), mount, file_manager));
 
-    // 2. Фаза импорта ассетов-сирот (создаются .meta и генерируются валидные GUID)
-    for (auto& orphan : scan_data.orphan_assets)
+    // 2. Фаза импорта ассетов-сирот (создаются .meta и генерируются валидные GUID).
+    //    Файл без зарегистрированного импортёра — не ассет, а соседний файл в папке
+    //    (README.md рядом с ассетами и т.п.), поэтому его пропускаем, а не считаем ошибкой.
+    for (auto& orphan : scan_data.orphan_assets) {
+        const size_t dot = orphan.rfind('.');
+        const bool importable = dot != eastl::string::npos && dot + 1 < orphan.size() &&
+                                import_system_.GetImporterByExtension(
+                                    eastl::string_view(orphan.data() + dot, orphan.size() - dot)) != nullptr;
+        if (!importable)
+            continue;
         tasks.push_back(ImportOrphanAsset(eastl::move(orphan), mount, file_manager));
+    }
 
     auto expecteds = co_await WhenAll(ThreadPool(), eastl::move(tasks));
 
@@ -461,14 +484,47 @@ Task<void> AssetPipeline::ImportOrphanAsset(eastl::string asset_path, AssetMount
     {
         std::lock_guard lock(db_mutex_);
         path_to_guid_[PathId(ToView(asset_path))] = res.main_guid;
+        guid_to_path_[res.main_guid] = asset_path;
     }
 
     LogInfo(LogCategory::Importer, "Ассет-сирота успешно импортирован: {}", asset_path.c_str());
     co_return {};
 }
 
+bool AssetPipeline::RequestReimport(eastl::string_view path, AsyncFileManager& file_manager) {
+    for (const StorageRoot& root : kStorageRoots) {
+        if (!IsAssetDomain(root.domain))
+            continue;
+
+        const eastl::string_view dir(root.dir);
+        if (path.size() <= dir.size() || path.substr(0, dir.size()) != dir || path[dir.size()] != '/')
+            continue;
+
+        LogInfo(LogCategory::Importer, "Reimport requested: {}", eastl::string(path.data(), path.size()).c_str());
+        RunAndForget(ThreadPool(), ReimportAsset(root.domain, eastl::string(path.data(), path.size()), file_manager));
+        return true;
+    }
+
+    LogError(LogCategory::Importer,
+             "Reimport: '{}' is not under an asset domain; content/data files have no .meta or importer",
+             eastl::string(path.data(), path.size()).c_str());
+    return false;
+}
+
+Task<void> AssetPipeline::ReimportAsset(StorageDomain domain, eastl::string asset_path,
+                                        AsyncFileManager& file_manager) {
+    const StorageRoot& root = RootOf(domain);
+    AssetMountPoint mount{.name = root.dir, .assets_dir = root.dir, .artifacts_dir = root.artifacts_dir};
+
+    eastl::string meta_path(asset_path);
+    meta_path.append(meta_ext);
+    DiscoveredAssetPair pair{asset_path, meta_path};
+    co_await ProcessExistingAsset(eastl::move(pair), mount, file_manager, /*force=*/true);
+    co_return {};
+}
+
 Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, AssetMountPoint mount,
-                                               AsyncFileManager& file_manager) {
+                                               AsyncFileManager& file_manager, bool force) {
     const eastl::string& asset_path = asset_pair.asset_path;
     const eastl::string& meta_path = asset_pair.meta_path;
 
@@ -488,15 +544,16 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
     if (meta_read.IsFailed())
         co_return LogAndMakeError("Не удалось прочитать мета-файл: {}", meta_path.c_str());
 
-    auto header_res = tryengine::resources::Json::DeserializePartial<HeaderOnly>(meta_read.GetData());
+    auto header_res = ParseMetaHeader(meta_read.GetData());
     if (!header_res.has_value())
         co_return LogAndMakeError("Ошибка парсинга заголовка мета-файла: {}", meta_path.c_str());
 
-    const auto& header = header_res->header;
+    const auto& header = *header_res;
 
     {
         std::lock_guard lock(db_mutex_);
         path_to_guid_[PathId(ToView(asset_path))] = header.guid;
+        guid_to_path_[header.guid] = asset_path;
     }
 
     RegisterArtifactPaths(mount, header.guid, header.sub_assets);
@@ -507,7 +564,10 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
 
     // 3. Проверка актуальности. Сравниваем входы с записанными в штампе импорта; mtime
     //    меты и артефактов не участвует — их пишем мы сами, асинхронно и в любом порядке.
-    bool need_reimport = false;
+    // force == true — явный переимпорт из редактора: не сравниваем штамп, а пересобираем
+    // артефакт из того, что сейчас лежит на диске (пользователь мог только что поправить
+    // .meta и ещё не тронул исходник).
+    bool need_reimport = force;
 
     auto stamp_result = co_await ReadStamp(mount, header.guid, file_manager);
     if (!stamp_result.has_value())
@@ -603,10 +663,14 @@ Task<void> AssetPipeline::ProcessExistingAsset(DiscoveredAssetPair asset_pair, A
     {
         std::lock_guard lock(db_mutex_);
         path_to_guid_[PathId(ToView(asset_path))] = res.main_guid;
+        guid_to_path_[res.main_guid] = asset_path;
     }
 
     RegisterArtifactPaths(mount, res.main_guid, CollectRuntimeSubGuids(res));
     RegisterEditorArtifactPaths(mount, CollectArtifactPaths(res));
+
+    if (force)
+        Post(TreeCommand::Kind::Reimported, asset_path, {}, res.main_guid);
     co_return {};
 }
 
@@ -657,14 +721,15 @@ void AssetPipeline::PostAssetReady(const char* path, uint64_t guid) {
     Post(TreeCommand::Kind::AssetReady, eastl::string_view(path), {}, guid);
 }
 
-void AssetPipeline::ApplyPendingTreeChanges() {
+eastl::vector<uint64_t> AssetPipeline::ApplyPendingTreeChanges() {
+    eastl::vector<uint64_t> reimported;
     eastl::vector<TreeCommand> batch;
     {
         std::lock_guard lock(pending_mutex_);
         batch.swap(pending_);
     }
     if (batch.empty())
-        return;
+        return reimported;
 
     UiTree::Changes changes;
     for (const TreeCommand& cmd : batch) {
@@ -678,15 +743,21 @@ void AssetPipeline::ApplyPendingTreeChanges() {
             case TreeCommand::Kind::AssetReady:
                 ApplyAssetReady(StringTable::View(cmd.a), cmd.guid, changes);
                 break;
+            case TreeCommand::Kind::Reimported:
+                reimported.push_back(cmd.guid);
+                ++reimport_generation_;
+                break;
         }
         ApplyPathChanges(changes);  // после КАЖДОЙ команды: следующая может зависеть от предыдущей
         strings_.Release(cmd.a);
         strings_.Release(cmd.b);
     }
+    return reimported;
 }
 
 bool AssetPipeline::LocateFolder(eastl::string_view path, UiTree*& tree, uint32_t& idx) {
-    for (UiTree* t : {&game_tree_, &engine_tree_, &content_tree_, &data_tree_}) {
+    for (UiTree* t :
+         {&engine_tree_, &engine_shaders_tree_, &game_tree_, &game_shaders_tree_, &content_tree_, &data_tree_}) {
         const uint32_t i = t->FindFolder(path);
         if (i != kNoFolder) {
             tree = t;
@@ -743,13 +814,14 @@ void AssetPipeline::ApplyRenamed(eastl::string_view old_path, eastl::string_view
 void AssetPipeline::ApplyAssetReady(eastl::string_view path, uint64_t guid, UiTree::Changes&) {
     const PathParts p = SplitPath(path);
     // Только ассеты: у авторитетных файлов (content, data) нет guid.
-    for (UiTree* t : {&game_tree_, &engine_tree_}) {
+    for (UiTree* t : {&game_tree_, &engine_tree_, &game_shaders_tree_, &engine_shaders_tree_}) {
         const uint32_t folder = t->EnsureFolder(p.parent);  // kNoFolder, если путь не из этого дерева
         if (folder == kNoFolder)
             continue;
         t->AddFile(folder, p.name, guid);
         std::lock_guard lock(db_mutex_);
         path_to_guid_[PathId(path)] = guid;
+        guid_to_path_[guid] = eastl::string(path.data(), path.size());
         return;
     }
 }

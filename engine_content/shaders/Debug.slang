@@ -1,3 +1,8 @@
+import engine.common;
+
+// Debug lines are a generated vertex buffer, not a mesh material.
+public static const uint MESH_ATTRIBUTES = 0xFFFFFFFEu;
+
 struct DebugLine
 {
     float3 start; // 12
@@ -5,12 +10,6 @@ struct DebugLine
     float3 end;   // 12
     uint _pad; // 4
 }; // 32
-
-struct Camera
-{
-    float4x4 view;
-    float4x4 proj;
-};
 
 struct VSOutput
 {

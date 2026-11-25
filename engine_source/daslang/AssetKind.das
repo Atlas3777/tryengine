@@ -12,12 +12,12 @@ module AssetKind shared public
 //       material : string
 //   }
 //
-// The value is `kind:ext`. `kind` is the storage domain (engine/game/content/data), not a
-// subfolder. `ext` filters the whole domain tree, so scene/prefab pickers see every
-// `.scene`/`.prefab` anywhere under content. The leading dot is optional: `data:mat` and
-// `data:.mat` mean the same. The annotation is inert metadata: the editor reads it from the
-// %ecs-generated field schema and draws the picker for a plain string field. No editor
-// types are required here.
+// The value is `kind:ext`. `kind` is the storage domain
+// (engine/game/content/data/engine_shaders/game_shaders), not a subfolder. `ext` filters the
+// whole domain tree, so scene/prefab pickers see every `.scene`/`.prefab` anywhere under
+// content. The leading dot is optional: `data:mat` and `data:.mat` mean the same. The
+// annotation is inert metadata: the editor reads it from the %ecs-generated field schema and
+// draws the picker for a plain string field. No editor types are required here.
 
 require daslib/rtti
 require strings
@@ -32,6 +32,9 @@ struct AssetFieldInfo {
 }
 
 def public IsAssetKind(kind : string) : bool {
+    if (kind == "engine_shaders" || kind == "game_shaders") {
+        return true
+    }
     return kind == "engine" || kind == "game" || kind == "content" || kind == "data"
 }
 
@@ -67,7 +70,7 @@ def public ParseAssetField(annotations : array<tuple<name : string; data : RttiV
         info.ext = ext
 
         if (!IsAssetKind(info.kind)) {
-            info.error = "@asset kind must be engine, game, content or data"
+            info.error = "@asset kind must be engine, game, content, data, engine_shaders or game_shaders"
             return info
         }
         return info

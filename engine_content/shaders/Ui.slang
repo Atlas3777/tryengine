@@ -20,6 +20,9 @@
 // Colors are premultiplied by the UI module, and the pass blends with (ONE, ONE_MINUS_SRC_ALPHA),
 // so scene alpha is preserved for the editor viewport texture.
 
+// UI geometry is a CPU-built vertex array, not a mesh material.
+public static const uint MESH_ATTRIBUTES = 0xFFFFFFFEu;
+
 struct UiVertex
 {
     float2 position; // render-target pixels, origin top-left

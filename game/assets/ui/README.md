@@ -27,10 +27,20 @@ the importer reads from the `.meta`, so "why is my texture compressed" is one cl
 
 ## Import settings
 
-```json
-{"header":{"guid":14429000468236573201,"importer_type":"TextureImporter","sub_assets":[]},
- "settings":{"format":"rgba8_srgb","generate_mips":false,"max_size":0,
-             "filter":"linear","wrap":"clamp"}}
+```text
+header: AssetMetaHeader = {
+	guid: u64 = 14429000468236573201
+	importer_type: string = "TextureImporter"
+	sub_assets: u64[] = [
+	]
+}
+settings: TextureImportSettings = {
+	format: string = "rgba8_srgb"
+	generate_mips: bool = false
+	max_size: u32 = 0
+	filter: string = "linear"
+	wrap: string = "clamp"
+}
 ```
 
 | Field | Values | Notes |
@@ -41,9 +51,9 @@ the importer reads from the `.meta`, so "why is my texture compressed" is one cl
 | `filter` | `linear`, `nearest` | `nearest` for pixel art |
 | `wrap` | `repeat`, `clamp`, `mirror` | `clamp` for sprites, `repeat` for tiling |
 
-Editing the `.meta` changes the import inputs, but the editor has no file watcher yet: restart it
-to re-import (the import stamp notices the changed meta on startup). An unknown value is an
-import error, not a silent fallback.
+Editing the settings in the **Import Settings** panel and pressing **Save & Reimport** re-bakes
+the texture without restarting the editor. An unknown value is an import error, not a silent
+fallback.
 
 ## Check the bake without the editor
 

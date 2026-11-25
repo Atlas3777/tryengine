@@ -77,7 +77,7 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
         rb.pending = false;
 
         if (picked_entity_id != 0) {
-            LogInfo("Выбран объект с Entity ID: {}", picked_entity_id);
+            LogInfo("Selected Entity ID: {}", picked_entity_id);
             auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
             script.InvokeFunctionFast<"SetSelectedEntity">(picked_entity_id);
         }

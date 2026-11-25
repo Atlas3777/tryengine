@@ -5,58 +5,14 @@
 // multiplied by the object's scale, so a box scaled to 2 m shows two metre cells no matter
 // how the entity is transformed, and the lines stay one metre apart in world units.
 //
-// The vertex stage repeats the Standard.slang fetch path (BDA positions and packed
-// attributes) because shaders with entry points are not modules and cannot be imported.
+// Vertex fetch, the object table and the opaque push constants come from engine.geometry and
+// engine.opaque; only the grid itself is material code.
 
-static const uint ATTR_BIT_NORMAL = 0;
+import engine.geometry;
+import engine.opaque;
 
-struct GeometryPointers
-{
-    float3*   positions;        // BDA: Позиции (12 байт / вершина)
-    uint32_t* attributes;       // BDA: Буфер 32-битных слов упакованных атрибутов
-    uint      attribute_flags;  // Битовая маска MeshAttributeFlags
-    uint      attribute_stride; // Размер атрибутов вершины в БАЙТАХ
-};
-
-struct ObjectData
-{
-    float4x4 model;
-    float4x4 normalMatrix;
-    GeometryPointers geometry;
-    uint2 _pad;
-};
-
-struct Camera
-{
-    float4x4 view;
-    float4x4 proj;
-};
-
-struct PointLight
-{
-    float4 position_radius;
-    float4 color_intensity;
-};
-
-// Mirrors FragmentDataGPU in OpaquePass.cpp; the pass fills the same push-constant block for
-// every material shader.
-struct FragmentData
-{
-    Camera*     camera;
-    PointLight* lights;
-    uint        lightCount;
-    uint        _pad[3];
-    float4      ambientColor;
-    float4      viewPos;
-};
-
-struct DrawPushConstants<TFragmentData>
-{
-    ObjectData*    objects;
-    TFragmentData* fragment;
-};
-
-[vk::push_constant] DrawPushConstants<FragmentData> pc;
+// The grid is built from the local position and the object scale; no UV or normal is read.
+public static const uint MESH_ATTRIBUTES = 0;
 
 // Material parameters, set from the material file (`data/materials/grid.mat`). The material
 // editor reflects this block and exposes the same fields.
@@ -69,23 +25,6 @@ cbuffer MaterialUBO
     float  line_width;     // line thickness in metres
     float2 _padding;
 };
-
-float4 unpackSnorm4x8(uint val)
-{
-    int4 i = int4(
-        (int)(val << 24) >> 24,
-        (int)(val << 16) >> 24,
-        (int)(val << 8)  >> 24,
-        (int)val         >> 24
-    );
-    return max(float4(-1.0), float4(i) * (1.0 / 127.0));
-}
-
-uint getAttributeDwordOffset(uint attrFlags, uint bitIndex)
-{
-    uint mask = attrFlags & ((1u << bitIndex) - 1u);
-    return countbits(mask);
-}
 
 struct GridVSOutput
 {
@@ -101,33 +40,22 @@ struct GridVSOutput
 GridVSOutput mainVS(uint vertexID : SV_VertexID, uint drawID : SV_DrawIndex)
 {
     ObjectData* object = &pc.objects[drawID];
+    VertexContext ctx = VertexContext.create(vertexID, object, pc.fragment->camera);
 
-    float3 local = object->geometry.positions[vertexID];
-    float4 world = mul(float4(local, 1.0), object->model);
+    float3 local = ctx.getLocalPosition();
+    float4 world = ctx.getWorldPosition();
 
     GridVSOutput output;
     output.localPosition = local;
     output.worldPosition = world.xyz;
-    // Rows of the row-vector model matrix are the transformed basis axes, so their lengths
-    // are the per-axis scales. The grid is built in metres from them.
-    output.objectScale = float3(length(object->model[0].xyz), length(object->model[1].xyz),
-                                length(object->model[2].xyz));
+    output.objectScale = ctx.getObjectScale();
 
-    // Normal: the same SNorm8x4 unpack and normal-matrix transform Standard.slang uses.
-    float3 localNormal = float3(0.0, 0.0, 1.0);
-    if ((object->geometry.attribute_flags & (1u << ATTR_BIT_NORMAL)) != 0)
-    {
-        uint baseDwordOffset = vertexID * (object->geometry.attribute_stride >> 2);
-        uint dwordOffset = getAttributeDwordOffset(object->geometry.attribute_flags, ATTR_BIT_NORMAL);
-        localNormal = unpackSnorm4x8(object->geometry.attributes[baseDwordOffset + dwordOffset]).xyz;
-    }
-    // The face plane must be chosen from the OBJECT-space normal: the grid coordinates are
-    // object-space * scale. A world-space choice breaks as soon as a box is rotated (a wall
-    // normal along world X would project onto local Y/Z and lose one grid direction).
-    output.localNormal = normalize(localNormal);
-    output.normal = normalize(mul(localNormal, (float3x3)object->normalMatrix));
+    // Normal: the same packed unpack and normal-matrix transform the generic vertex stage
+    // uses. The fallback face is the +Z side, like the box primitive.
+    output.localNormal = ctx.getLocalNormal(float3(0.0, 0.0, 1.0));
+    output.normal = ctx.getNormal(float3(0.0, 0.0, 1.0));
 
-    output.position = mul(mul(world, pc.fragment->camera->view), pc.fragment->camera->proj);
+    output.position = ctx.getClipPosition(world);
     return output;
 }
 

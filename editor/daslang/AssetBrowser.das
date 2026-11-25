@@ -45,12 +45,16 @@ def AssetStyle(selected : bool; is_dir : bool; blk : block) {
 var FOLDER_TREE_NODE : TreeNodeState
 var W_SEARCH_FILTER : TextFilterState
 
-// Корень, который сейчас показан. Домен — это корень: game/assets и engine_content/assets
-// содержат ассеты (.meta + guid), game/content и game/data — авторитетные файлы.
+// Корень, который сейчас показан. Домен — это корень: game/assets, engine_content/assets,
+// game/shaders и engine_content/shaders содержат ассеты (.meta + guid), game/content и
+// game/data — авторитетные файлы. shader_modules — не домен: это исходники без guid.
 var current_domain : StorageDomain = StorageDomain.Game
 var current_folder_idx : int = 0
 var selected_file_folder_idx : int = -1
 var selected_file_idx : int = -1
+// Каждый клик по файлу/папке увеличивает счётчик. Панели, которые реагируют на выбор
+// (например Material), сравнивают serial: повторный клик по тому же файлу — тоже событие.
+var private selection_serial : uint64 = 0ul
 
 // Payload перетаскивания. Поля и порядок совпадают с AssetItem: на принимающей стороне
 // (SceneViewPort) буфер читается как AssetItem, поэтому layout менять нельзя.
@@ -71,6 +75,8 @@ struct public AssetSelection {
     name : string
     ext : uint64
     guid : uint64
+    //! Растёт на каждый выбор в дереве, включая повторный клик по тому же узлу.
+    serial : uint64
 }
 
 def public GetSelectedFile() : AssetSelection {
@@ -94,7 +100,46 @@ def public GetSelectedFile() : AssetSelection {
     selection.name = file.name
     selection.ext = file.ext
     selection.guid = file.guid
+    selection.serial = selection_serial
     return <- selection
+}
+
+//! Selects a file by its authored path in any domain. Used after the editor creates a file:
+//! the tree is rescanned, then the new asset is shown as selected in the browser.
+def public SelectAssetPath(path : string) : bool {
+    if (SelectInDomain(StorageDomain.Game, path)) {
+        return true
+    }
+    if (SelectInDomain(StorageDomain.Engine, path)) {
+        return true
+    }
+    if (SelectInDomain(StorageDomain.Content, path)) {
+        return true
+    }
+    if (SelectInDomain(StorageDomain.Data, path)) {
+        return true
+    }
+    if (SelectInDomain(StorageDomain.EngineShaders, path)) {
+        return true
+    }
+    return SelectInDomain(StorageDomain.GameShaders, path)
+}
+
+def private SelectInDomain(domain : StorageDomain; path : string) : bool {
+    assume folders = get_folders(domain)
+    for (f in range(length(folders))) {
+        for (i in range(length(folders[f].files))) {
+            if (folders[f].files[i].path == path) {
+                current_domain = domain
+                current_folder_idx = f
+                selected_file_folder_idx = f
+                selected_file_idx = i
+                selection_serial++
+                return true
+            }
+        }
+    }
+    return false
 }
 
 [profile]
@@ -155,6 +200,7 @@ def private ResetSelection() {
     current_folder_idx = 0
     selected_file_folder_idx = -1
     selected_file_idx = -1
+    selection_serial++
 }
 
 def private SelectDomain(domain : StorageDomain) {
@@ -183,7 +229,10 @@ def private DrawRootSelector() {
     DrawDomainButton(StorageDomain.Content, "Content")
     same_line()
     DrawDomainButton(StorageDomain.Data, "Data")
+
+    DrawDomainButton(StorageDomain.GameShaders, "Game Shaders")
     same_line()
+    DrawDomainButton(StorageDomain.EngineShaders, "Engine Shaders")
 
     // Полная пересборка деревьев: пока нет файлового вотчера, новые файлы видны только так.
     if (button(BT_REFRESH_TREE, (text = "Refresh"))) {
@@ -261,6 +310,7 @@ def DrawSearchResults() {
                     if (button(BT_GO, (text = btn_text, size = item_size))) {
                         selected_file_folder_idx = r.folder
                         selected_file_idx = r.file
+                        selection_serial++
                     }
 
                     drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {
@@ -300,6 +350,7 @@ def DrawFolderContent(let folders; folder_idx : int) {
     if (IsMouseClicked(ImGuiMouseButton.Left) && IsWindowHovered() && !IsAnyItemHovered()) {
         selected_file_folder_idx = -1
         selected_file_idx = -1
+        selection_serial++
     }
 
     // --- РЕЖИМ ГЛОБАЛЬНОГО ПОИСКА ПО ТЕКУЩЕМУ КОРНЮ ---
@@ -338,6 +389,7 @@ def DrawFolderContent(let folders; folder_idx : int) {
                     if (button(BT_GO, (text = btn_text, size = item_size))) {
                         selected_file_folder_idx = child_idx
                         selected_file_idx = -1
+                        selection_serial++
                     }
 
                     // Двойной клик переходит внутрь папки
@@ -362,6 +414,7 @@ def DrawFolderContent(let folders; folder_idx : int) {
                     if (button(BT_GO, (text = btn_text, size = item_size))) {
                         selected_file_folder_idx = folder_idx
                         selected_file_idx = i
+                        selection_serial++
                     }
 
                     drag_drop_source(SOURCE_DD, (flags = ImGuiDragDropFlags.None)) {

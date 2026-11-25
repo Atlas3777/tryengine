@@ -98,6 +98,39 @@ tryengine::graphics::Material* GetMaterialPointer(uint64_t guid, das::Context* c
     return res_manager ? res_manager->GetPointerExplicit<tryengine::graphics::Material>(guid) : nullptr;
 }
 
+// Битовая маска атрибутов, которые реально есть у меша (MeshAttributeFlags). 0 — меш ещё не
+// загружен или у него только позиции: редактор в этом случае не прячет материалы, а ждёт.
+uint32_t GetMeshAttributeFlags(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    auto* mesh = res_manager ? res_manager->GetPointerExplicit<tryengine::graphics::Mesh>(guid) : nullptr;
+    return mesh != nullptr ? static_cast<uint32_t>(mesh->attribute_flags) : 0u;
+}
+
+// Маска -> "normal, texcoord0": подпись для панели материала. Строка живёт в куче контекста
+// daslang, как и остальные строки, которые отдают биндинги редактора.
+char* DescribeMeshAttributes(uint32_t mask, das::Context* ctx, das::LineInfoArg* at) {
+    const eastl::string text = tryengine::resources::DescribeMeshAttributeFlags(mask);
+    return ctx->allocateString(text.c_str(), text.size(), at);
+}
+
+// Атрибуты меша, которые требует шейдер (MeshAttributeFlags). 0xFFFFFFFF — шейдер ещё не
+// загружен: загрузка поставлена, а редактор считает совместимость неизвестной. 0 — шейдеру
+// нужны только позиции, 0xFFFFFFFE — шейдер не для меша.
+uint32_t GetShaderRequiredAttributes(uint64_t shader_guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    if (!res_manager)
+        return 0xFFFFFFFFu;
+    auto* shader = res_manager->GetPointerExplicit<tryengine::graphics::Shader>(shader_guid);
+    if (!shader) {
+        if (!res_manager->IsLoading<tryengine::graphics::Shader>(shader_guid) &&
+            !res_manager->IsFailed<tryengine::graphics::Shader>(shader_guid)) {
+            res_manager->RequestLoad<tryengine::graphics::Shader>(shader_guid);
+        }
+        return 0xFFFFFFFFu;
+    }
+    return shader->reflection.required_attributes;
+}
+
 // Схема параметров материала для редактора. Возвращаем `char*` из кучи контекста
 // daslang: на стороне скрипта это обычный `string`, промежуточный файл не нужен.
 // Шейдер грузится лениво: первый вызов только запускает загрузку и отдаёт null.
@@ -275,8 +308,17 @@ public:
         das::addExtern<DAS_BIND_FUN(GetMaterialPointer)>(*this, lib, "GetMaterialPointer",
                                                          das::SideEffects::accessGlobal, "GetMaterialPointer");
 
+        das::addExtern<DAS_BIND_FUN(GetMeshAttributeFlags)>(*this, lib, "GetMeshAttributeFlags",
+                                                            das::SideEffects::accessGlobal, "GetMeshAttributeFlags");
+
+        das::addExtern<DAS_BIND_FUN(DescribeMeshAttributes)>(*this, lib, "DescribeMeshAttributes",
+                                                             das::SideEffects::accessGlobal, "DescribeMeshAttributes");
+
         das::addExtern<DAS_BIND_FUN(GetMaterialSchema)>(*this, lib, "GetMaterialSchema", das::SideEffects::accessGlobal,
                                                         "GetMaterialSchema");
+
+        das::addExtern<DAS_BIND_FUN(GetShaderRequiredAttributes)>(
+            *this, lib, "GetShaderRequiredAttributes", das::SideEffects::accessGlobal, "GetShaderRequiredAttributes");
 
         das::addExtern<DAS_BIND_FUN(UiTextureMaterial)>(*this, lib, "UiTextureMaterial", das::SideEffects::accessGlobal,
                                                         "UiTextureMaterial");

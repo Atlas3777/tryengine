@@ -3,6 +3,7 @@
 #include <EASTL/hash_map.h>
 #include <EASTL/hash_set.h>
 #include <EASTL/sort.h>
+#include <EASTL/string_view.h>
 #include <filesystem>
 #include <initializer_list>
 #include <mutex>
@@ -15,6 +16,7 @@
 #include "engine/core/FormatUtils.h"
 #include "engine/core/Log.hpp"
 #include "engine/core/MakeError.hpp"
+#include "engine/resources/binary/MeshBinary.hpp"
 
 namespace tryeditor {
 
@@ -57,6 +59,111 @@ eastl::string ToProjectPath(const std::filesystem::path& path) {
 bool IsUnder(const std::filesystem::path& path, const std::filesystem::path& root) {
     const std::filesystem::path relative = path.lexically_relative(root);
     return !relative.empty() && relative.native().rfind("..", 0) != 0;
+}
+
+bool IsIdentStart(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+bool IsIdentChar(char c) {
+    return IsIdentStart(c) || (c >= '0' && c <= '9');
+}
+
+// Маска атрибутов меша, которую объявляет сам шейдер:
+//
+//   public static const uint MESH_ATTRIBUTES = ATTR_BIT_NORMAL | ATTR_BIT_TEXCOORD0;
+//
+// Slang не отдаёт её через рефлексию (атрибуты читаются из BDA, а не как vertex input),
+// поэтому объявление разбирается из исходника. Это контракт шейдера с материалом: редактор
+// предлагает материал только мешам, у которых есть все перечисленные атрибуты. Токены
+// сверяются с MeshAttributeFlags, поэтому опечатка в имени — ошибка импорта, а не тихая
+// потеря ограничения.
+tryengine::Result<uint32_t> ParseRequiredMeshAttributes(eastl::string_view source) {
+    constexpr eastl::string_view marker = "MESH_ATTRIBUTES";
+
+    // Find the declaration, not a mention in a comment: the marker must be a whole identifier
+    // followed by '='. `MESH_ATTRIBUTES_NOT_MESH` is skipped by the identifier check.
+    size_t marker_pos = eastl::string_view::npos;
+    size_t equals_pos = eastl::string_view::npos;
+    for (size_t at = source.find(marker); at != eastl::string_view::npos; at = source.find(marker, at + 1)) {
+        if (at > 0 && IsIdentChar(source[at - 1]))
+            continue;
+        size_t next = at + marker.size();
+        if (next < source.size() && IsIdentChar(source[next]))
+            continue;
+        while (next < source.size() &&
+               (source[next] == ' ' || source[next] == '\t' || source[next] == '\r' || source[next] == '\n')) {
+            ++next;
+        }
+        if (next < source.size() && source[next] == '=') {
+            marker_pos = at;
+            equals_pos = next;
+            break;
+        }
+    }
+
+    if (marker_pos == eastl::string_view::npos) {
+        return LogAndMakeError(
+            "Slang: shader must declare `public static const uint MESH_ATTRIBUTES = ...;` so the "
+            "editor knows which mesh attributes it reads (use 0 for position-only shaders)");
+    }
+
+    const size_t semicolon_pos = source.find(';', equals_pos + 1);
+    if (semicolon_pos == eastl::string_view::npos)
+        return LogAndMakeError("Slang: MESH_ATTRIBUTES declaration has no terminating ';'");
+
+    const eastl::string_view expression = source.substr(equals_pos + 1, semicolon_pos - equals_pos - 1);
+    uint32_t mask = 0;
+    size_t cursor = 0;
+    while (cursor < expression.size()) {
+        const char c = expression[cursor];
+        if (c == '|' || c == '(' || c == ')' || c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+            ++cursor;
+            continue;
+        }
+
+        if (IsIdentStart(c)) {
+            const size_t begin = cursor;
+            while (cursor < expression.size() && IsIdentChar(expression[cursor]))
+                ++cursor;
+            const eastl::string_view token = expression.substr(begin, cursor - begin);
+            tryengine::resources::MeshAttributeFlags flag{};
+            if (!tryengine::resources::ParseMeshAttributeToken(token, flag)) {
+                return LogAndMakeError("Slang: unknown mesh attribute token '{}' in MESH_ATTRIBUTES",
+                                       eastl::string(token.data(), token.size()).c_str());
+            }
+            mask |= static_cast<uint32_t>(flag);
+            continue;
+        }
+
+        if (c >= '0' && c <= '9') {
+            const size_t begin = cursor;
+            while (cursor < expression.size()) {
+                const char digit = expression[cursor];
+                const bool hex = (digit >= 'a' && digit <= 'f') || (digit >= 'A' && digit <= 'F');
+                const bool numeric = (digit >= '0' && digit <= '9') || hex || digit == 'x' || digit == 'X' ||
+                                     digit == 'u' || digit == 'U';
+                if (!numeric)
+                    break;
+                ++cursor;
+            }
+            const eastl::string_view token = expression.substr(begin, cursor - begin);
+            if (token == "0" || token == "0u" || token == "0U")
+                continue;
+            if (token == "0xFFFFFFFE" || token == "0xFFFFFFFEu" || token == "0xFFFFFFFEU") {
+                mask |= tryengine::resources::kNotMeshMaterialAttributes;
+                continue;
+            }
+            return LogAndMakeError(
+                "Slang: MESH_ATTRIBUTES must be built from ATTR_BIT_* tokens, 0, or the not-a-mesh "
+                "sentinel 0xFFFFFFFEu");
+        }
+
+        const char unexpected[2] = {c, '\0'};
+        return LogAndMakeError("Slang: unexpected character '{}' in MESH_ATTRIBUTES", unexpected);
+    }
+
+    return mask;
 }
 
 bool IsUnderAny(const std::filesystem::path& path, const eastl::vector<std::filesystem::path>& roots) {
@@ -356,9 +463,12 @@ void DumpStageSection(eastl::string& out, const char* stage_title, const ShaderR
 
 eastl::string DumpReflectionToString(const ShaderReflectionData& vs_reflection,
                                      const ShaderReflectionData& fs_reflection,
-                                     const ShaderReflectionData& full_reflection) {
+                                     const ShaderReflectionData& full_reflection, uint32_t required_attributes) {
     eastl::string out;
     out.append("================ SHADER REFLECTION DUMP ================\n\n");
+    out.append("Required mesh attributes: ");
+    out.append(tryengine::resources::DescribeMeshAttributeFlags(required_attributes).c_str());
+    out.append("\n\n");
 
     DumpStageSection(out, "VERTEX SHADER BINDINGS", vs_reflection);
     DumpStageSection(out, "FRAGMENT SHADER BINDINGS", fs_reflection);
@@ -517,7 +627,11 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
     ShaderCompileResult result{};
 
     if (vs_entry && fs_entry) {
-        result.kind = ShaderAssetKind::Shader;
+        auto required_attributes =
+            ParseRequiredMeshAttributes(eastl::string_view(request.source.c_str(), request.source.size()));
+        if (!required_attributes.has_value())
+            return std::unexpected(eastl::move(required_attributes.error()));
+        result.shader.reflection.required_attributes = *required_attributes;
 
         slang::IComponentType* vs_components[] = {module, vs_entry.get()};
         ComPtr<slang::IComponentType> vs_program;
@@ -609,19 +723,13 @@ tryengine::Result<ShaderCompileResult> ShaderCompilerSystem::Compile(const Shade
         CountStageResourcesFromReflection(vs_reflection, result.shader.vertex_counts);
         CountStageResourcesFromReflection(fs_reflection, result.shader.fragment_counts);
 
-        result.reflection_dump = DumpReflectionToString(vs_reflection, fs_reflection, full_reflection);
+        result.reflection_dump = DumpReflectionToString(vs_reflection, fs_reflection, full_reflection,
+                                                        result.shader.reflection.required_attributes);
     } else if (!vs_entry && !fs_entry) {
-        result.kind = ShaderAssetKind::Module;
-
-        ComPtr<slang::IBlob> module_ir;
-        if (SLANG_FAILED(module->serialize(module_ir.writeRef())) || !module_ir)
-            return LogAndMakeError("Slang: Failed to serialize module '{}'", module_name);
-
-        const auto* bytes = static_cast<const uint8_t*>(module_ir->getBufferPointer());
-        result.module_ir.assign(bytes, bytes + module_ir->getBufferSize());
-
-        const char* name = module->getName();
-        result.module_name = name ? FromStd(name) : module_name;
+        return LogAndMakeError(
+            "Slang: '{}' has no shader entry points. Shared code belongs in shader_modules/ and "
+            "is imported with `import <module>;`; only shaders with vsMain/fsMain are assets.",
+            module_name.c_str());
     } else {
         return LogAndMakeError("Slang: expected both vertex and fragment entry points, found {}",
                                vs_entry ? "only vertex" : "only fragment");

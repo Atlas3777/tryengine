@@ -17,11 +17,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include <glaze/json.hpp>
 
 #include "editor/import/TextureBaker.hpp"
 #include "editor/meta/AssetMetaHeader.hpp"
-#include "engine/resources/EastlGlazeSerializers.hpp"
 #include "engine/resources/binary/TextureBinary.hpp"
 #include "stb_image.h"
 #include "stb_image_resize2.h"
@@ -260,16 +258,23 @@ int main(int argc, char** argv) {
     // parse failure would fall back to defaults and re-bake the asset with a different look.
     if (meta_path != nullptr) {
         const auto meta_file = ReadFile(meta_path);
-        tryeditor::AssetMeta<tryeditor::TextureImportSettings> meta;
-        const auto read_error = glz::read_json(meta, eastl::span<const uint8_t>(meta_file.data(), meta_file.size()));
-        Check(read_error == glz::error_code::none, "the .meta parses as texture import settings");
-        if (read_error == glz::error_code::none) {
+        auto parsed_meta = tryeditor::ParseAssetMeta<tryeditor::TextureImportSettings>(
+            eastl::span<const uint8_t>(meta_file.data(), meta_file.size()));
+        Check(parsed_meta.has_value(), "the .meta parses as texture import settings");
+        if (parsed_meta.has_value()) {
+            const auto& meta = *parsed_meta;
             std::printf("meta: %s\n  importer %s  guid %llu\n  format %s  mips %s  max_size %u  filter %s  wrap %s\n",
                         meta_path, meta.header.importer_type.c_str(), static_cast<unsigned long long>(meta.header.guid),
                         meta.settings.format.c_str(), meta.settings.generate_mips ? "on" : "off",
                         meta.settings.max_size, meta.settings.filter.c_str(), meta.settings.wrap.c_str());
             Check(meta.header.importer_type == "TextureImporter", "the .meta names the texture importer");
             Check(!meta.settings.format.empty(), "the .meta carries a format");
+        } else {
+            {
+                const auto message = parsed_meta.error().Message();
+                std::printf("  meta error: %.*s\n", static_cast<int>(message.size()), message.data());
+            }
+            parsed_meta.error().Discard();
         }
     }
 
@@ -285,25 +290,29 @@ int main(int argc, char** argv) {
     auto empty = tryeditor::BakeTexture(eastl::span<const uint8_t>(), base);
     Check(!empty.has_value(), "an empty source is rejected");
 
-    // The importer reads the settings back from the .meta through glaze, so the field names are
-    // a contract: a rename here silently resets every texture to the default settings.
+    // The importer reads the settings back from the .meta with the shared codec, so the field
+    // names are a contract: a rename here silently resets every texture to the default settings.
     tryeditor::AssetMeta<tryeditor::TextureImportSettings> meta;
     meta.header.guid = 0xC83E1B7A4D2F9A11ull;
     meta.header.importer_type = "TextureImporter";
     meta.settings = ui_sprite;
-    eastl::vector<uint8_t> meta_bytes;
-    const auto write_error = glz::write_json(meta, meta_bytes);
-    Check(write_error == glz::error_code::none, "texture meta serializes");
-    if (write_error == glz::error_code::none) {
-        tryeditor::AssetMeta<tryeditor::TextureImportSettings> parsed;
-        const auto read_error =
-            glz::read_json(parsed, eastl::span<const uint8_t>(meta_bytes.data(), meta_bytes.size()));
-        Check(read_error == glz::error_code::none, "texture meta reads back");
-        if (read_error == glz::error_code::none) {
-            Check(parsed.header.guid == meta.header.guid, "meta keeps the guid");
-            Check(parsed.settings.format == "rgba8_srgb", "meta keeps the format");
-            Check(!parsed.settings.generate_mips, "meta keeps the mip policy");
-            Check(parsed.settings.filter == "nearest" && parsed.settings.wrap == "clamp", "meta keeps the sampler");
+    const eastl::vector<uint8_t> meta_bytes = tryeditor::WriteAssetMeta(meta);
+    Check(!meta_bytes.empty(), "texture meta serializes");
+    if (!meta_bytes.empty()) {
+        auto parsed = tryeditor::ParseAssetMeta<tryeditor::TextureImportSettings>(
+            eastl::span<const uint8_t>(meta_bytes.data(), meta_bytes.size()));
+        Check(parsed.has_value(), "texture meta reads back");
+        if (parsed.has_value()) {
+            Check(parsed->header.guid == meta.header.guid, "meta keeps the guid");
+            Check(parsed->settings.format == "rgba8_srgb", "meta keeps the format");
+            Check(!parsed->settings.generate_mips, "meta keeps the mip policy");
+            Check(parsed->settings.filter == "nearest" && parsed->settings.wrap == "clamp", "meta keeps the sampler");
+        } else {
+            {
+                const auto message = parsed.error().Message();
+                std::printf("  meta error: %.*s\n", static_cast<int>(message.size()), message.data());
+            }
+            parsed.error().Discard();
         }
     }
 

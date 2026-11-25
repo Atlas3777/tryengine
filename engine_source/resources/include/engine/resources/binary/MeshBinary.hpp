@@ -1,6 +1,8 @@
 #pragma once
 
 #include <EASTL/span.h>
+#include <EASTL/string.h>
+#include <EASTL/string_view.h>
 #include <EASTL/vector.h>
 #include <cstdint>
 
@@ -37,6 +39,94 @@ enum class MeshAttributeFlags : uint32_t {
 
 constexpr uint32_t GetPositionStride() {
     return sizeof(float) * 3;  // 12 байт (всегда в отдельном буфере)
+}
+
+// Имя атрибута для человека (`normal`, `texcoord0`, ...). Позиция живёт отдельным буфером
+// и в маске не участвует, поэтому её здесь нет.
+// Сентинелы в той же маске, что и MeshAttributeFlags. Оба значения не пересекаются с
+// реальными битами (0..6), поэтому их можно хранить в одном uint.
+//   pending    — шейдер ещё не загружен, совместимость неизвестна;
+//   not mesh   — шейдер не для меша (UI, экранный проход), материал нельзя предлагать.
+inline constexpr uint32_t kPendingMeshAttributes = 0xFFFFFFFFu;
+inline constexpr uint32_t kNotMeshMaterialAttributes = 0xFFFFFFFEu;
+
+inline const char* MeshAttributeLabel(MeshAttributeFlags flag) {
+    switch (flag) {
+        case MeshAttributeFlags::Normal:
+            return "normal";
+        case MeshAttributeFlags::Tangent:
+            return "tangent";
+        case MeshAttributeFlags::TexCoord0:
+            return "texcoord0";
+        case MeshAttributeFlags::TexCoord1:
+            return "texcoord1";
+        case MeshAttributeFlags::Color0:
+            return "color0";
+        case MeshAttributeFlags::Joints0:
+            return "joints0";
+        case MeshAttributeFlags::Weights0:
+            return "weights0";
+        case MeshAttributeFlags::None:
+            break;
+    }
+    return "none";
+}
+
+// Токен, которым шейдер объявляет атрибут в `MESH_ATTRIBUTES` (см. ShaderCompilerSystem).
+// Один список на парсер и на подсказки в редакторе.
+inline bool ParseMeshAttributeToken(eastl::string_view token, MeshAttributeFlags& out) {
+    if (token == "ATTR_BIT_NORMAL") {
+        out = MeshAttributeFlags::Normal;
+        return true;
+    }
+    if (token == "ATTR_BIT_TANGENT") {
+        out = MeshAttributeFlags::Tangent;
+        return true;
+    }
+    if (token == "ATTR_BIT_TEXCOORD0") {
+        out = MeshAttributeFlags::TexCoord0;
+        return true;
+    }
+    if (token == "ATTR_BIT_TEXCOORD1") {
+        out = MeshAttributeFlags::TexCoord1;
+        return true;
+    }
+    if (token == "ATTR_BIT_COLOR0") {
+        out = MeshAttributeFlags::Color0;
+        return true;
+    }
+    if (token == "ATTR_BIT_JOINTS0") {
+        out = MeshAttributeFlags::Joints0;
+        return true;
+    }
+    if (token == "ATTR_BIT_WEIGHTS0") {
+        out = MeshAttributeFlags::Weights0;
+        return true;
+    }
+    return false;
+}
+
+// Маска -> "normal, texcoord0". Пустая маска — "position only".
+inline eastl::string DescribeMeshAttributeFlags(uint32_t mask) {
+    if (mask == kPendingMeshAttributes)
+        return "shader loading";
+    if (mask == kNotMeshMaterialAttributes)
+        return "not a mesh material";
+
+    eastl::string text;
+    for (MeshAttributeFlags flag :
+         {MeshAttributeFlags::Normal, MeshAttributeFlags::Tangent, MeshAttributeFlags::TexCoord0,
+          MeshAttributeFlags::TexCoord1, MeshAttributeFlags::Color0, MeshAttributeFlags::Joints0,
+          MeshAttributeFlags::Weights0}) {
+        if ((mask & static_cast<uint32_t>(flag)) == 0)
+            continue;
+        if (!text.empty())
+            text.append(", ");
+        text.append(MeshAttributeLabel(flag));
+    }
+    if (text.empty())
+        text = "position only";
+    return text;
 }
 
 // Вычисление шага вершины в Attribute Buffer (Normal, UV, Color и т.д.)

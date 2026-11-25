@@ -170,6 +170,7 @@ def public AwaitDeps(var meshes : array<uint64>; var materials : array<uint64>) 
 var private g_last_model_eid : uint = 0u
 var private g_last_model_mesh : uint64 = 0ul
 var private g_last_model_material : uint64 = 0ul
+var private g_reapply_pending : bool = false
 
 //! Re-resolves the authored `model` of every entity into the runtime pointer components.
 //!
@@ -180,16 +181,29 @@ var private g_last_model_material : uint64 = 0ul
 //! `ApplyToEntity` cache is dropped too, otherwise selecting an entity whose pair was
 //! already applied would skip the write and leave it invisible.
 def public ReapplyPointers() {
+    g_reapply_pending = false
     query() $(eid : EntityId; model : ModelRender) {
         let refs = Resolve(model.mesh, model.material)
         if (!refs.ok || refs.mesh == 0ul) {
             return
         }
+
+        // After a reimport the resource is invalidated: RequestLoad builds it again under
+        // the same id. While it is not ready the old pointer stays in the archetype and keeps
+        // drawing; retry until every resource has arrived.
         var mesh_ptr = MeshPointer(refs)
         if (mesh_ptr == null) {
+            RequestLoadMesh(refs.mesh)
+            g_reapply_pending = true
             return
         }
         var material_ptr = MaterialPointer(refs)
+        if (refs.material != 0ul && material_ptr == null) {
+            RequestLoadMaterial(refs.material)
+            g_reapply_pending = true
+            return
+        }
+
         update_entity(eid) @(eid, cmp) {
             cmp |> set(MESH_POINTER_FIELD, mesh_ptr)
             if (material_ptr != null) {
@@ -199,6 +213,11 @@ def public ReapplyPointers() {
     }
     commit()
     g_last_model_eid = 0u
+}
+
+//! true while ReapplyPointers is waiting for a resource to reload after a reimport.
+def public HasPendingReapply() : bool {
+    return g_reapply_pending
 }
 
 //! Writes the resolved pointers into an existing entity. Used by the editor after the model

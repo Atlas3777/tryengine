@@ -1,5 +1,7 @@
 ================ SHADER REFLECTION DUMP ================
 
+Required mesh attributes: normal, texcoord0, color0
+
 ========================================================
   VERTEX SHADER BINDINGS
 ========================================================

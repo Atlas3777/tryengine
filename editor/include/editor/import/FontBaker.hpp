@@ -4,6 +4,7 @@
 #include <EASTL/string.h>
 #include <EASTL/vector.h>
 
+#include "editor/meta/AssetMetaHeader.hpp"
 #include "engine/core/Result.hpp"
 #include "engine/resources/binary/FontBinaryLayout.hpp"
 
@@ -21,6 +22,61 @@ struct FontBakeSettings {
     uint8_t onedge_value = 128;
     // Codepoint ranges separated by commas: "0x20-0x7E,0x400-0x4FF,0x20AC".
     eastl::string ranges = "0x20-0x7E,0xA0-0xFF,0x400-0x4FF,0x2010-0x2027,0x2030,0x2039,0x203A,0x20AC";
+};
+
+//! Поля блока `settings` в .meta шрифта. Зеркало для редактора — `FontBakeSettings`
+//! в editor/daslang/ImportSettings.das: имена полей обязаны совпадать.
+template <>
+struct MetaSettingsCodec<FontBakeSettings> {
+    static constexpr const char* kTypeName = "FontBakeSettings";
+
+    static Result<FontBakeSettings> Read(const tryengine::resources::ConfigObject& object) {
+        FontBakeSettings settings;
+        auto em_size = meta::ReadFloatField(object, "settings", "em_size", settings.em_size);
+        if (!em_size.has_value())
+            return eastl::move(em_size.error());
+        settings.em_size = *em_size;
+        auto px_range = meta::ReadFloatField(object, "settings", "px_range", settings.px_range);
+        if (!px_range.has_value())
+            return eastl::move(px_range.error());
+        settings.px_range = *px_range;
+        auto padding = meta::ReadU32Field(object, "settings", "padding", settings.padding);
+        if (!padding.has_value())
+            return eastl::move(padding.error());
+        settings.padding = *padding;
+        auto atlas_width = meta::ReadU32Field(object, "settings", "atlas_width", settings.atlas_width);
+        if (!atlas_width.has_value())
+            return eastl::move(atlas_width.error());
+        settings.atlas_width = *atlas_width;
+        auto atlas_height = meta::ReadU32Field(object, "settings", "atlas_height", settings.atlas_height);
+        if (!atlas_height.has_value())
+            return eastl::move(atlas_height.error());
+        settings.atlas_height = *atlas_height;
+        auto dist_scale = meta::ReadFloatField(object, "settings", "pixel_dist_scale", settings.pixel_dist_scale);
+        if (!dist_scale.has_value())
+            return eastl::move(dist_scale.error());
+        settings.pixel_dist_scale = *dist_scale;
+        auto onedge = meta::ReadU8Field(object, "settings", "onedge_value", settings.onedge_value);
+        if (!onedge.has_value())
+            return eastl::move(onedge.error());
+        settings.onedge_value = *onedge;
+        auto ranges = meta::ReadStringField(object, "settings", "ranges", settings.ranges);
+        if (!ranges.has_value())
+            return eastl::move(ranges.error());
+        settings.ranges = eastl::move(*ranges);
+        return settings;
+    }
+
+    static void Write(tryengine::resources::ConfigObject& object, const FontBakeSettings& settings) {
+        object.fields.push_back(meta::MakeFloatField("em_size", settings.em_size));
+        object.fields.push_back(meta::MakeFloatField("px_range", settings.px_range));
+        object.fields.push_back(meta::MakeU32Field("padding", settings.padding));
+        object.fields.push_back(meta::MakeU32Field("atlas_width", settings.atlas_width));
+        object.fields.push_back(meta::MakeU32Field("atlas_height", settings.atlas_height));
+        object.fields.push_back(meta::MakeFloatField("pixel_dist_scale", settings.pixel_dist_scale));
+        object.fields.push_back(meta::MakeU8Field("onedge_value", settings.onedge_value));
+        object.fields.push_back(meta::MakeStringField("ranges", settings.ranges));
+    }
 };
 
 struct FontBakeStats {

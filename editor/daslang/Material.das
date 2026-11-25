@@ -1,5 +1,6 @@
 options gen2
 options relaxed_assign = false
+options _allow_imgui_legacy = true
 
 module Material shared public
 
@@ -17,11 +18,16 @@ require tryengine/Types
 require tryengine/Profiling
 require tryengine/EcsMacro
 require tryeditor/Hierarchy
+require tryeditor/AssetPicker
+require tryeditor/AssetBrowser
+require tryeditor/FileSystemUtils
+require tryeditor/MaterialCompat
 
 require imgui
 require imgui/imgui_widgets_builtin
 require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
+require imgui/imgui_scope_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
 require imgui/imgui_boost_v2
@@ -29,6 +35,7 @@ require imgui/imgui_boost_v2
 require daslib/fio
 require daslib/decs
 require strings
+require daslib/strings_boost
 require math
 
 require TryEditor
@@ -50,9 +57,14 @@ struct MaterialParam {
     size       : uint
 }
 
-var private material_path = "game/data/materials/standard.mat"
+var private g_tex_pick : table<string; ClickState>
+var private g_tex_clear : table<string; ClickState>
+var private g_tex_preview : table<string; ImageState>
+
+var private material_path = ""
 var private material : MaterialConfig
 var private schema : array<MaterialParam>
+var private schema_attributes : uint = 0u
 var private material_loaded = false
 var private schema_pending = false
 var private status = ""
@@ -62,10 +74,19 @@ var private material_readonly = false
 var private last_synced_eid : EntityId = INVALID_ENTITY_ID
 var private last_synced_ref = ""
 var private follow_state = ToggleState(value = true)
+var private last_asset_generation : uint64 = 0ul
+// Выбор в Asset Browser — отдельный вход в панель: serial растёт на каждый клик, поэтому
+// повторный выбор того же .mat снова его открывает.
+var private last_browser_serial : uint64 = 0ul
 
-var private MATERIAL_PATH <- InputTextState()
-var private material_path_initialized = false
-var private auto_load_done = false
+// Диалог создания материала.
+var private create_popup = PopupState(open = false)
+var private create_name <- InputTextState()
+var private create_name_text = ""
+var private create_shader_names : array<string>
+var private create_shader_guids : array<uint64>
+var private create_shader_combo <- ComboState()
+var private create_status = ""
 
 def private InitInputText(var state : InputTextState; val : string) {
     state.value = val
@@ -197,8 +218,9 @@ def private WriteMaterial(var m : MaterialConfig) : string {
 // Схема из C++
 // ---------------------------------------------------------------------------
 
-def private ParseSchema(text : string; var out : array<MaterialParam>) : bool {
+def private ParseSchemaText(text : string; var out : array<MaterialParam>; var attributes : uint&) : bool {
     clear(out)
+    attributes = 0u
     if (empty(text)) {
         return false
     }
@@ -210,6 +232,8 @@ def private ParseSchema(text : string; var out : array<MaterialParam>) : bool {
     }
 
     var obj <- root.value as _object
+    attributes = GetUInt(obj, "attributes", 0u)
+
     var params = GetField(obj, "params")
     if (params == null || !(params.value is _array)) {
         return false
@@ -233,6 +257,13 @@ def private ParseSchema(text : string; var out : array<MaterialParam>) : bool {
         }
     }
     return true
+}
+
+def private ParseSchema(text : string; var out : array<MaterialParam>) : bool {
+    var attributes = 0u
+    let parsed = ParseSchemaText(text, out, attributes)
+    schema_attributes = attributes
+    return parsed
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +466,60 @@ def private DrawParam(p : MaterialParam) {
     }
 }
 
+// A texture is not a number in a field: show a preview, the authored path and a picker from
+// the asset tree. The .mat still stores a guid (the pak has no path table), but the user
+// never types it.
+def private DrawTextureParam(p : MaterialParam) {
+    EnsureParam(p)
+    let field = GetParamField(p)
+    if (field == null) {
+        with_id(p.name) {
+            text("{p.name}: unsupported type {p.value_type}")
+        }
+        return
+    }
+
+    var guid = 0ul
+    if (field.value is _uint64) { guid = field.value as _uint64 }
+
+    let owner = "mat_tex_{p.name}"
+    with_id(p.name) {
+        text("{p.name}")
+        same_line()
+        if (guid != 0ul) {
+            let preview = GetTexturePreview(guid)
+            if (preview != null) {
+                image(g_tex_preview[p.name], ImTextureRef(intptr(preview)), float2(32.0f, 32.0f))
+                same_line()
+            }
+        }
+
+        var source_path = ""
+        if (guid != 0ul) {
+            source_path = GetAssetSourcePath(guid)
+        }
+        if (empty(source_path)) {
+            text("none")
+        } else {
+            text("{source_path}")
+        }
+
+        if (!material_readonly) {
+            same_line()
+            if (button(g_tex_pick[p.name], (text = "Choose..."))) {
+                OpenTexturePicker(p.name, source_path, owner)
+            }
+            same_line()
+            if (button(g_tex_clear[p.name], (text = "Clear"))) {
+                SetParam(p, ConfigValue(_uint64 = 0ul))
+            }
+            if (DrawAssetPickerPopup(owner)) {
+                SetParam(p, ConfigValue(_uint64 = AssetPickerSelectionGuid()))
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Действия
 // ---------------------------------------------------------------------------
@@ -469,7 +554,6 @@ def private RequestSchema() {
 // файла, "guid:<id>" для импортированного.
 def private LoadMaterialAt(path : string; guid : uint64; asset_ref : string) {
     material_path = path
-    InitInputText(MATERIAL_PATH, path)
 
     let text = fio::fread(path)
     if (empty(text)) {
@@ -498,9 +582,9 @@ def private LoadMaterialAt(path : string; guid : uint64; asset_ref : string) {
     }
 }
 
-def private LoadMaterial() {
-    let asset_ref = material_path
-    LoadMaterialAt(asset_ref, RegisterMaterialFile(asset_ref), asset_ref)
+// Открывает .mat по авторскому пути: регистрирует файл в реестре (PathId) и читает его.
+def private OpenMaterial(path : string) {
+    LoadMaterialAt(path, RegisterMaterialFile(path), path)
 }
 
 // Авторская ссылка, которой сущность реально рисуется: оверрайд из `model.material`, а если
@@ -634,6 +718,17 @@ def private SaveMaterial() {
     status = "saved {material_path}"
 }
 
+def private SelectedMeshGuid() : uint64 {
+    if (!is_alive(selected_eid)) {
+        return 0ul
+    }
+    var mesh_guid = 0ul
+    query(selected_eid) $(let model : ModelRender) {
+        mesh_guid = model.mesh
+    }
+    return mesh_guid
+}
+
 def private ApplyMaterial() {
     if (!material_loaded) {
         status = "load a material first"
@@ -648,6 +743,12 @@ def private ApplyMaterial() {
         // Производный материал не адресуется из юзерспейса: он приходит через дефолт меша,
         // а чтобы переиспользовать его на другой модели, материал сохраняют в data/.
         status = "read-only: an imported material is reached through the mesh default; save it under data/ to override"
+        return
+    }
+
+    let mesh_guid = SelectedMeshGuid()
+    if (!MaterialCompat::IsCompatible(material_path, mesh_guid)) {
+        status = "not compatible with the selected mesh: missing {MaterialCompat::MissingAttributesText(material_path, mesh_guid)}"
         return
     }
 
@@ -667,35 +768,189 @@ def private ApplyMaterial() {
 }
 
 // ---------------------------------------------------------------------------
+// Создание материала
+// ---------------------------------------------------------------------------
+
+def private MaterialName(raw : string) : string {
+    var name = trim(raw)
+    if (ends_with(name, ".mat")) {
+        name = trim(slice(name, 0, length(name) - 4))
+    }
+    return name
+}
+
+def private ShaderChoiceLabel(file_name : string; attributes : uint) : string {
+    if (attributes == 0xFFFFFFFFu) {
+        return "{file_name} (shader loading)"
+    }
+    if (attributes == 0u) {
+        return "{file_name} (position only)"
+    }
+    return "{file_name} ({DescribeMeshAttributes(attributes)})"
+}
+
+def private AddShaderChoice(domain : StorageDomain; ref : AssetFileRef) {
+    let file = TreeFile(domain, ref)
+    let attributes = GetShaderRequiredAttributes(file.guid)
+    if (attributes == 0xFFFFFFFEu) {
+        // UI/debug pass shader: a material built on it would never draw a mesh.
+        return
+    }
+    create_shader_names |> push(ShaderChoiceLabel(file.name, attributes))
+    create_shader_guids |> push(file.guid)
+}
+
+def private RebuildShaderChoices() {
+    clear(create_shader_names)
+    clear(create_shader_guids)
+    let slang = asset_ext_key(".slang")
+    ForEachFile(StorageDomain.GameShaders, slang) $(ref) {
+        AddShaderChoice(StorageDomain.GameShaders, ref)
+    }
+    ForEachFile(StorageDomain.EngineShaders, slang) $(ref) {
+        AddShaderChoice(StorageDomain.EngineShaders, ref)
+    }
+    create_shader_combo.value = 0
+}
+
+def private OpenCreateDialog() {
+    RebuildShaderChoices()
+    create_name_text = ""
+    InitInputText(create_name, "")
+    create_status = ""
+    open_popup(create_popup)
+}
+
+// Параметры нового материала приходят из схемы шейдера, поэтому файл сразу содержит все
+// поля, которые шейдер просит, со значениями по умолчанию.
+def private CreateMaterial() {
+    let name = MaterialName(create_name_text)
+    if (empty(name)) {
+        create_status = "enter a material name"
+        return
+    }
+    if (contains(name, "/") || contains(name, "\\") || contains(name, "\"")) {
+        create_status = "a name cannot contain path separators or quotes"
+        return
+    }
+    if (length(create_shader_guids) == 0) {
+        create_status = "no shader found: import a .slang shader first"
+        return
+    }
+    create_shader_combo.value = clamp(create_shader_combo.value, 0, length(create_shader_guids) - 1)
+    let shader_guid = create_shader_guids[create_shader_combo.value]
+    let path = "game/data/materials/{name}.mat"
+    if (!empty(fio::fread(path))) {
+        create_status = "material '{path}' already exists"
+        return
+    }
+
+    var created : MaterialConfig
+    created.name = name
+    created.shader = shader_guid
+
+    var inscope new_schema : array<MaterialParam>
+    var attributes = 0u
+    if (ParseSchemaText(GetMaterialSchema(shader_guid), new_schema, attributes)) {
+        if (attributes == MaterialCompat::NOT_MESH) {
+            create_status = "this shader is not a mesh material"
+            return
+        }
+        for (p in new_schema) {
+            if (p.kind == "texture") {
+                EnsureParamIn(created.textures, p)
+            } else {
+                EnsureParamIn(created.params, p)
+            }
+        }
+    }
+
+    if (!fio::fwrite(path, WriteMaterial(created))) {
+        create_status = "cannot write {path}"
+        return
+    }
+
+    // There is no file watcher: the new .mat is in the browser only after a rescan. Selecting it
+    // also marks the browser event handled, so the panel does not load the file twice.
+    RefreshAssetTrees()
+    SelectAssetPath(path)
+    let selection = GetSelectedFile()
+    if (selection.valid) {
+        last_browser_serial = selection.serial
+    }
+    close_current_popup(create_popup)
+    OpenMaterial(path)
+}
+
+def private DrawCreateDialog() {
+    popup_modal(create_popup, (text = "New Material", closable = true, flags = ImGuiWindowFlags.None)) {
+        input_text(create_name, (text = "Name", flags = ImGuiInputTextFlags.None))
+        create_name_text = create_name.value
+        if (length(create_shader_names) == 0) {
+            text("No mesh shader found under game/shaders or engine_content/shaders.")
+        } else {
+            combo(create_shader_combo, (text = "Shader", items = create_shader_names))
+            text("file: game/data/materials/{MaterialName(create_name_text)}.mat")
+        }
+        separator()
+        with_disabled(empty(MaterialName(create_name_text)) || length(create_shader_guids) == 0) {
+            if (button(CREATE_MATERIAL_OK, (text = "Create"))) {
+                CreateMaterial()
+            }
+        }
+        same_line()
+        if (button(CREATE_MATERIAL_CANCEL, (text = "Cancel"))) {
+            close_current_popup(create_popup)
+        }
+        if (!empty(create_status)) {
+            text("{create_status}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Панель
 // ---------------------------------------------------------------------------
 
 [profile]
 def DrawMaterialEditor() {
+    // Reimporting a texture/shader drops the loaded materials in EditorApp. The panel
+    // re-reads its .mat for the same reason: otherwise live edits would go to a retired
+    // material.
+    let asset_generation = AssetReimportGeneration()
+    if (asset_generation != last_asset_generation) {
+        last_asset_generation = asset_generation
+        if (material_loaded && !material_readonly) {
+            let reloaded_guid = ReloadMaterialFile(material_path)
+            if (reloaded_guid != 0ul) {
+                LoadMaterialAt(material_path, reloaded_guid, material_ref)
+            }
+        }
+    }
+
     window(MATERIAL_EDITOR_WIN, (text = "Material", closable = false, flags = ImGuiWindowFlags.None)) {
-        if (!material_path_initialized) {
-            InitInputText(MATERIAL_PATH, material_path)
-            material_path_initialized = true
+        // Picking a .mat in the Asset Browser opens it here. `serial` counts every click, so
+        // choosing the same file again re-opens it after Follow selection moved the panel away.
+        let selection = GetSelectedFile()
+        if (selection.valid && selection.serial != last_browser_serial && ends_with(selection.path, ".mat")) {
+            last_browser_serial = selection.serial
+            OpenMaterial(selection.path)
         }
 
-        input_text(MATERIAL_PATH, (text = "File", flags = ImGuiInputTextFlags.None))
-        material_path = MATERIAL_PATH.value
-
-        if (!auto_load_done) {
-            auto_load_done = true
-            LoadMaterial()
-        }
-
-        if (button(MATERIAL_LOAD_BTN, (text = "Load"))) {
-            LoadMaterial()
+        if (button(MATERIAL_NEW_BTN, (text = "New..."))) {
+            OpenCreateDialog()
         }
         same_line()
-        if (button(MATERIAL_SAVE_BTN, (text = "Save"))) {
-            SaveMaterial()
+        with_disabled(!material_loaded || material_readonly) {
+            if (button(MATERIAL_SAVE_BTN, (text = "Save"))) {
+                SaveMaterial()
+            }
         }
         same_line()
-        if (button(MATERIAL_APPLY_BTN, (text = "Apply to selected"))) {
-            ApplyMaterial()
+        with_disabled(!material_loaded) {
+            if (button(MATERIAL_APPLY_BTN, (text = "Apply to selected"))) {
+                ApplyMaterial()
+            }
         }
         same_line()
         checkbox(follow_state, "Follow selection")
@@ -716,26 +971,73 @@ def DrawMaterialEditor() {
 
         separator()
         if (material_loaded) {
+            text("file: {material_path}")
             text("name: {material.name}")
-            text("shader: {material.shader:d}")
-            text("params: {length(material.params)}")
+            let shader_path = GetAssetSourcePath(material.shader)
+            if (empty(shader_path)) {
+                text("shader: {material.shader:d}")
+            } else {
+                text("shader: {shader_path}")
+            }
             if (material_readonly) {
                 text("read-only: generated by the asset importer (artifacts/)")
             }
-            separator()
-            for (p in schema) {
-                DrawParam(p)
+
+            // Compatibility with the selected entity's mesh: the same contract the
+            // Inspector uses to filter its material list. Show the reason, not just a flag.
+            let mesh_guid = SelectedMeshGuid()
+            if (schema_attributes == MaterialCompat::NOT_MESH) {
+                text("mesh: not a mesh material")
+            } elif (mesh_guid != 0ul && GetMeshPointer(mesh_guid) == null) {
+                text("mesh: loading")
+            } elif (mesh_guid != 0ul) {
+                let missing = schema_attributes & (~GetMeshAttributeFlags(mesh_guid))
+                if (missing != 0u) {
+                    text("mesh: missing {DescribeMeshAttributes(missing)}")
+                } else {
+                    text("mesh: compatible ({DescribeMeshAttributes(schema_attributes)})")
+                }
             }
-            if (schema.empty()) {
-                text("shader has no material parameters or the schema is still loading")
+
+            var param_count = 0
+            var texture_count = 0
+            for (p in schema) {
+                if (p.kind == "texture") {
+                    texture_count++
+                } else {
+                    param_count++
+                }
+            }
+
+            separator_text(MAT_PARAMS_SECTION, (text = "Parameters ({param_count})"))
+            for (p in schema) {
+                if (p.kind != "texture") {
+                    DrawParam(p)
+                }
+            }
+            if (param_count == 0) {
+                text("No uniform parameters")
+            }
+
+            separator_text(MAT_TEXTURES_SECTION, (text = "Textures ({texture_count})"))
+            for (p in schema) {
+                if (p.kind == "texture") {
+                    DrawTextureParam(p)
+                }
+            }
+            if (texture_count == 0) {
+                text("No textures")
             }
         } else {
-            text("load a .mat file")
+            text("No material selected.")
+            text("Pick a .mat in the Asset Browser, or create one with New...")
         }
 
         if (!status.empty()) {
             separator()
             text("{status}")
         }
+
+        DrawCreateDialog()
     }
 }

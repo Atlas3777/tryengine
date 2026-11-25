@@ -1,0 +1,8 @@
+header: AssetMetaHeader = {
+	guid: u64 = 5254742270069193212
+	importer_type: string = "SlangImporter"
+	sub_assets: u64[] = [
+	]
+}
+settings: SlangImportSettings = {
+}

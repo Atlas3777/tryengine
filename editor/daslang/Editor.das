@@ -14,6 +14,7 @@ require trygame/Game
 
 require math
 require tryengine/EcsMacro
+require tryengine/Model
 require tryengine/Scene
 require tryengine/Profiling
 require tryengine/Time
@@ -26,6 +27,7 @@ require tryeditor/UiScreens
 require tryeditor/UndoRedo
 
 require tryResources
+require TryEditor
 
 require imgui
 require daslib/decs
@@ -33,6 +35,12 @@ require daslib/decs_boost
 
 var is_playing : bool = false
 var is_paused  : bool = false
+
+// Reimporting an asset changes the contents of materials/meshes but not their id. By this
+// point EditorApp has already dropped the loaded resources; here entity pointers are
+// re-resolved, same as after Play/Stop. While the new resource loads, the old pointer keeps
+// drawing, so the entity never disappears.
+var private last_asset_generation : uint64 = 0ul
 
 // Editor state. Declared below as a component, but transient and hidden: it never reaches a
 // scene or a prefab and the Inspector does not draw it.
@@ -99,6 +107,14 @@ def EditorStart(){
 
 [export, profile]
 def EditorUpdate(){
+    let asset_generation = AssetReimportGeneration()
+    if (asset_generation != last_asset_generation) {
+        last_asset_generation = asset_generation
+        Model::ReapplyPointers()
+    } elif (Model::HasPendingReapply()) {
+        Model::ReapplyPointers()
+    }
+
     // Play runs with a game world and its changes are thrown away on Stop, and the hotkeys are
     // gone with it: undo only records and replays edits of the scene being authored.
     UndoRedo::SetSuspended(is_playing)

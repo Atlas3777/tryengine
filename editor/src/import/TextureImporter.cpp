@@ -2,7 +2,6 @@
 
 #include "engine/core/MakeError.hpp"
 #include "engine/core/Random.hpp"
-#include "engine/resources/Json.hpp"
 
 namespace tryeditor {
 
@@ -23,14 +22,14 @@ tryengine::async::Task<ImportResult> TextureImporter::Import(ImportContext ctx) 
 
     AssetMeta<TextureImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<TextureImportSettings>>(ctx.meta_bytes);
+        auto parsed_meta = ParseAssetMeta<TextureImportSettings>(ctx.meta_bytes);
         if (parsed_meta.has_value()) {
             meta = eastl::move(*parsed_meta);
         } else {
             // A typo in the settings must not orphan the asset: keep the guid from the header and
             // bake with defaults, so the texture stays addressable and the log names the problem.
-            auto header = tryengine::resources::Json::DeserializePartial<HeaderOnly>(ctx.meta_bytes);
-            meta.header = header.has_value() ? header->header : GenerateDefaultMeta().header;
+            auto header = ParseMetaHeader(ctx.meta_bytes);
+            meta.header = header.has_value() ? eastl::move(*header) : GenerateDefaultMeta().header;
             LogError(LogCategory::Importer, "Texture '{}': .meta settings are invalid; using defaults",
                      eastl::string(ctx.path.data(), ctx.path.size()).c_str());
         }
@@ -58,10 +57,7 @@ tryengine::async::Task<ImportResult> TextureImporter::Import(ImportContext ctx) 
 
     result.main_guid = meta.header.guid;
 
-    auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<TextureImportSettings>>(meta);
-    if (!meta_bytes.has_value())
-        co_return LogAndMakeError("Failed to serialize texture meta");
-    result.meta_bytes = eastl::move(meta_bytes.value());
+    result.meta_bytes = WriteAssetMeta(meta);
 
     co_return result;
 }

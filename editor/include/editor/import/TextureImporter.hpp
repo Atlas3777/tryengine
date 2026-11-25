@@ -23,6 +23,10 @@ public:
 
     [[nodiscard]] tryengine::async::Task<ImportResult> Import(ImportContext ctx) const override;
 
+    [[nodiscard]] bool ValidateMeta(eastl::span<const uint8_t> meta_bytes) const override {
+        return ValidateAssetMeta<TextureImportSettings>(meta_bytes);
+    }
+
 private:
     [[nodiscard]] AssetMeta<TextureImportSettings> GenerateDefaultMeta() const;
 

@@ -1,3 +1,8 @@
+import engine.geometry;
+
+// Legacy example shader: these are the explicit vertex inputs it reads.
+public static const uint MESH_ATTRIBUTES = ATTR_BIT_NORMAL | ATTR_BIT_COLOR0 | ATTR_BIT_TEXCOORD0;
+
 struct VSInput {
     float3 inPos : POSITION;
     float4 inNormal : NORMAL;

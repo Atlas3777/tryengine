@@ -1,1 +1,13 @@
-{"header":{"guid":16194625335567122889,"importer_type":"TextureImporter","sub_assets":[]},"settings":{"format":"rgba8_srgb","generate_mips":true,"max_size":0,"filter":"linear","wrap":"repeat"}}
+header: AssetMetaHeader = {
+	guid: u64 = 16194625335567122889
+	importer_type: string = "TextureImporter"
+	sub_assets: u64[] = [
+	]
+}
+settings: TextureImportSettings = {
+	format: string = "rgba8_srgb"
+	generate_mips: bool = true
+	max_size: u32 = 0
+	filter: string = "linear"
+	wrap: string = "repeat"
+}

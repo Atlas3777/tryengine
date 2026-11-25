@@ -269,12 +269,51 @@ VkDescriptorSet ImGuiPass::GetEditorViewportTexture() {
     return GetTexture(EditorRender::kEditorScope, tryengine::graphics::RGTag_v<"ForwardColor">);
 }
 
+VkDescriptorSet ImGuiPass::GetAssetTexture(uint64_t guid, VkImageView view, VkSampler sampler) {
+    if (view == VK_NULL_HANDLE)
+        return VK_NULL_HANDLE;
+
+    auto it = asset_textures_.find(guid);
+    if (it != asset_textures_.end() && it->second.set != VK_NULL_HANDLE && it->second.view == view)
+        return it->second.set;
+
+    const VkDescriptorSet previous_set = it != asset_textures_.end() ? it->second.set : VK_NULL_HANDLE;
+
+    // The ImGui pool holds 64 sets in total and viewport textures share it. Asset previews
+    // live as long as the material panel is open, so keep only a handful and let the rest
+    // go through the normal retired-set path; the next request recreates them.
+    constexpr size_t kMaxAssetPreviews = 16;
+    if (it == asset_textures_.end() && asset_textures_.size() >= kMaxAssetPreviews) {
+        auto victim = asset_textures_.begin();
+        RetireDescriptorSet(victim->second.set);
+        asset_textures_.erase(victim);
+    }
+
+    VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (set == VK_NULL_HANDLE) {
+        LogError("ImGuiPass: пул дескрипторов исчерпан, превью текстуры {} не обновлено", guid);
+        return previous_set;
+    }
+
+    if (it != asset_textures_.end()) {
+        RetireDescriptorSet(it->second.set);
+        it->second = AssetTexture{view, set};
+    } else {
+        asset_textures_.emplace(guid, AssetTexture{view, set});
+    }
+    return set;
+}
+
 void ImGuiPass::ClearTextureCache() {
     device_.WaitIdle();
     for (auto& entry : viewport_textures_)
         if (entry.second.set)
             ImGui_ImplVulkan_RemoveTexture(entry.second.set);
     viewport_textures_.clear();
+    for (auto& entry : asset_textures_)
+        if (entry.second.set)
+            ImGui_ImplVulkan_RemoveTexture(entry.second.set);
+    asset_textures_.clear();
     for (const auto& entry : retired_sets_)
         if (entry.set)
             ImGui_ImplVulkan_RemoveTexture(entry.set);

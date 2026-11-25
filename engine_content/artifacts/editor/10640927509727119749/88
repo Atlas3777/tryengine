@@ -1,5 +1,7 @@
 ================ SHADER REFLECTION DUMP ================
 
+Required mesh attributes: position only
+
 ========================================================
   VERTEX SHADER BINDINGS
 ========================================================
@@ -22,13 +24,6 @@ Resource: "MaterialUBO" (Hash: 0x220A6028)
 ========================================================
   FULL PROGRAM COMBINED BINDINGS
 ========================================================
-Resource: "pc" (Hash: 0x4E4E5564)
-  - Scope: Pass (Set 0) | Kind: UniformBuffer
-  - Set: 0, Binding: 0, Size: 16 bytes
-  - Members:
-      * "objects" | Offset: 0 | Size: 8 | Type: Float
-      * "fragment" | Offset: 8 | Size: 8 | Type: Float
---------------------------------------------------------
 Resource: "MaterialUBO" (Hash: 0x220A6028)
   - Scope: Material (Set 1) | Kind: UniformBuffer
   - Set: 1, Binding: 0, Size: 48 bytes
@@ -38,5 +33,12 @@ Resource: "MaterialUBO" (Hash: 0x220A6028)
       * "cell_size" | Offset: 32 | Size: 4 | Type: Float
       * "line_width" | Offset: 36 | Size: 4 | Type: Float
       * "_padding" | Offset: 40 | Size: 8 | Type: Vec2
+--------------------------------------------------------
+Resource: "pc" (Hash: 0x4E4E5564)
+  - Scope: Pass (Set 0) | Kind: UniformBuffer
+  - Set: 0, Binding: 0, Size: 16 bytes
+  - Members:
+      * "objects" | Offset: 0 | Size: 8 | Type: Float
+      * "fragment" | Offset: 8 | Size: 8 | Type: Float
 --------------------------------------------------------
 

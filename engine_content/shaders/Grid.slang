@@ -11,6 +11,9 @@
 // устройство не включает shaderDemoteToHelperInvocation, а пиксель без попадания и так
 // отдаёт нулевую альфу.
 
+// Fullscreen editor grid, not a mesh material.
+public static const uint MESH_ATTRIBUTES = 0xFFFFFFFEu;
+
 struct GridCamera
 {
     float4x4 view;

@@ -115,6 +115,13 @@ struct ShaderReflectedVertexInput {
 
 struct ShaderReflectionData {
     eastl::vector<ShaderReflectedVertexInput> vertex_inputs;
+
+    // Битовая маска MeshAttributeFlags, которую читает вершинная стадия. Объявляется в
+    // исходнике шейдера (`MESH_ATTRIBUTES`), а не выводится из SPIR-V: движок забирает
+    // атрибуты через BDA, и в скомпилированном коде их имён уже нет. Редактор по этой маске
+    // и по флагам меша решает, какие материалы предлагать для меша.
+    uint32_t required_attributes = 0;
+
     eastl::vector<ShaderReflectedBinding> bindings;
 
     [[nodiscard]] const ShaderReflectedBinding* FindBindingByTag(RGTag tag) const {
@@ -196,6 +203,8 @@ inline void WriteReflection(eastl::vector<uint8_t>& out, const ShaderReflectionD
         WriteU32(out, vi.location);
     }
 
+    WriteU32(out, refl.required_attributes);
+
     WriteU32(out, static_cast<uint32_t>(refl.bindings.size()));
     for (const auto& b : refl.bindings) {
         WriteString(out, b.name);
@@ -227,6 +236,9 @@ inline Result<void> ReadReflection(eastl::span<const uint8_t> bytes, size_t& cur
         if (!ReadU32(bytes, cursor, vi.location))
             return LogAndMakeError("buffer overflow reading vertex input location");
     }
+
+    if (!ReadU32(bytes, cursor, out.required_attributes))
+        return LogAndMakeError("buffer overflow reading required mesh attributes");
 
     uint32_t binding_count = 0;
     if (!ReadU32(bytes, cursor, binding_count))

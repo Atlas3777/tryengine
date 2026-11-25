@@ -3,7 +3,6 @@
 #include "engine/core/MakeError.hpp"
 #include "engine/core/Random.hpp"
 #include "engine/graphics/ShaderBinary.hpp"
-#include "engine/resources/Json.hpp"
 
 namespace tryeditor {
 
@@ -24,8 +23,16 @@ tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) co
 
     AssetMeta<SlangImportSettings> meta;
     if (!ctx.meta_bytes.empty()) {
-        auto parsed_meta = tryengine::resources::Json::Deserialize<AssetMeta<SlangImportSettings>>(ctx.meta_bytes);
-        meta = parsed_meta.value_or(GenerateDefaultMeta());
+        auto parsed_meta = ParseAssetMeta<SlangImportSettings>(ctx.meta_bytes);
+        if (parsed_meta.has_value()) {
+            meta = eastl::move(*parsed_meta);
+        } else {
+            // Keep the guid: a shader artifact under a new id would not be found by materials.
+            auto header = ParseMetaHeader(ctx.meta_bytes);
+            meta.header = header.has_value() ? eastl::move(*header) : GenerateDefaultMeta().header;
+            LogError(LogCategory::Importer, "Shader '{}': .meta is invalid; using defaults",
+                     eastl::string(ctx.path.data(), ctx.path.size()).c_str());
+        }
     } else {
         meta = GenerateDefaultMeta();
     }
@@ -40,34 +47,23 @@ tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) co
 
     ShaderCompileResult& compiled = *compile_result;
 
-    if (compiled.kind == ShaderAssetKind::Shader) {
-        eastl::vector<uint8_t> packed_binary = tryengine::graphics::PackShaderBinary(compiled.shader);
+    eastl::vector<uint8_t> packed_binary = tryengine::graphics::PackShaderBinary(compiled.shader);
 
-        ProducedArtifact debug_artifact{};
-        debug_artifact.sub_guid = 88;
-        debug_artifact.target = ArtifactTarget::Editor;
-        debug_artifact.extension = ".reflection.txt";
-        debug_artifact.bytes.assign(
-            reinterpret_cast<const uint8_t*>(compiled.reflection_dump.data()),
-            reinterpret_cast<const uint8_t*>(compiled.reflection_dump.data()) + compiled.reflection_dump.size());
-        result.artifacts.push_back(std::move(debug_artifact));
+    ProducedArtifact debug_artifact{};
+    debug_artifact.sub_guid = 88;
+    debug_artifact.target = ArtifactTarget::Editor;
+    debug_artifact.extension = ".reflection.txt";
+    debug_artifact.bytes.assign(
+        reinterpret_cast<const uint8_t*>(compiled.reflection_dump.data()),
+        reinterpret_cast<const uint8_t*>(compiled.reflection_dump.data()) + compiled.reflection_dump.size());
+    result.artifacts.push_back(std::move(debug_artifact));
 
-        ProducedArtifact artifact{};
-        artifact.sub_guid = 0;
-        artifact.target = ArtifactTarget::Runtime;
-        artifact.extension = ".tshd";
-        artifact.bytes = std::move(packed_binary);
-        result.artifacts.push_back(std::move(artifact));
-    } else {
-        ProducedArtifact artifact{};
-        artifact.sub_guid = 0;
-        artifact.target = ArtifactTarget::Runtime;
-        artifact.extension = ".slang-module";
-        artifact.bytes = std::move(compiled.module_ir);
-        result.artifacts.push_back(std::move(artifact));
-
-        LogInfo(LogCategory::Importer, "Slang module '{}' imported", compiled.module_name.c_str());
-    }
+    ProducedArtifact artifact{};
+    artifact.sub_guid = 0;
+    artifact.target = ArtifactTarget::Runtime;
+    artifact.extension = ".tshd";
+    artifact.bytes = std::move(packed_binary);
+    result.artifacts.push_back(std::move(artifact));
 
     result.dependencies.reserve(compiled.dependencies.size());
     for (const ShaderDependency& dependency : compiled.dependencies)
@@ -75,11 +71,7 @@ tryengine::async::Task<ImportResult> SlangImporter::Import(ImportContext ctx) co
 
     result.main_guid = meta.header.guid;
 
-    auto meta_bytes = tryengine::resources::Json::Serialize<AssetMeta<SlangImportSettings>>(meta);
-    if (meta_bytes.has_value())
-        result.meta_bytes = eastl::move(meta_bytes.value());
-    else
-        LogError("Не удалось сериализовать мету");
+    result.meta_bytes = WriteAssetMeta(meta);
 
     co_return result;
 }

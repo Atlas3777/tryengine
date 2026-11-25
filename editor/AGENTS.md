@@ -15,19 +15,45 @@
 - UV пакуются в half через `das::das_float_to_float16` (`<daScript/misc/vectypes.h>`).
   Это округление RTNE; для UV разница с усечением несущественна, но не меняй округление
   без причины.
+- Движок Z-up (гравитация `−Z`, камера смотрит вдоль `+Y` и держит `+Z` вверх), glTF —
+  Y-up. `settings.up_axis` в `.meta` модели называет ось исходника, а импортёр композирует
+  поворот на 90° в **корни сцены** (`GltfUpAxis.hpp`): `world = R * T`, ровно как
+  `ComposeWorld` для повёрнутого родителя. Вершины и локальные трансформы детей остаются в
+  системе файла, поэтому меш-артефакт, адресованный без ноды, сохраняет исходную ориентацию.
+  У моделей, чей корень уже несёт обратный поворот экспортёра (`RotX(-90)` у Sketchfab/FBX),
+  конверсия гасит его в identity — это нормально: значение имеет только итоговое `R * T`.
+  Проверка без GUI — `tools/agent/gltf-probe.sh`.
+- Ось — **нативный enum** `tryeditor::GltfUpAxis` (`Y`, `Z`, `X`), забинженный в
+  `Module_TryEditor.cpp` через `DAS_BASE_BIND_ENUM`: daslang видит настоящий тип, поэтому в
+  зеркале поле `up_axis : GltfUpAxis`, а форма рисует для него комбо из `each()` и имён
+  значений — ни `@choices`, ни таблицы осей в скрипте нет. В `.meta` enum пишется **именем**
+  (`up_axis: string = "Y"`), как это делает `string(enum)` в ConfigFormat; кодек C++ принимает
+  и строчное имя (`y`), чтобы правка файла руками не ломала импорт. Имя вне списка — ошибка
+  импорта, а не молчаливая исходная ориентация.
 
 ## Slang: компилятор и модули
 
 - Компилятор — `ShaderCompilerSystem` (система `Engine`, только редактор). `IGlobalSession`
   в Slang не thread-safe, поэтому она создаётся по одной на контекст и защищена мьютексом;
   импортёр не должен создавать `IGlobalSession` на каждый `.slang`.
-- `.slang` без точек входа `vsMain`/`fsMain` (и фолбэков) считается модулем: импорт даёт
-  артефакт `.slang-module`. Модуль лежит рядом с шейдером или в одном из search paths,
-  подключается через `import ModuleName;`. Объявленное в модуле API должно быть `public`.
-- Шейдер компилируется из исходников модулей через `SessionDesc::searchPaths`, поэтому
-  порядок импорта ассетов не важен. Реально прочитанные модули и include-файлы попадают в
-  `ImportResult::dependencies`; `AssetPipeline` пишет их в штамп, и правка модуля
-  переимпортирует зависимые шейдеры.
+- Шейдер — ассет в `engine_content/shaders` или `game/shaders` (домены `EngineShaders` /
+  `GameShaders`): `.slang.meta` с guid, runtime-артефакт `.tshd` (SPIR-V обеих стадий плюс
+  рефлексия для материала) и editor-артефакт `.reflection.txt`. Импортёр требует **обе**
+  точки входа; файл без них — ошибка, а не модуль.
+- Общий код шейдеров — модули в `engine_content/shader_modules` и `game/shader_modules`.
+  Это обычные исходники: **без `.meta`, guid и артефакта**, в Asset Browser их нет. Они
+  подключаются через `SessionDesc::searchPaths` (`ShaderCompilerConfig::module_search_paths`)
+  как `import engine.geometry;` / `import game.common;` — путь модуля задаёт папка
+  (`engine_content/shader_modules/engine/geometry.slang`). Порядок импорта ассетов не важен.
+- В модуле всё, что использует импортирующий шейдер, должно быть `public`, **включая поля
+  структур**: по умолчанию члены модуля внутренние. Импорт не транзитивен: если шейдеру
+  нужен тип из `engine.geometry`, он импортирует `engine.geometry` сам, даже когда другой
+  импортированный модуль уже это сделал.
+- Реально прочитанные модули и include-файлы попадают в `ImportResult::dependencies`;
+  `AssetPipeline` пишет их в штамп, и правка модуля переимпортирует зависимые шейдеры.
+- Проверка без GUI — `tools/agent/shader-probe.sh`: собирает настоящий
+  `ShaderCompilerSystem.cpp` и требует SPIR-V обеих стадий для каждого шейдера, а также
+  падает, если под `shader_modules` появились `.meta` или артефакты.
 
 
 ## Материалы: ConfigFormat и редактор
@@ -36,6 +62,13 @@
   `params: Params = { ... }` (uniform-параметры UBO) и `textures: Textures = { ... }`
   (сэмплеры, значение — u64 id текстуры). Оба блока динамические: имена и типы задаёт
   рефлексия Slang, C++ конкретный набор полей не знает.
+- Второй контракт шейдера с материалом — `MESH_ATTRIBUTES` в исходнике `.slang`
+  (`public static const uint MESH_ATTRIBUTES = ATTR_BIT_NORMAL | ATTR_BIT_TEXCOORD0;`).
+  Это маска `MeshAttributeFlags`, которую читает вершинная стадия; `0` — только позиции,
+  `0xFFFFFFFEu` — «не материал для меша» (UI, debug-проходы). `ShaderCompilerSystem`
+  разбирает объявление, `ShaderReflectionData::required_attributes` едет в `.tshd`, а
+  `BuildMaterialSchemaConfig` кладёт маску в схему материала. Редактор сравнивает её с
+  `Mesh::attribute_flags` и предлагает только совместимые `.mat` (`tryeditor/MaterialCompat`).
 - JSON-варианта материала нет: `MaterialLoader` разбирает только `MaterialConfig`, а
   glTF-импортёр пишет суб-ассеты тем же `WriteMaterialConfig`. Меняется содержимое
   артефактов — поднимай `GltfImporter::GetVersion()`, иначе старые JSON-артефакты
@@ -54,15 +87,38 @@
   `string`. Вернуть C++-объект `das::string` нельзя: его тип для скрипта — handled
   `das_string`, а `cast_res<das::string>` в ABI биндинга нет. Пока шейдер не загружен,
   функция отдаёт `null`.
-- Панель — `editor/daslang/Material.das`. При старте сама загружает
-  `game/data/materials/standard.mat`, дальше следует за выделением (галка Follow
-  selection): материал сущности — это оверрайд `model.material`, а если он пуст —
-  дефолт из артефакта меша (`MeshDefaultMaterial`), дальше -> путь из `AssetRegistry`
-  (`GetAssetFilePath`) -> файл. Follow selection реагирует не только на смену
-  `selected_eid`, но и на смену эффективного материала у той же сущности.
-  `IsImportedAsset(id)` отличает артефакт импортёра от авторитетного файла:
+- Панель — `editor/daslang/Material.das`. Стартует пустой: материал открывается выбором
+  `.mat` в Asset Browser (`AssetSelection::serial` растёт на каждый клик, поэтому повторный
+  выбор того же файла — тоже событие), кнопкой **New...** или галкой Follow selection.
+  Follow selection следует за выделением: материал сущности — это оверрайд
+  `model.material`, а если он пуст — дефолт из артефакта меша (`MeshDefaultMaterial`),
+  дальше -> путь из `AssetRegistry` (`GetAssetFilePath`) -> файл. Follow selection
+  реагирует не только на смену `selected_eid`, но и на смену эффективного материала у
+  той же сущности.
+- **New...** открывает модальный диалог: имя и шейдер. Список шейдеров собирается из
+  `GameShaders` и `EngineShaders`, `GetShaderRequiredAttributes` отсекает шейдеры не для
+  меша (`0xFFFFFFFE`), а подпись строки показывает требования к мешу. Материал пишется в
+  `game/data/materials/<имя>.mat` со всеми полями схемы шейдера (значения по умолчанию),
+  после чего `RefreshAssetTrees`/`SelectAssetPath` показывают его в браузере.
+- `IsImportedAsset(id)` отличает артефакт импортёра от авторитетного файла:
   импортированный показывается read-only, не пишется и не назначается другой сущности
   (для переиспользования его сохраняют копией в `data/`).
+- Параметры и текстуры рисуются двумя секциями (`separator_text`): у uniform-полей
+  обычные виджеты, у текстур — превью (дескриптор из `ImGuiPass::GetAssetTexture`),
+  авторский путь (`GetAssetSourcePath`) и `Choose...`; guid в поле не вводится. Значение
+  в `.mat` по-прежнему guid: в паке нет таблицы путей. Список текстур — `OpenTexturePicker`,
+  домены `game/assets` + `engine_content/assets`.
+- `model.material` в Инспекторе фильтруется по мешу: `AssetPicker` получает `mesh_guid`
+  и скрывает `.mat`, чей шейдер требует отсутствующих атрибутов (`MaterialCompat`).
+  `Apply to selected` в панели материала тоже отказывает несовместимому материалу. Пока
+  шейдер не загружен, совместимость считается неизвестной и материал показывается —
+  иначе список был бы пуст на старте.
+- Переимпорт (кнопки **Import Settings** / `RequestReimport`) сбрасывает ресурс и все
+  загруженные материалы в `EditorApp`; `EditorUpdate` по `AssetReimportGeneration`
+  перерезолвливает указатели (`Model::ReapplyPointers`), а панель материала перечитывает
+  свой `.mat`. Старый ресурс остаётся в retired-кеше, поэтому кадр не повисает. Шрифт,
+  перезапечённый в рантайме, подхватится только после перезапуска: `UiSystem` держит
+  собственный `Font`-handle.
 - Правка применяется сразу в живой `Material`: `ApplyMaterialConfigText` парсит тот же
   ConfigFormat, который записал бы Save, и пишет значения через `SetParamRaw` в замапленный
   UBO (`ApplyMaterialConfigLive` в `MaterialLoader.hpp`). UBO и текстуры не пересоздаются,
@@ -91,12 +147,16 @@
   `@hide`, `@min`, `@max`, `@speed`, `@readonly` и `@asset = "kind:ext"`.
 - Asset picker задаётся аннотацией самого поля, а не типом значения:
   `@asset = "data:mat"` над обычным `string`. `kind` — домен хранения
-  (`engine`/`game`/`content`/`data`), а не подпапка; `ext` фильтрует всё дерево домена,
+  (`engine`/`game`/`content`/`data`/`engine_shaders`/`game_shaders`), а не подпапка; `ext`
+  фильтрует всё дерево домена,
   поэтому сцены и префабы ищутся по всему `content`. Точка в `ext` необязательна:
   `data:mat` и `data:.mat` — одно и то же. Разбор аннотации — `tryengine/AssetKind`
   (`ParseAssetField` -> `AssetFieldInfo`), сам список — `tryeditor/AssetPicker`, который
   рисует input с кнопкой `...`. Отдельного реестра видов и привязки «имя компонента ->
-  kind» нет; malformed-аннотация выводится текстом вместо виджета.
+  kind» нет; malformed-аннотация выводится текстом вместо виджета. Picker принимает
+  несколько доменов (`domains`) и несколько расширений (`ext_keys`), поэтому текстуры
+  ищутся сразу в game и engine; `AssetPickerSelectionGuid` отдаёт guid импортируемого
+  ассета.
 - Обёрток-структур (`MaterialRef`, `SceneRef`, `PrefabRef`) больше нет: ссылка на ассет —
   это строка. `model.material` (`tryengine/Types`) — путь к авторитетному `.mat`,
   пустая строка означает материал по умолчанию из артефакта меша.
@@ -188,10 +248,15 @@
 
 - Корень дерева — домен `tryeditor::StorageDomain`; каталоги собраны в одной таблице
   `kStorageRoots` (`editor/include/editor/AssetPipeline.hpp`). Ассеты: `game/assets` и
-  `engine_content/assets` — `.meta` с guid, артефакты импорта. Авторитетные файлы:
-  `game/content` (сцены, префабы) и `game/data` (материалы и прочие атомы) — у них нет ни
-  `.meta`, ни guid, ни артефактов, дерево строится одним `AssetScanner::ScanDirectory` без
-  конвейера импорта.
+  `engine_content/assets`, а также шейдеры в `game/shaders` и `engine_content/shaders` —
+  `.meta` с guid, артефакты импорта (у шейдеров и у остальных ассетов они лежат в общем
+  `artifacts/` своего слоя). Авторитетные файлы: `game/content` (сцены, префабы) и
+  `game/data` (материалы и прочие атомы) — у них нет ни `.meta`, ни guid, ни артефактов,
+  дерево строится одним `AssetScanner::ScanDirectory` без конвейера импорта.
+  `shader_modules` — вообще не домен: модули не импортируются и в деревья не попадают.
+- Файл в asset-домене без зарегистрированного по расширению импортёра (README, служебный
+  файл) — не ассет: конвейер его пропускает, а не считает битым ассетом. `.meta` без
+  ассета тоже игнорируется.
 - Узел-файл хранит `UiFile::ext` — ключ расширения на 8 байт (`editor/include/editor/AssetExt.hpp`).
   Расширение строкой не хранится: поиск "все `.mat` в `data`" — одно сравнение `uint64` на
   файл. Ключ считает `ExtKey`, он же отдаётся скрипту как `asset_ext_key`.
@@ -200,7 +265,9 @@
   в кеше держит только индексы узлов, поэтому кеш не может пережить свои строки.
 - Файлового вотчера ещё нет (`FileWatcher` — заглушка): новые файлы появляются в деревьях
   только после `rebuild_asset_trees()` (кнопка Refresh в Asset Browser, обёртка
-  `RefreshAssetTrees()`), которая заново сканирует все четыре корня.
+  `RefreshAssetTrees()`), которая заново сканирует все шесть доменов. `int(StorageDomain)`
+  используется как индекс в скриптовых таблицах, поэтому новые домены добавляются только в
+  конец перечисления.
 
 ## Панели ImGui (daslang)
 
@@ -224,6 +291,11 @@
   `table<string; NarrativeState>` / `TreeNodeState` и передавай `[key]`; `with_id` даёт
   уникальный ImGui ID, но не отменяет проверку call site (пример — дерево компонентов в
   `PrefabInspector.das`).
+- **`var x : auto(T)` — параметр по значению.** Дженерик, который должен менять объект
+  вызывающего, объявляется `var x : auto(T)&`; без `&` запись уходит в копию и теряется молча
+  (форма Import Settings так «рисовала, но не сохраняла» ни одного поля). Это касается и
+  промежуточного звена: дженерик, принимающий структуру целиком, тоже нужен с `&`. Сюита
+  `tools/tests/generic_reference.das` держит это правило, включая enum-путь комбо.
 - `Hierarchy` при смене `selected_eid` (viewport, спавн префаба, Inspector, `SetSelectedEntity`)
   один кадр принудительно раскрывает цепочку родителей и выбранный узел, а если узел вне
   видимой области — скроллит к нему (`SetNextItemOpen` + `SetScrollHereY`). Force снимается
@@ -411,7 +483,7 @@
   локальных позах.
 - Формат префаба — `version: u32 = 7`, трансформ узла пишется как `transform: Transform = {
   position: ..., rotation: ..., scale: ... }`, внешность — `model: ModelRender = { mesh: ...,
-  material: "" }`. Импортёр glTF (`GetVersion() == 12`) пишет тот же формат и
+  material: "" }`. Импортёр glTF (`GetVersion() == 13`) пишет тот же формат и
   печёт материал по умолчанию в шапку меш-артефакта, поэтому старые артефакты
   переимпортируются. `Prefab::BuildPrefabTextFromEntity` обнуляет `transform.position`
   корня, rotation/scale сохраняет.
@@ -435,7 +507,7 @@
 ## Transform gizmo
 
 - Отрисовка и ввод разделены намеренно. `GizmoPass` (`editor/src/render/GizmoPass.cpp`,
-  шейдер `engine_content/assets/shaders/Gizmo.slang`) строит треугольники стрелок,
+  шейдер `engine_content/shaders/Gizmo.slang`) строит треугольники стрелок,
   плоскостей и колец на CPU и рисует их поверх `SceneColor` без depth-теста; мышь он не
   читает. `editor/daslang/Gizmo.das` владеет режимом/пространством, экранно-постоянным
   размером, аналитическим picking'ом и драгом. Picking идёт по точным формам ручек в
@@ -494,6 +566,7 @@
 - Шейдер — такой же ассет, как `Grid.slang`: первый запуск редактора импортирует его и
   создаёт артефакты в `engine_content/artifacts/` (они генерируются и в git не коммитятся,
   см. корневой `AGENTS.md`). Без запущенного редактора папки с новым guid нет — это нормально.
+  Исходник лежит в `engine_content/shaders`, общий код — в `engine_content/shader_modules`.
 - Горячие клавиши: `W`/`E`/`R` — move/rotate/scale, `X` — world/local, `V` — scale with
   distance, `Ctrl` при драге — снап (0.5 юнита, 15°, 0.05 scale). Пока зажат RMB (полёт
   камеры), W/E/R не переключают режим. Те же действия есть в меню `Gizmo`. Читаются они
@@ -535,11 +608,23 @@
 - `TextureProcessor` теперь умеет и сжатые (BC через rdo_bc), и несжатые 8-битные форматы
   (`r8`, `rg8`, `rgba8`, sRGB) и принимает `generate_mips`/`max_size`. Для UI спрайтов
   ставьте `rgba8_srgb`, `generate_mips = false`, `wrap = clamp`.
-- Панель **Import Settings** (`editor/daslang/AssetSettings.das`) показывает сводку `.meta`
-  выбранного в Asset Browser файла: C++ `DescribeAssetMeta` читает `<path>.meta`, форматирует
-  известные настройки (текстура, шрифт) и дописывает сырой JSON. Она только читает: правка
-  `.meta` перезапекается при следующем старте редактора, отдельного «reimport one asset» в
-  `AssetPipeline` пока нет.
+- `.meta` — документ ConfigFormat из двух блоков: `header` (`guid`, `importer_type`,
+  `sub_assets`) и `settings` (настройки импорта). C++-сторона — `AssetMetaHeader.hpp`
+  (`ParseAssetMeta`/`WriteAssetMeta`, `MetaSettingsCodec<T>` рядом с типом настроек в
+  `editor/include/editor/import/*.hpp`); daslang-зеркало полей — `ImportSettings.das`.
+  Имена полей, типы и значения по умолчанию обязаны совпадать: поле, добавленное в C++,
+  появляется в форме только после правки зеркала, а сохранение из формы пишет только
+  известные ей поля.
+- Панель **Import Settings** (`editor/daslang/AssetSettings.das`) раскладывает
+  `settings` на поля по структуре (`apply` + аннотации `@caption`, `@choices`,
+  `@multiline`), а не показывает сырой текст. Идентичность (`guid`, `importer_type`,
+  `sub_assets`) только читается: на guid ссылаются материалы, сцены и пак. Сохранение
+  проверяет, что документ разбирается кодеком импортёра (`IAssetImporter::ValidateMeta`),
+  кнопки **Reimport** / **Save & Reimport** ставят переимпорт в очередь
+  (`AssetPipeline::RequestReimport`, фоновая задача). После записи артефактов main thread
+  сбрасывает ресурс и зависимые материалы; скрипты узнают об этом по
+  `AssetReimportGeneration`. Форма рисуется и проверяется без GUI тестом
+  `tools/tests/import_settings.das` (headless ImGui).
 
 ## Шрифты игрового UI
 
@@ -596,8 +681,10 @@
   один клик и ставил бы коробку, и выбирал/тянул объект за ней. Порядок в `DrawEditor` важен:
   `DrawProBuilder` → `DrawSceneViewPort` → `UpdateProBuilderPlacement`; `DrawEditor` идёт из
   `ImGuiPass::Collect`, а `PickingPass` собирается позже.
-- Материал — `game/data/materials/grid.mat`, шейдер — `engine_content/assets/shaders/
+- Материал — `game/data/materials/grid.mat`, шейдер — `engine_content/shaders/
   GridMaterial.slang` (обязательный `.meta` с guid; шейдер импортируется на старте редактора).
+  Вершинный путь и push constants он берёт из `engine.geometry` / `engine.opaque`, а не
+  копирует из `Standard.slang`.
   Сетка рисуется в объектном пространстве с линиями на границах коробки: 1 м — одна клетка
   при любом размере. Плоскость грани выбирается по **локальной** нормали (`localNormal` из
   вершинного шейдера): по мировой нормали повёрнутая стена теряла одну ось сетки (были только

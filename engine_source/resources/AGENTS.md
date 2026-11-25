@@ -5,7 +5,8 @@
 ## Идентичность ассетов
 
 - `uint64_t` — единственная идентичность в рантайме и в паке. Ресурсы двух видов:
-  - импортируемый (`game/assets`, `engine_content/assets`): `.meta` с guid, суб-ассеты
+  - импортируемый (`game/assets`, `engine_content/assets`, `game/shaders`,
+    `engine_content/shaders`): `.meta` с guid, суб-ассеты
     `CombineID(main_guid, имя)`, артефакт в `artifacts/<main>/<sub>`; id — guid из меты;
   - авторитетный (`game/content`, `game/data`): файл без `.meta`, артефакта и guid;
     id — `core::PathId(путь)`.
