@@ -79,13 +79,14 @@ cmake --build build-debug --target editor -j "$(nproc)"
   отдаёт в скрипт: `engine_source/platform/src/Module_Input.cpp`,
   `engine_source/resources/src/Module_AsyncFileManager.cpp`,
   `engine_source/graphics/src/Module_Renderer.cpp` и `Module_Resources.cpp`,
-  `engine_source/physics/src/Module_Physics.cpp`, `editor/src/Module_TryEditor.cpp`.
+  `engine_source/physics/src/Module_Physics.cpp`, `editor/src/Module_TryEditor.cpp`,
+  `engine_source/core/src/Module_Log.cpp` (журнал — тип ядра).
 - Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
-  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`; агрегат для всех — `das_modules`
-  (`tools/agent/build.sh modules`).
+  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`; агрегат для
+  всех — `das_modules` (`tools/agent/build.sh modules`).
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
@@ -124,6 +125,8 @@ daslang -dry-run \
   -load_module "$PWD/modules/tryAsyncFile" \
   -load_module "$PWD/modules/tryeditor" \
   -load_module "$PWD/modules/tryPhysics" \
+  -load_module "$PWD/modules/tryUi" \
+  -load_module "$PWD/modules/tryLog" \
   -load_module /opt/daslang/modules/dasLLVM \
   <файл.das>
 ```
@@ -341,6 +344,14 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   создаёт и не чинит отсутствующую. `Scene::Load(path)` не принимает callback: успех —
   это `bool`, а scene-specific setup идёт сразу после него. `tryengine/startup`
   автоматически не загружается. Подробности — `engine_source/daslang/LOADER.md`.
+- Журнал — один на C++ и скрипты: нативные `LogInfo`/`LogWarn`/`LogError`/`LogCritical`/
+  `LogTrace` модуля `tryLog` (доступны через `tryengine/Log`) повторяют C++
+  `LogInfo` и компанию; категория — второй, необязательный аргумент (`LogCategory.Physics`),
+  по умолчанию `Script`. Запись идёт в консоль, в кольцо `LogHistory` (окно **Log** в
+  редакторе) и в `logs/engine-<дата>.log`; файл открыт до выхода, поэтому `tail -f` видит
+  строки сразу. Окно фильтрует по важности и категории масками в C++, кнопка Clear чистит
+  только кольцо (файл — история запуска). Источник скриптовой строки — место вызова в
+  скрипте, так что окно и файл для обоих языков адресуют одно и то же место.
 - Форматирование: `das-fmt --verify` (или `das-fmt` для перезаписи). Линт: MCP `lint`.
 
 ## 7. Стиль кода
@@ -398,7 +409,8 @@ Conventional стиле на английском языке.
 
 - `tools/agent/` — `doctor.sh` (проверка окружения), `build.sh`, `das-check.sh`,
   `editor-check.sh`, `fmt.sh`, `tidy.sh`, `verify.sh`, `test.sh` (headless-сюита поведения
-  `.das`), `undo-probe.sh` (история undo/redo на мире DECS без GUI).
+  `.das`), `undo-probe.sh` (история undo/redo на мире DECS без GUI), `log-probe.sh`
+  (файловый sink, кольцо журнала, фильтр и Clear без GUI).
 - `tools/tests/` — сама сюита: по файлу на тему, каждый тест — самостоятельная программа.
   Соглашения о `Check`, коде возврата и `//! expect:` — в §4.
 - `tools/prof-report.sh [file.tryprof]` — отчёт по кадр-логу (по умолчанию самый свежий из

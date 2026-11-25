@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "engine/core/Assert.hpp"
+#include "engine/core/LogHistory.hpp"
 
 namespace tryengine::core {
 
@@ -57,11 +58,13 @@ eastl::string_view to_string(LogCategory category) {
 
 Logger& Logger::instance() {
     static Logger logger;
-    // Регистрируем консольный sink лениво, один раз, при первом обращении —
-    // так логи есть с самого старта, даже до того как движок настроит
-    // файловый/ImGui sink в своей точке входа.
+    // Консоль и история в памяти регистрируются лениво, один раз, при первом обращении —
+    // так записи видны с самого старта, даже до того как приложение настроит файловый sink
+    // и откроет окно журнала. Историю читает окно редактора; она же делает один журнал
+    // общим для C++ и daslang.
     static const bool bootstrapped = [&logger] {
         logger.add_sink(eastl::unique_ptr<ILogSink>(new ConsoleLogSink()));
+        logger.add_sink(eastl::unique_ptr<ILogSink>(new HistoryLogSink()));
         return true;
     }();
     (void) bootstrapped;
@@ -83,11 +86,19 @@ void Logger::remove_sink(ILogSink* sink) {
 
 void Logger::log(LogLevel level, LogCategory category, const std::source_location& location,
                  eastl::string_view message) {
+    log(level, category, eastl::string_view(location.file_name()), location.line(), message);
+}
+
+void Logger::log(LogLevel level, LogCategory category, eastl::string_view file, uint32_t line,
+                 eastl::string_view message) {
     if (level < m_min_level)
         return;
 
-    const LogRecord record{level, category, message, location};
+    const LogRecord record{level, category, message, file, line};
+    dispatch(record);
+}
 
+void Logger::dispatch(const LogRecord& record) {
     std::lock_guard lock(m_mutex);
     for (auto& sink : m_sinks)
         sink->write(record);
@@ -100,8 +111,14 @@ void ConsoleLogSink::write(const LogRecord& record) {
            << "[" << to_string(record.category).data() << "] ";
     stream.write(record.message.data(), static_cast<std::streamsize>(record.message.size()));
 
-    if (record.level >= LogLevel::Error)
-        stream << "\n  at " << record.location.file_name() << ":" << record.location.line();
+    if (record.level >= LogLevel::Error) {
+        stream << "\n  at ";
+        if (!record.file.empty())
+            stream.write(record.file.data(), static_cast<std::streamsize>(record.file.size()));
+        else
+            stream << "<unknown>";
+        stream << ":" << record.line;
+    }
 
     stream << "\n";
 }

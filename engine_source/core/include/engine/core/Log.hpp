@@ -61,14 +61,19 @@ eastl::string_view to_string(LogLevel level);
 eastl::string_view to_string(LogCategory category);
 
 // Одно готовое сообщение, которое получает каждый sink.
-// message валиден только на время вызова write() — если sink'у нужно
+// message/file валидны только на время вызова write() — если sink'у нужно
 // сохранить сообщение (например асинхронная запись в файл), он обязан
 // скопировать его в eastl::string сам.
+//
+// Источник — пара file/line, а не std::source_location: C++ берёт её из
+// source_location, а daslang-биндинг (tryLog) — из LineInfoArg вызова скрипта,
+// и std::source_location вручную сконструировать нельзя.
 struct LogRecord {
     LogLevel level;
     LogCategory category;
     eastl::string_view message;
-    std::source_location location;
+    eastl::string_view file;
+    uint32_t line;
 };
 
 // Точка расширения. Реализуйте этот интерфейс для ImGui-консоли,
@@ -100,9 +105,13 @@ public:
     }
 
     void log(LogLevel level, LogCategory category, const std::source_location& location, eastl::string_view message);
+    // Источник, который нельзя выразить через std::source_location (строки скрипта).
+    void log(LogLevel level, LogCategory category, eastl::string_view file, uint32_t line, eastl::string_view message);
 
 private:
     Logger() = default;
+
+    void dispatch(const LogRecord& record);
 
     eastl::vector<eastl::unique_ptr<ILogSink>> m_sinks;
     LogLevel m_min_level = LogLevel::Trace;

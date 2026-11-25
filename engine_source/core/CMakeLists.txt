@@ -51,3 +51,7 @@ target_compile_definitions(engine_core PUBLIC
         DAS_MOD_EXPORTS
         "DAS_ROOT_DIR=\"${DAS_SDK_ROOT}\""
 )
+
+# Журнал (Logger) отдаётся в daslang тем же биндингом, что C++: скрипт пишет в те же
+# sink'и (консоль, кольцо окна, файл), что и LogInfo/LogError из C++.
+tryengine_add_das_module(tryLog_shared tryLog src/Module_Log.cpp engine::core)

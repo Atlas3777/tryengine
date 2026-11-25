@@ -25,6 +25,7 @@ require tryeditor/BuildManager
 require tryeditor/Material
 require tryeditor/PrefabAuthoring
 require tryeditor/ProfilerWindow
+require tryeditor/LogWindow
 require tryeditor/Gizmo
 require tryeditor/ProBuilder
 require tryeditor/ColliderDebug
@@ -154,6 +155,7 @@ def DrawMainMenu() {
             menu_label(WIN_PROFILER, (text = "Profiler", selected = true))
             menu_label(WIN_PROBUILDER, (text = "ProBuilder", selected = true))
             menu_label(WIN_PAK_MGR, (text = "Pak Manager", selected = true))
+            menu_label(WIN_LOG, (text = "Log", selected = true))
         }
 
         menu(GIZMO_MENU, (text = "Gizmo", enabled = true)) {
@@ -258,6 +260,7 @@ def DrawEditor() {
     DrawBuildManager()
     DrawMaterialEditor()
     DrawProfilerWindow()
+    DrawLogWindow()
     DrawPlotWindow()
     DrawScopesWindow()
     // DrawQuadTreeDebug()

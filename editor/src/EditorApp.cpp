@@ -15,6 +15,7 @@
 #include "engine/async/PollHandle.hpp"
 #include "engine/core/Engine.hpp"
 #include "engine/core/GameScriptSetup.hpp"
+#include "engine/core/LogFileSink.hpp"
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -43,6 +44,10 @@ using namespace tryengine::platform;
 using namespace tryengine::resources;
 
 void EditorApp::Init() {
+    // Файл журнала открывается до всего остального: тогда в нём есть и ошибки инициализации
+    // Vulkan. Кольцо окна Log регистрируется само при первом LogInfo; окно читает его.
+    InstallLogFileSink();
+
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "tryengine");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
     // vsync выключен: профилировать иначе бессмысленно, fps упирается в частоту монитора.

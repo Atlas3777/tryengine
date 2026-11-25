@@ -6,6 +6,7 @@
 #include "GameRender.hpp"
 #include "engine/async/PollHandle.hpp"
 #include "engine/core/GameScriptSetup.hpp"
+#include "engine/core/LogFileSink.hpp"
 #include "engine/core/Profiler.hpp"
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/graphics/UiSystem.hpp"
@@ -43,6 +44,10 @@ Task<eastl::vector<uint8_t>> LoadScriptPak(AsyncFileManager& fm) {
 }  // namespace
 
 void GameApp::Init() {
+    // У игры нет окна журнала: файл — единственное место, где её лог остаётся после
+    // закрытия. Пишут и C++, и скрипты через один Logger.
+    InstallLogFileSink();
+
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "trygame");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
     swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/false);

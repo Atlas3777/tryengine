@@ -17,6 +17,7 @@ DECLARE_MODULE(Module_TryEditor);
 DECLARE_MODULE(Module_AsyncFileManager);
 DECLARE_MODULE(Module_Physics);
 DECLARE_MODULE(Module_Ui);
+DECLARE_MODULE(Module_Log);
 
 // Функция регистрации ДОЛЖНА БЫТЬ в глобальном namespace ::
 // Чтобы NEED_ALL_DEFAULT_MODULES не искал символы внутри tryeditor::
@@ -31,6 +32,7 @@ inline void RegisterEditorScriptModules() {
     PULL_MODULE(Module_AsyncFileManager);
     PULL_MODULE(Module_Physics);
     PULL_MODULE(Module_Ui);
+    PULL_MODULE(Module_Log);
 }
 
 namespace tryeditor {

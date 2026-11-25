@@ -19,6 +19,7 @@ DECLARE_MODULE(Module_Input);
 DECLARE_MODULE(Module_AsyncFileManager);
 DECLARE_MODULE(Module_Physics);
 DECLARE_MODULE(Module_Ui);
+DECLARE_MODULE(Module_Log);
 
 // Функция регистрации ДОЛЖНА БЫТЬ в глобальном namespace ::
 inline void RegisterGameScriptModules() {
@@ -31,6 +32,7 @@ inline void RegisterGameScriptModules() {
     PULL_MODULE(Module_AsyncFileManager);
     PULL_MODULE(Module_Physics);
     PULL_MODULE(Module_Ui);
+    PULL_MODULE(Module_Log);
 }
 
 // Фабрика контекста игры. Используется и в игре, и в редакторе (для ScriptBuildSystem).
