@@ -205,6 +205,10 @@ void UiSystem::ResetFrameStrings() {
     frame_strings_.clear();
 }
 
+void UiSystem::SetOverlayText(const char* text) {
+    overlay_text_ = text != nullptr ? text : "";
+}
+
 das::float2 UiSystem::WindowSize() const {
     int width = 0;
     int height = 0;

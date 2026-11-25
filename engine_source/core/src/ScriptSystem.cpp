@@ -1,5 +1,6 @@
 #include "engine/core/ScriptSystem.hpp"
 
+#include <chrono>
 #include <cstring>
 #include <daScript/ast/dyn_modules.h>
 
@@ -17,7 +18,24 @@ uint64_t NextScriptRevision() {
     return ++next;
 }
 
+double ElapsedMs(const std::chrono::steady_clock::time_point from, const std::chrono::steady_clock::time_point to) {
+    return std::chrono::duration<double, std::milli>(to - from).count();
+}
+
 }  // namespace
+
+//! Фоновая компиляция живёт в shared_ptr: поток пула может закончить работу, когда хост уже
+//! закрывает окно; деструктор ScriptSystem дожидается флага done, а не висячего `this`.
+struct ScriptSystem::AsyncCompileState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool done = false;
+    bool hot_reload = false;
+    eastl::string path;
+    CompileTiming timing;
+    std::optional<Result<CompiledScript>> result;
+    std::chrono::steady_clock::time_point requested_at;
+};
 
 ScriptSystem::ScriptSystem(ScriptSystemConfig config) : config_(eastl::move(config)) {
     TRY_ASSERT(config_.create_context, "Фабрика контекста должна быть задана!");
@@ -29,7 +47,9 @@ ScriptSystem::ScriptSystem(ScriptSystemConfig config) : config_(eastl::move(conf
     // 1. Статическая регистрация C++ модулей (PULL_MODULE / NEED_ALL_DEFAULT_MODULES)
     config_.register_modules();
 
-    // 2. Источник файлов (папки или пак) решает тот, кто собрал конфиг
+    // 2. Источник файлов (папки или пак) решает тот, кто собрал конфиг. Он нужен только
+    // для require_dynamic_modules: каждое поколение компилируется через свой FileAccess,
+    // иначе кеш прочитанных файлов вернул бы старую версию скрипта.
     file_access_ = config_.create_file_access();
     TRY_ASSERT(file_access_, "FileAccess не создан (битый пак?)");
 
@@ -43,6 +63,16 @@ ScriptSystem::ScriptSystem(ScriptSystemConfig config) : config_(eastl::move(conf
 }
 
 ScriptSystem::~ScriptSystem() {
+    // Фоновая компиляция не должна пережить систему: она читает config_ и пишет в своё
+    // состояние, но закрываться посреди неё процесс не имеет права.
+    if (async_) {
+        LogInfo(LogCategory::Script, "Ожидание фоновой компиляции скриптов перед выходом");
+        auto state = async_;
+        std::unique_lock lock(state->mutex);
+        state->cv.wait(lock, [&state] { return state->done; });
+        async_.reset();
+    }
+
     if (das_ctx_) {
         delete das_ctx_;
         das_ctx_ = nullptr;
@@ -53,21 +83,18 @@ ScriptSystem::~ScriptSystem() {
     das::Module::Shutdown();
 }
 
-Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::string_view path) {
+Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::string_view path, bool use_module_cache,
+                                                                     das::smart_ptr<das::FileAccess> file_access,
+                                                                     CompileTiming& timing) const {
     das::TextPrinter tout;
     CompiledScript result;
     result.module_group = std::make_unique<das::ModuleGroup>();
 
-    // FileAccess кеширует текст прочитанных файлов, поэтому повторная компиляция через тот
-    // же экземпляр взяла бы прошлую версию скриптов. Первую компиляцию обслуживает источник
-    // из конструктора, на перезагрузке нужен свежий. Старый живёт, пока жив его Program.
-    if (das_ctx_) {
-        file_access_ = config_.create_file_access();
-        TRY_ASSERT(file_access_, "FileAccess не создан (битый пак?)");
-    }
+    if (!file_access)
+        return LogAndMakeError("FileAccess не создан (битый пак?)");
 
     if (config_.prepare_file_access)
-        config_.prepare_file_access(*file_access_);
+        config_.prepare_file_access(*file_access);
 
     const das::string script_path(path.data(), path.size());
 
@@ -75,7 +102,7 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
     // compileDaScript переиспользует promoted-модули прошлой сборки, и правка не видна.
     // AST-кеш отдаёт неизменённые модули без повторного парсинга.
     das::CodeOfPolicies policies = config_.policies;
-    if (reload_extension_) {
+    if (use_module_cache) {
         result.module_cache = std::make_unique<das::ModuleFileCache>();
         const das::string cache_path =
             das::ModuleFileCache::defaultPath(script_path, "tryengine-editor", "project.das_project");
@@ -89,11 +116,13 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
             result.module_cache->finish();
     };
 
+    const auto compile_begin = std::chrono::steady_clock::now();
     das::ProgramPtr program;
     {
-        TRY_PROFILE_SCOPE("Script.Compile");
-        program = das::compileDaScript(script_path, file_access_, tout, *result.module_group, policies);
+        program = das::compileDaScript(script_path, file_access, tout, *result.module_group, policies);
     }
+    const auto compile_end = std::chrono::steady_clock::now();
+    timing.compile_ms = ElapsedMs(compile_begin, compile_end);
 
     if (!program) {
         finish_module_cache();
@@ -123,22 +152,222 @@ Result<ScriptSystem::CompiledScript> ScriptSystem::CompileMainScript(eastl::stri
     // дочитывает через require_module_now, живут в promoted-списке и переживают перезагрузку.
     finish_module_cache();
 
+    const auto simulate_begin = std::chrono::steady_clock::now();
     auto* new_ctx = config_.create_context(program->getContextStackSize());
     if (!new_ctx)
         return LogAndMakeError("Фабрика контекста вернула nullptr: {}", path.data());
 
-    {
-        TRY_PROFILE_SCOPE("Script.Simulate");
-        if (!program->simulate(*new_ctx, tout)) {
-            delete new_ctx;
-            finish_module_cache();
-            return LogAndMakeError("Ошибка симуляции контекста! {}", tout.c_str());
-        }
+    if (!program->simulate(*new_ctx, tout)) {
+        delete new_ctx;
+        finish_module_cache();
+        return LogAndMakeError("Ошибка симуляции контекста! {}", tout.c_str());
     }
+    timing.simulate_ms = ElapsedMs(simulate_begin, std::chrono::steady_clock::now());
 
     result.program = eastl::move(program);
     result.context.reset(new_ctx);
     return result;
+}
+
+void ScriptSystem::StartCompile(bool hot_reload) {
+    TRY_ASSERT(!async_, "Фоновая компиляция уже идёт");
+    TRY_ASSERT(!compiling_, "Фоновая компиляция уже идёт");
+
+    auto state = std::make_shared<AsyncCompileState>();
+    state->hot_reload = hot_reload;
+    state->path = main_script_path_;
+    state->requested_at = std::chrono::steady_clock::now();
+
+    async_ = state;
+    compiling_ = true;
+    status_ = ScriptStatus::Compiling;
+
+    // use_module_cache тот же, что у синхронного пути: у редактора он есть всегда (у него
+    // подключено reload-расширение), у игры его нет.
+    const bool use_module_cache = reload_extension_ != nullptr;
+    // Первая загрузка переиспользует FileAccess из конструктора (он уже прочитал
+    // динамические модули; у игры его фабрика одноразовая — пак отдаётся по move).
+    // Перезагрузке нужен свежий доступ, иначе кеш текста вернул бы старую версию.
+    auto file_access = das_ctx_ ? config_.create_file_access() : file_access_;
+    eastl::function<void()> work = [this, state, use_module_cache, file_access]() {
+        auto result = CompileMainScript(state->path, use_module_cache, file_access, state->timing);
+        state->timing.wall_ms = ElapsedMs(state->requested_at, std::chrono::steady_clock::now());
+        {
+            std::lock_guard lock(state->mutex);
+            state->result.emplace(eastl::move(result));
+            state->done = true;
+        }
+        state->cv.notify_all();
+    };
+
+    LogInfo(LogCategory::Script, "Скрипт {}: {}", state->path.c_str(),
+            config_.post_background ? "компиляция в фоне" : "компиляция");
+    if (config_.post_background) {
+        config_.post_background(eastl::move(work));
+    } else {
+        work();
+        // Синхронный хост не обязан знать про PollAsync: без фонового исполнителя работа
+        // уже сделана, и установка поколения — часть того же вызова.
+        PollAsync();
+    }
+}
+
+void ScriptSystem::LoadMainScriptAsync(eastl::string_view path) {
+    if (async_ || compiling_)
+        return LogError(LogCategory::Script, "Загрузка скрипта уже идёт");
+    if (das_ctx_)
+        return LogError(LogCategory::Script, "Главный скрипт уже загружен");
+    if (status_ == ScriptStatus::Failed)
+        return LogError(LogCategory::Script, "Движок заперт после ошибки загрузки скриптов");
+
+    main_script_path_.assign(path.data(), path.size());
+    StartCompile(/*hot_reload=*/false);
+}
+
+void ScriptSystem::ReloadMainScriptAsync() {
+    if (!reload_extension_)
+        return LogError(LogCategory::Script, "Горячая перезагрузка не подключена");
+    if (main_script_path_.empty() || !das_ctx_)
+        return LogError(LogCategory::Script, "Главный скрипт ещё не загружен");
+    if (async_ || compiling_)
+        return LogError(LogCategory::Script, "Горячая перезагрузка уже идёт");
+
+    // Снимок состояния делает старый контекст, пока он ещё цел. Хуки идут до компиляции,
+    // чтобы ошибка разбора нового поколения не мешала сохранению состояния.
+    eastl::string hook_errors;
+    {
+        TRY_PROFILE_SCOPE("Script.Reload.BeforeHooks");
+        InvokeReloadHooks(das_ctx_, "__before_reload_", hook_errors);
+    }
+    pending_hook_errors_ = eastl::move(hook_errors);
+
+    StartCompile(/*hot_reload=*/true);
+}
+
+void ScriptSystem::PollAsync() {
+    if (!async_)
+        return;
+
+    {
+        std::lock_guard lock(async_->mutex);
+        if (!async_->done)
+            return;
+    }
+
+    auto state = eastl::move(async_);
+    async_.reset();
+    compiling_ = false;
+
+    auto result = eastl::move(*state->result);
+    if (!result.has_value()) {
+        eastl::string message(result.error().Message().data(), result.error().Message().size());
+        FailCompile(state->hot_reload, message, state->timing);
+        return;
+    }
+
+    {
+        TRY_PROFILE_SCOPE("Script.Install");
+        if (state->hot_reload)
+            InstallReload(eastl::move(*result), state->timing);
+        else
+            InstallFirstLoad(eastl::move(*result), state->path, state->timing);
+    }
+    status_ = ScriptStatus::Ready;
+    compile_error_ = false;
+    last_error_.clear();
+    last_compile_ms_ = state->timing.wall_ms;
+}
+
+void ScriptSystem::FailCompile(bool hot_reload, eastl::string_view message, const CompileTiming& timing) {
+    last_error_.assign(message.data(), message.size());
+    compile_error_ = true;
+    last_compile_ms_ = timing.wall_ms;
+    // Снимок, снятый [before_reload] перед неудачной попыткой, к следующей уже не относится.
+    pending_hook_errors_.clear();
+
+    if (hot_reload) {
+        // Старое поколение остаётся рабочим: ошибка перезагрузки не имеет права отнимать
+        // у редактора уже работающий движок. Play при этом запрещён до успешной попытки.
+        status_ = ScriptStatus::Ready;
+        if (reload_extension_)
+            reload_extension_->OnReloadFinished(false, last_error_);
+        LogError(LogCategory::Script, "Перезагрузка скриптов не удалась за {:.1f} мс: {}", timing.wall_ms, last_error_);
+        return;
+    }
+
+    // Первая загрузка провалилась: контекста нет, движок заперт до перезапуска процесса.
+    status_ = ScriptStatus::Failed;
+    LogError(LogCategory::Script, "Загрузка скриптов не удалась за {:.1f} мс: {}", timing.wall_ms, last_error_);
+}
+
+void ScriptSystem::InstallFirstLoad(CompiledScript&& compiled, eastl::string_view path, const CompileTiming& timing) {
+    // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
+    // Кеш объявлен первым: он переживает контекст, программу и группу модулей.
+    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
+    std::unique_ptr<das::Context> old_context(das_ctx_);
+    das::ProgramPtr old_program = eastl::move(program_);
+    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
+
+    das_ctx_ = compiled.context.release();
+    revision_ = NextScriptRevision();
+    module_cache_ = eastl::move(compiled.module_cache);
+    program_ = eastl::move(compiled.program);
+    module_group_ = eastl::move(compiled.module_group);
+    main_script_path_.assign(path.data(), path.size());
+
+    old_context.reset();
+    old_program = nullptr;
+    old_group.reset();
+    old_cache.reset();
+
+    LogInfo(LogCategory::Script, "Скрипт {} загружен за {:.1f} мс (компиляция {:.1f}, симуляция {:.1f})", path.data(),
+            timing.wall_ms, timing.compile_ms, timing.simulate_ms);
+}
+
+void ScriptSystem::InstallReload(CompiledScript&& compiled, const CompileTiming& timing) {
+    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
+    std::unique_ptr<das::Context> old_context(das_ctx_);
+    das::ProgramPtr old_program = eastl::move(program_);
+    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
+
+    das_ctx_ = compiled.context.release();
+    // Новая ревизия до ReinitializeContext: точки входа хоста уже обязаны искать функции
+    // в новом контексте, а не брать кеш прошлого поколения.
+    revision_ = NextScriptRevision();
+    module_cache_ = eastl::move(compiled.module_cache);
+    program_ = eastl::move(compiled.program);
+    module_group_ = eastl::move(compiled.module_group);
+
+    // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
+    // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
+    if (reload_extension_) {
+        TRY_PROFILE_SCOPE("Script.Reload.Reinit");
+        reload_extension_->ReinitializeContext(*this);
+    }
+    das_ctx_->restart();
+
+    eastl::string hook_errors = eastl::move(pending_hook_errors_);
+    pending_hook_errors_.clear();
+    {
+        TRY_PROFILE_SCOPE("Script.Reload.AfterHooks");
+        InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
+    }
+
+    // Старое поколение уходит последним: его контекст ссылается на программу и модули,
+    // а AST-кеш — на FileInfo, которые эти модули ещё читают.
+    old_context.reset();
+    old_program = nullptr;
+    old_group.reset();
+    old_cache.reset();
+
+    if (reload_extension_)
+        reload_extension_->OnReloadFinished(true, hook_errors);
+
+    LogInfo(LogCategory::Script, "Скрипты перезагружены за {:.1f} мс (компиляция {:.1f}, симуляция {:.1f})",
+            timing.wall_ms, timing.compile_ms, timing.simulate_ms);
+
+    if (!hook_errors.empty())
+        LogError(LogCategory::Script, "Перезагрузка скриптов завершилась с ошибками: {}", hook_errors);
 }
 
 bool ScriptSystem::InvokeReloadHooks(das::Context* ctx, const char* prefix, eastl::string& errors) {
@@ -176,95 +405,59 @@ bool ScriptSystem::InvokeReloadHooks(das::Context* ctx, const char* prefix, east
 }
 
 Result<void> ScriptSystem::LoadMainScript(eastl::string_view path) {
-    auto compiled = CompileMainScript(path);
-    if (!compiled.has_value())
+    if (async_ || compiling_)
+        return LogAndMakeError("Загрузка скрипта уже идёт");
+
+    CompileTiming timing;
+    const auto begin = std::chrono::steady_clock::now();
+    auto compiled = CompileMainScript(path, /*use_module_cache=*/reload_extension_ != nullptr, file_access_, timing);
+    if (!compiled.has_value()) {
+        timing.wall_ms = ElapsedMs(begin, std::chrono::steady_clock::now());
+        eastl::string message(compiled.error().Message().data(), compiled.error().Message().size());
+        FailCompile(/*hot_reload=*/false, message, timing);
         return std::unexpected(std::move(compiled.error()));
+    }
 
-    // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
-    // Кеш объявлен первым: он переживает контекст, программу и группу модулей.
-    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
-    std::unique_ptr<das::Context> old_context(das_ctx_);
-    das::ProgramPtr old_program = eastl::move(program_);
-    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
-
-    das_ctx_ = compiled->context.release();
-    revision_ = NextScriptRevision();
-    module_cache_ = eastl::move(compiled->module_cache);
-    program_ = eastl::move(compiled->program);
-    module_group_ = eastl::move(compiled->module_group);
-    main_script_path_.assign(path.data(), path.size());
-
-    old_context.reset();
-    old_program = nullptr;
-    old_group.reset();
-    old_cache.reset();
-
-    LogInfo(LogCategory::Script, "Скрипт {} успешно скомпилирован", path.data());
+    timing.wall_ms = ElapsedMs(begin, std::chrono::steady_clock::now());
+    InstallFirstLoad(eastl::move(*compiled), path, timing);
+    status_ = ScriptStatus::Ready;
+    compile_error_ = false;
+    last_error_.clear();
+    last_compile_ms_ = timing.wall_ms;
     return {};
 }
 
 Result<void> ScriptSystem::ReloadMainScript() {
     if (!reload_extension_)
         return LogAndMakeError("Горячая перезагрузка не подключена");
-    if (main_script_path_.empty())
+    if (main_script_path_.empty() || !das_ctx_)
         return LogAndMakeError("Главный скрипт ещё не загружен");
-    if (!das_ctx_)
-        return LogAndMakeError("Нет активного контекста скриптов");
+    if (async_ || compiling_)
+        return LogAndMakeError("Горячая перезагрузка уже идёт");
 
-    // Снимок состояния делает старый контекст, пока он ещё цел. Хуки идут до компиляции,
-    // чтобы ошибка разбора нового поколения не мешала сохранению состояния.
     eastl::string hook_errors;
     {
         TRY_PROFILE_SCOPE("Script.Reload.BeforeHooks");
         InvokeReloadHooks(das_ctx_, "__before_reload_", hook_errors);
     }
+    pending_hook_errors_ = eastl::move(hook_errors);
 
-    // Пока новый скрипт компилируется и симулируется, старый продолжает работать:
-    // ошибка компиляции не должна ронять редактор.
-    auto compiled = CompileMainScript(main_script_path_);
+    CompileTiming timing;
+    const auto begin = std::chrono::steady_clock::now();
+    auto compiled =
+        CompileMainScript(main_script_path_, /*use_module_cache=*/true, config_.create_file_access(), timing);
+    timing.wall_ms = ElapsedMs(begin, std::chrono::steady_clock::now());
     if (!compiled.has_value()) {
-        reload_extension_->OnReloadFinished(false, compiled.error().Message());
+        eastl::string message(compiled.error().Message().data(), compiled.error().Message().size());
+        FailCompile(/*hot_reload=*/true, message, timing);
         return std::unexpected(std::move(compiled.error()));
     }
 
-    std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
-    std::unique_ptr<das::Context> old_context(das_ctx_);
-    das::ProgramPtr old_program = eastl::move(program_);
-    std::unique_ptr<das::ModuleGroup> old_group = eastl::move(module_group_);
-
-    das_ctx_ = compiled->context.release();
-    // Новая ревизия до ReinitializeContext: точки входа хоста уже обязаны искать функции
-    // в новом контексте, а не брать кеш прошлого поколения.
-    revision_ = NextScriptRevision();
-    module_cache_ = eastl::move(compiled->module_cache);
-    program_ = eastl::move(compiled->program);
-    module_group_ = eastl::move(compiled->module_group);
-
-    // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
-    // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
-    {
-        TRY_PROFILE_SCOPE("Script.Reload.Reinit");
-        reload_extension_->ReinitializeContext(*this);
-    }
-    das_ctx_->restart();
-
-    {
-        TRY_PROFILE_SCOPE("Script.Reload.AfterHooks");
-        InvokeReloadHooks(das_ctx_, "__after_reload_", hook_errors);
-    }
-
-    // Старое поколение уходит последним: его контекст ссылается на программу и модули,
-    // а AST-кеш — на FileInfo, которые эти модули ещё читают.
-    old_context.reset();
-    old_program = nullptr;
-    old_group.reset();
-    old_cache.reset();
-
-    reload_extension_->OnReloadFinished(true, hook_errors);
-    if (hook_errors.empty())
-        LogInfo(LogCategory::Script, "Скрипты перезагружены: {}", main_script_path_);
-    else
-        LogError(LogCategory::Script, "Перезагрузка скриптов завершилась с ошибками: {}", hook_errors);
+    InstallReload(eastl::move(*compiled), timing);
+    status_ = ScriptStatus::Ready;
+    compile_error_ = false;
+    last_error_.clear();
+    last_compile_ms_ = timing.wall_ms;
     return {};
 }
 

@@ -1,5 +1,6 @@
 #include "editor/render/ImGuiPass.hpp"
 
+#include <cstring>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
@@ -19,6 +20,45 @@ namespace {
 void LogVkResult(VkResult err) {
     if (err != VK_SUCCESS)
         LogError("ImGui Vulkan backend: VkResult {}", static_cast<int>(err));
+}
+
+//! Запасной экран, пока контекста скриптов нет (первая загрузка) или он перекомпилируется.
+//! Интерфейс редактора сам написан на daslang, поэтому без этого окно осталось бы пустым.
+void DrawScriptStatusOverlay(tryengine::core::ScriptSystem& script) {
+    const bool failed = script.IsFailed();
+    const bool compiling = script.IsCompiling();
+    if (!failed && !compiling)
+        return;
+
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowBgAlpha(0.94f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing;
+
+    if (ImGui::Begin("##script-status", nullptr, flags)) {
+        if (compiling) {
+            const int dots = static_cast<int>(ImGui::GetTime() * 2.0) % 3 + 1;
+            ImGui::TextUnformatted("Compiling scripts");
+            ImGui::SameLine();
+            ImGui::TextUnformatted(dots == 1 ? "." : dots == 2 ? ".." : "...");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "Script compilation failed");
+            const eastl::string& error = script.LastError();
+            if (!error.empty()) {
+                char buffer[4001];
+                const size_t length = error.size() < 4000 ? error.size() : 4000;
+                std::memcpy(buffer, error.data(), length);
+                buffer[length] = '\0';
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 48.0f);
+                ImGui::TextUnformatted(buffer);
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::TextDisabled("The engine is locked until the process is restarted.");
+        }
+    }
+    ImGui::End();
 }
 
 }  // namespace
@@ -133,7 +173,11 @@ void ImGuiPass::Collect(tryengine::graphics::CollectContext& ctx) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    ctx.engine.Get<tryengine::core::ScriptSystem>().InvokeFunctionSafe<"DrawEditor">();
+    auto& script = ctx.engine.Get<tryengine::core::ScriptSystem>();
+    if (script.IsReady())
+        script.InvokeFunctionSafe<"DrawEditor">();
+    else
+        DrawScriptStatusOverlay(script);
 
     ImGui::Render();
 }

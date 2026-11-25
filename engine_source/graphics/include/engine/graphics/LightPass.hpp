@@ -21,9 +21,10 @@ struct LightPass {
 
 inline eastl::vector<PointLightGPU> CollectLight(core::Engine& engine) {
     auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_lights", das::Array*>();
-
-    if (!result.has_value())
-        LogError(result.error().Message());
+    // No script context (loading / failed first load) is not an error worth a log line per
+    // frame: the frame simply has no point lights.
+    if (!result.has_value() || *result == nullptr)
+        return {};
 
     const auto array = *result;
     PointLightGPU* points = reinterpret_cast<PointLightGPU*>(array->data);

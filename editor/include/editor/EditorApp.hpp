@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 
 #include "editor/Editor.hpp"
@@ -19,7 +20,7 @@ public:
     EditorApp& operator=(const EditorApp&) = delete;
 
     void Init();
-    void Run() const;
+    void Run();
     void Shutdown() const;
 
 private:
@@ -28,5 +29,7 @@ private:
     std::unique_ptr<tryengine::graphics::FrameSync> frame_sync_;
     std::unique_ptr<tryengine::core::Engine> engine_;
     std::unique_ptr<Editor> editor_;
+    std::chrono::steady_clock::time_point startup_begin_;
+    bool scripts_started_ = false;
 };
 }  // namespace tryeditor

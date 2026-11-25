@@ -138,15 +138,17 @@ void EditorRender::Render(tryengine::core::Engine& engine, tryengine::graphics::
 
     auto editor_camera_res = script.SimpleReturnUnsafe<"GetEditorCamera", tryengine::graphics::CameraData*>(
         size_res.value_or(das::float2(1, 1)));
-    tryengine::graphics::CameraData cam_data =
-        editor_camera_res.has_value() ? *(*editor_camera_res) : tryengine::graphics::CameraData{};
+    tryengine::graphics::CameraData cam_data{};
+    if (editor_camera_res.has_value() && *editor_camera_res != nullptr)
+        cam_data = *(*editor_camera_res);
 
     // LogInfo("x = {}, y = {}, z = {}",cam_data.position.x, cam_data.position.y, cam_data.position.z);
 
     auto game_camera_res = script.SimpleReturnUnsafe<"GetGameCamera", tryengine::graphics::CameraData*>(
         size_game_res.value_or(das::float2(1, 1)));
-    tryengine::graphics::CameraData game_cam_data =
-        editor_camera_res.has_value() ? *(*game_camera_res) : tryengine::graphics::CameraData{};
+    tryengine::graphics::CameraData game_cam_data{};
+    if (game_camera_res.has_value() && *game_camera_res != nullptr)
+        game_cam_data = *(*game_camera_res);
 
     rg_.GetCPUBlackboard().Put(kEditorScope, tryengine::graphics::RGTag_v<"ViewportSize">, scene_viewport);
     rg_.GetCPUBlackboard().Put(kEditorScope, tryengine::graphics::RGTag_v<"Camera">, cam_data);

@@ -47,6 +47,7 @@ void EditorApp::Init() {
     // Файл журнала открывается до всего остального: тогда в нём есть и ошибки инициализации
     // Vulkan. Кольцо окна Log регистрируется само при первом LogInfo; окно читает его.
     InstallLogFileSink();
+    startup_begin_ = std::chrono::steady_clock::now();
 
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "tryengine");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
@@ -89,11 +90,18 @@ void EditorApp::Init() {
     // нет ни .meta, ни guid, ни артефактов, конвейер импорта им не нужен.
     editor_->GetAssetSourceDatabase().BuildAuthoritativeTrees();
 
-    auto& script_system = engine_->RegisterSystem<ScriptSystem>(GetEditorScriptConfig(*engine_, *editor_));
+    auto script_config = GetEditorScriptConfig(*engine_, *editor_);
+    // JIT-компиляция скриптов — самая долгая часть загрузки: она идёт на пуле потоков,
+    // пока главный поток импортирует движковый контент и рисует экран загрузки.
+    script_config.post_background = [](eastl::function<void()> work) {
+        ThreadPool().Post([work = eastl::move(work)]() mutable { work(); });
+    };
+    auto& script_system = engine_->RegisterSystem<ScriptSystem>(eastl::move(script_config));
     auto& script_reload = engine_->RegisterSystem<ScriptReload>(script_system);
     script_system.SetReloadExtension(&script_reload);
 
-    script_system.LoadMainScript("./editor/daslang/EntryPoint.das");
+    // Возвращается сразу: контекст установится в Run/PollAsync, когда компиляция закончится.
+    script_system.LoadMainScriptAsync("./editor/daslang/EntryPoint.das");
 
     engine_->RegisterSystem<ScriptBuildSystem>(GetGameScriptBuildConfig(*engine_));
 
@@ -111,13 +119,10 @@ void EditorApp::Init() {
     engine_->RegisterSystem<EditorRender>(*engine_, *vulkan_device_, engine_->Get<RenderGraph>(), *swapchain_,
                                           *frame_sync_);
 
-    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EngineStart">();
-    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EditorStart">();
-
     RunAndForget(ThreadPool(), editor_->GetAssetSourceDatabase().ImportGameContent(engine_->Get<AsyncFileManager>()));
 }
 
-void EditorApp::Run() const {
+void EditorApp::Run() {
     editor_->running = true;
     editor_->state = PlayModeState::Edit;
 
@@ -148,23 +153,47 @@ void EditorApp::Run() const {
             MainThread().Pull();
         }
 
-        script_system.InvokeFunctionFast<"EngineUpdate">();
-        script_system.InvokeFunctionFast<"EditorUpdate">();
-
-        // Перезагрузка запрашивается из UI/хоткея во время EditorUpdate; подменять контекст
-        // можно только когда в нём не выполняется ни одна функция скрипта, то есть здесь.
-        if (auto* reload = engine_->TryGet<ScriptReload>(); reload && reload->IsReloadRequested()) {
-            TRY_PROFILE_SCOPE("Script.Reload");
-            reload->ProcessRequested();
+        // Единственное место, где устанавливается готовое поколение скриптов и вызываются
+        // reload-хуки: до этого момента скриптовые функции не трогаем.
+        {
+            TRY_PROFILE_SCOPE("Script.Poll");
+            script_system.PollAsync();
         }
 
-        // Граница GC. Скрипты редактора живут на persistent_heap с options gc, но без
-        // явного вызова сборщик не запускается, и каждый кадр панелей оставляет мусор.
-        // DECS-компоненты держат строки и массивы в сырой памяти архетипов, поэтому
-        // перед сборкой нужны gc_dummy-корни: их ставят/снимают скриптовые хуки.
-        {
-            TRY_PROFILE_SCOPE("Script.GC");
-            script_system.InvokeFunctionFast<"EngineCollectGarbage">();
+        if (!scripts_started_ && script_system.IsReady()) {
+            TRY_PROFILE_SCOPE("Script.Start");
+            script_system.InvokeFunctionFast<"EngineStart">();
+            script_system.InvokeFunctionFast<"EditorStart">();
+            scripts_started_ = true;
+            const double startup_ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - startup_begin_).count();
+            LogInfo(LogCategory::Script, "Редактор готов за {:.1f} мс; скрипты готовы за {:.1f} мс", startup_ms,
+                    script_system.LastCompileMs());
+        }
+
+        // Пока первая загрузка не закончилась (или провалилась), движок заперт: кадр
+        // рисует C++ (экран загрузки/ошибки), а скриптовые точки входа не вызываются.
+        // Во время фоновой перезагрузки старый контекст жив, но тоже не вызывается:
+        // компилятор daScript не потокобезопасен, и кадр не должен в него залезать.
+        if (scripts_started_ && script_system.IsReady()) {
+            script_system.InvokeFunctionFast<"EngineUpdate">();
+            script_system.InvokeFunctionFast<"EditorUpdate">();
+
+            // Перезагрузка запрашивается из UI/хоткея во время EditorUpdate; подменять
+            // контекст можно только когда в нём не выполняется ни одна функция скрипта.
+            if (auto* reload = engine_->TryGet<ScriptReload>(); reload && reload->IsReloadRequested()) {
+                TRY_PROFILE_SCOPE("Script.Reload");
+                reload->ProcessRequested();
+            }
+
+            // Граница GC. Скрипты редактора живут на persistent_heap с options gc, но без
+            // явного вызова сборщик не запускается, и каждый кадр панелей оставляет мусор.
+            // DECS-компоненты держат строки и массивы в сырой памяти архетипов, поэтому
+            // перед сборкой нужны gc_dummy-корни: их ставят/снимают скриптовые хуки.
+            {
+                TRY_PROFILE_SCOPE("Script.GC");
+                script_system.InvokeFunctionFast<"EngineCollectGarbage">();
+            }
         }
 
         {

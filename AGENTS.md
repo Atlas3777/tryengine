@@ -215,6 +215,14 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   таблице кешируется до смены поколения контекста.
 - Горячая перезагрузка компилирует новое поколение в отдельной `ModuleGroup` со свежим
   `FileAccess` и AST-кешем: иначе daScript переиспользует старые модули и правка не видна.
+- Первая загрузка и горячая перезагрузка компилируются на `ThreadPool` через
+  `ScriptSystemConfig::post_background`. Пока идёт компиляция, `ScriptSystem::IsReady()` ложно,
+  и вызовы скриптов отклоняются: компилятор daScript не потокобезопасен. Экран
+  загрузки/ошибки рисует C++ (ImGui в редакторе, fallback `UiPass` с точками в игре), а не
+  скрипт. Первая неудачная загрузка запирает процесс (`ScriptStatus::Failed`); неудачная
+  перезагрузка оставляет старое поколение рабочим, но `ScriptsHealthy()` запрещает Play до
+  успешного F5. Длительности компиляции/симуляции и готовность приложения пишутся в лог
+  категории `Script`.
 - ECS — только DECS (`daslib/decs`) и макросы движка (`create_entity`, `update_entity`,
   `apply_decs_template`, `EcsRegister`), см. `engine_source/daslang/EcsMacro.das`,
   компоненты в `engine_source/daslang/Types.das`, живой пример — `game/scripts/Game.das`.

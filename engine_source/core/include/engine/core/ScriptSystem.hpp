@@ -4,12 +4,15 @@
 #include <EASTL/functional.h>
 #include <EASTL/string.h>
 #include <EASTL/string_view.h>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <daScript/ast/ast_serializer.h>
 #include <daScript/daScript.h>
 #include <daScript/simulate/aot.h>
 #include <memory>
+#include <mutex>
+#include <optional>
 
 #include "engine/core/Assert.hpp"
 #include "engine/core/MakeError.hpp"
@@ -39,6 +42,16 @@ struct ScriptFunctionName {
 template <std::size_t N>
 ScriptFunctionName(const char (&)[N]) -> ScriptFunctionName<N>;
 
+//! Состояние поколения скриптов. `Compiling` — идёт фоновая компиляция/симуляция; в это
+//! время вызовы скриптов запрещены, потому что daScript не потокобезопасен. `Failed` —
+//! первая загрузка не удалась, движок заперт и скриптовой части больше нет.
+enum class ScriptStatus : uint8_t {
+    Unloaded,
+    Compiling,
+    Ready,
+    Failed,
+};
+
 //! Расширение жизненного цикла скриптов, которое ставит хост. Горячая перезагрузка —
 //! именно расширение: редактор подключает её, игра не подключает и о перезагрузке не знает.
 class IScriptReloadExtension {
@@ -62,6 +75,10 @@ struct ScriptSystemConfig {
     eastl::function<void(das::FileAccess&)> prepare_file_access;
     eastl::function<das::Context*(uint32_t stack_size)> create_context;
     das::CodeOfPolicies policies;
+    //! Исполнитель фоновой компиляции: принимает работу и выполняет её вне главного
+    //! потока. Хосты передают сюда ThreadPool(); пусто — компиляция идёт на месте
+    //! (CLI, тесты, старые синхронные сценарии).
+    eastl::function<void(eastl::function<void()>)> post_background;
 };
 
 class ScriptSystem {
@@ -72,25 +89,79 @@ public:
     ScriptSystem(const ScriptSystem&) = delete;
     ScriptSystem& operator=(const ScriptSystem&) = delete;
 
+    //! Синхронная загрузка: компилирует и симулирует на вызывающем потоке, затем
+    //! устанавливает контекст. Хосты используют её в CLI/тестах; кадровый цикл зовёт
+    //! LoadMainScriptAsync, чтобы не блокировать окно.
     Result<void> LoadMainScript(eastl::string_view path);
 
-    //! Подключает хост-расширение. Без него ReloadMainScript отказывает: перезагрузка
+    //! Ставит компиляцию первой загрузки в фон. Возвращается сразу; результат забирает
+    //! PollAsync() на главном потоке. Если фоновый исполнитель не задан, компиляция идёт
+    //! на месте, но контекст всё равно устанавливается только в PollAsync().
+    void LoadMainScriptAsync(eastl::string_view path);
+
+    //! Запускает горячую перезагрузку в фоне. Старый контекст остаётся живым и перестаёт
+    //! вызываться до PollAsync(), который либо подменит его, либо оставит старый.
+    void ReloadMainScriptAsync();
+
+    //! Главный поток: забирает готовую фоновую компиляцию. Единственное место, где
+    //! устанавливается новое поколение контекста и вызываются reload-хуки.
+    void PollAsync();
+
+    //! Подключает хост-расширение. Без него ReloadMainScriptAsync отказывает: перезагрузка
     //! принадлежит хосту, а не движку.
     void SetReloadExtension(IScriptReloadExtension* extension) {
         reload_extension_ = extension;
     }
 
-    //! Пересобирает и симулирует главный скрипт заново, не убивая процесс. Старый контекст
-    //! остаётся рабочим до успешной симуляции нового: при ошибке компиляции/симуляции
-    //! редактор продолжает жить на старом коде. Перед подменой вызываются функции,
-    //! помеченные [before_reload], после подмены и точек входа хоста — [after_reload].
+    //! Синхронная перезагрузка. Оставлена для тестов и хостов без кадрового цикла; редактор
+    //! зовёт ReloadMainScriptAsync.
     Result<void> ReloadMainScript();
 
+    //! Контекст установлен и в нём не идёт компиляция: можно вызывать скриптовые функции.
+    [[nodiscard]] bool IsReady() const {
+        return das_ctx_ != nullptr && !compiling_;
+    }
+
+    [[nodiscard]] ScriptStatus GetStatus() const {
+        return status_;
+    }
+
+    [[nodiscard]] bool IsCompiling() const {
+        return status_ == ScriptStatus::Compiling;
+    }
+
+    //! Первая загрузка провалилась: контекста нет, движок заперт. Хост не должен вызывать
+    //! скрипты и не пытается восстановиться сам — только новый процесс.
+    [[nodiscard]] bool IsFailed() const {
+        return status_ == ScriptStatus::Failed;
+    }
+
+    [[nodiscard]] bool HasContext() const {
+        return das_ctx_ != nullptr;
+    }
+
+    //! Последняя попытка компиляции закончилась ошибкой. При успешной перезагрузке
+    //! сбрасывается; редактор по этому флагу запрещает Play.
+    [[nodiscard]] bool HasCompileError() const {
+        return compile_error_;
+    }
+
+    [[nodiscard]] const eastl::string& LastError() const {
+        return last_error_;
+    }
+
+    //! Длительность последней успешной/неудачной компиляции (стена, включая симуляцию).
+    [[nodiscard]] double LastCompileMs() const {
+        return last_compile_ms_;
+    }
+
     //! Вызов из кадрового цикла: имя известно на этапе компиляции, поиск по таблице функций
-    //! кешируется до следующей перезагрузки. Исключения скрипта не ловятся — это горячий путь.
+    //! кешируется до следующей перезагрузки. Пока идёт компиляция, вызов отклоняется: в
+    //! контексте daScript в этот момент работает фоновый компилятор, а он не потокобезопасен.
     template <ScriptFunctionName Name, typename... Args>
     bool InvokeFunctionFast(Args&&... args) {
-        TRY_ASSERT(das_ctx_, "Script context is null");
+        if (!IsReady())
+            return false;
 
         auto* function = FindFunction<Name>();
         if (!function)
@@ -104,10 +175,8 @@ public:
     //! Вызов с проверкой исключения: ошибка скрипта попадает в лог, а не роняет хост.
     template <ScriptFunctionName Name, typename... Args>
     bool InvokeFunctionSafe(Args&&... args) {
-        if (!das_ctx_) {
-            LogError(LogCategory::Script, "Script context is null");
+        if (!IsReady())
             return false;
-        }
 
         auto* function = FindFunction<Name>();
         if (!function)
@@ -120,7 +189,8 @@ public:
     //! `SimpleReturnUnsafe<"GetEditorViewportSize", das::float2>()`.
     template <ScriptFunctionName Name, typename T, typename... Args>
     Result<T> SimpleReturnUnsafe(Args&&... args) {
-        TRY_ASSERT(das_ctx_, "Script context is null");
+        if (!IsReady())
+            return std::unexpected(Error(ErrorCode::EngineInternalError, eastl::string("scripts are not ready")));
 
         auto* function = FindFunction<Name>();
         if (!function)
@@ -145,7 +215,22 @@ private:
         std::unique_ptr<das::Context> context;
     };
 
-    Result<CompiledScript> CompileMainScript(eastl::string_view path);
+    struct CompileTiming {
+        double compile_ms = 0.0;
+        double simulate_ms = 0.0;
+        double wall_ms = 0.0;
+    };
+
+    //! Состояние одной фоновой компиляции. Живёт в shared_ptr: поток пула может закончить
+    //! работу уже после того, как хост закрыл окно; деструктор ScriptSystem ждёт флаг done.
+    struct AsyncCompileState;
+
+    Result<CompiledScript> CompileMainScript(eastl::string_view path, bool use_module_cache,
+                                             das::smart_ptr<das::FileAccess> file_access, CompileTiming& timing) const;
+    void StartCompile(bool hot_reload);
+    void InstallFirstLoad(CompiledScript&& compiled, eastl::string_view path, const CompileTiming& timing);
+    void InstallReload(CompiledScript&& compiled, const CompileTiming& timing);
+    void FailCompile(bool hot_reload, eastl::string_view message, const CompileTiming& timing);
     //! Вызывает все функции контекста с префиксом имени (их создают аннотации
     //! before_reload/after_reload). Исключение одной функции гасится, чтобы следующая
     //! выполнялась в чистом контексте; итог пишется в errors.
@@ -202,6 +287,14 @@ private:
     //! найденный SimFunction* ещё жив; номера не повторяются между экземплярами системы.
     uint64_t revision_ = 0;
     IScriptReloadExtension* reload_extension_ = nullptr;
+
+    ScriptStatus status_ = ScriptStatus::Unloaded;
+    bool compiling_ = false;
+    bool compile_error_ = false;
+    eastl::string last_error_;
+    double last_compile_ms_ = 0.0;
+    eastl::string pending_hook_errors_;
+    std::shared_ptr<AsyncCompileState> async_;
 };
 
 }  // namespace tryengine::core

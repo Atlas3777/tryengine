@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 
 #include "engine/core/Engine.hpp"
@@ -16,7 +17,9 @@ public:
     void Shutdown() const;
 
 private:
-    bool running_;
+    bool running_ = false;
+    bool scripts_started_ = false;
+    std::chrono::steady_clock::time_point startup_begin_;
 
     std::unique_ptr<tryengine::graphics::VulkanDevice> vulkan_device_;
     std::unique_ptr<tryengine::graphics::VulkanSwapchain> swapchain_;

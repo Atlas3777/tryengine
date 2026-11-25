@@ -14,6 +14,7 @@
 #include "editor/render/EditorRender.hpp"
 #include "editor/render/ImGuiPass.hpp"
 #include "engine/core/ScriptBuildSystem.hpp"
+#include "engine/core/ScriptSystem.hpp"
 #include "engine/core/strings/Hash.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
 #include "engine/graphics/UiSystem.hpp"
@@ -245,6 +246,17 @@ bool BuildScriptPak(const char* entry_path, const char* output_path, das::Contex
 
     LogInfo(LogCategory::Script, "script_pak собран: {}", output_path);
     return true;
+}
+
+//! Разрешает Play только когда текущее поколение скриптов работает и последняя
+//! компиляция не закончилась ошибкой. После неудачной перезагрузки старый контекст жив
+//! (редактор продолжает работать), но запускать на нём игру нельзя.
+bool ScriptsHealthy(das::Context* ctx) {
+    auto* try_ctx = static_cast<tryeditor::TryEditorContext*>(ctx);
+    if (!try_ctx)
+        return false;
+    auto* scripts = try_ctx->engine.TryGet<tryengine::core::ScriptSystem>();
+    return scripts != nullptr && scripts->IsReady() && !scripts->HasCompileError();
 }
 
 bool TestCompileScriptPak(const das::TArray<uint8_t>& data, das::Context* ctx) {
@@ -506,6 +518,9 @@ public:
 
         das::addExtern<DAS_BIND_FUN(TestCompileScriptPak)>(*this, lib, "TestCompileScriptPak",
                                                            das::SideEffects::accessGlobal, "TestCompileScriptPak");
+
+        das::addExtern<DAS_BIND_FUN(ScriptsHealthy)>(*this, lib, "ScriptsHealthy", das::SideEffects::accessGlobal,
+                                                     "ScriptsHealthy");
 
         tryeditor::RegisterScriptReloadBindings(*this, lib);
 

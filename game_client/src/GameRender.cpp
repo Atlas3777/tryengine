@@ -72,8 +72,9 @@ void GameRender::Render(tryengine::core::Engine& engine, tryengine::graphics::Vu
 
     auto camera_res = script.SimpleReturnUnsafe<"GetGameCamera", tryengine::graphics::CameraData*>(
         das::float2(game_viewport.width, game_viewport.height));
-    tryengine::graphics::CameraData cam_data =
-        camera_res.has_value() ? *(*camera_res) : tryengine::graphics::CameraData{};
+    tryengine::graphics::CameraData cam_data{};
+    if (camera_res.has_value() && *camera_res != nullptr)
+        cam_data = *(*camera_res);
 
     rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"ViewportSize">, game_viewport);
     rg_.GetCPUBlackboard().Put(kMainScope, tryengine::graphics::RGTag_v<"Camera">, cam_data);

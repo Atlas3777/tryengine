@@ -56,13 +56,22 @@ struct PushConstants {
 eastl::vector<MeshDrawCall> CollectDrawable(core::Engine& engine) {
     eastl::vector<MeshDrawCall> draw_calls;
 
-    auto result = engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_render_obj", das::Array*>();
+    auto& script = engine.Get<core::ScriptSystem>();
+    // Loading / failed first load: there is nothing to draw and a log line per frame would
+    // bury the actual error in the ring buffer.
+    if (!script.IsReady())
+        return draw_calls;
+
+    auto result = script.SimpleReturnUnsafe<"get_render_obj", das::Array*>();
     if (!result.has_value()) {
         LogError(result.error().Message());
         return draw_calls;
     }
 
     const auto array = *result;
+    if (array == nullptr)
+        return draw_calls;
+
     DaslangDrawCall* draws = reinterpret_cast<DaslangDrawCall*>(array->data);
     eastl::span draw_span(draws, array->size);
 

@@ -39,6 +39,7 @@ require imgui/imgui_containers_builtin
 require imgui/imgui_widgets_builtin
 require imgui/imgui_docking_builtin
 require imgui/imgui_boost_v2
+require imgui/imgui_scope_builtin
 require imgui/imgui_file_dialog
 
 require TryEditor
@@ -200,11 +201,17 @@ def DrawPlayControls() {
     assume style    = GetStyle()
     let pad      = style.FramePadding.x
     let spacing  = style.ItemSpacing.x
+    // A failed reload keeps the old context alive, but starting Play on code that no longer
+    // compiles would hide the error behind a running game. Fix the script and reload (F5).
+    let healthy  = ScriptsHealthy()
 
     // 1. Считаем, сколько места займут кнопки в текущем режиме
     var total_w = 0.0f
     if (!is_playing) {
         total_w = CalcTextSize("Play").x + pad * 2.0f
+        if (!healthy) {
+            total_w += spacing + CalcTextSize("scripts broken - F5").x
+        }
     } else {
         let pause_txt = is_paused ? "Continue" : "Pause"
         total_w = CalcTextSize(pause_txt).x    + pad * 2.0f + spacing + CalcTextSize("One frame").x  + pad * 2.0f + spacing + CalcTextSize("Stop").x       + pad * 2.0f
@@ -217,7 +224,13 @@ def DrawPlayControls() {
 
     // 3. Рисуем кнопки как раньше
     if (!is_playing) {
-        if (button(PLAY_BTN, (text = "Play"))) { BeginPlay() }
+        with_disabled(!healthy) {
+            if (button(PLAY_BTN, (text = "Play"))) { BeginPlay() }
+        }
+        if (!healthy) {
+            same_line()
+            text_disabled(PLAY_SCRIPTS_BROKEN, (text = "scripts broken - F5"))
+        }
     } else {
         if (button(PAUSE_BTN, (text = is_paused ? "Continue" : "Pause"))) {
             if (is_paused) { ResumePlay() } else { PausePlay() }

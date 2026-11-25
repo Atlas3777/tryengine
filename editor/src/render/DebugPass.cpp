@@ -29,12 +29,13 @@ struct DebugPushConstants {
 }  // namespace
 
 void DebugPass::Collect(CollectContext& ctx) {
+    lines_.clear();
     auto debug_res = ctx.engine.Get<tryengine::core::ScriptSystem>().SimpleReturnUnsafe<"GetDebugLines", das::Array*>();
-    if (!debug_res.has_value())
-        LogError(LogCategory::Script, "Error on invoke script");
-    const auto array = *debug_res;
-    DebugLine* points = reinterpret_cast<DebugLine*>(array->data);
-    lines_ = eastl::vector<DebugLine>(points, points + array->size);
+    if (debug_res.has_value() && *debug_res != nullptr) {
+        const auto array = *debug_res;
+        DebugLine* points = reinterpret_cast<DebugLine*>(array->data);
+        lines_ = eastl::vector<DebugLine>(points, points + array->size);
+    }
 
     // Физика владеет своими коллайдерами и отдаёт готовые линии: DebugPass только
     // перекладывает их в тот же буфер, что и отладочные линии скрипта.

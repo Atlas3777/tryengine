@@ -7,6 +7,10 @@
 #include "engine/graphics/rg/IRenderPass.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 
+namespace tryengine::core {
+class ScriptSystem;
+}
+
 namespace tryengine::graphics {
 
 struct Material;
@@ -65,6 +69,10 @@ private:
                     float v1, const das::float4& shape, const das::float4& params);
     void EmitShape(const UiDrawCmd& cmd, uint32_t mode);
     void EmitText(const UiDrawCmd& cmd, UiSystem& ui);
+    //! C++ fallback when there is no script frame: loading dots or the compile error. The
+    //! script context either does not exist yet (first load) or is being recompiled, so the
+    //! usual `get_ui_draw_cmds` cannot be called.
+    void EmitScriptStatus(core::ScriptSystem& script, UiSystem& ui);
     void EmitTextured(const UiDrawCmd& cmd);
 
     ScopeId scope_;

@@ -100,7 +100,7 @@ void PickingPass::Collect(tryengine::graphics::CollectContext& ctx) {
         return;
 
     auto mouse = script.SimpleReturnUnsafe<"GetEditorSceneViewportMouse", Mouse*>(*size);
-    if (!mouse.has_value())
+    if (!mouse.has_value() || *mouse == nullptr)
         return;
 
     const Mouse* m = *mouse;

@@ -1,7 +1,9 @@
 #include "engine/graphics/UiPass.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 
 #include "engine/core/Engine.hpp"
 #include "engine/core/ScriptSystem.hpp"
@@ -23,6 +25,9 @@ constexpr uint32_t kKindQuad = 0;
 constexpr uint32_t kKindText = 1;
 constexpr uint32_t kKindTextured = 2;
 constexpr uint32_t kKindBorder = 3;
+
+//! text_id sentinel: the glyphs come from UiSystem::OverlayText(), not from the script table.
+constexpr uint32_t kOverlayTextId = 0xFFFFFFFFu;
 
 //! Intersects a script-provided clip rectangle with the render area.
 VkRect2D ComposeScissor(const das::float4& scissor, VkExtent2D extent) {
@@ -73,7 +78,17 @@ void UiPass::Collect(CollectContext& ctx) {
     viewport_ = *extent;
     frame_data_ = ui->FrameData(das::float2(static_cast<float>(viewport_.width), static_cast<float>(viewport_.height)));
 
-    auto result = ctx.engine.Get<core::ScriptSystem>().SimpleReturnUnsafe<"get_ui_draw_cmds", das::Array*>();
+    auto* script = ctx.engine.TryGet<core::ScriptSystem>();
+    if (script == nullptr || !script->IsReady()) {
+        // During the first load and during a hot reload the script context is intentionally
+        // not called: daScript is compiling in the background. Draw the engine-owned status
+        // instead, so the window never turns into a frozen black rectangle.
+        if (script != nullptr && (script->IsCompiling() || script->IsFailed()))
+            EmitScriptStatus(*script, *ui);
+        return;
+    }
+
+    auto result = script->SimpleReturnUnsafe<"get_ui_draw_cmds", das::Array*>();
     if (!result.has_value() || *result == nullptr || (*result)->size == 0) {
         if (!warned_missing_export_) {
             warned_missing_export_ = true;
@@ -85,6 +100,82 @@ void UiPass::Collect(CollectContext& ctx) {
     const auto* commands = reinterpret_cast<const UiDrawCmd*>((*result)->data);
     cmds_.assign(commands, commands + (*result)->size);
     ExpandDraws(*ui);
+}
+
+void UiPass::EmitScriptStatus(core::ScriptSystem& script, UiSystem& ui) {
+    const float width = static_cast<float>(viewport_.width);
+    const float height = static_cast<float>(viewport_.height);
+    if (width <= 0.0f || height <= 0.0f)
+        return;
+
+    const das::float4 full(0.0f, 0.0f, width, height);
+    UiDrawCmd background{};
+    background.kind = kKindQuad;
+    background.material = 0;
+    background.rect = full;
+    background.color = das::float4(0.055f, 0.06f, 0.075f, 1.0f);
+    background.scissor = full;
+    cmds_.push_back(background);
+
+    const bool failed = script.IsFailed();
+    eastl::string message;
+    if (failed) {
+        message = "Script compilation failed";
+        const eastl::string_view error = script.LastError();
+        if (!error.empty()) {
+            size_t end = 0;
+            while (end < error.size() && end < 140 && error[end] != '\n' && error[end] != '\r')
+                ++end;
+            message += ": ";
+            message.append(error.data(), end);
+            if (end < error.size())
+                message += "...";
+        }
+    } else {
+        message = "Compiling scripts";
+    }
+    ui.SetOverlayText(message.c_str());
+
+    const float center_x = width * 0.5f;
+    const float center_y = height * 0.5f;
+    const float radius = 7.0f;
+    const float gap = 30.0f;
+
+    uint32_t dot_count = 1;
+    if (!failed) {
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        dot_count = static_cast<uint32_t>(seconds * 2.0) % 3u + 1u;
+    }
+
+    for (uint32_t i = 0; i < dot_count; ++i) {
+        UiDrawCmd dot{};
+        dot.kind = kKindQuad;
+        dot.material = 0;
+        dot.rect =
+            das::float4(center_x + (static_cast<float>(i) - static_cast<float>(dot_count - 1) * 0.5f) * gap - radius,
+                        center_y - radius, radius * 2.0f, radius * 2.0f);
+        dot.color = failed ? das::float4(0.95f, 0.25f, 0.2f, 1.0f) : das::float4(0.95f, 0.95f, 0.95f, 1.0f);
+        dot.extra = das::float4(radius, 0.0f, 0.0f, 0.0f);
+        dot.scissor = full;
+        cmds_.push_back(dot);
+    }
+
+    constexpr float kTextPx = 22.0f;
+    const das::float2 text_size = ui.Measure(message.c_str(), kTextPx);
+    if (text_size.x > 0.0f) {
+        UiDrawCmd text{};
+        text.kind = kKindText;
+        text.text_id = kOverlayTextId;
+        text.material = 0;
+        text.rect = das::float4(center_x - text_size.x * 0.5f, center_y + radius + 24.0f, text_size.x, text_size.y);
+        text.color = failed ? das::float4(1.0f, 0.82f, 0.8f, 1.0f) : das::float4(0.92f, 0.92f, 0.95f, 1.0f);
+        text.extra = das::float4(kTextPx, 0.0f, 0.0f, 0.0f);
+        text.scissor = full;
+        cmds_.push_back(text);
+    }
+
+    ExpandDraws(ui);
 }
 
 void UiPass::BeginBatch(uint64_t material, const das::float4& scissor) {
@@ -194,7 +285,7 @@ void UiPass::EmitText(const UiDrawCmd& cmd, UiSystem& ui) {
     if (px <= 0.0f)
         return;
 
-    const char* text = ui.FrameString(cmd.text_id);
+    const char* text = cmd.text_id == kOverlayTextId ? ui.OverlayText() : ui.FrameString(cmd.text_id);
     if (text == nullptr || *text == '\0')
         return;
 

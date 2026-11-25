@@ -47,6 +47,7 @@ void GameApp::Init() {
     // У игры нет окна журнала: файл — единственное место, где её лог остаётся после
     // закрытия. Пишут и C++, и скрипты через один Logger.
     InstallLogFileSink();
+    startup_begin_ = std::chrono::steady_clock::now();
 
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "trygame");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
@@ -96,13 +97,17 @@ void GameApp::Init() {
     };
     TRY_ASSERT(pak_task.GetResult().has_value(), "Не удалось загрузить script_pak");
 
-    engine_->RegisterSystem<ScriptSystem>(GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult())));
-    engine_->Get<ScriptSystem>().LoadMainScript("./game/scripts/Game.das");
-    engine_->Get<ScriptSystem>().InvokeFunctionFast<"EngineStart">();
+    auto script_config = GetGameScriptConfig(*engine_, eastl::move(*pak_task.GetResult()));
+    // JIT-компиляция идёт на пуле потоков: окно с экраном загрузки живёт всё это время,
+    // а EngineStart/GameStart вызываются первым кадром после установки контекста.
+    script_config.post_background = [](eastl::function<void()> work) {
+        ThreadPool().Post([work = eastl::move(work)]() mutable { work(); });
+    };
+    engine_->RegisterSystem<ScriptSystem>(eastl::move(script_config));
 
     // Прогрева контента здесь нет: GameStart запускает задачу Loader::Load, а она
     // читает тексты и запрашивает меши/материалы; GameUpdate не знает про загрузку.
-    engine_->Get<ScriptSystem>().InvokeFunctionFast<"GameStart">();
+    engine_->Get<ScriptSystem>().LoadMainScriptAsync("./game/scripts/Game.das");
 
     // У игры нет ImGui: смотреть на её кадры можно только по файлам в logs/. Каптион пишет
     // компактный поток кадров и строку статуса раз в секунду прямо из кадра, так что
@@ -135,12 +140,33 @@ void GameApp::Run() {
             MainThread().Pull();
         }
 
-        script_system.InvokeFunctionSafe<"EngineUpdate">();
-        // UI объявляется каждый кадр на своём клоке и не зависит от gameplay: пауза игрового
-        // мира не должна замораживать экраны. Поэтому это отдельная точка входа, а не часть
-        // GameUpdate.
-        script_system.InvokeFunctionSafe<"GameUiFrame">();
-        script_system.InvokeFunctionSafe<"GameUpdate">();
+        // Готовое поколение устанавливается только здесь. Пока компиляция идёт или
+        // провалилась, скриптовые точки входа не вызываются: кадр рисует C++-экран
+        // загрузки/ошибки, а движок остаётся запертым.
+        {
+            TRY_PROFILE_SCOPE("Script.Poll");
+            script_system.PollAsync();
+        }
+
+        if (!scripts_started_ && script_system.IsReady()) {
+            TRY_PROFILE_SCOPE("Script.Start");
+            script_system.InvokeFunctionFast<"EngineStart">();
+            script_system.InvokeFunctionFast<"GameStart">();
+            scripts_started_ = true;
+            const double startup_ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - startup_begin_).count();
+            LogInfo(LogCategory::Script, "Игра готова за {:.1f} мс; скрипты готовы за {:.1f} мс", startup_ms,
+                    script_system.LastCompileMs());
+        }
+
+        if (scripts_started_ && script_system.IsReady()) {
+            script_system.InvokeFunctionSafe<"EngineUpdate">();
+            // UI объявляется каждый кадр на своём клоке и не зависит от gameplay: пауза игрового
+            // мира не должна замораживать экраны. Поэтому это отдельная точка входа, а не часть
+            // GameUpdate.
+            script_system.InvokeFunctionSafe<"GameUiFrame">();
+            script_system.InvokeFunctionSafe<"GameUpdate">();
+        }
 
         {
             TRY_PROFILE_SCOPE("Async.Submit");

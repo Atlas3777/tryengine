@@ -125,6 +125,15 @@ public:
     [[nodiscard]] const char* FrameString(uint32_t id) const;
     void ResetFrameStrings();
 
+    //! Text of the C++ fallback overlay (loading dots caption, compile error). Unlike
+    //! InternText it is not part of the script frame table: when the script context does not
+    //! exist yet there is no UiFrameBegin to clear it. Cleared by an empty string.
+    void SetOverlayText(const char* text);
+
+    [[nodiscard]] const char* OverlayText() const {
+        return overlay_text_.c_str();
+    }
+
     //! Grows when the atlas becomes available; scripts use it to drop cached glyph metrics.
     [[nodiscard]] uint32_t AtlasVersion() const {
         return atlas_version_;
@@ -152,6 +161,7 @@ private:
     static UiSystem* instance_;
     uint32_t atlas_version_ = 0;
     eastl::vector<eastl::string> frame_strings_;
+    eastl::string overlay_text_;
     uint64_t material_id_ = 0;
     Font* font_ = nullptr;
     Material* material_ = nullptr;

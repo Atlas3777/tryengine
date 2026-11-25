@@ -40,9 +40,10 @@ void ScriptReload::ProcessRequested() {
         return;
 
     reload_requested_ = false;
-    const auto result = script_system_.ReloadMainScript();
-    if (!result.has_value())
-        LogError(tryengine::core::LogCategory::Script, "Перезагрузка скриптов не удалась: {}", result.error());
+    // Компиляция уходит на пул потоков: кадр не ждёт JIT. Пока она идёт, ScriptSystem
+    // отклоняет вызовы скриптов, а PollAsync на главном потоке подменит контекст или
+    // оставит старое поколение при ошибке.
+    script_system_.ReloadMainScriptAsync();
 }
 
 void ScriptReload::StoreBytes(const das::TArray<uint8_t>& data) {
