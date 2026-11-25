@@ -84,6 +84,8 @@ struct public LoaderRequest {
 enum private ResourceJobKind {
     Mesh
     Material
+    Texture
+    Font
 }
 
 // One requested asset. `kind` is the AssetCache kind ("bundle", "scene", "prefab", ...) and
@@ -245,8 +247,12 @@ def private ReleaseAll() {
         }
         if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
             ReleaseMeshResource(g_resource_jobs[index].id)
-        } else {
+        } elif (g_resource_jobs[index].kind == ResourceJobKind.Material) {
             ReleaseMaterialResource(g_resource_jobs[index].id)
+        } elif (g_resource_jobs[index].kind == ResourceJobKind.Texture) {
+            ReleaseTextureResource(g_resource_jobs[index].id)
+        } else {
+            ReleaseFontResource(g_resource_jobs[index].id)
         }
         g_resource_jobs[index].held = false
     }
@@ -282,6 +288,12 @@ def private AddDependencies(deps : Dependencies) {
     for (material in deps.materials) {
         AddResourceJob(ResourceJobKind.Material, material)
     }
+    for (texture in deps.textures) {
+        AddResourceJob(ResourceJobKind.Texture, texture)
+    }
+    for (font in deps.fonts) {
+        AddResourceJob(ResourceJobKind.Font, font)
+    }
 }
 
 def private RequestResources() {
@@ -291,8 +303,12 @@ def private RequestResources() {
         }
         if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
             RequestLoadMesh(g_resource_jobs[index].id)
-        } else {
+        } elif (g_resource_jobs[index].kind == ResourceJobKind.Material) {
             RequestLoadMaterial(g_resource_jobs[index].id)
+        } elif (g_resource_jobs[index].kind == ResourceJobKind.Texture) {
+            RequestLoadTexture(g_resource_jobs[index].id)
+        } else {
+            RequestLoadFont(g_resource_jobs[index].id)
         }
         g_resource_jobs[index].held = true
     }
@@ -523,7 +539,8 @@ def private Advance() {
                 continue
             }
             let id = g_resource_jobs[index].id
-            if (g_resource_jobs[index].kind == ResourceJobKind.Mesh) {
+            let kind = g_resource_jobs[index].kind
+            if (kind == ResourceJobKind.Mesh) {
                 if (ResourceIsFailedMesh(id)) {
                     Fail("mesh {id} failed to load")
                     return
@@ -541,12 +558,32 @@ def private Advance() {
                 } else {
                     complete = false
                 }
-            } else {
+            } elif (kind == ResourceJobKind.Material) {
                 if (ResourceIsFailedMaterial(id)) {
                     Fail("material {id} failed to load")
                     return
                 }
                 if (ResourceIsReadyMaterial(id)) {
+                    g_resource_jobs[index].done = true
+                } else {
+                    complete = false
+                }
+            } elif (kind == ResourceJobKind.Texture) {
+                if (ResourceIsFailedTexture(id)) {
+                    Fail("texture {id} failed to load")
+                    return
+                }
+                if (ResourceIsReadyTexture(id)) {
+                    g_resource_jobs[index].done = true
+                } else {
+                    complete = false
+                }
+            } else {
+                if (ResourceIsFailedFont(id)) {
+                    Fail("font {id} failed to load")
+                    return
+                }
+                if (ResourceIsReadyFont(id)) {
                     g_resource_jobs[index].done = true
                 } else {
                     complete = false

@@ -132,6 +132,15 @@ public:
             cache->Release(guid);
     }
 
+    //! Takes a reference to a resource that is already resident; never loads. False means the
+    //! resource was not preloaded by the loader, which runtime code reports instead of reading
+    //! the disk from the frame path.
+    template <typename T>
+    bool Hold(uint64_t guid) {
+        auto* cache = GetTypedCache<T>();
+        return cache ? cache->Hold(guid) : false;
+    }
+
     void Purge() {
         std::lock_guard lock(mutex_);
         for (auto& cache : caches_)

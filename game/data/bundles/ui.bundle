@@ -1,0 +1,14 @@
+version: u32 = 2
+name: string = "ui"
+assets: BundleAsset[] = [
+	{
+		name: string = "font"
+		kind: string = "font"
+		ref: string = "guid:7732110565556845333"
+	}
+	{
+		name: string = "material"
+		kind: string = "material"
+		ref: string = "game/data/materials/ui.mat"
+	}
+]

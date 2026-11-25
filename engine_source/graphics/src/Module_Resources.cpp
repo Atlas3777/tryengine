@@ -47,6 +47,16 @@ void RequestLoadMaterial(uint64_t guid, das::Context* ctx) {
         res_manager->RequestLoad<tryengine::graphics::Material>(guid);
 }
 
+void RequestLoadTexture(uint64_t guid, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->RequestLoad<tryengine::graphics::TextureSampler>(guid);
+}
+
+void RequestLoadFont(uint64_t guid, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->RequestLoad<tryengine::graphics::Font>(guid);
+}
+
 bool ResourceIsReadyMesh(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->IsReady<tryengine::graphics::Mesh>(guid) : false;
@@ -57,6 +67,16 @@ bool ResourceIsReadyMaterial(uint64_t guid, das::Context* ctx) {
     return res_manager ? res_manager->IsReady<tryengine::graphics::Material>(guid) : false;
 }
 
+bool ResourceIsReadyTexture(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsReady<tryengine::graphics::TextureSampler>(guid) : false;
+}
+
+bool ResourceIsReadyFont(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsReady<tryengine::graphics::Font>(guid) : false;
+}
+
 bool ResourceIsFailedMesh(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->IsFailed<tryengine::graphics::Mesh>(guid) : false;
@@ -65,6 +85,47 @@ bool ResourceIsFailedMesh(uint64_t guid, das::Context* ctx) {
 bool ResourceIsFailedMaterial(uint64_t guid, das::Context* ctx) {
     auto* res_manager = GetResourceManager(ctx);
     return res_manager ? res_manager->IsFailed<tryengine::graphics::Material>(guid) : false;
+}
+
+bool ResourceIsFailedTexture(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsFailed<tryengine::graphics::TextureSampler>(guid) : false;
+}
+
+bool ResourceIsFailedFont(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->IsFailed<tryengine::graphics::Font>(guid) : false;
+}
+
+// Reference-only paths for the frame: a scene/prefab/UI takes what the loader already brought.
+// Returning false is the caller's cue to report a missing preload instead of reading the disk.
+bool HoldMeshResource(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->Hold<tryengine::graphics::Mesh>(guid) : false;
+}
+
+bool HoldMaterialResource(uint64_t guid, das::Context* ctx) {
+    auto* res_manager = GetResourceManager(ctx);
+    return res_manager ? res_manager->Hold<tryengine::graphics::Material>(guid) : false;
+}
+
+void ReleaseTextureResource(uint64_t guid, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->Release<tryengine::graphics::TextureSampler>(guid);
+}
+
+void ReleaseFontResource(uint64_t guid, das::Context* ctx) {
+    if (auto* res_manager = GetResourceManager(ctx))
+        res_manager->Release<tryengine::graphics::Font>(guid);
+}
+
+// Pure `guid:<u64>` parse, no engine context: a bundle document resolves its asset table at
+// parse time, and a headless script can do the same without a ResourceManager.
+uint64_t ParseAssetGuid(const char* ref) {
+    uint64_t id = 0;
+    if (ref == nullptr || !tryengine::resources::ParseGuidRef(ref, id))
+        return 0;
+    return id;
 }
 
 tryengine::graphics::Mesh* GetMeshPointer(uint64_t guid, das::Context* ctx) {
@@ -276,6 +337,39 @@ public:
 
         das::addExtern<DAS_BIND_FUN(RequestLoadMesh)>(*this, lib, "RequestLoadMesh", das::SideEffects::accessGlobal,
                                                       "RequestLoadMesh");
+
+        das::addExtern<DAS_BIND_FUN(RequestLoadTexture)>(*this, lib, "RequestLoadTexture",
+                                                         das::SideEffects::accessGlobal, "RequestLoadTexture");
+
+        das::addExtern<DAS_BIND_FUN(RequestLoadFont)>(*this, lib, "RequestLoadFont", das::SideEffects::accessGlobal,
+                                                      "RequestLoadFont");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsReadyTexture)>(*this, lib, "ResourceIsReadyTexture",
+                                                             das::SideEffects::accessGlobal, "ResourceIsReadyTexture");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsReadyFont)>(*this, lib, "ResourceIsReadyFont",
+                                                          das::SideEffects::accessGlobal, "ResourceIsReadyFont");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsFailedTexture)>(
+            *this, lib, "ResourceIsFailedTexture", das::SideEffects::accessGlobal, "ResourceIsFailedTexture");
+
+        das::addExtern<DAS_BIND_FUN(ResourceIsFailedFont)>(*this, lib, "ResourceIsFailedFont",
+                                                           das::SideEffects::accessGlobal, "ResourceIsFailedFont");
+
+        das::addExtern<DAS_BIND_FUN(HoldMeshResource)>(*this, lib, "HoldMeshResource", das::SideEffects::accessGlobal,
+                                                       "HoldMeshResource");
+
+        das::addExtern<DAS_BIND_FUN(HoldMaterialResource)>(*this, lib, "HoldMaterialResource",
+                                                           das::SideEffects::accessGlobal, "HoldMaterialResource");
+
+        das::addExtern<DAS_BIND_FUN(ReleaseTextureResource)>(*this, lib, "ReleaseTextureResource",
+                                                             das::SideEffects::accessGlobal, "ReleaseTextureResource");
+
+        das::addExtern<DAS_BIND_FUN(ReleaseFontResource)>(*this, lib, "ReleaseFontResource",
+                                                          das::SideEffects::accessGlobal, "ReleaseFontResource");
+
+        das::addExtern<DAS_BIND_FUN(ParseAssetGuid)>(*this, lib, "ParseAssetGuid", das::SideEffects::none,
+                                                     "ParseAssetGuid");
 
         das::addExtern<DAS_BIND_FUN(ResourceIsReadyMaterial)>(
             *this, lib, "ResourceIsReadyMaterial", das::SideEffects::accessGlobal, "ResourceIsReadyMaterial");

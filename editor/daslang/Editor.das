@@ -11,9 +11,12 @@ require tryeditor/Gizmo
 require tryeditor/ProBuilder
 
 require trygame/Game
+require trygame/GameBundles
 
 require math
+require tryengine/Bundle
 require tryengine/EcsMacro
+require tryengine/Loader
 require tryengine/Model
 require tryengine/Scene
 require tryengine/Profiling
@@ -27,6 +30,7 @@ require tryeditor/UiScreens
 require tryeditor/UndoRedo
 
 require tryResources
+require tryUi
 require TryEditor
 
 require imgui
@@ -35,6 +39,57 @@ require daslib/decs_boost
 
 var is_playing : bool = false
 var is_paused  : bool = false
+
+// The editor previews game screens, so it needs the same UI assets the game boots with: the
+// font and the UI material live in the shared `ui.bundle`. They are loaded through the loader
+// like any other content; the UI itself never requests a resource.
+var private g_ui_bundle_failed : bool = false
+var private g_ui_assets_set : bool = false
+
+def private ApplyUiAssets() {
+    if (g_ui_assets_set) {
+        return
+    }
+    let font = Bundle::Get(GameBundles::kUi, "font")
+    let material = Bundle::Get(GameBundles::kUi, "material")
+    if (font == 0ul || material == 0ul) {
+        return
+    }
+    UiSetAssets(font, material)
+    g_ui_assets_set = true
+}
+
+def private OnUiBundlesLoaded() {
+    ApplyUiAssets()
+}
+
+// Loads the UI and screen bundles the preview needs. The editor may read on demand, but it
+// goes through the same loader the game uses, so the "who touches the disk" rule has one
+// owner. A failed request is reported once and not retried until the next script generation.
+def private EnsureUiAssets() {
+    if (g_ui_assets_set || g_ui_bundle_failed) {
+        return
+    }
+    if (Bundle::Ready(GameBundles::kUi)) {
+        ApplyUiAssets()
+        return
+    }
+    if (Loader::IsActive()) {
+        if (Loader::IsFailed()) {
+            print("[EDITOR] UI bundle load failed: {Loader::Error()}\n")
+            Loader::Abort()
+            g_ui_bundle_failed = true
+        }
+        return
+    }
+
+    // A previous attempt may have been aborted by Play taking the loader; start over.
+    var request <- LoaderRequest()
+    for (path in GameBundles::All()) {
+        request.AddBundle(path)
+    }
+    StartTask(Loader::Load(request, @@OnUiBundlesLoaded))
+}
 
 // Reimporting an asset changes the contents of materials/meshes but not their id. By this
 // point EditorApp has already dropped the loaded resources; here entity pointers are
@@ -98,6 +153,7 @@ def private OnSceneUnloaded() {
 [export]
 def EditorStart(){
     TimeAttach(editor_clock)
+    EnsureUiAssets()
     init_quadtree_debug()
     RegisterSceneLoadedListener(@@OnSceneLoaded)
     RegisterSceneUnloadedListener(@@OnSceneUnloaded)
@@ -107,6 +163,10 @@ def EditorStart(){
 
 [export, profile]
 def EditorUpdate(){
+    if (!is_playing) {
+        EnsureUiAssets()
+    }
+
     let asset_generation = AssetReimportGeneration()
     if (asset_generation != last_asset_generation) {
         last_asset_generation = asset_generation

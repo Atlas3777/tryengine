@@ -635,10 +635,11 @@
 - Настройки запекания (`em_size`, `px_range`, `padding`, размер атласа, `ranges`) лежат в
   `.meta` ассета: перезапекание не требует правок кода. Меняешь содержимое артефакта —
   поднимай `FontImporter::GetVersion()`.
-- Guid из `game/assets/fonts/<Font>.ttf.meta` попадает в `kDefaultUiFontGuid`
-  (`engine_source/graphics/.../UiSystem.hpp`), а сборка кладёт артефакт в common-пак через
-  `BuildSettings.fonts` (заполняется в `Module_TryEditor::CreateBuild` из `UiSystem`).
-  Без этого шрифт в игре не найдётся, хотя в редакторе всё работает (loose-артефакт).
+- Guid из `game/assets/fonts/<Font>.ttf.meta` пишется в `assets` общего бандла
+  `game/data/bundles/ui.bundle` (`kind = "font"`), а игра/редактор после загрузки бандла
+  зовут `UiSetAssets(font_guid, material_guid)`. Сборка берёт шрифт из `assets` бандлов
+  (`BuildSystem::CollectBundleDependencies`), отдельных `BuildSettings.fonts` больше нет.
+  В редакторе шрифт работает как loose-артефакт, в игре — из common-пака.
 - Инструкция для человека — `game/assets/fonts/README.md`; проверка —
   `tools/agent/font-probe.sh game/assets/fonts/<Font>.ttf`.
 

@@ -29,6 +29,10 @@ public:
     virtual bool IsFailed(uint64_t guid) = 0;
     virtual void* GetRawPointer(uint64_t guid) = 0;
     virtual bool Release(uint64_t guid) = 0;
+    //! Takes a reference to an already ready resource and never starts a load. Runtime code
+    //! (scene apply, prefab spawn, UI) uses this: if it returns false the asset was not
+    //! preloaded, which is an error, not a reason to touch the disk.
+    virtual bool Hold(uint64_t guid) = 0;
     virtual bool HasGuid(uint64_t guid) const = 0;
     //! Снимок guid'ов, лежащих в кеше. Нужен редактору после переимпорта: загруженные
     //! материалы пересоздаются, чтобы подхватить новую текстуру/шейдер.
@@ -128,6 +132,20 @@ public:
 
         // Вызов только уменьшает счетчик. Очистка произойдет в Purge()
         it->second->ref_count.fetch_sub(1, std::memory_order_acq_rel);
+        return true;
+    }
+
+    bool Hold(uint64_t guid) override {
+        std::lock_guard lock(cache_mutex_);
+        auto it = cache_.find(guid);
+        if (it == cache_.end() || !it->second)
+            return false;
+        if (it->second->state.load(std::memory_order_acquire) != ResourceState::Ready)
+            return false;
+
+        // Only the count: a missing or still-loading resource must stay missing here, because
+        // a Hold call comes from the frame/gameplay path that is not allowed to read the disk.
+        it->second->ref_count.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
 

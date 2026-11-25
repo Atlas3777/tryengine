@@ -148,6 +148,8 @@ def public Advance(var values : table<string; auto(TT)?>; path : string; items_f
     // is that very document, and the call may move it.
     clone(g_meta[path].deps.meshes, document.deps.meshes)
     clone(g_meta[path].deps.materials, document.deps.materials)
+    clone(g_meta[path].deps.textures, document.deps.textures)
+    clone(g_meta[path].deps.fonts, document.deps.fonts)
 
     var value = invoke(compile, document)
     if (value == null) {
@@ -169,6 +171,8 @@ def public Store(var values : table<string; auto(TT)?>; kind : string; path : st
     meta.state = value != null ? AssetState.Ready : AssetState.Failed
     clone(meta.deps.meshes, deps.meshes)
     clone(meta.deps.materials, deps.materials)
+    clone(meta.deps.textures, deps.textures)
+    clone(meta.deps.fonts, deps.fonts)
     g_meta[path] <- meta
     values[path] <- value
 }
@@ -189,6 +193,8 @@ def public Dependencies(path : string) : Content::Dependencies {
     if (key_exists(g_meta, path)) {
         clone(deps.meshes, g_meta[path].deps.meshes)
         clone(deps.materials, g_meta[path].deps.materials)
+        clone(deps.textures, g_meta[path].deps.textures)
+        clone(deps.fonts, g_meta[path].deps.fonts)
     }
     return <- deps
 }

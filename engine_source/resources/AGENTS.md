@@ -74,14 +74,17 @@
 - Артефакт готовит `TextureProcessor` (BC-сжатие через rdo_bc и несжатые 8-битные форматы),
   формат/мипы/размер/сэмплер берутся из `TextureImportSettings` в `.meta`.
 - `AssetPak` несёт текстуры по guid. Текстуры, на которые не ссылается ни материал, ни сцена
-  (UI-спрайты), попадают в common-пак через `BuildSettings::ui_textures`, который
-  `CreateBuild` заполняет из `UiConfig::textures`.
+  (UI-спрайты), попадают в common-пак из `assets` бандлов: `BuildSystem` читает каждый
+  `.bundle` через `CollectBundleDependencies` и добавляет `texture`/`font`/`material`/`mesh`
+  записи в зависимости common-пака. Отдельного списка UI-текстур в C++ больше нет.
 
 ## Шрифт игрового UI
 
 - Импортируемый `.ttf` — обычный ассет: guid из `.meta`, один runtime-артефакт
   `runtime/<main_guid>/0` в формате `FontBinary` (шапка + глифы + вложенный
   `TextureBinary`), `sub_assets` пустой, поэтому runtime-id совпадает с main guid.
-- `AssetPak.fonts`/`fonts_data` кладут этот артефакт в common-пак; список заполняет
-  `BuildSystem` из `BuildSettings.fonts` (UiSystem config), потому что ни сцена, ни префаб
-  на шрифт не ссылаются. Loader — `FontLoader` в graphics, тип `Font` в `ResourceManager`.
+- `AssetPak.fonts`/`fonts_data` кладут этот артефакт в common-пак; список берётся из
+  `assets` бандлов (`kind = "font"`), потому что ни сцена, ни префаб на шрифт не ссылаются.
+  Загрузчик ждёт шрифт как отдельный resource job в фазе Resources; Loader — `FontLoader` в
+  graphics, тип `Font` в `ResourceManager`. `UiSystem` шрифт не запрашивает: игра/редактор
+  зовут `UiSetAssets` после загрузки `ui.bundle`.

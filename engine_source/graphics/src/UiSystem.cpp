@@ -26,31 +26,44 @@ UiSystem* UiSystem::ForScripts() {
     return instance_;
 }
 
+void UiSystem::SetAssets(uint64_t font_guid, uint64_t material_guid) {
+    if (font_guid != config_.font_guid) {
+        config_.font_guid = font_guid;
+        font_ = nullptr;
+        font_failed_logged_ = false;
+        font_not_requested_logged_ = false;
+        atlas_bound_ = false;
+        assets_missing_logged_ = false;
+    }
+    if (material_guid != config_.material_guid) {
+        config_.material_guid = material_guid;
+        material_ = nullptr;
+        material_failed_logged_ = false;
+        material_not_requested_logged_ = false;
+        atlas_bound_ = false;
+        assets_missing_logged_ = false;
+    }
+}
+
 void UiSystem::Tick() {
-    if (config_.font_guid == 0) {
-        if (!font_failed_logged_) {
-            font_failed_logged_ = true;
+    if (config_.font_guid == 0 || config_.material_guid == 0) {
+        // Startup normally runs a few frames before the game's boot request calls
+        // UiSetAssets; only a lasting absence is a mistake worth a warning.
+        const auto now = std::chrono::steady_clock::now();
+        if (assets_missing_since_ == std::chrono::steady_clock::time_point{})
+            assets_missing_since_ = now;
+        if (!assets_missing_logged_ && now - assets_missing_since_ > std::chrono::seconds(10)) {
+            assets_missing_logged_ = true;
             LogWarn(LogCategory::Graphics,
-                    "UiSystem: UiConfig.font_guid is 0; import a .ttf and put its guid in UiConfig/kDefaultUiFontGuid "
-                    "to enable the game UI");
+                    "UiSystem: UI assets are not set; call UiSetAssets(font_guid, material_guid) after the ui.bundle "
+                    "request is ready (the game UI stays off until then)");
         }
         return;
     }
+    assets_missing_since_ = {};
 
     PollFont();
     PollMaterial();
-
-    // UI textures are known from the config: request them up front instead of waiting for the
-    // first draw command that names one, so the first frame that draws an image already has it.
-    if (!textures_requested_) {
-        textures_requested_ = true;
-        for (uint64_t texture_guid : config_.textures) {
-            if (texture_guid == 0)
-                continue;
-            resource_manager_.RequestLoad<TextureSampler>(texture_guid);
-            texture_requested_[texture_guid] = 1;
-        }
-    }
 
     // Re-import or material live-reload replaces the stored resource; the pointers we hold are
     // only valid while the cache keeps the same object, so re-read them and rebind the atlas.
@@ -61,8 +74,8 @@ void UiSystem::Tick() {
             atlas_bound_ = false;
         }
     }
-    if (material_ != nullptr && material_id_ != 0) {
-        Material* current = resource_manager_.GetPointerExplicit<Material>(material_id_);
+    if (material_ != nullptr && config_.material_guid != 0) {
+        Material* current = resource_manager_.GetPointerExplicit<Material>(config_.material_guid);
         if (current != material_ && current != nullptr) {
             material_ = current;
             atlas_bound_ = false;
@@ -73,12 +86,6 @@ void UiSystem::Tick() {
 }
 
 void UiSystem::PollFont() {
-    if (!font_requested_) {
-        resource_manager_.RequestLoad<Font>(config_.font_guid);
-        font_requested_ = true;
-        LogInfo(LogCategory::Graphics, "UI font {} requested", config_.font_guid);
-        return;
-    }
     if (font_ != nullptr)
         return;
 
@@ -91,34 +98,35 @@ void UiSystem::PollFont() {
     }
     if (resource_manager_.IsFailed<Font>(config_.font_guid) && !font_failed_logged_) {
         font_failed_logged_ = true;
-        LogError("UI font {} failed to load: check the .ttf import and UiConfig.font_guid", config_.font_guid);
+        LogError("UI font {} failed to load: check the .ttf import", config_.font_guid);
+        return;
+    }
+    // Nobody asked the loader for this asset: the UI will stay blank, and the cause is a
+    // missing ui.bundle entry rather than a slow read.
+    if (!resource_manager_.IsLoading<Font>(config_.font_guid) && !font_not_requested_logged_) {
+        font_not_requested_logged_ = true;
+        LogError("UI font {} was not preloaded; add it to the ui.bundle and load that bundle before the UI frame",
+                 config_.font_guid);
     }
 }
 
 void UiSystem::PollMaterial() {
-    if (material_id_ == 0) {
-        const auto& registry = resource_manager_.GetAssetRegistry();
-        const auto resolved = registry.ResolveRef(config_.material_path);
-        if (!resolved.has_value() || *resolved == 0)
-            return;  // registry may still be scanning at startup; retried next frame
-        material_id_ = *resolved;
-    }
-    if (!material_requested_) {
-        resource_manager_.RequestLoad<Material>(material_id_);
-        material_requested_ = true;
-        LogInfo(LogCategory::Graphics, "UI material '{}' ({}) requested", config_.material_path.c_str(), material_id_);
-        return;
-    }
     if (material_ != nullptr)
         return;
 
-    if (resource_manager_.IsReady<Material>(material_id_)) {
-        material_ = resource_manager_.GetPointerExplicit<Material>(material_id_);
+    if (resource_manager_.IsReady<Material>(config_.material_guid)) {
+        material_ = resource_manager_.GetPointerExplicit<Material>(config_.material_guid);
         return;
     }
-    if (resource_manager_.IsFailed<Material>(material_id_) && !material_failed_logged_) {
+    if (resource_manager_.IsFailed<Material>(config_.material_guid) && !material_failed_logged_) {
         material_failed_logged_ = true;
-        LogError("UI material '{}' failed to load", config_.material_path.c_str());
+        LogError("UI material {} failed to load", config_.material_guid);
+        return;
+    }
+    if (!resource_manager_.IsLoading<Material>(config_.material_guid) && !material_not_requested_logged_) {
+        material_not_requested_logged_ = true;
+        LogError("UI material {} was not preloaded; add it to the ui.bundle and load that bundle before the UI frame",
+                 config_.material_guid);
     }
 }
 
@@ -146,11 +154,18 @@ Material* UiSystem::TextureMaterial(uint64_t texture_guid) {
     if (texture_guid == 0 || material_ == nullptr || !material_->shader)
         return nullptr;
 
+    // Reference-only: the texture belongs to a screen bundle the game or the editor loaded
+    // before the screen. If it is missing, the UI draws nothing; it must not start a read.
     TextureSampler* texture = resource_manager_.GetPointerExplicit<TextureSampler>(texture_guid);
     if (texture == nullptr) {
-        if (texture_requested_.find(texture_guid) == texture_requested_.end()) {
-            resource_manager_.RequestLoad<TextureSampler>(texture_guid);
-            texture_requested_[texture_guid] = 1;
+        // The bundle publishes its names as soon as it is parsed; its resources arrive in the
+        // loader's Resources phase. Loading is silent, a texture nobody requested is an error.
+        if (resource_manager_.IsLoading<TextureSampler>(texture_guid))
+            return nullptr;
+        if (texture_missing_logged_.find(texture_guid) == texture_missing_logged_.end()) {
+            texture_missing_logged_[texture_guid] = 1;
+            LogError("UI texture {} was not preloaded; add it to the screen bundle and load that bundle first",
+                     texture_guid);
         }
         return nullptr;
     }

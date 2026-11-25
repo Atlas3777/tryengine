@@ -1,0 +1,9 @@
+version: u32 = 2
+name: string = "hud"
+assets: BundleAsset[] = [
+	{
+		name: string = "logo"
+		kind: string = "texture"
+		ref: string = "guid:14429000468236573201"
+	}
+]

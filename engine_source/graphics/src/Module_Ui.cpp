@@ -71,6 +71,13 @@ uint32_t UiAtlasVersion() {
     return 0u;
 }
 
+//! The game/editor calls this once the `ui.bundle` request is ready: the UI then draws with
+//! assets the loader already brought, and never requests one itself.
+void UiSetAssets(uint64_t font_guid, uint64_t material_guid) {
+    if (auto* ui = Ui())
+        ui->SetAssets(font_guid, material_guid);
+}
+
 class Module_Ui : public das::Module {
 public:
     Module_Ui() : das::Module("tryUi") {
@@ -95,6 +102,8 @@ public:
         das::addExtern<DAS_BIND_FUN(UiIsReady)>(*this, lib, "UiIsReady", das::SideEffects::accessGlobal, "UiIsReady");
         das::addExtern<DAS_BIND_FUN(UiAtlasVersion)>(*this, lib, "UiAtlasVersion", das::SideEffects::accessGlobal,
                                                      "UiAtlasVersion");
+        das::addExtern<DAS_BIND_FUN(UiSetAssets)>(*this, lib, "UiSetAssets", das::SideEffects::accessGlobal,
+                                                  "UiSetAssets");
 
         verifyAotReady();
     }

@@ -4,6 +4,7 @@
 #include <EASTL/unique_ptr.h>
 #include <EASTL/unordered_map.h>
 #include <EASTL/vector.h>
+#include <chrono>
 #include <daScript/misc/vectypes.h>
 
 #include "engine/graphics/RuntimeTypes.hpp"
@@ -16,32 +17,14 @@ namespace tryengine::graphics {
 
 class VulkanDevice;
 
-//! Guid of the UI font asset: the guid stored in `game/assets/fonts/<Font>.ttf.meta`. The
-//! FontImporter turns the .ttf into a `.font` artifact under this guid; put the imported
-//! number here (0 disables the game UI until a font is imported).
-inline constexpr uint64_t kDefaultUiFontGuid = 7732110565556845333ULL;
-
-//! Guid of the texture the sample HUD draws with `Ui::ImageTexture`, so a build can pack it:
-//! nothing else references a UI-only texture, and the pak keeps no path table for assets.
-//! Leave the list empty when your game has no UI textures.
-inline constexpr uint64_t kDefaultUiTextureGuid = 14429000468236573201ULL;
-
-//! UI textures by guid: what the UI draws, and what a build has to pack into the common pak.
-inline eastl::vector<uint64_t> DefaultUiTextures() {
-    eastl::vector<uint64_t> out;
-    if (kDefaultUiTextureGuid != 0)
-        out.push_back(kDefaultUiTextureGuid);
-    return out;
-}
-
-//! Game UI configuration: the font asset (its runtime id), the material the UI draws with
-//! (an authoritative `game/data/...` path) and the textures it addresses by guid.
+//! Optional asset overrides for an embedder that does not use bundles. The game and the editor
+//! leave both at 0 and call `UiSystem::SetAssets` (script binding `UiSetAssets`) once the
+//! loader has made the assets of the `ui.bundle` ready. `UiSystem` itself never requests a
+//! resource: a UI asset that nobody preloaded stays missing, which is a loader bug, not a
+//! reason for the UI to read the disk.
 struct UiConfig {
-    uint64_t font_guid = kDefaultUiFontGuid;
-    //! Texture assets the UI samples by guid. The editor loads them loose; a build packs them
-    //! into the common pak (see BuildSettings::ui_textures).
-    eastl::vector<uint64_t> textures = DefaultUiTextures();
-    eastl::string material_path = "game/data/materials/ui.mat";
+    uint64_t font_guid = 0;
+    uint64_t material_guid = 0;
 };
 
 //! Frame constants of the UI shader, pushed once per draw. Mirrored in Ui.slang.
@@ -66,9 +49,10 @@ struct UiGlyphQuad {
     float px_per_em = 0.0f;
 };
 
-//! Owns the one font the UI draws with: polls its async load (and the UI material's), binds
-//! the distance-field atlas into that material once both are ready, and answers metrics to
-//! the scripts and glyph quads to the pass. Nothing here builds vertices or touches the frame.
+//! Owns the one font the UI draws with: reads the loader-preloaded font and UI material,
+//! binds the distance-field atlas into that material once both are ready, and answers metrics
+//! to the scripts and glyph quads to the pass. It never requests a resource: `SetAssets` is
+//! the game's/editor's promise that the loader already made them ready.
 class UiSystem {
 public:
     UiSystem(UiConfig config, VulkanDevice& device, resources::ResourceManager& resource_manager);
@@ -96,13 +80,10 @@ public:
     //! texture and rebuilt if the imported texture is replaced; null while the texture loads.
     [[nodiscard]] Material* TextureMaterial(uint64_t texture_guid);
 
-    [[nodiscard]] const UiConfig& GetConfig() const {
-        return config_;
-    }
-
-    [[nodiscard]] uint64_t GetFontGuid() const {
-        return config_.font_guid;
-    }
+    //! Points the UI at the font and UI material the loader already preloaded. Called from
+    //! the game/editor script (binding `UiSetAssets`) after the `ui.bundle` request finished.
+    //! A changed guid drops the cached pointers and rebinds the atlas on the next `Tick`.
+    void SetAssets(uint64_t font_guid, uint64_t material_guid);
 
     //! True when the built-in material has no unused sampler that still points at the white
     //! fallback texture; a warning is logged once when that happens.
@@ -151,18 +132,17 @@ private:
     VulkanDevice& device_;
     resources::ResourceManager& resource_manager_;
 
-    bool font_requested_ = false;
-    bool material_requested_ = false;
     bool font_failed_logged_ = false;
     bool material_failed_logged_ = false;
+    bool font_not_requested_logged_ = false;
+    bool material_not_requested_logged_ = false;
+    bool assets_missing_logged_ = false;
     bool atlas_bound_ = false;
-    bool textures_requested_ = false;
 
     static UiSystem* instance_;
     uint32_t atlas_version_ = 0;
     eastl::vector<eastl::string> frame_strings_;
     eastl::string overlay_text_;
-    uint64_t material_id_ = 0;
     Font* font_ = nullptr;
     Material* material_ = nullptr;
     uint32_t atlas_binding_ = 0;
@@ -176,12 +156,15 @@ private:
     };
 
     eastl::unordered_map<uint64_t, TextureMaterialEntry> texture_materials_;
-    //! Textures the UI asked for; keeps RequestLoad from being issued every frame per guid.
-    eastl::unordered_map<uint64_t, uint8_t> texture_requested_;
+    //! Textures a screen named but nobody preloaded; one error per guid, not per frame.
+    eastl::unordered_map<uint64_t, uint8_t> texture_missing_logged_;
     //! Replaced materials whose descriptor sets may still be referenced by a recorded command
     //! buffer. Destruction of the GPU resources is deferred to the whole UI's lifetime.
     eastl::vector<eastl::unique_ptr<Material>> retired_texture_materials_;
     bool texture_binding_error_logged_ = false;
+    //! Wall clock since the UI first found its assets unset; a warning is issued only when
+    //! the absence is lasting (a slow first load is normal, a forgotten UiSetAssets is not).
+    std::chrono::steady_clock::time_point assets_missing_since_{};
 };
 
 }  // namespace tryengine::graphics

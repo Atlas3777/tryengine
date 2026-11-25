@@ -435,7 +435,7 @@ def public SpawnPrefabTemplate(data : PrefabTemplate?; origin : float3) : Entity
             print("[PREFAB ERROR] prefab '{data.path}' node {node_index}: material '{model.material}' is not an existing authored .mat path; a derived material is reached through the mesh default\n")
             return INVALID_ENTITY_ID
         }
-        if (model.mesh != 0ul && !Model::Reserve(refs)) {
+        if (model.mesh != 0ul && !Model::Hold(refs)) {
             print("[PREFAB ERROR] prefab '{data.path}': mesh {model.mesh:d} / material {refs.material:d} is not loaded; add the prefab to the LoaderRequest first\n")
             return INVALID_ENTITY_ID
         }

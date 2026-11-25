@@ -87,6 +87,7 @@ def public IsReady(refs : ModelRefs) : bool {
 //! to be created, then reports whether it is usable right now. `false` means a resource is
 //! missing or still loading: the caller must not create the entity / must report the error.
 //! The reference is what keeps a spawned prefab's resources alive after the loader lets go.
+//! Editor paths use this (they may load on demand); runtime spawn uses `Hold`.
 def public Reserve(refs : ModelRefs) : bool {
     if (!refs.ok || refs.mesh == 0ul) {
         return false
@@ -95,6 +96,23 @@ def public Reserve(refs : ModelRefs) : bool {
     RequestLoadMesh(refs.mesh)
     if (refs.material != 0ul) {
         RequestLoadMaterial(refs.material)
+    }
+    return IsReady(refs)
+}
+
+//! Reference-only counterpart of `Reserve` for the runtime: the loader preloaded the pair, the
+//! spawn only takes its own reference. `false` is a preload error, not a reason to read the
+//! disk from the spawn path.
+def public Hold(refs : ModelRefs) : bool {
+    if (!refs.ok || refs.mesh == 0ul) {
+        return false
+    }
+
+    if (!HoldMeshResource(refs.mesh)) {
+        return false
+    }
+    if (refs.material != 0ul && !HoldMaterialResource(refs.material)) {
+        return false
     }
     return IsReady(refs)
 }

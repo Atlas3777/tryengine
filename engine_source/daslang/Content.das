@@ -84,12 +84,15 @@ def public KindName(kind : DocumentKind) : string {
     return "bundle"
 }
 
-// Resource ids one content document needs before it can be shown: meshes and materials
-// are the heavy, asynchronous part of loading. The collector below fills this from the
-// authored document; the loading state machine requests the ids and waits for them.
+// Resource ids one content document needs before it can be shown: meshes and materials are
+// the heavy, asynchronous part of loading, and a bundle adds textures and fonts of its own
+// asset table. The collector below fills this from the authored document; the loading state
+// machine requests the ids and waits for them.
 struct public Dependencies {
     meshes    : array<uint64>
     materials : array<uint64>
+    textures  : array<uint64>
+    fonts     : array<uint64>
 }
 
 def public AddMeshDependency(var deps : Dependencies; id : uint64) {
@@ -101,6 +104,18 @@ def public AddMeshDependency(var deps : Dependencies; id : uint64) {
 def public AddMaterialDependency(var deps : Dependencies; id : uint64) {
     if (id != 0ul && !deps.materials.contains(id)) {
         deps.materials |> push(id)
+    }
+}
+
+def public AddTextureDependency(var deps : Dependencies; id : uint64) {
+    if (id != 0ul && !deps.textures.contains(id)) {
+        deps.textures |> push(id)
+    }
+}
+
+def public AddFontDependency(var deps : Dependencies; id : uint64) {
+    if (id != 0ul && !deps.fonts.contains(id)) {
+        deps.fonts |> push(id)
     }
 }
 
@@ -141,12 +156,55 @@ def private ParseAssetRefArray(cf : StructField?) : array<uint64> {
         if (elem == null || !(elem.value is _string)) {
             continue
         }
-        let id = ResolveAssetRef(elem.value as _string)
+        let id = ResolveRef(elem.value as _string)
         if (id != 0ul && !res.contains(id)) {
             res |> push(id)
         }
     }
     return <- res
+}
+
+//! Authored reference -> runtime id. `guid:<u64>` is a pure parse and needs no registry, so a
+//! bundle's asset table resolves even in a headless context; anything else is an authored path
+//! resolved through the asset registry.
+def public ResolveRef(ref : string) : uint64 {
+    if (empty(ref)) {
+        return 0ul
+    }
+    if (starts_with(ref, "guid:")) {
+        return ParseAssetGuid(ref)
+    }
+    return ResolveAssetRef(ref)
+}
+
+// Resource buckets of an `assets` table (`{name, kind, ref}`). The names are the bundle's
+// runtime lookup keys and are read by `tryengine/Bundle`; the loader only needs the ids, so
+// this collector groups them by kind. An unknown kind is skipped here and rejected by the
+// bundle parser, which owns the format.
+def private CollectAssetTable(var deps : Dependencies; cf : StructField?) {
+    if (cf == null || !(cf.value is _array)) {
+        return
+    }
+
+    assume arr = cf.value as _array
+    for (elem in arr) {
+        if (elem == null || !(elem.value is _object)) {
+            continue
+        }
+        assume obj = elem.value as _object
+
+        let kind = from_CF(obj?["kind"] ?? null, type<string>)
+        let id = ResolveRef(from_CF(obj?["ref"] ?? null, type<string>))
+        if (kind == "texture") {
+            AddTextureDependency(deps, id)
+        } elif (kind == "font") {
+            AddFontDependency(deps, id)
+        } elif (kind == "material") {
+            AddMaterialDependency(deps, id)
+        } elif (kind == "mesh") {
+            AddMeshDependency(deps, id)
+        }
+    }
 }
 
 // Dependencies live on the item's components. `model` is the only appearance form: a mesh
@@ -163,7 +221,7 @@ def private CollectObjectDependencies(var deps : Dependencies; obj : table<strin
 
     let material_path = from_CF(model_obj?["material"] ?? null, type<string>)
     if (!empty(material_path)) {
-        AddMaterialDependency(deps, ResolveAssetRef(material_path))
+        AddMaterialDependency(deps, ResolveRef(material_path))
     }
 }
 
@@ -196,6 +254,11 @@ def public CollectDependencies(items_field : string; root : StructField?) : Depe
     for (id in ParseAssetRefArray(root_obj?["requireMaterials"] ?? null)) {
         AddMaterialDependency(deps, id)
     }
+
+    // A bundle names its own resources (`assets`), a scene/prefab has none; the field is read
+    // for any document so the loader learns the bundle's textures and fonts from the same place
+    // it learns meshes and materials.
+    CollectAssetTable(deps, root_obj?["assets"] ?? null)
 
     if (!empty(items_field)) {
         let items_cf = root_obj?[items_field] ?? null

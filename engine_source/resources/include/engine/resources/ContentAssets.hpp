@@ -14,6 +14,8 @@ namespace tryengine::resources {
 struct ContentDependencies {
     eastl::vector<uint64_t> meshes;
     eastl::vector<uint64_t> materials;
+    eastl::vector<uint64_t> textures;
+    eastl::vector<uint64_t> fonts;
 };
 
 namespace content_detail {
@@ -111,6 +113,54 @@ inline void CollectSceneDependencies(eastl::string_view text, const AssetRegistr
 
     AddRefArray(FindField(*parsed, "requireMeshs"), registry, out.meshes);
     AddRefArray(FindField(*parsed, "requireMaterials"), registry, out.materials);
+}
+
+// A bundle declares the assets of its screen as `{ name, kind, ref }`. The loader learns the
+// same ids from the script side; the build needs them to put every asset the screen names
+// into the common pak, because nothing else references a UI-only texture or font.
+inline void CollectBundleDependencies(eastl::string_view text, const AssetRegistry& registry,
+                                      ContentDependencies& out) {
+    auto parsed = ParseConfig(text);
+    if (!parsed.has_value()) {
+        LogError("Bundle: failed to parse for dependencies: {}", parsed.error().Message());
+        return;
+    }
+
+    const ConfigField* assets_field = FindField(*parsed, "assets");
+    const ConfigArray* assets = assets_field ? GetArray(assets_field->value) : nullptr;
+    if (!assets)
+        return;
+
+    for (const auto& element : assets->elements) {
+        const ConfigObject* asset = GetObject(element.value);
+        if (!asset)
+            continue;
+
+        const ConfigField* kind_field = FindField(*asset, "kind");
+        const ConfigField* ref_field = FindField(*asset, "ref");
+        if (!kind_field || !ref_field)
+            continue;
+
+        const auto* kind = eastl::get_if<eastl::string>(&kind_field->value);
+        const auto* ref = eastl::get_if<eastl::string>(&ref_field->value);
+        if (!kind || !ref || ref->empty())
+            continue;
+
+        const auto id = registry.ResolveRef(*ref);
+        if (!id.has_value() || *id == 0) {
+            LogError("Bundle asset '{}': reference '{}' is not a known asset", *kind, ref->c_str());
+            continue;
+        }
+
+        if (*kind == "texture")
+            out.textures.push_back(*id);
+        else if (*kind == "font")
+            out.fonts.push_back(*id);
+        else if (*kind == "material")
+            out.materials.push_back(*id);
+        else if (*kind == "mesh")
+            out.meshes.push_back(*id);
+    }
 }
 
 }  // namespace tryengine::resources

@@ -92,8 +92,7 @@ eastl::vector<uint64_t> BuildSystem::ExtractAndRemoveShared(eastl::span<eastl::v
     return shared;
 }
 
-tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::span<SceneDTO> scenes,
-                                                const char* build_directory) {
+tryengine::async::Task<void> BuildSystem::Build(eastl::span<SceneDTO> scenes, const char* build_directory) {
     LogInfo("BuildSystem::Build enter");
 
     // Контейнер для хранения хэндлов. Используем type-erasure, чтобы не знать точный тип хэндла.
@@ -183,6 +182,8 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 
     // 3. Собираем content до common-пака: префабы должны уехать туда вместе со своими
     // мешами и материалами, иначе Prefab::Spawn в игре получит текст без ресурсов.
+    eastl::vector<uint64_t> bundle_textures;
+    eastl::vector<uint64_t> common_fonts;
     eastl::vector<ContentFile> content_files;
     const auto content_paths = res_m_.GetAssetRegistry().AuthoritativePaths();
     for (const auto& path : content_paths) {
@@ -209,6 +210,18 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
             tryengine::resources::CollectPrefabDependencies(text, res_m_.GetAssetRegistry(), deps);
             AppendUnique(common_dto.meshes, eastl::move(deps.meshes));
             AppendUnique(common_dto.mats, eastl::move(deps.materials));
+        } else if (is_data && EndsWith(path, ".bundle")) {
+            // A bundle is the screen's manifest: its textures and fonts are referenced by
+            // nothing else, so common is the only place they can ride.
+            const eastl::string_view text(reinterpret_cast<const char*>(file.data.data()), file.data.size());
+            tryengine::resources::ContentDependencies deps;
+            tryengine::resources::CollectBundleDependencies(text, res_m_.GetAssetRegistry(), deps);
+            AppendUnique(common_dto.meshes, eastl::move(deps.meshes));
+            AppendUnique(common_dto.mats, eastl::move(deps.materials));
+            for (uint64_t texture : deps.textures)
+                bundle_textures.push_back(texture);
+            for (uint64_t font : deps.fonts)
+                common_fonts.push_back(font);
         } else if (is_data && EndsWith(path, ".mat")) {
             // A material may be requested at runtime by path even if no scene/prefab
             // references it; its shader and textures belong in common as well.
@@ -243,13 +256,38 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
     }
     eastl::sort(common_shaders.begin(), common_shaders.end());
     common_shaders.erase(eastl::unique(common_shaders.begin(), common_shaders.end()), common_shaders.end());
-    // UI textures are requested by guid from the HUD and nothing else references them, so the
-    // build is told explicitly that they belong in common.
-    for (const uint64_t ui_texture : settings.ui_textures)
-        if (ui_texture != 0)
-            common_textures.push_back(ui_texture);
+    // Textures a bundle names are drawn by the UI and referenced by nothing else; they belong
+    // in common exactly like the material textures above.
+    for (const uint64_t texture : bundle_textures)
+        if (texture != 0)
+            common_textures.push_back(texture);
     eastl::sort(common_textures.begin(), common_textures.end());
     common_textures.erase(eastl::unique(common_textures.begin(), common_textures.end()), common_textures.end());
+    eastl::sort(common_fonts.begin(), common_fonts.end());
+    common_fonts.erase(eastl::unique(common_fonts.begin(), common_fonts.end()), common_fonts.end());
+
+    // A bundle asset may also be referenced by one scene; it must not be packed twice. After
+    // common is final, remove every common id from the per-scene lists (the same reason
+    // ExtractAndRemoveShared exists, extended to assets common got from bundles/content).
+    eastl::sort(common_dto.meshes.begin(), common_dto.meshes.end());
+    common_dto.meshes.erase(eastl::unique(common_dto.meshes.begin(), common_dto.meshes.end()), common_dto.meshes.end());
+    eastl::sort(common_dto.mats.begin(), common_dto.mats.end());
+    common_dto.mats.erase(eastl::unique(common_dto.mats.begin(), common_dto.mats.end()), common_dto.mats.end());
+
+    auto remove_common = [](eastl::vector<uint64_t>& list, const eastl::vector<uint64_t>& common) {
+        if (list.empty() || common.empty())
+            return;
+        list.erase(
+            eastl::remove_if(list.begin(), list.end(),
+                             [&common](uint64_t id) { return eastl::binary_search(common.begin(), common.end(), id); }),
+            list.end());
+    };
+    for (size_t i = 0; i < scenes.size(); ++i) {
+        remove_common(scenes[i].meshes, common_dto.meshes);
+        remove_common(scenes[i].mats, common_dto.mats);
+        remove_common(per_scene_shaders[i], common_shaders);
+        remove_common(per_scene_textures[i], common_textures);
+    }
 
     eastl::vector<tryengine::resources::AssetPak> asset_paks;
 
@@ -265,7 +303,7 @@ tryengine::async::Task<void> BuildSystem::Build(BuildSettings settings, eastl::s
 
     // 5. Пакуем общие ресурсы: сцены делят их между собой, а префабы могут понадобиться
     // в любой момент, поэтому common несёт все prefab/data и их зависимости.
-    auto common_result = co_await CreatePak(common_dto, common_shaders, common_textures, settings.fonts);
+    auto common_result = co_await CreatePak(common_dto, common_shaders, common_textures, common_fonts);
     if (!common_result.has_value())
         co_return LogAndMakeError("Create Pak Is Failed");
 

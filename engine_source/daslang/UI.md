@@ -266,24 +266,40 @@ let public kDangerButton = ButtonTemplate(
 картинку туда, где у текста лежит атлас шрифта. Команда не появляется, пока текстура не
 загрузилась, поэтому кадр не ломается на старте.
 
+Экран не держит guid в коде: у каждого экрана есть свой бандл
+(`game/data/bundles/<screen>.bundle`), который хранит `ключ -> guid`. Экран читает ключ
+синхронно из готового бандла:
+
 ```das
-Ui::ImageTexture("##logo", UiTheme::kLogoGuid, float2(48.0f, 48.0f))
-Ui::ImageTexture("##dim", UiTheme::kLogoGuid, float2(64.0f, 64.0f), UiStyle(color = float4(1.0f, 1.0f, 1.0f, 0.5f)))
+// ScreenHud.das
+require tryengine/Bundle
+require trygame/GameBundles
+
+Ui::ImageTexture("##logo", Bundle::Get(GameBundles::kHud, "logo"), float2(24.0f, 24.0f))
+Ui::ImageTexture("##dim", Bundle::Get(GameBundles::kHud, "logo"), float2(64.0f, 64.0f),
+                 UiStyle(color = float4(1.0f, 1.0f, 1.0f, 0.5f)))
 ```
+
+Бандл загружается до показа экрана: `GameFlow::LoadScene` кладёт `hud.bundle` в тот же
+`LoaderRequest`, что и сцену, а boot-запрос `GameFlow::Start` — `ui.bundle` с шрифтом и
+материалом UI. `Bundle::Get` — только чтение кеша: UI сам никогда не просит ресурс, а
+непринесённая текстура просто не рисуется и один раз пишет ошибку в лог.
 
 - `style.color` — множитель цвета (по умолчанию белый; альфа тоже множитель), `size` — размер
   в пикселях цели;
-- guid — число из `.png.meta`. Путь не подходит: в паке нет таблицы путей для импортированных
-  ассетов, поэтому guid — единственная ссылка, которая переживает билд. Один и тот же guid
-  пишется в двух местах: константа в теме игры (адрес для скрипта) и `UiConfig::textures` в
-  C++ (что упаковать в common-пак);
+- guid пишется один раз — в `assets`-таблице бандла (`ref = "guid:<id>"`), рядом с
+  `kind = "texture"`. Ключ (`"logo"`) — то, что называет экран; путь и `.meta` в коде не
+  нужны. Билд берёт ассеты из `assets` бандлов и кладёт их в common-пак, поэтому отдельного
+  списка UI-текстур в C++ больше нет;
 - настройки импорта (`format`, `generate_mips`, `max_size`, `filter`, `wrap`) лежат в `.meta`
   ассета, панель **Import Settings** показывает их для выбранного в Asset Browser файла, а
   `tools/agent/texture-probe.sh` проверяет запекание без редактора. Инструкция —
   `game/assets/ui/README.md`.
 
 `Ui::Image(id, path, size)` остаётся для материала: когда картинка настраивается в
-`game/data/**/*.mat` и её же использует 3D, материал — общий ресурс.
+`game/data/**/*.mat` и её же использует 3D, материал — общий ресурс. Материал тоже перечислен
+в бандле экрана (`kind = "material"`, `ref` — авторский путь `.mat`), а `Ui::MaterialFor`
+только читает готовый ресурс из кеша.
 
 ## Свои виджеты
 

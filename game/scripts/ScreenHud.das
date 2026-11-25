@@ -6,7 +6,9 @@ module ScreenHud shared public
 //! HUD: the bottom gameplay layer. Widgets in three corners show how anchors work: the panel is
 //! pinned to the top-left, the phase label to the top-right, the counter to the bottom-left.
 
+require tryengine/Bundle
 require tryengine/Ui
+require trygame/GameBundles
 require trygame/GameScreens
 require trygame/GameState
 require trygame/UiTheme
@@ -36,10 +38,10 @@ def private OnTogglePause() {
 
 def private BuildHud() {
     Ui::Panel("##hud", UiTheme::kHudPanel, UiLayout(anchor = float2(0.0f, 0.0f), offset = float2(24.0f, 24.0f), spacing = 8.0f)) {
-        // A texture asset drawn directly, without a material file: the guid comes from the
-        // asset's .meta, the size from the layout.
+        // A texture asset drawn directly, without a material file: the bundle resolves the
+        // screen-local name to the asset id, the size comes from the layout.
         Ui::Row("##brand", UiStyle(), UiLayout(spacing = 10.0f)) {
-            Ui::ImageTexture("##logo", UiTheme::kLogoGuid, float2(24.0f, 24.0f))
+            Ui::ImageTexture("##logo", Bundle::Get(GameBundles::kHud, "logo"), float2(24.0f, 24.0f))
             Ui::Column("##brand_text", UiStyle(), UiLayout(spacing = 2.0f)) {
                 Ui::Label("##title", "tryengine UI", UiTheme::kTitle)
                 Ui::Label("##subtitle", "hud screen", UiTheme::kMuted)

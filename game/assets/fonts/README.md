@@ -7,17 +7,23 @@ import it once:
 2. Start the editor. `FontImporter` registers `.ttf` assets, so the first scan imports the font
    and writes `YourFont.ttf.meta` (the asset guid) plus the runtime artifact
    `game/artifacts/runtime/<guid>/0` in the `FontBinary` format (SDF atlas + glyph metrics).
-3. Copy the guid from the `.meta` into `kDefaultUiFontGuid` in
-   `engine_source/graphics/include/engine/graphics/UiSystem.hpp`:
+3. Put the guid from the `.meta` into the `font` entry of the shared UI bundle,
+   `game/data/bundles/ui.bundle`:
 
-   ```cpp
-   inline constexpr uint64_t kDefaultUiFontGuid = 1234567890123456789ull;
+   ```text
+   {
+       name: string = "font"
+       kind: string = "font"
+       ref: string = "guid:1234567890123456789"
+   }
    ```
 
-   `0` disables the game UI: the tree is still built, but `UiPass` draws nothing and a warning
-   is logged once.
-4. Rebuild the editor and the game client. The build puts the font artifact into the common pak
-   because `BuildSettings.fonts` is filled from `UiSystem` in `CreateBuild`.
+   The game and the editor read this key after the bundle is loaded and hand it to
+   `UiSetAssets`; no C++ constant needs editing, and a new font is a one-line change here.
+   Without a resolvable `font` entry the UI stays off: the tree is still built, but `UiPass`
+   draws nothing and `UiSystem` logs why.
+4. Rebuild the editor and the game client. The build packs the font into the common pak because
+   it reads `assets` of every bundle (`kind = "font"`); there is no separate build setting.
 
 ## Bake settings
 

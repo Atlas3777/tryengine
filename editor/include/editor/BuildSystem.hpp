@@ -19,23 +19,13 @@ struct SceneDTO {
     eastl::vector<uint64_t> mats;
 };
 
-struct BuildSettings {
-    uint64_t first_scene_guid;
-    // Assets that must ride in the common pak although no scene or prefab references them.
-    // Today this is the baked UI font and the textures the HUD draws by guid (UiSystem config);
-    // CreateBuild fills both in.
-    eastl::vector<uint64_t> fonts;
-    eastl::vector<uint64_t> ui_textures;
-};
-
 class BuildSystem {
 public:
     explicit BuildSystem(tryengine::resources::ResourceManager& resource_m,
                          tryengine::resources::AsyncFileManager& file_m)
         : res_m_(resource_m), file_m_(file_m) {}
 
-    tryengine::async::Task<void> Build(BuildSettings settings, eastl::span<SceneDTO> scenes,
-                                       const char* build_directory);
+    tryengine::async::Task<void> Build(eastl::span<SceneDTO> scenes, const char* build_directory);
 
 private:
     eastl::vector<uint64_t> ExtractAndRemoveShared(eastl::span<eastl::vector<uint64_t>*> per_scene_lists);

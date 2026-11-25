@@ -236,10 +236,14 @@ def public ApplyState(var state : SceneState) {
     scene_context.scene_path = state.path
 
     for (mesh in active_scene.requireMeshs) {
-        RequestLoadMesh(mesh)
+        if (!HoldMeshResource(mesh)) {
+            print("[SCENE ERROR] mesh {mesh:d} is not resident while restoring the editor scene\n")
+        }
     }
     for (mat in active_scene.requireMaterials) {
-        RequestLoadMaterial(mat)
+        if (!HoldMaterialResource(mat)) {
+            print("[SCENE ERROR] material {mat:d} is not resident while restoring the editor scene\n")
+        }
     }
 }
 
@@ -391,6 +395,22 @@ def private ApplyDocument(document : Content::Document?) : bool {
         }
     }
 
+    // The header may list ids no entity uses; they are still the document's dependencies and
+    // the loader was asked for them. Check before touching the world, so a cold cache is one
+    // clear error instead of a half-applied scene.
+    for (mesh_id in document.deps.meshes) {
+        if (!ResourceIsReadyMesh(mesh_id)) {
+            print("[SCENE ERROR] mesh {mesh_id:d} is not loaded; preload the scene first.\n")
+            return false
+        }
+    }
+    for (mat_id in document.deps.materials) {
+        if (!ResourceIsReadyMaterial(mat_id)) {
+            print("[SCENE ERROR] material {mat_id:d} is not loaded; preload the scene first.\n")
+            return false
+        }
+    }
+
     UnloadActiveScene()
     scene_context.scene_name = Content::Stem(document.path)
     scene_context.scene_path = document.path
@@ -409,11 +429,17 @@ def private ApplyDocument(document : Content::Document?) : bool {
         }
     }
 
+    // Reference-only: the loader already brought every id the document lists. A hold that
+    // fails means the resource was not preloaded; the frame path never starts a read.
     for (mesh_id in active_scene.requireMeshs) {
-        RequestLoadMesh(mesh_id)
+        if (!HoldMeshResource(mesh_id)) {
+            print("[SCENE ERROR] mesh {mesh_id:d} is not resident; preload the scene first.\n")
+        }
     }
     for (mat_id in active_scene.requireMaterials) {
-        RequestLoadMaterial(mat_id)
+        if (!HoldMaterialResource(mat_id)) {
+            print("[SCENE ERROR] material {mat_id:d} is not resident; preload the scene first.\n")
+        }
     }
 
     let ent_count = length(entities_arr)

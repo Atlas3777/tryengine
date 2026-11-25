@@ -101,21 +101,44 @@ if (Loader::IsFailed()) {
 
 ## Бандлы
 
-`game/data/**/*.bundle`:
+`game/data/bundles/*.bundle` — манифест одного экрана:
 
 ```
-version: u32 = 1
-name: string = "startup"
+version: u32 = 2
+name: string = "hud"
 prefabs: string[] = [
-    "content/prefabl.prefab"
     "content/props/sword.prefab"
+]
+assets: BundleAsset[] = [
+    {
+        name: string = "logo"
+        kind: string = "texture"
+        ref: string = "guid:14429000468236573201"
+    }
+    {
+        name: string = "material"
+        kind: string = "material"
+        ref: string = "game/data/materials/ui.mat"
+    }
 ]
 ```
 
-`AddBundle("data/bundles/startup.bundle")` находит файл, читает его текст в фазе
-`Bundles`, добавляет префабы в очередь фазы `Prefabs` и тем самым увеличивает её `total`.
-`prefabs` — пути `content/...` с расширением. Бандл — только группировка префабов, не
-отдельный кеш ресурсов.
+`AddBundle("data/bundles/hud.bundle")` находит файл, читает его текст в фазе `Bundles`,
+добавляет префабы в очередь фазы `Prefabs` и тем самым увеличивает её `total`.
+`prefabs` — пути `content/...` с расширением.
+
+`assets` — таблица `ключ -> runtime id` для экрана. `kind` — `texture`, `font`, `material`
+или `mesh`; `ref` — `guid:<id>` (импортированный ассет) или авторский путь (`.mat`).
+`Content::Parse` собирает ids в `Content::Dependencies.textures`/`fonts`, поэтому загрузчик
+запрашивает их в фазе `Resources` вместе с мешами и материалами. Готовый бандл кешируется
+как таблица `name -> id`; экран читает её синхронно через `Bundle::Get(path, "logo")`.
+Бандл не хранит байты и ничего не грузит сам: единица загрузки — **путь** к бандлу, а
+`Bundle` — готовый продукт, как `PrefabTemplate` (CF-документ после разбора выбрасывается).
+
+Пути бандлов экранов живут в `game/scripts/GameBundles.das`: `kUi` — общий бандл (шрифт и
+UI-материал), `kHud` — HUD. Игра грузит `kUi` на boot, экран — свой бандл в том же
+`LoaderRequest`, что и сцену, поэтому к первому кадру экрана всё, что он называет, уже
+готово.
 
 ## Где грузятся префабы
 
@@ -135,6 +158,13 @@ prefabs: string[] = [
 4. `Prefab::Spawn` — только cache-hit. Если префаба нет в запросе и он не загружен
    `Prefab::LoadPrefabFile`, `Spawn` вернёт `INVALID_ENTITY_ID`.
 
+Ссылки на готовые ресурсы (после загрузчика) берутся через `Hold*`, а не `RequestLoad*`:
+сцена, префаб и UI только увеличивают refcount. Если ассет не был предзагружен, это
+ошибка `[SCENE ERROR]`/`[PREFAB ERROR]`/`[UI ERROR]`, а не повод прочитать диск из кадра.
+`RequestLoad*` в рантайме делает только `Loader` (и редакторские пути
+`Scene::LoadAsync`/`Prefab::SpawnPrefab`, которым разрешено грузить по действию
+пользователя).
+
 Повторный `Loader::Load` (Play, рестарт, повторный вход в сцену) для неизменённого
 контента не делает ни одного чтения: `AssetCache::Request` видит готовые записи, меши и
 материалы уже готовы в `ResourceManager`, и запрос завершается на первом же шаге задачи.
@@ -145,7 +175,12 @@ prefabs: string[] = [
 
 Play использует тот же путь: `PlayMode.BeginPlay` снимает снимок DECS-heap/`SceneState`/
 selection, затем `GameStart` запускает `Loader::Load`. `EditorUpdate` вызывает
-`GameUpdate`, который не знает про загрузку. `Scene::Load` в callback создаёт editor-камеру
+`GameUpdate`, который не знает про загрузку.
+
+В Edit режиме редактор грузит те же бандлы через `Loader::Load` (`EditorStart`/`EditorUpdate`,
+`GameBundles::All()`), потому что панель **Screens** рисует экраны игры и им нужны шрифт,
+UI-материал и текстуры. Ленивого запроса из `UiSystem` больше нет: UI читает только то, что
+уже принёс загрузчик. `Scene::Load` в callback создаёт editor-камеру
 через `NotifySceneLoaded`. Stop не вызывает игру: `EndPlay` делает `Loader::Abort` и
 восстанавливает снимок, а задача `Load` завершается по своему поколению.
 

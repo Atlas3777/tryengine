@@ -1,8 +1,8 @@
 # UI textures
 
 Sprites and icons the game UI draws with `Ui::ImageTexture`. `logo.png` here is a placeholder the
-sample HUD uses; delete it (and the two guid constants described below) if your game has no UI
-texture.
+sample HUD uses; delete it (and the `logo` entry in `game/data/bundles/hud.bundle`) if your game
+has no UI texture.
 
 ## Add a texture
 
@@ -10,17 +10,31 @@ texture.
 2. Start the editor. `TextureImporter` registers the extension, imports the file and writes
    `YourImage.png.meta` (the asset guid plus the bake settings) and the runtime artifact
    `game/artifacts/runtime/<guid>/0` in the `TextureBinary` format.
-3. Use the guid from the `.meta` in the scripts, e.g. in `game/scripts/UiTheme.das`:
+3. Add the texture to the bundle of the screen that draws it, e.g. `game/data/bundles/hud.bundle`:
 
-   ```das
-   let public kLogoGuid : uint64 = 14429000468236573201ul
+   ```text
+   assets: BundleAsset[] = [
+       {
+           name: string = "logo"
+           kind: string = "texture"
+           ref: string = "guid:14429000468236573201"
+       }
+   ]
    ```
 
-4. Add the same guid to `UiConfig::textures` in
-   `engine_source/graphics/include/engine/graphics/UiSystem.hpp`. A build has to be told which
-   UI-only textures to pack: nothing else references them, and a pak keeps no path table for
-   imported assets, so a guid is the only reference that survives the build.
-5. Rebuild the editor and the game client.
+   `name` is the key the screen uses; `ref` is the guid from the `.meta`. A guid therefore
+   lives in exactly one authored place, and a pak needs no path table for imported assets.
+4. Use the key in the screen:
+
+   ```das
+   Ui::ImageTexture("##logo", Bundle::Get(GameBundles::kHud, "logo"), float2(24.0f, 24.0f))
+   ```
+
+   `Bundle::Get` is a cache read: the loader has already brought the texture, because the
+   screen's bundle is part of the request that shows it (`GameFlow::LoadScene` for the HUD,
+   `GameFlow::Start` for the shared `ui.bundle`).
+5. Rebuild the editor and the game client. The build packs every asset named by a bundle into
+   the common pak, so a UI-only texture has no separate build setting.
 
 The editor's **Import Settings** panel (select the file in the Asset Browser) shows exactly what
 the importer reads from the `.meta`, so "why is my texture compressed" is one click away.

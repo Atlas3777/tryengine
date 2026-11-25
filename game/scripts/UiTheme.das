@@ -33,15 +33,6 @@ let public kAccentHot : float4 = float4(0.36f, 0.66f, 1.0f, 1.0f)
 let public kDanger : float4 = float4(0.86f, 0.29f, 0.33f, 1.0f)
 let public kDangerHot : float4 = float4(0.96f, 0.39f, 0.43f, 1.0f)
 
-// --- textures -----------------------------------------------------------------------------
-//
-// Assets are addressed by guid, not path: a pak keeps no path table for imported assets, so a
-// guid is the only reference that survives a build. The number is the one in the asset's .meta
-// (`game/assets/ui/logo.png.meta`); the same value goes to UiConfig::textures in
-// `engine_source/graphics/include/engine/graphics/UiSystem.hpp`, because a build has to be told
-// which UI-only textures to pack.
-let public kLogoGuid : uint64 = 14429000468236573201ul
-
 // --- sound names --------------------------------------------------------------------------
 //
 // The UI never plays audio: it emits a path on hover/press/click and the game decides what that

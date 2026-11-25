@@ -17,7 +17,6 @@
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/strings/Hash.hpp"
 #include "engine/graphics/RuntimeTypes.hpp"
-#include "engine/graphics/UiSystem.hpp"
 #include "engine/graphics/loaders/MaterialLoader.hpp"
 #include "engine/graphics/rg/RenderGraph.hpp"
 #include "engine/resources/AssetTypes.hpp"
@@ -103,18 +102,9 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
 
     LogInfo("CreateBuild CPP");
 
-    tryeditor::BuildSettings settings{};
-
-    // The UI font is a runtime resource the game requests by guid; no scene mentions it, so
-    // the build has to be told explicitly that it belongs in the common pak.
-    if (auto* ui = try_ctx->engine.TryGet<tryengine::graphics::UiSystem>(); ui != nullptr) {
-        if (ui->GetFontGuid() != 0)
-            settings.fonts.push_back(ui->GetFontGuid());
-        for (const uint64_t texture : ui->GetConfig().textures)
-            if (texture != 0)
-                settings.ui_textures.push_back(texture);
-    }
-
+    // Bundle assets (UI font, UI material, screen textures) are discovered by BuildSystem
+    // from the `.bundle` documents themselves: the bundle is the only list of what a screen
+    // needs, so there is nothing to fill in here.
     auto array = *scenes_ptr;
 
     SceneDTODas* scene_dto = reinterpret_cast<SceneDTODas*>(array.data);
@@ -139,8 +129,7 @@ void CreateBuild(const char* build_path, das::Array* scenes_ptr, das::Context* c
             LogInfo("MAT {}", mat);
     }
 
-    tryengine::async::RunAndForget(tryengine::async::ThreadPool(),
-                                   build_system.Build(settings, scene_dtos, build_path));
+    tryengine::async::RunAndForget(tryengine::async::ThreadPool(), build_system.Build(scene_dtos, build_path));
 }
 
 namespace {

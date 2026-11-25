@@ -152,7 +152,7 @@ var private g_measure_version : uint = 0xFFFFFFFFu
 // Value watchers and material resolution bookkeeping.
 var private g_watch : table<uint64; double>
 var private g_material_guid : table<string; uint64>
-var private g_material_requested : table<uint64; int>
+var private g_material_warned : table<string; int>
 
 // --- styles -------------------------------------------------------------------------------
 
@@ -1061,27 +1061,30 @@ def private StateFill(style : UiStyle; node : UiNode) : float4 {
     return color
 }
 
+// Material of `Ui::Image`: resolved through the registry and read from the resource cache.
+// The UI never requests: a material is in a screen bundle, the loader made it ready before
+// the screen was shown, and a miss is a bundle mistake reported once per path.
 def private MaterialFor(path : string) : TryMat? {
     if (empty(path)) {
         return null
     }
+
     var guid = 0ul
     if (key_exists(g_material_guid, path)) {
         guid = g_material_guid[path]
     } else {
         guid = ResolveAssetRef(path)
-        if (guid != 0ul) {
-            g_material_guid[path] = guid
+        if (guid == 0ul) {
+            if (!key_exists(g_material_warned, path)) {
+                g_material_warned[path] = 1
+                print("[UI ERROR] material '{path}' is not a known asset; add it to the screen bundle\n")
+            }
+            return null
         }
+        g_material_guid[path] = guid
     }
-    if (guid == 0ul) {
-        return null
-    }
+
     if (!ResourceIsReadyMaterial(guid)) {
-        if (!key_exists(g_material_requested, guid)) {
-            g_material_requested[guid] = 1
-            RequestLoadMaterial(guid)
-        }
         return null
     }
     return GetMaterialPointer(guid)
