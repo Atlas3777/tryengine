@@ -20,7 +20,8 @@ require tryengine/Content
 require tryengine/EcsMacro
 require tryengine/EntitySet
 require tryengine/FileReader
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Model
 require tryengine/Serializable
 require tryengine/TransformSystem

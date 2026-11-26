@@ -10,7 +10,8 @@ require tryengine/AssetMap
 require tryengine/AsyncTaskManager
 require tryengine/Content
 require tryengine/Input
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Loader
 require tryengine/Physics
 require tryengine/Profiling

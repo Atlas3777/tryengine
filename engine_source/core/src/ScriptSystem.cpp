@@ -5,7 +5,6 @@
 #include <daScript/ast/dyn_modules.h>
 #include <daScript/misc/free_list.h>
 
-#include "engine/core/LiveStore.hpp"
 #include "engine/core/LogHistory.hpp"
 #include "engine/core/Profiler.hpp"
 
@@ -74,10 +73,14 @@ ScriptSystem::ScriptSystem(ScriptSystemConfig config) : config_(eastl::move(conf
     file_access_ = config_.create_file_access();
     TRY_ASSERT(file_access_, "FileAccess не создан (битый пак?)");
 
-    // 3. Загрузка динамических модулей
+    // 3. Загрузка динамических модулей. dasLiveHost приложение регистрирует статически
+    // (DAS::LiveHost): иначе в процессе оказались бы две копии live-хоста с разными
+    // хранилищами и флагами.
     das::TextPrinter tout;
     das::vector<das::string> load_modules;
-    das::require_dynamic_modules(file_access_, das::getDasRoot(), "", load_modules, tout);
+    das::vector<das::string> disabled_modules;
+    disabled_modules.push_back("dasLiveHost");
+    das::require_dynamic_modules(file_access_, das::getDasRoot(), "", load_modules, disabled_modules, tout);
 
     // 4. Глобальная инициализация модулей daScript
     das::Module::Initialize();
@@ -359,10 +362,6 @@ void ScriptSystem::FailCompile(bool hot_reload, eastl::string_view message, cons
 }
 
 void ScriptSystem::InstallFirstLoad(CompiledScript&& compiled, eastl::string_view path, const CompileTiming& timing) {
-    // Новый прогон в том же процессе (система переиспользована): @live-хранилище от прошлого
-    // поколения к этому отношения не имеет, а первый контекст обязан видеть is_reload() == false.
-    ResetLiveStore();
-
     // Предыдущее поколение (если LoadMainScript зовут повторно) живёт до установки нового.
     // Кеш объявлен первым: он переживает контекст, программу и группу модулей.
     std::unique_ptr<das::ModuleFileCache> old_cache = eastl::move(module_cache_);
@@ -402,9 +401,6 @@ void ScriptSystem::InstallReload(CompiledScript&& compiled, const CompileTiming&
 
     // Точки входа хоста повторяются на новом контексте: TimeInit/SetInputSource,
     // подписки редактора, начальная сцена. [after_reload] затем возвращает состояние.
-    // is_reload() скрипты видят уже во время реинициализации, как в daslang-live: по нему
-    // точки входа отличают перезагрузку от холодного старта.
-    SetLiveReload(true);
     if (reload_extension_) {
         TRY_PROFILE_SCOPE("Script.Reload.Reinit");
         reload_extension_->ReinitializeContext(*this);

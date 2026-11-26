@@ -13,7 +13,8 @@ module GameState shared public
 //! that request in its own frame.
 
 require math
-require tryengine/Live
+require live/live_vars
+require live_host
 require trygame/GameTime
 
 struct public GameUiState {

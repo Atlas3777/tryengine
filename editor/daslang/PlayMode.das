@@ -13,7 +13,8 @@ module PlayMode shared public
 require daslib/archive
 require daslib/decs
 require tryengine/EcsMacro
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Loader
 require tryengine/Model
 require tryengine/Physics

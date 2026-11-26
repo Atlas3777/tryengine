@@ -22,7 +22,8 @@ require tryengine/TransformSystem
 require tryengine/Ui
 require tryengine/Types
 require tryengine/Input
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/AsyncTaskManager
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/UndoRedo

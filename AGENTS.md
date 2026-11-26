@@ -80,14 +80,17 @@ cmake --build build-debug --target editor -j "$(nproc)"
   `engine_source/resources/src/Module_AsyncFileManager.cpp`,
   `engine_source/graphics/src/Module_Renderer.cpp` и `Module_Resources.cpp`,
   `engine_source/physics/src/Module_Physics.cpp`, `editor/src/Module_TryEditor.cpp`,
-  `engine_source/core/src/Module_Log.cpp` (журнал — тип ядра) и
-  `engine_source/core/src/Module_Live.cpp` (хранилище `@live` — тоже состояние ядра).
+  `engine_source/core/src/Module_Log.cpp` (журнал — тип ядра).
 - Рядом с библиотекой лежит дескриптор `modules/<имя>/.das_module`: daslang читает его для
   `-load_module` и при скане `modules/`, поэтому дескриптор **хранится в git**.
 - Цели CMake заводит `tryengine_add_das_module()` (`cmake/DasModule.cmake`):
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
-  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`, `tryLive_shared`;
-  агрегат для всех — `das_modules` (`tools/agent/build.sh modules`).
+  `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`; агрегат для
+  всех — `das_modules` (`tools/agent/build.sh modules`).
+- Live-хост — не наш модуль, а `liblibDasModuleLiveHost.a` из SDK: target `DAS::LiveHost`,
+  приложения линкуют его и регистрируют `Module_LiveHost` статически. Динамическую копию из
+  `<dasroot>/modules` ScriptSystem запрещает (`disabled_modules`), иначе в процессе две копии
+  live-хоста с разными хранилищами и флагами.
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
@@ -128,8 +131,8 @@ daslang -dry-run \
   -load_module "$PWD/modules/tryPhysics" \
   -load_module "$PWD/modules/tryUi" \
   -load_module "$PWD/modules/tryLog" \
-  -load_module "$PWD/modules/tryLive" \
   -load_module /opt/daslang/modules/dasLLVM \
+  -load_module /opt/daslang/modules/dasLiveHost \
   <файл.das>
 ```
 
@@ -144,6 +147,9 @@ daslang -dry-run \
 - `/opt/daslang/modules/dasLLVM` нужен потому, что `engine_source/daslang/Engine.das`
   требует `daslib/just_in_time`; без модуля LLVM симуляция падает с
   `LLVM JIT: the emitter module llvm/daslib/llvm_macro did not load`.
+- `/opt/daslang/modules/dasLiveHost` нужен, потому что сгенерированный `@live`-код зовёт
+  `live_store_bytes`/`live_load_bytes`. С явными `-load_module` CLI не подхватывает
+  SDK-модули сам, поэтому live-хост перечислен рядом с LLVM.
 - `-dry-run` компилирует и симулирует (строже, чем `-compile-only`), но не выполняет код.
 - Линт **не выключай**: редактор компилирует с ним, и `-no-lint` однажды скрыл
   `error[30264] type expression result is used` на `type<T>`; `type<T>` — no-storage тег,
@@ -234,30 +240,22 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   компиляции; без этого `compileDaScript` падает в `AstSerializer` ещё до разбора первого
   модуля. Новое окружение на воркере не создавай: модули проекта и генерация должны
   остаться в том же реестре, что и у главного потока.
-- `@live` — аннотация глобальной переменной или поля структуры: значение переживает горячую
-  перезагрузку. Живёт в `tryengine/Live` (`engine_source/daslang/Live.das`, infer-макрос по
-  образцу `live/live_vars` из dasLiveHost): в модуле появляются
-  `__before_reload_try_live`/`__after_reload_try_live`, которые `ScriptSystem` находит по
-  префиксу. Значение пишется в `tryLive` (`engine_source/core/src/Module_Live.cpp` +
-  `LiveStore.hpp`) под ключом из имени модуля и переменной, вместе с хешем выражения
-  инициализатора: смена дефолта в коде отбрасывает старое значение. Хранилище живёт в
-  процессе, первая загрузка его чистит; `is_reload()` истинно в поколении после
-  перезагрузки. `@live` на `let` — ошибка компиляции.
-- Аннотации `before_reload`/`after_reload` регистрирует **tryLive**, а не TryEditor: это
-  контракт движка, хост подключает только саму перезагрузку. Нативные функции хранилища
-  называются `try_live_*`, а скриптовый фасад — `live_save`/`live_load`/`is_reload`. Имена
-  не совпадают с dasLiveHost намеренно: в программе редактора живут **обе** live-системы
-  (виджеты imgui используют `live/live_vars`/`live_host`), и неквалифицированный
-  `live_store_bytes` был бы неоднозначным. Сгенерированный код вызывает
-  `tryLive::try_live_*`. Маркер своего прохода — `__before_reload_try_live`, а не общий с
-  upstream `__before_reload_live_vars`: иначе в программе с обеими live-системами (редактор)
-  модуль доставался бы то одному проходу, то другому, и его значения могли не попасть в наш
-  store. Теперь наш проход генерирует хуки для каждого модуля с `@live`; два прохода могут
-  работать над одним модулем, но у них разные хранилища и одинаковые сохранённые значения.
-- Модуль, объявляющий `@live`, обязан сам `require tryengine/Live`: infer-проход виден только
-  в области модуля. Без require `@live` — просто аргумент аннотации: если в программе есть
-  upstream `live_vars`, он может сгенерировать хуки в своё хранилище, но к нашему store они
-  отношения не имеют (так `Game.das` однажды потерял `g_ready` после перезагрузки).
+- `@live` — аннотация upstream live-хоста (`live/live_vars`), своей реализации нет. Модуль,
+  который её использует, обязан требовать **оба** модуля: `require live/live_vars` (сам
+  infer-проход) и `require live_host` (сгенерированные хуки зовут `live_store_bytes` /
+  `live_load_bytes`, а `require` не транзитивен). Хуки
+  `__before_reload_live_vars`/`__after_reload_live_vars` ScriptSystem находит по префиксу;
+  формат ключа и хеш выражения инициализатора — upstream: значение переживает перезагрузку,
+  смена дефолта в коде отбрасывает старое. `@live` на `let` — ошибка компиляции.
+- Live-хост — модуль SDK `liblibDasModuleLiveHost.a`: imported target `DAS::LiveHost`
+  (`engine_source/core/CMakeLists.txt`), `DECLARE_MODULE`/`PULL_MODULE(Module_LiveHost)` в
+  обоих setup-файлах. `ScriptSystem` запрещает динамическую копию из `<dasroot>/modules`
+  (`disabled_modules`), иначе в процессе оказались бы два live-хоста с разными хранилищами
+  и флагами. Shared-модули `modules/try*` его не содержат: там live-хост не нужен.
+- Скриптовые флаги live-хоста ставит редактор через `engine/core/LiveHost.hpp`
+  (`extern "C"` из SDK): `is_reload` — в начале перезагрузки (`ScriptReload`), счётчик
+  поколений и `get_last_error` — по её завершении. Поэтому `is_reload()` под редактором
+  ведёт себя как под `daslang-live`; хранилище — SDK (`live_store_bytes`/`live_load_bytes`).
 - Что помечено `@live`: массив `clocks` и `root_clock` в `Time` и **каждый** тег клока
   (`editor_clock`, `game_clock`/`game_world_clock`/`game_ui_clock`, `g_physics_clock`, клок
   `Ui`, `Physics::g_physics_attached`); `Scene::active_scene` и `scene_context`; снимок Play
@@ -269,7 +267,7 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `ApplyState` в reload-хуке больше не нужен.
 - Мир DECS (сущности, архетипы, байты компонентов) — это чужой глобал `decsState`, ему
   `@live` не поставить. Его сохраняет `tryengine/LiveEcs` (`engine_source/daslang/LiveEcs.das`,
-  требуется из `Engine.das`) в то же хранилище: `[before_reload]` кладёт
+  требуется из `Engine.das`) в то же хранилище live-хоста: `[before_reload]` кладёт
   `mem_archive_save(decsState)`, `[after_reload]` делает `decs::restart`,
   `mem_archive_load`, `EcsApplyRegistry` и `Model::ReapplyPointers` (архив обнуляет
   указатели `mesh`/`material`). Игра об этом не знает.

@@ -8,9 +8,10 @@
 #include <thread>
 
 #include "engine/core/FsFileAccessFactory.hpp"
+#include "engine/core/LiveHost.hpp"
 #include "engine/core/ScriptSystem.hpp"
 
-DECLARE_MODULE(Module_Live);
+DECLARE_MODULE(Module_LiveHost);
 
 namespace {
 
@@ -21,11 +22,14 @@ void RegisterProbeModules() {
     das::setDasRoot(DAS_ROOT_DIR);
 
     NEED_ALL_DEFAULT_MODULES;
-    PULL_MODULE(Module_Live);
+    PULL_MODULE(Module_LiveHost);
 }
 
 struct ProbeReloadExtension final : tryengine::core::IScriptReloadExtension {
-    void ReinitializeContext(tryengine::core::ScriptSystem&) override {}
+    void ReinitializeContext(tryengine::core::ScriptSystem&) override {
+        // Same contract the editor provides: the new generation is a reload, not a cold start.
+        live_host_set_is_reload(true);
+    }
 
     void OnReloadFinished(bool success, eastl::string_view error) override {
         std::printf("[PROBE] reload finished: success=%d error=%.*s\n", success ? 1 : 0, static_cast<int>(error.size()),

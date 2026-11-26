@@ -24,7 +24,8 @@ module Time shared public
 //! editor and the game is `@live` for the same reason: a restored tag addresses its slot in
 //! the restored array.
 
-require tryengine/Live
+require live/live_vars
+require live_host
 
 let k_no_slot = -1
 

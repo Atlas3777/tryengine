@@ -17,7 +17,8 @@ require daslib/decs
 require daslib/decs_boost
 require tryengine/ConfigFormatBoost
 require tryengine/EcsMacro
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Profiling
 require tryengine/Serializable
 require tryengine/Time

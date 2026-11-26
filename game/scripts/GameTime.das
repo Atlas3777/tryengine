@@ -3,7 +3,8 @@ options relaxed_assign = false
 
 module GameTime shared public
 
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Time public
 
 struct GameClock : ClockTag {}

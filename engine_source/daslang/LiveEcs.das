@@ -7,7 +7,7 @@ module LiveEcs shared public
 //!
 //! The world is the `decsState` heap: entities, archetypes and component bytes. It is not a
 //! global this repository owns (`daslib/decs` declares it), so it cannot carry `@live`; the
-//! pair of reload hooks here serializes it into the same `tryLive` store that `@live` uses.
+//! pair of reload hooks here serializes it into the same live-host store that `@live` uses.
 //! Everything script-side that the heap does not carry — the active scene and its resource
 //! references, the editor snapshot, the clocks — is `@live` in its own module instead.
 //!
@@ -22,7 +22,7 @@ require daslib/archive
 require daslib/decs
 require daslib/decs_boost
 require tryengine/EcsMacro
-require tryengine/Live
+require live_host
 require tryengine/Model
 
 let private kEcsKey : string = "__tryengine_live_ecs"
@@ -30,13 +30,13 @@ let private kEcsKey : string = "__tryengine_live_ecs"
 [before_reload]
 def private SaveEcsHeap() {
     let data <- mem_archive_save(decsState)
-    live_save(kEcsKey, data)
+    live_store_bytes(kEcsKey, data)
 }
 
 [after_reload]
 def private RestoreEcsHeap() {
     var data : array<uint8>
-    if (!live_load(kEcsKey, data) || length(data) == 0) {
+    if (!live_load_bytes(kEcsKey, data) || length(data) == 0) {
         return
     }
 

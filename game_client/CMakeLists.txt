@@ -17,4 +17,5 @@ target_link_libraries(game_client PRIVATE
         engine::async
         engine::graphics
         engine::physics
+        DAS::LiveHost
 )

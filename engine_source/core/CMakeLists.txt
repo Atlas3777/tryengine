@@ -52,9 +52,16 @@ target_compile_definitions(engine_core PUBLIC
         "DAS_ROOT_DIR=\"${DAS_SDK_ROOT}\""
 )
 
+# Модуль live-хоста из SDK: @live, before_reload/after_reload, is_reload и хранилище.
+# Приложения регистрируют его статически и запрещают динамическую копию из
+# <dasroot>/modules (см. ScriptSystem), поэтому в процессе ровно один live host.
+set(DAS_LIVEHOST_LIB "${DAS_SDK_ROOT}/lib/liblibDasModuleLiveHost.a")
+if (NOT EXISTS "${DAS_LIVEHOST_LIB}")
+    message(FATAL_ERROR "Нет live host модуля SDK: ${DAS_LIVEHOST_LIB}")
+endif()
+add_library(DAS::LiveHost STATIC IMPORTED GLOBAL)
+set_target_properties(DAS::LiveHost PROPERTIES IMPORTED_LOCATION "${DAS_LIVEHOST_LIB}")
+
 # Журнал (Logger) отдаётся в daslang тем же биндингом, что C++: скрипт пишет в те же
 # sink'и (консоль, кольцо окна, файл), что и LogInfo/LogError из C++.
 tryengine_add_das_module(tryLog_shared tryLog src/Module_Log.cpp engine::core)
-
-# Хранилище @live-переменных: старый контекст пишет перед перезагрузкой, новый читает после.
-tryengine_add_das_module(tryLive_shared tryLive src/Module_Live.cpp engine::core)

@@ -20,7 +20,8 @@ require daslib/decs_boost
 require tryengine/ConfigFormatBoost
 require tryengine/EcsMacro
 require tryengine/Input
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Physics
 require tryengine/Serializable
 require tryengine/TransformSystem

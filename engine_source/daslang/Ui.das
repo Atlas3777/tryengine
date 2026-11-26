@@ -30,7 +30,8 @@ require daslib/math_boost
 require tryengine/AssetMap
 require tryengine/Time
 require tryengine/Input
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Profiling
 require tryengine/UiTypes public
 require tryResources

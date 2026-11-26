@@ -17,7 +17,7 @@ module HotReload shared public
 //! What is left is the game's screen stack: a `ScreenRef` is a function pointer plus an
 //! `AssetMap` handle, and neither survives a new script generation. This module captures the
 //! two flags needed to decide which screen belongs on top before the swap and rebuilds the
-//! stack after it. Both sides go through the same `tryLive` store as `@live`.
+//! stack after it. Both sides go through the same `live_store_bytes` store as `@live`.
 
 require TryEditor
 require tryeditor/Editor
@@ -27,7 +27,7 @@ require trygame/GameTime
 require trygame/GameUi
 require trygame/UiTheme
 require tryengine/Input
-require tryengine/Live
+require live_host
 require tryengine/Physics
 require tryengine/Ui
 require daslib/archive
@@ -59,13 +59,13 @@ def private SaveReloadUiState() {
     state.is_playing = is_playing
     state.game_ready = Game::IsReady()
     let data <- mem_archive_save(state)
-    live_save(kReloadUiKey, data)
+    live_store_bytes(kReloadUiKey, data)
 }
 
 [after_reload]
 def private RestoreReloadUiState() {
     var data : array<uint8>
-    if (!live_load(kReloadUiKey, data) || length(data) == 0) {
+    if (!live_load_bytes(kReloadUiKey, data) || length(data) == 0) {
         print("[RELOAD] no saved session; the game UI starts from the menu\n")
         return
     }

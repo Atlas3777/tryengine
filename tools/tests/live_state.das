@@ -11,8 +11,9 @@ options relaxed_assign = false
 //! the `@live` value to survive the reload.
 
 require daslib/rtti
+require live_host
+require live/live_vars
 require strings
-require tryengine/Live
 
 var @live probe_value = 42
 var @live probe_name = "cold"
@@ -33,25 +34,25 @@ def main() : int {
     data |> push(uint8(1))
     data |> push(uint8(2))
     data |> push(uint8(3))
-    live_save("live_state_test", data)
+    live_store_bytes("live_state_test", data)
 
     var loaded : array<uint8>
-    Check(live_load("live_state_test", loaded), "a stored key is found")
+    Check(live_load_bytes("live_state_test", loaded), "a stored key is found")
     Check(length(loaded) == 3, "stored bytes keep their length")
     Check(length(loaded) == 3 && loaded[0] == uint8(1) && loaded[2] == uint8(3), "stored bytes round-trip")
 
     var missing : array<uint8>
-    Check(!live_load("live_state_test_missing", missing), "an unknown key is not found")
+    Check(!live_load_bytes("live_state_test_missing", missing), "an unknown key is not found")
 
     Check(!is_reload(), "a cold load does not report a reload")
 
     var before_hook = false
     var after_hook = false
     context_for_each_function() $(info) {
-        if (info.name == "__before_reload_try_live") {
+        if (info.name == "__before_reload_live_vars") {
             before_hook = true
         }
-        if (info.name == "__after_reload_try_live") {
+        if (info.name == "__after_reload_live_vars") {
             after_hook = true
         }
     }

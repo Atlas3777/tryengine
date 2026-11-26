@@ -3,11 +3,11 @@
 #
 #   tools/agent/live-probe.sh
 #
-# Runs a lifecycle script under daslang-live with the engine's own `tryLive` module, waits
+# Runs a lifecycle script under daslang-live with the SDK's live host, waits
 # for the cold start, edits the file to trigger the watcher, and requires the `@live` counter
 # to come back with its runtime value instead of the source default. The store and the
-# generated `[before_reload]`/`[after_reload]` hooks are engine code; daslang-live only drives
-# the context swap, the same way ScriptSystem does in the editor. The file watcher is the one
+# generated `[before_reload]`/`[after_reload]` hooks come from the same live host the editor
+# links statically; daslang-live only drives the context swap. The file watcher is the one
 # shipped with dasLiveHost (`live/live_watch`), so no editor or GPU is needed.
 #
 # The probe is headless and runs a temporary script from tools/agent/.tmp.
@@ -19,7 +19,6 @@ DASLIVE="${TRY_DASLIVE:-$DAS_ROOT/bin/daslang-live}"
 DAS_LIVE_HOST="${TRY_DAS_LIVE_HOST:-$DAS_ROOT/modules/dasLiveHost}"
 
 need_file "$DASLIVE"
-need_file "$ROOT/modules/tryLive/tryLive.shared_module"
 need_file "$DAS_LIVE_HOST/.das_module"
 
 ensure_tmp
@@ -34,7 +33,8 @@ mkdir -p "$work"
 cat >"$script" <<'DAS'
 options gen2
 
-require tryengine/Live
+require live_host
+require live/live_vars
 require live/live_watch
 
 var @live counter = 0
@@ -59,7 +59,6 @@ def shutdown() {
 DAS
 
 "$DASLIVE" -project "$DAS_PROJECT" \
-    -load_module "$ROOT/modules/tryLive" \
     -load_module "$DAS_LIVE_HOST" \
     --live-port "$port" "$script" >"$out" 2>&1 &
 pid=$!

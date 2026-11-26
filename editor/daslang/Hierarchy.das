@@ -9,7 +9,8 @@ require imgui/imgui_containers_builtin
 require imgui/imgui_layout_builtin
 require imgui/imgui_id_builtin
 require imgui/imgui_boost_runtime
-require tryengine/Live
+require live/live_vars
+require live_host
 require tryengine/Profiling
 require tryengine/TransformSystem
 require tryengine/Types

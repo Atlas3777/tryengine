@@ -41,7 +41,7 @@ if [[ ! -x "$bin" || "$src" -nt "$bin" || "${libs[0]}" -nt "$bin" ]]; then
         -DDAS_ROOT_DIR="\"$DAS_ROOT\"" \
         -I "$ROOT/engine_source/core/include" \
         -I "$eastl_include" -I "$eabase_include" -I "$DAS_ROOT/include" \
-        "$src" "${libs[@]}" \
+        "$src" "${libs[@]}" "$DAS_ROOT/lib/liblibDasModuleLiveHost.a" \
         -L"$DAS_ROOT/lib" -llibDaScriptDyn -llibDaScriptDyn_runtime -Wl,-rpath,"$DAS_ROOT/lib" \
         -o "$bin" -lpthread -ldl
 fi
@@ -51,7 +51,8 @@ cat >"$script" <<'DAS'
 options gen2
 options relaxed_assign = false
 
-require tryengine/Live
+require live_host
+require live/live_vars
 require tryengine/Time
 
 var @live counter = 0
@@ -59,19 +60,19 @@ var @live title = "cold"
 
 var g_ok = false
 
-// The annotations are registered by tryLive, not by the editor, so a plain host like this
+// The annotations come from live_host (the SDK module linked into this probe), so a plain host like this
 // probe can use them too. Each hook writes a marker into the live store; ProbeCheck reads
 // both marks after the swap.
 [before_reload]
 def ProbeBeforeHook() {
     var mark <- [uint8(5)]
-    live_save("probe_before_hook", mark)
+    live_store_bytes("probe_before_hook", mark)
 }
 
 [after_reload]
 def ProbeAfterHook() {
     var mark <- [uint8(7)]
-    live_save("probe_after_hook", mark)
+    live_store_bytes("probe_after_hook", mark)
 }
 
 [export]
@@ -96,8 +97,8 @@ def ProbeCheck() {
     let reload = is_reload()
     var before_mark : array<uint8>
     var after_mark : array<uint8>
-    let before_ok = live_load("probe_before_hook", before_mark) && length(before_mark) == 1 && before_mark[0] == uint8(5)
-    let after_ok = live_load("probe_after_hook", after_mark) && length(after_mark) == 1 && after_mark[0] == uint8(7)
+    let before_ok = live_load_bytes("probe_before_hook", before_mark) && length(before_mark) == 1 && before_mark[0] == uint8(5)
+    let after_ok = live_load_bytes("probe_after_hook", after_mark) && length(after_mark) == 1 && after_mark[0] == uint8(7)
     g_ok = counter == 12345 && title == "hot" && reload && total > 0.2d && before_ok && after_ok
     print("[PROBE] counter={counter} title={title} is_reload={reload} total={total:0.3f} before_hook={before_ok} after_hook={after_ok}\n")
 }

@@ -141,6 +141,7 @@ add_executable(editor src/main.cpp)
 target_link_libraries(editor PRIVATE editor_core)
 
 tryengine_add_das_module(tryeditor_shared tryeditor src/Module_TryEditor.cpp editor_core)
+target_link_libraries(editor_core PRIVATE DAS::LiveHost)
 
 set_target_properties(editor tryeditor_shared PROPERTIES
         BUILD_RPATH "${slang_SOURCE_DIR}/lib"
