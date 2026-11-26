@@ -21,7 +21,7 @@ public:
     explicit ShaderLoader(VkDevice device) : device_(device) {}
 
     async::Task<Shader> Parse(eastl::span<const uint8_t> data) const {
-        LogInfo("Shader Load...");
+        LogInfo(LogCategory::Importer, "Shader Load...");
 
         co_await tryengine::async::ExecutorSwitch(tryengine::async::MainThread());
 
@@ -163,7 +163,7 @@ public:
             co_return LogAndMakeError("Failed to create Fragment VkShaderEXT");
         }
 
-        LogInfo("End Shader Loading");
+        LogInfo(LogCategory::Importer, "End Shader Loading");
 
         co_return eastl::move(shader);
     }

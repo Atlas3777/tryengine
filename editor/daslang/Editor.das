@@ -22,8 +22,11 @@ require tryengine/TransformSystem
 require tryengine/Ui
 require tryengine/Types
 require tryengine/Input
-require live/live_vars
-require live_host
+// The live host only exists in the development hosts (the editor, the CLI gate and
+// the probes). The game pak is compiled without it, so these modules stay clean of
+// live: the guarded require is skipped and @live is just an unused annotation.
+require ?live_host live_host
+require ?live_host live/live_vars
 require tryengine/AsyncTaskManager
 require tryeditor/QuadTreeDebugWindow
 require tryeditor/UndoRedo

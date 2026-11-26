@@ -12,6 +12,10 @@
 #include "engine/core/ScriptSystem.hpp"
 #include "engine/core/TryengineContext.hpp"
 
+// Игра не регистрирует live-хост: скрипты игры компилируются без него, а guarded
+// require в общих модулях (`require ?live_host ...`) тогда пропускается. Live-хост есть
+// только у редактора/пробников/CLI-гейта.
+
 // DECLARE_MODULE — на глобальном уровне
 DECLARE_MODULE(Module_Renderer);
 DECLARE_MODULE(Module_Resources);
@@ -20,7 +24,6 @@ DECLARE_MODULE(Module_AsyncFileManager);
 DECLARE_MODULE(Module_Physics);
 DECLARE_MODULE(Module_Ui);
 DECLARE_MODULE(Module_Log);
-DECLARE_MODULE(Module_LiveHost);
 
 // Функция регистрации ДОЛЖНА БЫТЬ в глобальном namespace ::
 inline void RegisterGameScriptModules() {
@@ -34,7 +37,6 @@ inline void RegisterGameScriptModules() {
     PULL_MODULE(Module_Physics);
     PULL_MODULE(Module_Ui);
     PULL_MODULE(Module_Log);
-    PULL_MODULE(Module_LiveHost);
 }
 
 // Фабрика контекста игры. Используется и в игре, и в редакторе (для ScriptBuildSystem).

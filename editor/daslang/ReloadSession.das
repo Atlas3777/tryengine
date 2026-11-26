@@ -1,9 +1,9 @@
 options gen2
 options relaxed_assign = false
 
-module HotReload shared public
+module ReloadSession shared public
 
-//! Editor hot reload: the one piece of state a serializer cannot carry.
+//! Editor reload session: the one piece of state a serializer cannot carry.
 //!
 //! The editor asks for a reload through RequestScriptReload() (button / F5). The actual
 //! recompilation runs in the C++ frame loop after EditorUpdate returns, because a context

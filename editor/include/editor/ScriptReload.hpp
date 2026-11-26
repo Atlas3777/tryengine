@@ -13,7 +13,7 @@ namespace tryeditor {
 //! Движок даёт точку расширения (IScriptReloadExtension) и механику подмены контекста;
 //! запрос из UI и повтор точек входа хоста живут здесь. Само состояние перезагрузки —
 //! не редакторское: `@live`-переменные и мир возвращает live-хост SDK и `tryengine/LiveEcs`,
-//! а редактор восстанавливает только игровой UI (см. HotReload.das). Здесь же ставятся
+//! а редактор восстанавливает только игровой UI (см. ReloadSession.das). Здесь же ставятся
 //! скриптовые флаги live-хоста: `is_reload`, `get_reload_generation`, `get_last_error`.
 //! Игра расширение не подключает и о перезагрузке не знает.
 class ScriptReload final : public tryengine::core::IScriptReloadExtension {

@@ -11,7 +11,7 @@ require math
 require tryeditor/Editor
 require tryeditor/PlayMode
 require trygame/Game
-require tryeditor/HotReload
+require tryeditor/ReloadSession
 
 require tryeditor/Hierarchy
 require tryeditor/Inspector

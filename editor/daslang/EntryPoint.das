@@ -6,6 +6,7 @@ options intern_strings
 options relaxed_assign = false
 
 require tryengine/Engine
+require tryengine/LiveEcs
 
 require tryengine/Render
 require tryeditor/EditorUI

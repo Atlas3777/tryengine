@@ -220,7 +220,8 @@ public:
         }
 
         if (material.textures.empty())
-            LogInfo("Material '{}': no textures bound, using the default white texture", config.name.c_str());
+            LogInfo(LogCategory::Importer, "Material '{}': no textures bound, using the default white texture",
+                    config.name.c_str());
 
         // Материал уходит в кадр только после этого: дескрипторы больше не меняются
         // на месте, live-правка выделит новый набор.

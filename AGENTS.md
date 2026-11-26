@@ -87,10 +87,10 @@ cmake --build build-debug --target editor -j "$(nproc)"
   `tryRenderer_shared`, `tryResources_shared`, `tryInput_shared`, `tryAsyncFile_shared`,
   `tryeditor_shared`, `tryPhysics_shared`, `tryUi_shared`, `tryLog_shared`; агрегат для
   всех — `das_modules` (`tools/agent/build.sh modules`).
-- Live-хост — не наш модуль, а `liblibDasModuleLiveHost.a` из SDK: target `DAS::LiveHost`,
-  приложения линкуют его и регистрируют `Module_LiveHost` статически. Динамическую копию из
-  `<dasroot>/modules` ScriptSystem запрещает (`disabled_modules`), иначе в процессе две копии
-  live-хоста с разными хранилищами и флагами.
+- Live-хост — не наш модуль, а `liblibDasModuleLiveHost.a` из SDK: target `DAS::LiveHost`.
+  Его линкуют и регистрируют статически только редактор и пробники; игра — нет (см. §6).
+  Динамическую копию из `<dasroot>/modules` ScriptSystem запрещает (`disabled_modules`),
+  иначе в процессе две копии live-хоста с разными хранилищами и флагами.
 - Собирай их **только в Release**. Обе конфигурации пишут один и тот же файл
   `modules/<имя>/<имя>.shared_module`; Debug-сборка затирает Release-модуль, и редактор с
   CLI начинают грузить debug-бинарник.
@@ -241,17 +241,26 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   модуля. Новое окружение на воркере не создавай: модули проекта и генерация должны
   остаться в том же реестре, что и у главного потока.
 - `@live` — аннотация upstream live-хоста (`live/live_vars`), своей реализации нет. Модуль,
-  который её использует, обязан требовать **оба** модуля: `require live/live_vars` (сам
-  infer-проход) и `require live_host` (сгенерированные хуки зовут `live_store_bytes` /
-  `live_load_bytes`, а `require` не транзитивен). Хуки
-  `__before_reload_live_vars`/`__after_reload_live_vars` ScriptSystem находит по префиксу;
-  формат ключа и хеш выражения инициализатора — upstream: значение переживает перезагрузку,
-  смена дефолта в коде отбрасывает старое. `@live` на `let` — ошибка компиляции.
+  который её использует, требует **оба** модуля под guard'ом:
+  `require ?live_host live_host` и `require ?live_host live/live_vars`. Guard — сам
+  `live_host`: в редакторе/гейте/пробниках он есть, в игре нет, и там `@live` остаётся
+  просто аргументом аннотации (infer-проход и хуки не появляются). Требуются оба, потому
+  что сгенерированные хуки зовут `live_store_bytes`/`live_load_bytes`, а `require` не
+  транзитивен. Хуки `__before_reload_live_vars`/`__after_reload_live_vars` ScriptSystem
+  находит по префиксу; формат ключа и хеш выражения инициализатора — upstream: значение
+  переживает перезагрузку, смена дефолта в коде отбрасывает старое. `@live` на `let` —
+  ошибка компиляции.
 - Live-хост — модуль SDK `liblibDasModuleLiveHost.a`: imported target `DAS::LiveHost`
-  (`engine_source/core/CMakeLists.txt`), `DECLARE_MODULE`/`PULL_MODULE(Module_LiveHost)` в
-  обоих setup-файлах. `ScriptSystem` запрещает динамическую копию из `<dasroot>/modules`
-  (`disabled_modules`), иначе в процессе оказались бы два live-хоста с разными хранилищами
-  и флагами. Shared-модули `modules/try*` его не содержат: там live-хост не нужен.
+  (`engine_source/core/CMakeLists.txt`). Его линкуют **только редактор** (editor_core) и
+  пробники; `editor_core` регистрирует `Module_LiveHost` статически, игра — нет: в
+  `GameScriptSetup.hpp` живого хоста нет, `game_client` его не линкует, а guarded require
+  в скриптах игры просто пропускается. `ScriptSystem` запрещает динамическую копию из
+  `<dasroot>/modules` (`disabled_modules`) в обоих хостах: в редакторе иначе было бы две
+  копии с разными хранилищами и флагами.
+- Пак игры всё равно собирается в процессе редактора, где live-хост есть, поэтому
+  `live_vars` и его зависимости могут попасть в `script_pak`; игра их не компилирует
+  (guard пропускает). Если это станет важно, для `BuildPak` заводится отдельный
+  `project_*.das_project` без маппинга `live/`.
 - Скриптовые флаги live-хоста ставит редактор через `engine/core/LiveHost.hpp`
   (`extern "C"` из SDK): `is_reload` — в начале перезагрузки (`ScriptReload`), счётчик
   поколений и `get_last_error` — по её завершении. Поэтому `is_reload()` под редактором
@@ -267,11 +276,12 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   `ApplyState` в reload-хуке больше не нужен.
 - Мир DECS (сущности, архетипы, байты компонентов) — это чужой глобал `decsState`, ему
   `@live` не поставить. Его сохраняет `tryengine/LiveEcs` (`engine_source/daslang/LiveEcs.das`,
-  требуется из `Engine.das`) в то же хранилище live-хоста: `[before_reload]` кладёт
+  требуется из `editor/daslang/EntryPoint.das`; в игру не входит) в то же хранилище
+  live-хоста: `[before_reload]` кладёт
   `mem_archive_save(decsState)`, `[after_reload]` делает `decs::restart`,
   `mem_archive_load`, `EcsApplyRegistry` и `Model::ReapplyPointers` (архив обнуляет
   указатели `mesh`/`material`). Игра об этом не знает.
-- `editor/daslang/HotReload.das` — только координатор того, что сериализовать нельзя:
+- `editor/daslang/ReloadSession.das` — только координатор того, что сериализовать нельзя:
   стек экранов игры (`ScreenRef` = указатель на функцию + хэндл `AssetMap`). До свапа он
   пишет в то же хранилище пару флагов (`is_playing`, `Game::IsReady()`), после свапа
   пересоздаёт стек через `GameUi::Restore` (или зовёт `GameStart`, если Play не успел
@@ -418,8 +428,11 @@ transform pass, префабы, сцены, undo). Гейт компиляции
   два: `g_ready` (сцена применена) и путь запроса в полёте; «загружаемся» — это
   `Loader::IsActive()`, отдельного флага нет.
   Ни загрузчик, ни `Scene::Load`/`Prefab::Spawn` не читают диск. После горячей перезагрузки
-  координатор (`editor/daslang/HotReload.das`) зовёт `GameUi::Restore(true)`: игра
+  координатор (`editor/daslang/ReloadSession.das`) зовёт `GameUi::Restore(true)`: игра
   перечитывает бандлы и строит новые карты, мир и сцена уже восстановлены движком.
+  `Game.das` требует `tryengine/Engine` (C++-хост зовёт `EngineStart`/`EngineUpdate`:
+  `TimeInit`, `TimeTick`, физика, transform) и `tryengine/Render` (экспорты игрового
+  рендера); ни то, ни другое не тянет live-хост.
 - `tryengine/Loader.das` — `Loader::Load(request, callback)` это `[async]`-задача,
   которую запускают через `StartTask`. Пока она идёт, `GetProgress(LoadPhase.Prefabs)` /
   `GetProgress(LoadPhase.Scenes)` отдают `float2(done, total)` по каждой фазе отдельно

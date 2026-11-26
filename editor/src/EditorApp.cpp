@@ -52,7 +52,7 @@ void EditorApp::Init() {
     vulkan_device_ = std::make_unique<VulkanDevice>(1280, 720, "tryengine");
     frame_sync_ = std::make_unique<FrameSync>(*vulkan_device_);
     // vsync выключен: профилировать иначе бессмысленно, fps упирается в частоту монитора.
-    swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/false);
+    swapchain_ = std::make_unique<VulkanSwapchain>(*vulkan_device_, 1280, 720, /*vsync=*/true);
 
     engine_ = std::make_unique<Engine>();
     engine_->RegisterSystem<tryengine::physics::PhysicsWorld>();
